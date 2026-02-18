@@ -1,0 +1,125 @@
+﻿<UserControl
+    x:Class="PrintBit.Presentation.Views.PrintConfigurationView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </UserControl.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="1.5*" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <materialDesign:Card Margin="8" Padding="16">
+            <StackPanel>
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="Document Preview" />
+                <Border
+                    Margin="0,12,0,0"
+                    Padding="12"
+                    BorderBrush="#FFBBBBBB"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <Grid Height="220">
+                        <Rectangle
+                            Fill="#FFF2F2F2"
+                            RadiusX="8"
+                            RadiusY="8" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="16"
+                            Text="{Binding SelectedUploadedFile, StringFormat=Preview: {0}}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <materialDesign:Card
+            Grid.Row="1"
+            Margin="8"
+            Padding="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    Grid.ColumnSpan="2"
+                    Margin="0,0,0,12"
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="Print Settings" />
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal">
+                    <TextBlock VerticalAlignment="Center" Text="Copies:" />
+                    <Button
+                        Margin="8,0,8,0"
+                        Command="{Binding DecreaseCopiesCommand}"
+                        Content="-" />
+                    <TextBlock
+                        MinWidth="30"
+                        VerticalAlignment="Center"
+                        Text="{Binding Copies}" />
+                    <Button Command="{Binding IncreaseCopiesCommand}" Content="+" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="1">
+                    <TextBlock Margin="0,0,0,4" Text="Color Mode" />
+                    <ComboBox
+                        Width="170"
+                        ItemsSource="{Binding ColorModes}"
+                        SelectedItem="{Binding SelectedColorMode, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                    <TextBlock Margin="0,0,0,4" Text="Pages" />
+                    <ComboBox
+                        Width="170"
+                        ItemsSource="{Binding PageSelectionModes}"
+                        SelectedItem="{Binding SelectedPageSelectionMode, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel
+                    Grid.Row="2"
+                    Grid.Column="1"
+                    Margin="0,12,0,0"
+                    Visibility="{Binding IsPageRangeSelection, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Margin="0,0,0,4" Text="Page Range (e.g. 1-3)" />
+                    <TextBox Width="170" Text="{Binding PageRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+
+        <StackPanel
+            Grid.Row="2"
+            Margin="8"
+            HorizontalAlignment="Right"
+            Orientation="Horizontal">
+            <Button
+                Margin="0,0,8,0"
+                Padding="10,6"
+                Command="{Binding GoBackToPrintCommand}"
+                Content="Back" />
+            <Button
+                Padding="10,6"
+                Command="{Binding GoToConfirmPrintCommand}"
+                Content="Continue to Confirm" />
+        </StackPanel>
+    </Grid>
+</UserControl>

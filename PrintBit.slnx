@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="PrintBit.Presentation/PrintBit.Presentation.csproj" />
+  <Project Path="PrintBit.Application/PrintBit.Application.csproj" />
+  <Project Path="PrintBit.Domain/PrintBit.Domain.csproj" />
+  <Project Path="PrintBit.Infrastructure/PrintBit.Infrastructure.csproj" />
+</Solution>

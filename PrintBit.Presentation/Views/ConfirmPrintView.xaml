@@ -1,0 +1,90 @@
+﻿<UserControl
+    x:Class="PrintBit.Presentation.Views.ConfirmPrintView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <materialDesign:Card Margin="8" Padding="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.2*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Print Summary" />
+                    <TextBlock Margin="0,12,0,0" Text="{Binding SelectedUploadedFile, StringFormat=File: {0}}" />
+                    <TextBlock Margin="0,4,0,0" Text="{Binding Copies, StringFormat=Copies: {0}}" />
+                    <TextBlock Margin="0,4,0,0" Text="{Binding SelectedColorMode, StringFormat=Color Mode: {0}}" />
+                    <TextBlock Margin="0,4,0,0" Text="{Binding SelectedPageSelectionMode, StringFormat=Pages: {0}}" />
+                    <TextBlock Margin="0,4,0,0" Text="{Binding PageRange, StringFormat=Page Range: {0}}" />
+                    <TextBlock Margin="0,20,0,0" FontSize="16" FontWeight="SemiBold" Text="{Binding Price, StringFormat=Total Price: PHP {0:N2}}" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1">
+                    <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Insert Coins" />
+                    <TextBlock Margin="0,12,0,0" Text="Accepted: 1, 5, 10 peso coins only." />
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button
+                            Margin="0,0,8,8"
+                            Padding="14,8"
+                            Command="{Binding InsertCoinCommand}"
+                            CommandParameter="1"
+                            Content="PHP 1" />
+                        <Button
+                            Margin="0,0,8,8"
+                            Padding="14,8"
+                            Command="{Binding InsertCoinCommand}"
+                            CommandParameter="5"
+                            Content="PHP 5" />
+                        <Button
+                            Margin="0,0,8,8"
+                            Padding="14,8"
+                            Command="{Binding InsertCoinCommand}"
+                            CommandParameter="10"
+                            Content="PHP 10" />
+                    </WrapPanel>
+
+                    <TextBlock Margin="0,8,0,0" Text="{Binding Credit, StringFormat=Credit: PHP {0:N2}}" />
+                    <TextBlock Margin="0,4,0,0" Text="{Binding Change, StringFormat=Change: PHP {0:N2}}" />
+                    <TextBlock Margin="0,12,0,0" FontStyle="Italic" Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+
+        <StackPanel
+            Grid.Row="1"
+            Margin="8"
+            HorizontalAlignment="Right"
+            Orientation="Horizontal">
+            <Button
+                Margin="0,0,8,0"
+                Padding="10,6"
+                Command="{Binding GoBackToConfigurationCommand}"
+                Content="Back" />
+            <Button
+                Margin="0,0,8,0"
+                Padding="10,6"
+                Command="{Binding ResetCoinsCommand}"
+                Content="Reset Coins" />
+            <Button
+                Padding="10,6"
+                Command="{Binding StartPrintCommand}"
+                Content="Print" />
+        </StackPanel>
+    </Grid>
+</UserControl>

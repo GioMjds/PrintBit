@@ -1,0 +1,66 @@
+﻿<UserControl
+    x:Class="PrintBit.Presentation.Views.CopyView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </UserControl.Resources>
+
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <materialDesign:Card Margin="8" Padding="16">
+            <StackPanel>
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="Copy View" />
+                <TextBlock Margin="0,8,0,0" Text="Place the document in scanner, then press Scan." />
+
+                <Border
+                    Margin="0,16,0,0"
+                    Padding="12"
+                    BorderBrush="#FFBBBBBB"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <Grid Height="220">
+                        <Rectangle Fill="#FFF2F2F2" RadiusX="8" RadiusY="8" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="16"
+                            Text="{Binding ScannedDocumentName, TargetNullValue=No scanned document preview yet.}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <StackPanel
+            Grid.Row="1"
+            Margin="8"
+            HorizontalAlignment="Right"
+            Orientation="Horizontal">
+            <Button
+                Margin="0,0,8,0"
+                Padding="10,6"
+                Command="{Binding GoBackToLandingCommand}"
+                Content="Back" />
+            <Button
+                Margin="0,0,8,0"
+                Padding="10,6"
+                Command="{Binding SimulateScanCommand}"
+                Content="Scan" />
+            <Button
+                Padding="10,6"
+                Command="{Binding ProceedCopyToConfigurationCommand}"
+                Content="Proceed to Configuration" />
+        </StackPanel>
+    </Grid>
+</UserControl>

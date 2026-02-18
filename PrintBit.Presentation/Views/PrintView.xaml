@@ -1,0 +1,84 @@
+﻿<UserControl
+    x:Class="PrintBit.Presentation.Views.PrintView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1.3*" />
+            <ColumnDefinition Width="2*" />
+        </Grid.ColumnDefinitions>
+
+        <materialDesign:Card
+            Grid.Column="0"
+            Margin="8"
+            Padding="16">
+            <StackPanel>
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="Scan QR to Upload" />
+                <Border
+                    Margin="0,12,0,0"
+                    Padding="12"
+                    BorderBrush="#FFBBBBBB"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <Grid Height="240">
+                        <Rectangle
+                            Fill="#FFE8E8E8"
+                            RadiusX="8"
+                            RadiusY="8" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="16"
+                            Text="QR Code Placeholder" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <materialDesign:Card
+            Grid.Column="1"
+            Margin="8"
+            Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="Uploaded Files" />
+
+                <ListBox
+                    Grid.Row="1"
+                    Margin="0,12,0,12"
+                    ItemsSource="{Binding UploadedFiles}"
+                    SelectedItem="{Binding SelectedUploadedFile, Mode=TwoWay}" />
+
+                <StackPanel
+                    Grid.Row="2"
+                    HorizontalAlignment="Right"
+                    Orientation="Horizontal">
+                    <Button
+                        Margin="0,0,8,0"
+                        Padding="10,6"
+                        Command="{Binding GoBackToLandingCommand}"
+                        Content="Back" />
+                    <Button
+                        Padding="10,6"
+                        Command="{Binding ContinueToConfigurationCommand}"
+                        Content="Continue" />
+                </StackPanel>
+            </Grid>
+        </materialDesign:Card>
+    </Grid>
+</UserControl>
