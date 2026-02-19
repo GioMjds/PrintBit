@@ -36,29 +36,19 @@
                     <TextBlock
                         FontSize="18"
                         FontWeight="SemiBold"
-                        Text="Insert Coins" />
-                    <TextBlock Margin="0,12,0,0" Text="Accepted: 1, 5, 10 peso coins only." />
-                    <WrapPanel Margin="0,12,0,0">
-                        <Button
-                            Margin="0,0,8,8"
-                            Padding="14,8"
-                            Command="{Binding InsertCoinCommand}"
-                            CommandParameter="1"
-                            Content="PHP 1" />
-                        <Button
-                            Margin="0,0,8,8"
-                            Padding="14,8"
-                            Command="{Binding InsertCoinCommand}"
-                            CommandParameter="5"
-                            Content="PHP 5" />
-                        <Button
-                            Margin="0,0,8,8"
-                            Padding="14,8"
-                            Command="{Binding InsertCoinCommand}"
-                            CommandParameter="10"
-                            Content="PHP 10" />
-                    </WrapPanel>
-
+                        Text="Arduino Coin Balance" />
+                    <TextBlock Margin="0,12,0,0" Text="Live serial input (9600 baud). Accepted: 1, 5, 10, 20." />
+                    <Border
+                        Margin="0,14,0,6"
+                        Padding="12"
+                        Background="#11000000"
+                        CornerRadius="10">
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="54"
+                            FontWeight="Bold"
+                            Text="{Binding BalanceDisplay}" />
+                    </Border>
                     <TextBlock Margin="0,8,0,0" Text="{Binding Credit, StringFormat=Credit: PHP {0:N2}}" />
                     <TextBlock Margin="0,4,0,0" Text="{Binding Change, StringFormat=Change: PHP {0:N2}}" />
                     <TextBlock Margin="0,12,0,0" FontStyle="Italic" Text="{Binding StatusMessage}" TextWrapping="Wrap" />
@@ -79,8 +69,8 @@
             <Button
                 Margin="0,0,8,0"
                 Padding="10,6"
-                Command="{Binding ResetCoinsCommand}"
-                Content="Reset Coins" />
+                Command="{Binding ResetBalanceCommand}"
+                Content="Reset Balance" />
             <Button
                 Padding="10,6"
                 Command="{Binding StartPrintCommand}"

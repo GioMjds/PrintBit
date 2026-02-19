@@ -7,12 +7,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.3" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
     <Folder Include="DependecyInjection\" />
-    <Folder Include="Services\" />
-    <Folder Include="Persistence\" />
   </ItemGroup>
 
   <PropertyGroup>

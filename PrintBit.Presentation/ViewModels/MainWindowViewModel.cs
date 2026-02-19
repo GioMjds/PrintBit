@@ -1,11 +1,11 @@
 ﻿using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Windows.Input;
+using PrintBit.Application.Services;
 using PrintBit.Presentation.Behaviors;
 
 namespace PrintBit.Presentation.ViewModels;
 
-public sealed class MainWindowViewModel : ViewModelBase
+public sealed class MainWindowViewModel : MainViewModel
 {
     private KioskScreen _currentScreen = KioskScreen.Landing;
     private string? _selectedUploadedFile;
@@ -17,7 +17,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string? _scannedDocumentName;
     private string _statusMessage = "Welcome to PrintBit.";
 
-    public MainWindowViewModel()
+    public MainWindowViewModel(CoinManager coinManager)
+        : base(coinManager)
     {
         UploadedFiles = new ObservableCollection<string>
         {
@@ -55,11 +56,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         IncreaseCopiesCommand = new RelayCommand(_ => Copies++);
         DecreaseCopiesCommand = new RelayCommand(_ => Copies--, _ => Copies > 1);
 
-        InsertCoinCommand = new RelayCommand(InsertCoin);
         StartPrintCommand = new RelayCommand(_ => StartPrint(), _ => CanPrint);
         ResetCoinsCommand = new RelayCommand(_ =>
         {
-            Credit = 0m;
+            ResetBalanceCommand.Execute(null);
             StatusMessage = "Coin credit reset.";
         });
 
@@ -111,8 +111,6 @@ public sealed class MainWindowViewModel : ViewModelBase
     public ICommand IncreaseCopiesCommand { get; }
 
     public ICommand DecreaseCopiesCommand { get; }
-
-    public ICommand InsertCoinCommand { get; }
 
     public ICommand ResetCoinsCommand { get; }
 
@@ -319,27 +317,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void InsertCoin(object? parameter)
-    {
-        if (parameter is null)
-        {
-            return;
-        }
-
-        if (!decimal.TryParse(parameter.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var coinValue))
-        {
-            return;
-        }
-
-        if (coinValue <= 0m)
-        {
-            return;
-        }
-
-        Credit += coinValue;
-        StatusMessage = $"Coin inserted: PHP {coinValue:0.00}. Current credit: PHP {Credit:0.00}.";
-    }
-
     private void StartPrint()
     {
         if (!CanPrint)
@@ -348,7 +325,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var changeAmount = Change;
-        Credit = 0m;
+        ResetBalanceCommand.Execute(null);
         Copies = 1;
         SelectedPageSelectionMode = "All Pages";
         SelectedColorMode = "Colored";
@@ -401,5 +378,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         return (endPage - startPage) + 1;
+    }
+
+    protected override void OnBalanceChanged(int balance)
+    {
+        Credit = balance;
+
+        if (balance > 0)
+        {
+            StatusMessage = $"Coin received. Current credit: PHP {Credit:0.00}.";
+        }
     }
 }
