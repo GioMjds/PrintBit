@@ -4,10 +4,22 @@ using System.Text;
 namespace PrintBit.Infrastructure.Coin;
 
 public delegate void CoinReceivedHandler(int value);
+public delegate void SerialStatusReceivedHandler(string statusLine);
+public delegate void SerialProtocolErrorHandler(string invalidLine);
 
+/// <summary>
+/// Serial coin intake contract (9600 baud, newline-delimited):
+/// - READY
+/// - COIN:&lt;value&gt; where value is one of 1, 5, 10, 20
+/// </summary>
 public sealed class SerialService : IDisposable
 {
     private static readonly HashSet<int> ValidCoinValues = new() { 1, 5, 10, 20 };
+
+    private const string ReadyToken = "READY";
+    private const string CoinPrefix = "COIN:";
+    private const string WarningPrefix = "WARN:";
+    private const string ErrorPrefix = "ERROR:";
 
     private readonly SerialPort _serialPort;
     private readonly object _sync = new();
@@ -27,6 +39,8 @@ public sealed class SerialService : IDisposable
     }
 
     public event CoinReceivedHandler? OnCoinReceived;
+    public event SerialStatusReceivedHandler? OnStatusReceived;
+    public event SerialProtocolErrorHandler? OnProtocolError;
 
     public string PortName => _serialPort.PortName;
 
@@ -92,11 +106,11 @@ public sealed class SerialService : IDisposable
         lock (_sync)
         {
             _buffer.Append(incoming);
-            ProcessBuffer();
+            ProcessBufferedLines();
         }
     }
 
-    private void ProcessBuffer()
+    private void ProcessBufferedLines()
     {
         while (true)
         {
@@ -117,13 +131,34 @@ public sealed class SerialService : IDisposable
     private void ProcessLine(string line)
     {
         var trimmed = line.Trim();
-        if (!int.TryParse(trimmed, out var coinValue))
+        if (string.IsNullOrWhiteSpace(trimmed))
         {
             return;
         }
 
-        if (!ValidCoinValues.Contains(coinValue))
+        if (trimmed.Equals(ReadyToken, StringComparison.OrdinalIgnoreCase))
         {
+            OnStatusReceived?.Invoke(trimmed);
+            return;
+        }
+
+        if (trimmed.StartsWith(WarningPrefix, StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith(ErrorPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            OnStatusReceived?.Invoke(trimmed);
+            return;
+        }
+
+        if (!trimmed.StartsWith(CoinPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            OnProtocolError?.Invoke(trimmed);
+            return;
+        }
+
+        var valueText = trimmed[CoinPrefix.Length..].Trim();
+        if (!int.TryParse(valueText, out var coinValue) || !ValidCoinValues.Contains(coinValue))
+        {
+            OnProtocolError?.Invoke(trimmed);
             return;
         }
 

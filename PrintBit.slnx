@@ -3,4 +3,5 @@
   <Project Path="PrintBit.Application/PrintBit.Application.csproj" />
   <Project Path="PrintBit.Domain/PrintBit.Domain.csproj" />
   <Project Path="PrintBit.Infrastructure/PrintBit.Infrastructure.csproj" />
+  <Project Path="PrintBit.WirelessGateway/PrintBit.WirelessGateway.csproj" />
 </Solution>

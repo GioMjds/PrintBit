@@ -1,0 +1,19 @@
+{
+  "sessionId": "11908355-e98c-4268-8fa2-013f41da32a4",
+  "token": "f692e4ba9542f07d2990e1871f5450f1",
+  "uploadUrl": "http://192.168.1.2:5058/upload/f692e4ba9542f07d2990e1871f5450f1",
+  "createdAt": "2026-02-20T11:06:12.1696717+00:00",
+  "expiresAt": "2026-02-20T11:11:12.1696717+00:00",
+  "status": 1,
+  "documents": [
+    {
+      "documentId": "d941787f-9a2b-4313-b438-a57083868c35",
+      "sessionId": "11908355-e98c-4268-8fa2-013f41da32a4",
+      "fileName": "printbit-wireless-final.pdf",
+      "contentType": "application/octet-stream",
+      "sizeBytes": 18,
+      "storedPath": "C:\\Users\\giomj\\source\\repos\\PrintBit\\PrintBit.WirelessGateway\\wireless-uploads\\20260220\\11908355e98c42688fa2013f41da32a4\\59e1f0d12da646d4818740f50280e7ea_printbit-wireless-final.pdf",
+      "uploadedAt": "2026-02-20T11:06:14.5891816+00:00"
+    }
+  ]
+}

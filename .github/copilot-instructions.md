@@ -23,3 +23,5 @@ Current baseline: there is no test project yet, and `dotnet build .\pisopit.slnx
 - Preserve existing control naming style: `x:Name` values include control-type suffixes (`BalanceTextBlock`, `CoinComboBox`, `StartPrintButton`, etc.).
 - Keep classes in the `pisopit` namespace and maintain WPF partial class pairs (`MainWindow.xaml` + `MainWindow.xaml.cs`, etc.).
 - Keep solution-level commands rooted at repository top with the `.slnx` file (`pisopit.slnx`).
+- Disable or comment out kiosk mode, the magic hotkey for exiting the app, and fullscreen functionality across the solution by default. Ensure that the WPF window starts in a normal state (WindowState should be Normal, not Maximized).
+- Disable serial COM port detection to allow the UI to run without an Arduino by using the `PRINTBIT_DISABLE_SERIAL` environment variable to skip serial registration.

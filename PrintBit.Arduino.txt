@@ -1,0 +1,94 @@
+const int coinPin = 2;
+
+const unsigned long startupDelayMs = 3000;
+const unsigned long debounceMs = 50;
+const unsigned long pulseFinalizeMs = 180;
+
+volatile byte pulseCount = 0;
+volatile unsigned long lastPulseTimeMs = 0;
+
+unsigned long powerOnTimeMs = 0;
+bool acceptCoins = false;
+
+int mapPulseCountToCoinValue(byte pulseTotal) {
+  switch (pulseTotal) {
+    case 1: return 1;
+    case 2: return 5;
+    case 3: return 10;
+    case 4: return 20;
+    default: return 0;
+  }
+}
+
+void setup() {
+  pinMode(coinPin, INPUT_PULLUP);
+  Serial.begin(9600);
+
+  powerOnTimeMs = millis();
+  attachInterrupt(digitalPinToInterrupt(coinPin), onPulseDetected, FALLING);
+}
+
+void loop() {
+  if (!acceptCoins && millis() - powerOnTimeMs > startupDelayMs) {
+    acceptCoins = true;
+
+    noInterrupts();
+    pulseCount = 0;
+    lastPulseTimeMs = 0;
+    interrupts();
+
+    Serial.println("READY");
+  }
+
+  if (!acceptCoins) {
+    return;
+  }
+
+  byte pulseSnapshot;
+  unsigned long lastPulseSnapshotMs;
+
+  noInterrupts();
+  pulseSnapshot = pulseCount;
+  lastPulseSnapshotMs = lastPulseTimeMs;
+  interrupts();
+
+  if (pulseSnapshot == 0) {
+    return;
+  }
+
+  if (millis() - lastPulseSnapshotMs < pulseFinalizeMs) {
+    return;
+  }
+
+  noInterrupts();
+  byte finalizedPulseCount = pulseCount;
+  pulseCount = 0;
+  interrupts();
+
+  int coinValue = mapPulseCountToCoinValue(finalizedPulseCount);
+  if (coinValue > 0) {
+    Serial.print("COIN:");
+    Serial.println(coinValue);
+    return;
+  }
+
+  Serial.print("WARN:PULSE:");
+  Serial.println(finalizedPulseCount);
+}
+
+void onPulseDetected() {
+  if (!acceptCoins) {
+    return;
+  }
+
+  unsigned long nowMs = millis();
+  if (nowMs - lastPulseTimeMs <= debounceMs) {
+    return;
+  }
+
+  if (pulseCount < 250) {
+    pulseCount++;
+  }
+
+  lastPulseTimeMs = nowMs;
+}

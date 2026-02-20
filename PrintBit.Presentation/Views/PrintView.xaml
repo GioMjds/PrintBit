@@ -27,18 +27,26 @@
                     BorderBrush="#FFBBBBBB"
                     BorderThickness="1"
                     CornerRadius="8">
-                    <Grid Height="240">
+                    <Grid Height="220">
                         <Rectangle
                             Fill="#FFE8E8E8"
                             RadiusX="8"
                             RadiusY="8" />
-                        <TextBlock
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            FontSize="16"
-                            Text="QR Code Placeholder" />
+                        <Image
+                            Margin="8"
+                            Source="{Binding WirelessQrCodeImage}"
+                            Stretch="Uniform" />
                     </Grid>
                 </Border>
+                <TextBlock
+                    Margin="0,10,0,0"
+                    FontSize="13"
+                    Text="{Binding WirelessUploadStatus}"
+                    TextWrapping="Wrap" />
+                <Button
+                    Margin="0,10,0,0"
+                    Command="{Binding StartWirelessSessionCommand}"
+                    Content="Refresh QR Session" />
             </StackPanel>
         </materialDesign:Card>
 

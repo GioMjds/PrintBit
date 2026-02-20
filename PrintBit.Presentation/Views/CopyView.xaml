@@ -31,7 +31,10 @@
                     BorderThickness="1"
                     CornerRadius="8">
                     <Grid Height="220">
-                        <Rectangle Fill="#FFF2F2F2" RadiusX="8" RadiusY="8" />
+                        <Rectangle
+                            Fill="#FFF2F2F2"
+                            RadiusX="8"
+                            RadiusY="8" />
                         <TextBlock
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"

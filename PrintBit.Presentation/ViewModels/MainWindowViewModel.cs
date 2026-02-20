@@ -1,12 +1,22 @@
 ﻿using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using PrintBit.Application.DTOs;
+using PrintBit.Application.Interfaces;
 using PrintBit.Application.Services;
 using PrintBit.Presentation.Behaviors;
+using QRCoder;
 
 namespace PrintBit.Presentation.ViewModels;
 
 public sealed class MainWindowViewModel : MainViewModel
 {
+    private readonly IWirelessKioskClient _wirelessKioskClient;
     private KioskScreen _currentScreen = KioskScreen.Landing;
     private string? _selectedUploadedFile;
     private int _copies = 1;
@@ -16,16 +26,20 @@ public sealed class MainWindowViewModel : MainViewModel
     private decimal _credit;
     private string? _scannedDocumentName;
     private string _statusMessage = "Welcome to PrintBit.";
+    private ImageSource? _wirelessQrCodeImage;
+    private string? _wirelessUploadUrl;
+    private string _wirelessUploadStatus = "Wireless upload not started.";
+    private Guid? _activeWirelessSessionId;
+    private bool _isStartingWirelessSession;
 
-    public MainWindowViewModel(CoinManager coinManager)
+    public MainWindowViewModel(CoinManager coinManager, IWirelessKioskClient wirelessKioskClient)
         : base(coinManager)
     {
-        UploadedFiles = new ObservableCollection<string>
-        {
-            "ProjectProposal.pdf",
-            "Resume.docx",
-            "FloorPlan.png"
-        };
+        _wirelessKioskClient = wirelessKioskClient;
+        _wirelessKioskClient.UploadCompleted += HandleWirelessUploadCompleted;
+        _wirelessKioskClient.StatusChanged += HandleWirelessStatusChanged;
+
+        UploadedFiles = new ObservableCollection<string>();
 
         ColorModes = new ObservableCollection<string> { "Colored", "Grayscale" };
         PageSelectionModes = new ObservableCollection<string> { "All Pages", "Page Range" };
@@ -40,6 +54,9 @@ public sealed class MainWindowViewModel : MainViewModel
         });
         OpenSettingsCommand = new RelayCommand(_ => StatusMessage = "Settings screen is not implemented yet.");
         PowerOffCommand = new RelayCommand(_ => StatusMessage = "Power off is disabled in this demo.");
+        StartWirelessSessionCommand = new RelayCommand(
+            _ => _ = StartWirelessSessionAsync(),
+            _ => !_isStartingWirelessSession);
 
         ContinueToConfigurationCommand = new RelayCommand(
             _ => NavigateTo(KioskScreen.PrintConfiguration),
@@ -97,6 +114,8 @@ public sealed class MainWindowViewModel : MainViewModel
     public ICommand OpenSettingsCommand { get; }
 
     public ICommand PowerOffCommand { get; }
+
+    public ICommand StartWirelessSessionCommand { get; }
 
     public ICommand ContinueToConfigurationCommand { get; }
 
@@ -291,6 +310,34 @@ public sealed class MainWindowViewModel : MainViewModel
         private set => SetProperty(ref _statusMessage, value);
     }
 
+    public ImageSource? WirelessQrCodeImage
+    {
+        get => _wirelessQrCodeImage;
+        private set => SetProperty(ref _wirelessQrCodeImage, value);
+    }
+
+    public string? WirelessUploadUrl
+    {
+        get => _wirelessUploadUrl;
+        private set
+        {
+            if (!SetProperty(ref _wirelessUploadUrl, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(HasWirelessUploadUrl));
+        }
+    }
+
+    public bool HasWirelessUploadUrl => !string.IsNullOrWhiteSpace(WirelessUploadUrl);
+
+    public string WirelessUploadStatus
+    {
+        get => _wirelessUploadStatus;
+        private set => SetProperty(ref _wirelessUploadStatus, value);
+    }
+
     private void NavigateTo(KioskScreen targetScreen)
     {
         CurrentScreen = targetScreen;
@@ -302,6 +349,10 @@ public sealed class MainWindowViewModel : MainViewModel
         else if (targetScreen == KioskScreen.Print)
         {
             StatusMessage = "Scan the QR code or select an uploaded file.";
+            if (_activeWirelessSessionId is null)
+            {
+                _ = StartWirelessSessionAsync();
+            }
         }
         else if (targetScreen == KioskScreen.PrintConfiguration)
         {
@@ -332,6 +383,11 @@ public sealed class MainWindowViewModel : MainViewModel
         PageRange = "1-2";
         SelectedUploadedFile = null;
         ScannedDocumentName = null;
+        _activeWirelessSessionId = null;
+        WirelessQrCodeImage = null;
+        WirelessUploadUrl = null;
+        WirelessUploadStatus = "Wireless upload not started.";
+        _ = _wirelessKioskClient.DisconnectAsync();
         NavigateTo(KioskScreen.Landing);
         StatusMessage = changeAmount > 0m
             ? $"Printing started. Please collect your change: PHP {changeAmount:0.00}."
@@ -388,5 +444,109 @@ public sealed class MainWindowViewModel : MainViewModel
         {
             StatusMessage = $"Coin received. Current credit: PHP {Credit:0.00}.";
         }
+    }
+
+    private async Task StartWirelessSessionAsync()
+    {
+        if (_isStartingWirelessSession)
+        {
+            return;
+        }
+
+        _isStartingWirelessSession = true;
+        WirelessUploadStatus = "Creating wireless session...";
+        CommandManager.InvalidateRequerySuggested();
+
+        try
+        {
+            var session = await _wirelessKioskClient.CreateSessionAsync();
+            _activeWirelessSessionId = session.SessionId;
+            WirelessUploadUrl = session.UploadUrl;
+            WirelessQrCodeImage = BuildQrCodeImage(session.UploadUrl);
+            await _wirelessKioskClient.ConnectToSessionAsync(session.SessionId);
+
+            var uploadedDocuments = await _wirelessKioskClient.GetUploadedDocumentsAsync(session.SessionId);
+            foreach (var uploadedDocument in uploadedDocuments)
+            {
+                ApplyWirelessUploadedDocument(uploadedDocument);
+            }
+
+            WirelessUploadStatus = $"Session ready until {session.ExpiresAt.LocalDateTime:t}.";
+            StatusMessage = "Scan the QR code with your phone and upload a file.";
+        }
+        catch (HttpRequestException ex)
+        {
+            WirelessUploadStatus = $"Wireless server unavailable: {ex.Message}";
+            StatusMessage = "Unable to reach wireless upload service.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            WirelessUploadStatus = $"Wireless session error: {ex.Message}";
+            StatusMessage = "Unable to create wireless upload session.";
+        }
+        catch (TaskCanceledException ex)
+        {
+            WirelessUploadStatus = $"Wireless session timed out: {ex.Message}";
+            StatusMessage = "Wireless upload session timed out.";
+        }
+        finally
+        {
+            _isStartingWirelessSession = false;
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private void HandleWirelessUploadCompleted(UploadedDocumentDto document)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            ApplyWirelessUploadedDocument(document);
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(new Action(() => ApplyWirelessUploadedDocument(document)));
+    }
+
+    private void HandleWirelessStatusChanged(string statusMessage)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            WirelessUploadStatus = statusMessage;
+            return;
+        }
+
+        _ = dispatcher.BeginInvoke(new Action(() => WirelessUploadStatus = statusMessage));
+    }
+
+    private void ApplyWirelessUploadedDocument(UploadedDocumentDto document)
+    {
+        if (!UploadedFiles.Any(existingFileName =>
+                string.Equals(existingFileName, document.FileName, StringComparison.OrdinalIgnoreCase)))
+        {
+            UploadedFiles.Add(document.FileName);
+        }
+
+        SelectedUploadedFile = document.FileName;
+        WirelessUploadStatus = $"Upload received: {document.FileName}";
+        StatusMessage = $"Wireless file ready: {document.FileName}. Continue to print configuration.";
+    }
+
+    private static ImageSource BuildQrCodeImage(string payload)
+    {
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
+        var qrCode = new PngByteQRCode(qrCodeData);
+        var pngBytes = qrCode.GetGraphic(20);
+
+        using var memoryStream = new MemoryStream(pngBytes);
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = memoryStream;
+        bitmap.EndInit();
+        bitmap.Freeze();
+        return bitmap;
     }
 }

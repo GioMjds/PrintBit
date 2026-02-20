@@ -8,14 +8,14 @@
     xmlns:views="clr-namespace:PrintBit.Presentation.Views"
     Title="PrintBit"
     Width="800"
-    Height="450"
+    Height="750"
     Loaded="Window_Loaded"
-    ResizeMode="NoResize"
-    ShowInTaskbar="False"
-    Topmost="True"
+    ResizeMode="CanResize"
+    ShowInTaskbar="True"
+    Topmost="False"
     Unloaded="Window_Unloaded"
-    WindowState="Maximized"
-    WindowStyle="None"
+    WindowState="Normal"
+    WindowStyle="SingleBorderWindow"
     mc:Ignorable="d">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -76,7 +76,7 @@
                     <views:PrintView Visibility="{Binding IsPrintScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <views:PrintConfigurationView Visibility="{Binding IsPrintConfigurationScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <views:ConfirmPrintView Visibility="{Binding IsConfirmPrintScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    <views:CopyView Visibility="{Binding IsCopyScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <views:CopyView Loaded="CopyView_Loaded" Visibility="{Binding IsCopyScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </Grid>
             </Border>
 

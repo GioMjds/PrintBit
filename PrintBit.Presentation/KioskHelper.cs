@@ -17,6 +17,9 @@ namespace PrintBit.Presentation
         private readonly IntPtr _hwnd;
         private bool _disposed;
 
+        // Feature toggle: set to false to disable kiosk behaviors (keyboard hook, fullscreen, etc.)
+        private const bool KioskEnabled = false;
+
         // Secret exit combo: Ctrl + Alt + K
         private const int VK_K = 0x4B;
         private const int VK_LWIN = 0x5B;
@@ -47,6 +50,14 @@ namespace PrintBit.Presentation
 
         private void Enable()
         {
+            // Kiosk mode disabled by toggle to make it simple to re-enable later.
+            if (!KioskEnabled)
+            {
+                // Disabled: not changing window styles, not installing keyboard hook.
+                // To re-enable, set KioskEnabled = true and rebuild.
+                return;
+            }
+
             // Window presentation settings
             _window.WindowStyle = WindowStyle.None;
             _window.ResizeMode = ResizeMode.NoResize;

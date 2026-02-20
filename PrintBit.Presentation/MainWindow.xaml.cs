@@ -21,8 +21,8 @@ public partial class MainWindow : Window
     protected override void OnClosing(CancelEventArgs e)
     {
         // Prevent closing unless we explicitly allow it (exit from kiosk)
-        if (!_allowClose)
-            e.Cancel = true;
+        //if (!_allowClose)
+        //    e.Cancel = true;
         base.OnClosing(e);
     }
 
@@ -41,12 +41,17 @@ public partial class MainWindow : Window
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         // Attach kiosk behavior
-        _kiosk = KioskHelper.Attach(this);
+        //_kiosk = KioskHelper.Attach(this);
     }
 
     private void Window_Unloaded(object sender, RoutedEventArgs e)
     {
-        _kiosk?.Dispose();
-        _kiosk = null;
+        //_kiosk?.Dispose();
+        //_kiosk = null;
+    }
+
+    private void CopyView_Loaded(object sender, RoutedEventArgs e)
+    {
+
     }
 }
