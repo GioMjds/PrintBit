@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -21,6 +22,7 @@ public sealed class MainWindowViewModel : MainViewModel
     private readonly DispatcherTimer _networkJoinTimer;
     private readonly DispatcherTimer _sessionCountdownTimer;
     private readonly TimeSpan _networkJoinTimeout;
+    private readonly Dictionary<string, UploadedDocumentDto> _uploadedDocumentsByName = new(StringComparer.OrdinalIgnoreCase);
 
     private KioskScreen _currentScreen = KioskScreen.Landing;
     private string? _selectedUploadedFile;
@@ -36,6 +38,8 @@ public sealed class MainWindowViewModel : MainViewModel
     private ImageSource? _wirelessQrCodeImage;
     private string? _wirelessUploadUrl;
     private string _wirelessUploadStatus = "Wireless upload not started.";
+    private Uri? _documentPreviewUri;
+    private string _documentPreviewStatusMessage = "Select an uploaded file to preview.";
     private string _offlineGuidanceMessage = "Offline print is preparing.";
     private string _sessionCountdownText = "";
     private string _hotspotSsid = "PrintBit-Kiosk";
@@ -316,8 +320,21 @@ public sealed class MainWindowViewModel : MainViewModel
 
             OnPropertyChanged(nameof(CanProceedToConfiguration));
             OnPropertyChanged(nameof(CanConfirmConfiguration));
+            UpdateSelectedDocumentPreview();
             RefreshPricingState();
         }
+    }
+
+    public Uri? DocumentPreviewUri
+    {
+        get => _documentPreviewUri;
+        private set => SetProperty(ref _documentPreviewUri, value);
+    }
+
+    public string DocumentPreviewStatusMessage
+    {
+        get => _documentPreviewStatusMessage;
+        private set => SetProperty(ref _documentPreviewStatusMessage, value);
     }
 
     public int Copies
@@ -500,6 +517,7 @@ public sealed class MainWindowViewModel : MainViewModel
         _ = _wirelessKioskClient.DisconnectAsync();
         _activeWirelessSessionId = null;
         _activeSessionExpiresAt = null;
+        _uploadedDocumentsByName.Clear();
         WirelessQrCodeImage = null;
         WirelessUploadUrl = null;
         WirelessUploadStatus = "Preparing upload QR session...";
@@ -797,6 +815,8 @@ public sealed class MainWindowViewModel : MainViewModel
 
     private void ApplyWirelessUploadedDocument(UploadedDocumentDto document)
     {
+        _uploadedDocumentsByName[document.FileName] = document;
+
         if (!UploadedFiles.Any(existingFileName =>
                 string.Equals(existingFileName, document.FileName, StringComparison.OrdinalIgnoreCase)))
         {
@@ -813,6 +833,59 @@ public sealed class MainWindowViewModel : MainViewModel
     {
         OfflineState = state;
         OfflineGuidanceMessage = guidanceMessage;
+    }
+
+    private void UpdateSelectedDocumentPreview()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedUploadedFile))
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = "Select an uploaded file to preview.";
+            return;
+        }
+
+        if (!_uploadedDocumentsByName.TryGetValue(SelectedUploadedFile, out var uploadedDocument))
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = $"Preview is unavailable for \"{SelectedUploadedFile}\".";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(uploadedDocument.StoredPath) || !File.Exists(uploadedDocument.StoredPath))
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = $"File not found for preview: \"{uploadedDocument.FileName}\".";
+            return;
+        }
+
+        var extension = Path.GetExtension(uploadedDocument.FileName).ToLowerInvariant();
+        if (extension is not ".pdf" and not ".docx" and not ".doc")
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = $"Embedded preview is supported for PDF, DOCX, and DOC only. Selected: {uploadedDocument.FileName}";
+            return;
+        }
+
+        try
+        {
+            DocumentPreviewUri = new Uri(uploadedDocument.StoredPath, UriKind.Absolute);
+            DocumentPreviewStatusMessage = $"Previewing: {uploadedDocument.FileName}";
+        }
+        catch (IOException ex)
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = $"Unable to read document preview: {ex.Message}";
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = $"Preview access denied: {ex.Message}";
+        }
+        catch (UriFormatException ex)
+        {
+            DocumentPreviewUri = null;
+            DocumentPreviewStatusMessage = $"Document preview path error: {ex.Message}";
+        }
     }
 
     private static ImageSource BuildQrCodeImage(string payload)

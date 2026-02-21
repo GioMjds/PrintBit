@@ -22,9 +22,9 @@
             Padding="16">
             <StackPanel>
                 <TextBlock
-                    FontSize="18"
-                    FontWeight="SemiBold"
-                    Text="Offline-First Wireless Upload" />
+                    FontSize="24"
+                    FontWeight="Bold"
+                    Text="Wireless Upload" />
                 <TextBlock
                     Margin="0,8,0,0"
                     FontSize="13"
@@ -60,21 +60,12 @@
                     FontSize="13"
                     Text="{Binding WirelessUploadStatus}"
                     TextWrapping="Wrap" />
-                <TextBox
-                    Margin="0,8,0,0"
-                    IsReadOnly="True"
-                    Text="{Binding WirelessUploadUrl, Mode=OneWay}"
-                    Visibility="{Binding IsUploadQrVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                 <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
                     <Button
                         Margin="0,0,8,0"
                         Command="{Binding StartWirelessSessionCommand}"
                         Content="Refresh QR Session" />
-                    <Button
-                        Command="{Binding UseUsbFallbackCommand}"
-                        Content="Use USB Fallback"
-                        Visibility="{Binding IsFallbackActionsVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
             </StackPanel>
         </materialDesign:Card>
@@ -91,8 +82,8 @@
                 </Grid.RowDefinitions>
 
                 <TextBlock
-                    FontSize="18"
-                    FontWeight="SemiBold"
+                    FontSize="23"
+                    FontWeight="Bold"
                     Text="Uploaded Files" />
 
                 <ListBox
@@ -106,6 +97,7 @@
                     HorizontalAlignment="Right"
                     Orientation="Horizontal">
                     <Button
+                        Width="78"
                         Margin="0,0,8,0"
                         Padding="10,6"
                         Command="{Binding GoBackToLandingCommand}"
