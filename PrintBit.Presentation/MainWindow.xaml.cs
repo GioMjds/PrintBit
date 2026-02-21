@@ -1,4 +1,3 @@
-using System;
 using System.ComponentModel;
 using System.Windows;
 using PrintBit.Presentation.ViewModels;
@@ -8,7 +7,7 @@ namespace PrintBit.Presentation;
 public partial class MainWindow : Window
 {
     private bool _allowClose;
-    private KioskHelper? _kiosk;
+    private readonly KioskHelper? _kiosk;
     private readonly MainWindowViewModel _viewModel;
 
     public MainWindow(MainWindowViewModel viewModel)
@@ -48,10 +47,5 @@ public partial class MainWindow : Window
     {
         //_kiosk?.Dispose();
         //_kiosk = null;
-    }
-
-    private void CopyView_Loaded(object sender, RoutedEventArgs e)
-    {
-
     }
 }

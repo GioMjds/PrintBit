@@ -33,7 +33,7 @@ public sealed class WirelessSessionStore
         Directory.CreateDirectory(_uploadsRoot);
     }
 
-    public WirelessUploadSessionDto CreateSession(Uri publicBaseUrl, TimeSpan timeToLive)
+    public WirelessUploadSessionDto CreateSession(Uri publicBaseUrl)
     {
         var now = DateTimeOffset.UtcNow;
         var sessionId = Guid.NewGuid();
@@ -44,7 +44,7 @@ public sealed class WirelessSessionStore
             SessionId = sessionId,
             Token = token,
             CreatedAt = now,
-            ExpiresAt = now.Add(timeToLive),
+            ExpiresAt = DateTimeOffset.MaxValue,
             Status = UploadSessionStatus.WaitingForUpload
         };
 
@@ -117,13 +117,6 @@ public sealed class WirelessSessionStore
                 return StoreUploadResult.Failed("invalid_token", "Invalid session token.");
             }
 
-            if (entry.Session.ExpiresAt <= DateTimeOffset.UtcNow)
-            {
-                entry.Session.Status = UploadSessionStatus.Expired;
-                PersistSessionMetadata(entry, publicBaseUrl);
-                return StoreUploadResult.Failed("session_expired", "Session expired. Please scan a new QR code.");
-            }
-
             if (entry.Session.Status is UploadSessionStatus.Cancelled or UploadSessionStatus.Expired)
             {
                 return StoreUploadResult.Failed("session_inactive", "Session is no longer active.");
@@ -171,22 +164,7 @@ public sealed class WirelessSessionStore
 
     public IReadOnlyList<Guid> MarkExpiredSessions()
     {
-        var now = DateTimeOffset.UtcNow;
-        var expiredSessionIds = new List<Guid>();
-
-        foreach (var entry in _sessions.Values)
-        {
-            lock (entry.SyncRoot)
-            {
-                if (entry.Session.Status == UploadSessionStatus.WaitingForUpload && entry.Session.ExpiresAt <= now)
-                {
-                    entry.Session.Status = UploadSessionStatus.Expired;
-                    expiredSessionIds.Add(entry.Session.SessionId);
-                }
-            }
-        }
-
-        return expiredSessionIds;
+        return [];
     }
 
     private WirelessUploadSessionDto ToDto(SessionEntry entry, Uri publicBaseUrl)

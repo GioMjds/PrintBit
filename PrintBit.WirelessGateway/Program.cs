@@ -17,7 +17,6 @@ builder.WebHost.UseUrls(string.IsNullOrWhiteSpace(listenUrl) ? "http://0.0.0.0:5
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<WirelessSessionStore>();
-builder.Services.AddHostedService<WirelessSessionExpiryNotifier>();
 
 var app = builder.Build();
 
@@ -55,7 +54,7 @@ app.MapGet("/upload/{token}/{*asset}", (IWebHostEnvironment env, string token, s
 app.MapPost("/api/wireless/sessions", (HttpContext context, WirelessSessionStore sessionStore) =>
 {
     var publicBaseUrl = ResolvePublicBaseUrl(context);
-    var session = sessionStore.CreateSession(publicBaseUrl, TimeSpan.FromMinutes(5));
+    var session = sessionStore.CreateSession(publicBaseUrl);
     return Results.Ok(session);
 });
 
@@ -72,7 +71,7 @@ app.MapGet("/api/wireless/sessions/by-token/{token}", (string token, HttpContext
     var publicBaseUrl = ResolvePublicBaseUrl(context);
     return sessionStore.TryGetSessionByToken(token, publicBaseUrl, out var session)
         ? Results.Ok(session)
-        : Results.NotFound(new { error = "Session not found or token expired." });
+        : Results.NotFound(new { error = "Session not found." });
 });
 
 app.MapPost(

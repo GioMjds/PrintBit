@@ -17,7 +17,6 @@ function setStatus(message, css) {
 
 function mapError(result) {
   if (!result || !result.code) return result?.error || 'Upload failed.';
-  if (result.code === 'session_expired') return 'Session expired. Please scan a new QR code from the kiosk.';
   if (result.code === 'session_already_used') return 'This QR session already has a file. Ask kiosk to refresh QR session.';
   if (result.code === 'invalid_token') return 'Invalid upload token. Please scan a fresh kiosk QR.';
   if (result.code === 'unsupported_file_type') return 'Unsupported file type. Use PDF, DOC/DOCX, PNG, JPG, or JPEG.';
@@ -41,7 +40,7 @@ async function initializeSession() {
   try {
     const response = await fetch(`/api/wireless/sessions/by-token/${encodeURIComponent(token)}`);
     if (!response.ok) {
-      setStatus('This QR session is invalid or expired. Please scan a new QR code from the kiosk.', 'error');
+      setStatus('This QR session is invalid. Please scan a new QR code from the kiosk.', 'error');
       if (sessionMeta) sessionMeta.textContent = 'Session unavailable';
       return;
     }
@@ -49,7 +48,7 @@ async function initializeSession() {
     const session = await response.json();
     sessionId = session.sessionId;
     if (uploadButton) uploadButton.disabled = false;
-    if (sessionMeta) sessionMeta.textContent = `Session active until ${new Date(session.expiresAt).toLocaleString()}`;
+    if (sessionMeta) sessionMeta.textContent = 'Session active';
     setStatus('Session ready. Select your file and tap Upload.', null);
   } catch (error) {
     setStatus('Could not reach kiosk server. Connect phone to kiosk Wi-Fi (internet is not required).', 'error');

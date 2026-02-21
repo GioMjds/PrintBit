@@ -26,23 +26,6 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-
-                <StackPanel>
-                    <TextBlock
-                        FontSize="18"
-                        FontWeight="SemiBold"
-                        Text="Document Preview" />
-                    <TextBlock
-                        Margin="0,4,0,0"
-                        FontSize="13"
-                        Text="{Binding SelectedUploadedFile, StringFormat=File: {0}}" />
-                    <TextBlock
-                        Margin="0,4,0,0"
-                        FontSize="12"
-                        Opacity="0.75"
-                        Text="{Binding DocumentPreviewStatusMessage}" />
-                </StackPanel>
-
                 <Border
                     Grid.Row="1"
                     Margin="0,12,0,0"
@@ -89,19 +72,13 @@
 
                 <StackPanel Grid.Row="2" Margin="0,12,0,0">
                     <TextBlock Margin="0,0,0,4" Text="Color Mode" />
-                    <ComboBox
-                        ItemsSource="{Binding ColorModes}"
-                        SelectedItem="{Binding SelectedColorMode, Mode=TwoWay}" />
+                    <ComboBox ItemsSource="{Binding ColorModes}" SelectedItem="{Binding SelectedColorMode, Mode=TwoWay}" />
                 </StackPanel>
 
                 <StackPanel Grid.Row="3" Margin="0,12,0,0">
                     <TextBlock Margin="0,0,0,4" Text="Pages" />
-                    <ComboBox
-                        ItemsSource="{Binding PageSelectionModes}"
-                        SelectedItem="{Binding SelectedPageSelectionMode, Mode=TwoWay}" />
-                    <StackPanel
-                        Margin="0,12,0,0"
-                        Visibility="{Binding IsPageRangeSelection, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ComboBox ItemsSource="{Binding PageSelectionModes}" SelectedItem="{Binding SelectedPageSelectionMode, Mode=TwoWay}" />
+                    <StackPanel Margin="0,12,0,0" Visibility="{Binding IsPageRangeSelection, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <TextBlock Margin="0,0,0,4" Text="Page Range (e.g. 1-3)" />
                         <TextBox Text="{Binding PageRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     </StackPanel>

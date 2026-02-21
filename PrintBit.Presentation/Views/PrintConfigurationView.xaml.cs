@@ -1,13 +1,13 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Controls;
+using System.Windows.Input;
 using Microsoft.Web.WebView2.Core;
 using PrintBit.Presentation.ViewModels;
-using Word = Microsoft.Office.Interop.Word;
 
 namespace PrintBit.Presentation.Views;
 
@@ -22,12 +22,12 @@ public partial class PrintConfigurationView : UserControl
         Loaded += HandleLoaded;
         DataContextChanged += HandleDataContextChanged;
         Unloaded += HandleUnloaded;
+        PreviewKeyDown += HandlePreviewKeyDown;
     }
 
     private async void HandleLoaded(object sender, System.Windows.RoutedEventArgs e)
     {
-        await EnsureWebViewReadyAsync();
-        await NavigatePreviewAsync(_viewModel?.DocumentPreviewUri);
+        await SafeNavigatePreviewAsync(_viewModel?.DocumentPreviewUri);
     }
 
     private void HandleDataContextChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
@@ -44,14 +44,14 @@ public partial class PrintConfigurationView : UserControl
         }
 
         _viewModel.PropertyChanged += HandleViewModelPropertyChanged;
-        _ = NavigatePreviewAsync(_viewModel.DocumentPreviewUri);
+        _ = SafeNavigatePreviewAsync(_viewModel.DocumentPreviewUri);
     }
 
     private void HandleViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainWindowViewModel.DocumentPreviewUri))
         {
-            _ = NavigatePreviewAsync(_viewModel?.DocumentPreviewUri);
+            _ = SafeNavigatePreviewAsync(_viewModel?.DocumentPreviewUri);
         }
     }
 
@@ -65,10 +65,31 @@ public partial class PrintConfigurationView : UserControl
         await DocumentPreviewBrowser.EnsureCoreWebView2Async();
         _isWebViewReady = true;
 
-        DocumentPreviewBrowser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        DocumentPreviewBrowser.CoreWebView2.Settings.AreDevToolsEnabled = false;
-        DocumentPreviewBrowser.CoreWebView2.NewWindowRequested += HandleNewWindowRequested;
-        DocumentPreviewBrowser.CoreWebView2.DownloadStarting += HandleDownloadStarting;
+        var coreWebView = DocumentPreviewBrowser.CoreWebView2;
+        if (coreWebView is null)
+        {
+            _isWebViewReady = false;
+            throw new InvalidOperationException("WebView2 core was not initialized.");
+        }
+
+        try
+        {
+            coreWebView.Settings.AreDefaultContextMenusEnabled = false;
+            coreWebView.Settings.AreDevToolsEnabled = false;
+            coreWebView.Settings.AreBrowserAcceleratorKeysEnabled = false;
+            coreWebView.Settings.IsZoomControlEnabled = false;
+            coreWebView.Settings.HiddenPdfToolbarItems =
+                CoreWebView2PdfToolbarItems.Save |
+                CoreWebView2PdfToolbarItems.SaveAs |
+                CoreWebView2PdfToolbarItems.Print;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"WebView2 settings fallback: {ex.Message}");
+        }
+
+        coreWebView.NewWindowRequested += HandleNewWindowRequested;
+        coreWebView.DownloadStarting += HandleDownloadStarting;
     }
 
     private async Task NavigatePreviewAsync(Uri? previewUri)
@@ -97,9 +118,13 @@ public partial class PrintConfigurationView : UserControl
 
             DocumentPreviewBrowser.CoreWebView2.Navigate(new Uri(targetPath).AbsoluteUri);
         }
-        catch (COMException ex)
+        catch (TimeoutException ex)
         {
-            NavigateHtml($"Unable to render Word document inside kiosk preview. {ex.Message}");
+            NavigateHtml($"Preview conversion timed out. {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            NavigateHtml($"Preview conversion failed. {ex.Message}");
         }
         catch (IOException ex)
         {
@@ -115,6 +140,22 @@ public partial class PrintConfigurationView : UserControl
         }
     }
 
+    private async Task SafeNavigatePreviewAsync(Uri? previewUri)
+    {
+        try
+        {
+            await NavigatePreviewAsync(previewUri);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Preview initialization failed: {ex.Message}");
+            if (DocumentPreviewBrowser.CoreWebView2 is not null)
+            {
+                NavigateHtml($"Preview engine unavailable. {ex.Message}");
+            }
+        }
+    }
+
     private static string ConvertWordDocumentToPdf(string sourcePath)
     {
         var cacheFolder = Path.Combine(Path.GetTempPath(), "PrintBit", "PreviewCache");
@@ -127,44 +168,79 @@ public partial class PrintConfigurationView : UserControl
             return outputPdfPath;
         }
 
-        Word.Application? wordApplication = null;
-        Word.Document? wordDocument = null;
-        try
+        var sourceExtension = Path.GetExtension(sourcePath);
+        var conversionSourcePath = Path.Combine(cacheFolder, $"{cacheKey}{sourceExtension}");
+        File.Copy(sourcePath, conversionSourcePath, overwrite: true);
+
+        var sofficePath = ResolveLibreOfficePath();
+        if (sofficePath is null)
         {
-            wordApplication = new Word.Application
-            {
-                Visible = false,
-                DisplayAlerts = Word.WdAlertLevel.wdAlertsNone
-            };
-
-            wordDocument = wordApplication.Documents.Open(
-                FileName: sourcePath,
-                ConfirmConversions: false,
-                ReadOnly: true,
-                AddToRecentFiles: false,
-                Visible: false,
-                OpenAndRepair: true,
-                NoEncodingDialog: true);
-
-            wordDocument.SaveAs2(
-                FileName: outputPdfPath,
-                FileFormat: Word.WdSaveFormat.wdFormatPDF);
-
-            return outputPdfPath;
+            throw new IOException("LibreOffice is not installed or PRINTBIT_LIBREOFFICE_PATH is not configured.");
         }
-        finally
+
+        ConvertWithLibreOffice(sofficePath, conversionSourcePath, cacheFolder);
+        if (!File.Exists(outputPdfPath))
         {
-            if (wordDocument is not null)
+            throw new IOException("LibreOffice conversion did not produce a preview PDF.");
+        }
+
+        return outputPdfPath;
+    }
+
+    private static string? ResolveLibreOfficePath()
+    {
+        var configuredPath = Environment.GetEnvironmentVariable("PRINTBIT_LIBREOFFICE_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredPath) && File.Exists(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        var candidates = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "LibreOffice", "program", "soffice.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "LibreOffice", "program", "soffice.exe")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
             {
-                wordDocument.Close(Word.WdSaveOptions.wdDoNotSaveChanges);
-                Marshal.FinalReleaseComObject(wordDocument);
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static void ConvertWithLibreOffice(string sofficePath, string sourcePath, string outputDirectory)
+    {
+        using var process = new Process();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = sofficePath,
+            Arguments = $"--headless --nologo --nodefault --norestore --nolockcheck --convert-to pdf --outdir \"{outputDirectory}\" \"{sourcePath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start LibreOffice conversion process.");
+        }
+
+        if (!process.WaitForExit(60000))
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
             }
 
-            if (wordApplication is not null)
-            {
-                wordApplication.Quit(Word.WdSaveOptions.wdDoNotSaveChanges);
-                Marshal.FinalReleaseComObject(wordApplication);
-            }
+            throw new TimeoutException("LibreOffice did not finish within 60 seconds.");
+        }
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"LibreOffice conversion failed with exit code {process.ExitCode}.");
         }
     }
 
@@ -177,6 +253,19 @@ public partial class PrintConfigurationView : UserControl
     {
         e.Cancel = true;
         NavigateHtml("Kiosk preview blocked external download. Use supported preview format or continue to print.");
+    }
+
+    private void HandlePreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+        {
+            return;
+        }
+
+        if (e.Key is Key.P or Key.S or Key.O or Key.N)
+        {
+            e.Handled = true;
+        }
     }
 
     private void NavigateHtml(string message)
@@ -199,5 +288,7 @@ public partial class PrintConfigurationView : UserControl
             DocumentPreviewBrowser.CoreWebView2.NewWindowRequested -= HandleNewWindowRequested;
             DocumentPreviewBrowser.CoreWebView2.DownloadStarting -= HandleDownloadStarting;
         }
+
+        PreviewKeyDown -= HandlePreviewKeyDown;
     }
 }

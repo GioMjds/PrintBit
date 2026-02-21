@@ -9,6 +9,7 @@
     Title="PrintBit"
     Width="800"
     Height="750"
+    FontFamily="Global Sans Serif"
     Loaded="Window_Loaded"
     ResizeMode="CanResize"
     ShowInTaskbar="True"
@@ -74,29 +75,11 @@
                 <Grid>
                     <views:LandingView Visibility="{Binding IsLandingScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <views:PrintView Visibility="{Binding IsPrintScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <views:CopyView Visibility="{Binding IsCopyScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <views:PrintConfigurationView Visibility="{Binding IsPrintConfigurationScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <views:ConfirmPrintView Visibility="{Binding IsConfirmPrintScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    <views:CopyView Loaded="CopyView_Loaded" Visibility="{Binding IsCopyScreen, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </Grid>
             </Border>
-
-            <materialDesign:Card
-                Grid.Row="2"
-                Margin="0,16,0,0"
-                Padding="12">
-                <DockPanel>
-                    <materialDesign:PackIcon
-                        Width="18"
-                        Height="18"
-                        Margin="0,0,8,0"
-                        VerticalAlignment="Center"
-                        Kind="InformationOutline" />
-                    <TextBlock
-                        FontSize="14"
-                        Text="{Binding StatusMessage}"
-                        TextWrapping="Wrap" />
-                </DockPanel>
-            </materialDesign:Card>
         </Grid>
     </Grid>
 </Window>

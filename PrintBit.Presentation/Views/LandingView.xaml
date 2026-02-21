@@ -19,7 +19,10 @@
                 FontWeight="SemiBold"
                 Text="Landing Screen" />
 
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <StackPanel
+                Margin="20,0,0,0"
+                DockPanel.Dock="Right"
+                Orientation="Horizontal">
                 <Button
                     Margin="0,0,8,0"
                     Padding="5"

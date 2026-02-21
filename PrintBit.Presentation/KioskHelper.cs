@@ -57,32 +57,6 @@ namespace PrintBit.Presentation
                 // To re-enable, set KioskEnabled = true and rebuild.
                 return;
             }
-
-            // Window presentation settings
-            _window.WindowStyle = WindowStyle.None;
-            _window.ResizeMode = ResizeMode.NoResize;
-            _window.WindowState = WindowState.Maximized;
-            _window.Topmost = true;
-            _window.ShowInTaskbar = false;
-            // System.Windows.Input.Mouse.OverrideCursor = Cursors.None;
-
-            // Cover taskbar / all monitors - use native APIs to get monitor bounds
-            IntPtr hMonitor = MonitorFromWindow(_hwnd, MONITOR_DEFAULTTOPRIMARY);
-            MONITORINFO monitorInfo = new MONITORINFO();
-            monitorInfo.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
-            
-            if (GetMonitorInfo(hMonitor, ref monitorInfo))
-            {
-                var bounds = monitorInfo.rcMonitor;
-                SetWindowPos(_hwnd, IntPtr.Zero,
-                    bounds.Left, bounds.Top,
-                    bounds.Right - bounds.Left, bounds.Bottom - bounds.Top,
-                    SWP_NOZORDER | SWP_FRAMECHANGED);
-            }
-
-            // Install low-level keyboard hook
-            // Pass null to GetModuleHandle to get the current process module handle
-            _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _proc, GetModuleHandle(null), 0);
         }
 
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)

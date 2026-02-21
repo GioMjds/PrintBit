@@ -38,23 +38,14 @@
                     BorderThickness="1"
                     CornerRadius="8"
                     Visibility="{Binding IsUploadQrVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <Grid Height="220">
-                        <Rectangle
-                            Fill="#FFE8E8E8"
-                            RadiusX="8"
-                            RadiusY="8" />
+                    <Grid Height="420">
                         <Image
-                            Margin="8"
+                            Margin="2"
                             Source="{Binding WirelessQrCodeImage}"
                             Stretch="Uniform" />
                     </Grid>
                 </Border>
 
-                <TextBlock
-                    Margin="0,10,0,0"
-                    FontSize="13"
-                    Text="{Binding SessionCountdownText}"
-                    TextWrapping="Wrap" />
                 <TextBlock
                     Margin="0,6,0,0"
                     FontSize="13"

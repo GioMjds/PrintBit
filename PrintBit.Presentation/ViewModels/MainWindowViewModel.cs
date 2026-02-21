@@ -1,9 +1,6 @@
 using System.Collections.ObjectModel;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
-using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -42,9 +39,9 @@ public sealed class MainWindowViewModel : MainViewModel
     private string _documentPreviewStatusMessage = "Select an uploaded file to preview.";
     private string _offlineGuidanceMessage = "Offline print is preparing.";
     private string _sessionCountdownText = "";
-    private string _hotspotSsid = "PrintBit-Kiosk";
-    private string _hotspotPassword = "PrintBit1234";
-    private ImageSource? _hotspotQrCodeImage;
+    private readonly string _hotspotSsid = "PrintBit-Kiosk";
+    private readonly string _hotspotPassword = "PrintBit1234";
+    private readonly ImageSource? _hotspotQrCodeImage;
     private Guid? _activeWirelessSessionId;
     private DateTimeOffset? _activeSessionExpiresAt;
     private bool _isStartingWirelessSession;
@@ -68,10 +65,10 @@ public sealed class MainWindowViewModel : MainViewModel
         _hotspotPassword = ResolveHotspotPassword();
         _hotspotQrCodeImage = BuildWifiQrCodeImage(_hotspotSsid, _hotspotPassword);
 
-        UploadedFiles = new ObservableCollection<string>();
+        UploadedFiles = [];
 
-        ColorModes = new ObservableCollection<string> { "Colored", "Grayscale" };
-        PageSelectionModes = new ObservableCollection<string> { "All Pages", "Page Range" };
+        ColorModes = ["Colored", "Grayscale"];
+        PageSelectionModes = ["All Pages", "Page Range"];
 
         ShowLandingCommand = new RelayCommand(_ => NavigateTo(KioskScreen.Landing));
         OpenPrintCommand = new RelayCommand(_ => NavigateTo(KioskScreen.Print));
@@ -82,7 +79,30 @@ public sealed class MainWindowViewModel : MainViewModel
             StatusMessage = "Use Scan to capture a document, then proceed to print configuration.";
         });
         OpenSettingsCommand = new RelayCommand(_ => StatusMessage = "Settings screen is not implemented yet.");
-        PowerOffCommand = new RelayCommand(_ => StatusMessage = "Power off is disabled in this demo.");
+        PowerOffCommand = new RelayCommand(_ =>
+        {
+            var choice = System.Windows.MessageBox.Show(
+                "Shut down the kiosk application?",
+                "Power Off",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question
+            );
+
+            if (choice != System.Windows.MessageBoxResult.Yes) return;
+
+            try
+            {
+                _networkJoinTimer.Stop();
+                _sessionCountdownTimer.Stop();
+                _ = _wirelessKioskClient.DisconnectAsync();
+            } 
+            catch {  }
+
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                System.Windows.Application.Current.Shutdown();
+            });
+        });
 
         ConfirmPhoneConnectedCommand = new RelayCommand(
             _ =>
@@ -672,7 +692,7 @@ public sealed class MainWindowViewModel : MainViewModel
 
             var session = await _wirelessKioskClient.CreateSessionAsync();
             _activeWirelessSessionId = session.SessionId;
-            _activeSessionExpiresAt = session.ExpiresAt;
+            _activeSessionExpiresAt = null;
             WirelessUploadUrl = session.UploadUrl;
             WirelessQrCodeImage = BuildQrCodeImage(session.UploadUrl);
             await _wirelessKioskClient.ConnectToSessionAsync(session.SessionId);
@@ -683,7 +703,7 @@ public sealed class MainWindowViewModel : MainViewModel
                 ApplyWirelessUploadedDocument(uploadedDocument);
             }
 
-            StartSessionCountdown();
+            SessionCountdownText = string.Empty;
 
             if (uploadedDocuments.Count > 0)
             {
