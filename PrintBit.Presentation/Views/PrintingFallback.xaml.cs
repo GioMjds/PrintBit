@@ -11,16 +11,15 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace PrintBit.Presentation.Views
+namespace PrintBit.Presentation.Views;
+
+/// <summary>
+/// Interaction logic for PrintingFallback.xaml
+/// </summary>
+public partial class PrintingFallback : UserControl
 {
-    /// <summary>
-    /// Interaction logic for PrintingFallback.xaml
-    /// </summary>
-    public partial class PrintingFallback : Page
+    public PrintingFallback()
     {
-        public PrintingFallback()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
     }
 }

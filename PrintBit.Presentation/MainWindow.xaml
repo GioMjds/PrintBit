@@ -9,7 +9,6 @@
     Title="PrintBit"
     Width="800"
     Height="750"
-    FontFamily="Global Sans Serif"
     Loaded="Window_Loaded"
     ResizeMode="CanResize"
     ShowInTaskbar="True"

@@ -21,43 +21,18 @@
             Margin="8"
             Padding="16">
             <StackPanel>
-                <TextBlock
-                    FontSize="24"
-                    FontWeight="Bold"
-                    Text="Wireless Upload" />
-                <TextBlock
-                    Margin="0,8,0,0"
-                    FontSize="13"
-                    Text="{Binding OfflineGuidanceMessage}"
-                    TextWrapping="Wrap" />
-
                 <Border
                     Margin="0,12,0,0"
-                    Padding="12"
-                    BorderBrush="#FFBBBBBB"
-                    BorderThickness="1"
-                    CornerRadius="8"
+                    Padding="2"
+                    CornerRadius="2"
                     Visibility="{Binding IsUploadQrVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <Grid Height="420">
+                    <Grid Height="500">
                         <Image
-                            Margin="2"
+                            Margin="0,0,0,0"
                             Source="{Binding WirelessQrCodeImage}"
-                            Stretch="Uniform" />
+                            Stretch="Fill" />
                     </Grid>
                 </Border>
-
-                <TextBlock
-                    Margin="0,6,0,0"
-                    FontSize="13"
-                    Text="{Binding WirelessUploadStatus}"
-                    TextWrapping="Wrap" />
-
-                <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
-                    <Button
-                        Margin="0,0,8,0"
-                        Command="{Binding StartWirelessSessionCommand}"
-                        Content="Refresh QR Session" />
-                </StackPanel>
             </StackPanel>
         </materialDesign:Card>
 
