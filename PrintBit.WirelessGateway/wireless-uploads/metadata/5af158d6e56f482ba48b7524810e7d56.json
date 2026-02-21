@@ -1,0 +1,19 @@
+{
+  "sessionId": "5af158d6-e56f-482b-a48b-7524810e7d56",
+  "token": "ccdd5dee71d3c2479b7d6d6fcacdd78b",
+  "uploadUrl": "http://192.168.1.2:5058/upload/ccdd5dee71d3c2479b7d6d6fcacdd78b",
+  "createdAt": "2026-02-21T01:04:52.0616782+00:00",
+  "expiresAt": "2026-02-21T01:09:52.0616782+00:00",
+  "status": 1,
+  "documents": [
+    {
+      "documentId": "6b1106e8-0b5a-42b7-9f87-c846c9382c9b",
+      "sessionId": "5af158d6-e56f-482b-a48b-7524810e7d56",
+      "fileName": "2024-27-03-LU-AA-FO-150-Parent_s-Consent-Form-1.pdf",
+      "contentType": "application/pdf",
+      "sizeBytes": 151987,
+      "storedPath": "C:\\Users\\giomj\\source\\repos\\PrintBit\\PrintBit.WirelessGateway\\wireless-uploads\\20260221\\5af158d6e56f482ba48b7524810e7d56\\aa56103473bb4718b9044349009d2e8c_2024-27-03-LU-AA-FO-150-Parent_s-Consent-Form-1.pdf",
+      "uploadedAt": "2026-02-21T01:05:10.2328536+00:00"
+    }
+  ]
+}

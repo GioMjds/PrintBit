@@ -23,9 +23,33 @@ var app = builder.Build();
 
 app.MapGet("/", () => Results.Text("PrintBit Wireless Gateway is running."));
 
-app.MapGet("/upload/{token}", (string token) =>
+// Serve portal HTML for the token
+app.MapGet("/upload/{token}", (IWebHostEnvironment env, string token) =>
 {
-    return Results.Content(UploadPortalPage.Render(token), "text/html");
+    return Results.Content(UploadPortalPage.Render(token, env.ContentRootPath), "text/html");
+});
+
+// Serve assets referenced by the portal under the same token path:
+// - /upload/{token}/styles.css
+// - /upload/{token}/app.js
+app.MapGet("/upload/{token}/{*asset}", (IWebHostEnvironment env, string token, string asset) =>
+{
+    if (string.IsNullOrWhiteSpace(asset))
+        return Results.NotFound();
+
+    // Allowlist to avoid serving arbitrary files
+    var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "styles.css", "app.js" };
+    var fileName = Path.GetFileName(asset);
+    if (!allowed.Contains(fileName))
+        return Results.NotFound();
+
+    // Resolve from project content folder
+    var filePath = Path.Combine(env.ContentRootPath, "Pages", "UploadPortal", fileName);
+    if (!File.Exists(filePath))
+        return Results.NotFound();
+
+    var contentType = fileName.EndsWith(".css", StringComparison.OrdinalIgnoreCase) ? "text/css" : "application/javascript";
+    return Results.File(filePath, contentType);
 });
 
 app.MapPost("/api/wireless/sessions", (HttpContext context, WirelessSessionStore sessionStore) =>
@@ -65,7 +89,11 @@ app.MapPost(
             var errorMessage = storeResult.ErrorMessage ?? "Upload failed.";
             await hubContext.Clients.Group(WirelessHub.SessionGroup(sessionId))
                 .SendAsync("UploadFailed", errorMessage, cancellationToken);
-            return Results.BadRequest(new { error = errorMessage });
+            return Results.BadRequest(new
+            {
+                code = storeResult.ErrorCode ?? "upload_failed",
+                error = errorMessage
+            });
         }
 
         await hubContext.Clients.Group(WirelessHub.SessionGroup(sessionId))

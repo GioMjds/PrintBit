@@ -169,6 +169,11 @@ public sealed class WirelessGatewayClient : IWirelessKioskClient, IDisposable
             StatusChanged?.Invoke($"Upload completed: {document.FileName}");
         });
 
+        connection.On<string>("UploadStarted", fileName =>
+        {
+            StatusChanged?.Invoke($"Upload in progress: {fileName}");
+        });
+
         connection.On<string>("UploadFailed", message =>
         {
             StatusChanged?.Invoke($"Upload failed: {message}");

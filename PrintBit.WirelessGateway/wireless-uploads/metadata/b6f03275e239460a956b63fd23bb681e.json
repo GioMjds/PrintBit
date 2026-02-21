@@ -1,0 +1,19 @@
+{
+  "sessionId": "b6f03275-e239-460a-956b-63fd23bb681e",
+  "token": "b83831ac8106b66a73ba2a887f3b7f8e",
+  "uploadUrl": "http://192.168.1.2:5058/upload/b83831ac8106b66a73ba2a887f3b7f8e",
+  "createdAt": "2026-02-21T02:40:02.1482753+00:00",
+  "expiresAt": "2026-02-21T02:45:02.1482753+00:00",
+  "status": 1,
+  "documents": [
+    {
+      "documentId": "ccfb7940-2e1b-4d15-9415-9e8f01d8b5c4",
+      "sessionId": "b6f03275-e239-460a-956b-63fd23bb681e",
+      "fileName": "Research-Title_Topic-Proposal_Draft_PrintbIT.docx",
+      "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sizeBytes": 101034,
+      "storedPath": "C:\\Users\\giomj\\source\\repos\\PrintBit\\PrintBit.WirelessGateway\\wireless-uploads\\20260221\\b6f03275e239460a956b63fd23bb681e\\c4b6965710b440a790acebe5528a53c6_Research-Title_Topic-Proposal_Draft_PrintbIT.docx",
+      "uploadedAt": "2026-02-21T02:40:30.8463248+00:00"
+    }
+  ]
+}

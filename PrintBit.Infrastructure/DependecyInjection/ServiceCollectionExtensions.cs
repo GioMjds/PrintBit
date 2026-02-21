@@ -17,7 +17,7 @@ public static class ServiceCollectionExtensions
         var wirelessBaseUrl = Environment.GetEnvironmentVariable("PRINTBIT_WIRELESS_BASE_URL");
         if (string.IsNullOrWhiteSpace(wirelessBaseUrl))
         {
-            wirelessBaseUrl = "http://localhost:5058";
+            wirelessBaseUrl = "http://192.168.1.2:5058";
         }
 
         services.AddSingleton<IWirelessKioskClient>(_ => new WirelessGatewayClient(wirelessBaseUrl));

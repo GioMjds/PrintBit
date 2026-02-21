@@ -14,7 +14,7 @@
     ShowInTaskbar="True"
     Topmost="False"
     Unloaded="Window_Unloaded"
-    WindowState="Normal"
+    WindowState="Maximized"
     WindowStyle="SingleBorderWindow"
     mc:Ignorable="d">
     <Window.Resources>

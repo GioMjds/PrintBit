@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PrintBit Upload</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="card">
+
+    <div class="card-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/>
+      </svg>
+    </div>
+
+    <h1>Upload Your Documents</h1>
+    <p class="subtitle">Accepted formats: PDF, DOC, DOCX &mdash; up to 25 MB</p>
+
+    <div class="divider"></div>
+
+    <form id="uploadForm">
+
+      <label for="fileInput">Choose file</label>
+
+      <div class="file-area">
+        <div class="dz-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+        </div>
+        <p class="dz-primary"><span>Browse file</span> or drag &amp; drop here</p>
+        <p class="dz-hint">PDF, DOC or DOCX</p>
+        <input id="fileInput" name="file" type="file" accept=".pdf,.doc,.docx" required />
+      </div>
+      <p id="selectedFileName" class="selected-file-name">No file selected</p>
+
+      <button id="uploadButton" type="submit" disabled>Upload to Kiosk</button>
+
+    </form>
+
+    <div id="statusBox" class="status">
+      <div class="status-dot"></div>
+      Waiting for session validation…
+    </div>
+
+  </main>
+
+  <script>window.uploadToken = "{{token}}";</script>
+  <script defer src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "sessionId": "8ca67ef3-7e9d-436f-9da3-91b523b85258",
+  "token": "2dc4a941ce2137f44b294489229c8a6c",
+  "uploadUrl": "http://localhost:3000/upload/2dc4a941ce2137f44b294489229c8a6c",
+  "createdAt": "2026-02-21T01:47:45.4644545+00:00",
+  "expiresAt": "2026-02-21T01:52:45.4644545+00:00",
+  "status": 0,
+  "documents": []
+}

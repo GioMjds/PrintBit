@@ -13,10 +13,7 @@ public sealed class WirelessSessionStore
     {
         ".pdf",
         ".doc",
-        ".docx",
-        ".png",
-        ".jpg",
-        ".jpeg"
+        ".docx"
     };
 
     private const long MaxUploadBytes = 25 * 1024 * 1024;
@@ -94,42 +91,49 @@ public sealed class WirelessSessionStore
     {
         if (!_sessions.TryGetValue(sessionId, out var entry))
         {
-            return StoreUploadResult.Failed("Session not found.");
+            return StoreUploadResult.Failed("session_not_found", "Session not found.");
         }
 
         if (file.Length <= 0)
         {
-            return StoreUploadResult.Failed("Uploaded file is empty.");
+            return StoreUploadResult.Failed("file_empty", "Uploaded file is empty.");
         }
 
         if (file.Length > MaxUploadBytes)
         {
-            return StoreUploadResult.Failed($"File is too large. Maximum allowed is {MaxUploadBytes / (1024 * 1024)} MB.");
+            return StoreUploadResult.Failed("file_too_large", $"File is too large. Maximum allowed is {MaxUploadBytes / (1024 * 1024)} MB.");
         }
 
         var extension = Path.GetExtension(file.FileName);
         if (string.IsNullOrWhiteSpace(extension) || !AllowedFileExtensions.Contains(extension))
         {
-            return StoreUploadResult.Failed("Unsupported file type.");
+            return StoreUploadResult.Failed("unsupported_file_type", "Unsupported file type.");
         }
 
         lock (entry.SyncRoot)
         {
             if (!string.Equals(entry.Session.Token, token, StringComparison.Ordinal))
             {
-                return StoreUploadResult.Failed("Invalid session token.");
+                return StoreUploadResult.Failed("invalid_token", "Invalid session token.");
             }
 
             if (entry.Session.ExpiresAt <= DateTimeOffset.UtcNow)
             {
                 entry.Session.Status = UploadSessionStatus.Expired;
                 PersistSessionMetadata(entry, publicBaseUrl);
-                return StoreUploadResult.Failed("Session expired. Please scan a new QR code.");
+                return StoreUploadResult.Failed("session_expired", "Session expired. Please scan a new QR code.");
             }
 
             if (entry.Session.Status is UploadSessionStatus.Cancelled or UploadSessionStatus.Expired)
             {
-                return StoreUploadResult.Failed("Session is no longer active.");
+                return StoreUploadResult.Failed("session_inactive", "Session is no longer active.");
+            }
+
+            if (entry.Documents.Count > 0 || entry.Session.Status == UploadSessionStatus.Uploaded)
+            {
+                return StoreUploadResult.Failed(
+                    "session_already_used",
+                    "This upload session already has a file. Refresh QR session for a new upload.");
             }
         }
 
@@ -241,18 +245,20 @@ public sealed class WirelessSessionStore
 
 public sealed class StoreUploadResult
 {
-    private StoreUploadResult(bool isSuccess, UploadedDocumentDto? document, string? errorMessage)
+    private StoreUploadResult(bool isSuccess, UploadedDocumentDto? document, string? errorCode, string? errorMessage)
     {
         IsSuccess = isSuccess;
         Document = document;
+        ErrorCode = errorCode;
         ErrorMessage = errorMessage;
     }
 
     public bool IsSuccess { get; }
     public UploadedDocumentDto? Document { get; }
+    public string? ErrorCode { get; }
     public string? ErrorMessage { get; }
 
-    public static StoreUploadResult Success(UploadedDocumentDto document) => new(true, document, null);
+    public static StoreUploadResult Success(UploadedDocumentDto document) => new(true, document, null, null);
 
-    public static StoreUploadResult Failed(string message) => new(false, null, message);
+    public static StoreUploadResult Failed(string code, string message) => new(false, null, code, message);
 }

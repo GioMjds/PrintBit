@@ -6,9 +6,13 @@
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </UserControl.Resources>
+
     <Grid Margin="12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="1.3*" />
+            <ColumnDefinition Width="1.35*" />
             <ColumnDefinition Width="2*" />
         </Grid.ColumnDefinitions>
 
@@ -20,13 +24,20 @@
                 <TextBlock
                     FontSize="18"
                     FontWeight="SemiBold"
-                    Text="Scan QR to Upload" />
+                    Text="Offline-First Wireless Upload" />
+                <TextBlock
+                    Margin="0,8,0,0"
+                    FontSize="13"
+                    Text="{Binding OfflineGuidanceMessage}"
+                    TextWrapping="Wrap" />
+
                 <Border
                     Margin="0,12,0,0"
                     Padding="12"
                     BorderBrush="#FFBBBBBB"
                     BorderThickness="1"
-                    CornerRadius="8">
+                    CornerRadius="8"
+                    Visibility="{Binding IsUploadQrVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Grid Height="220">
                         <Rectangle
                             Fill="#FFE8E8E8"
@@ -38,15 +49,33 @@
                             Stretch="Uniform" />
                     </Grid>
                 </Border>
+
                 <TextBlock
                     Margin="0,10,0,0"
                     FontSize="13"
+                    Text="{Binding SessionCountdownText}"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    Margin="0,6,0,0"
+                    FontSize="13"
                     Text="{Binding WirelessUploadStatus}"
                     TextWrapping="Wrap" />
-                <Button
-                    Margin="0,10,0,0"
-                    Command="{Binding StartWirelessSessionCommand}"
-                    Content="Refresh QR Session" />
+                <TextBox
+                    Margin="0,8,0,0"
+                    IsReadOnly="True"
+                    Text="{Binding WirelessUploadUrl, Mode=OneWay}"
+                    Visibility="{Binding IsUploadQrVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                    <Button
+                        Margin="0,0,8,0"
+                        Command="{Binding StartWirelessSessionCommand}"
+                        Content="Refresh QR Session" />
+                    <Button
+                        Command="{Binding UseUsbFallbackCommand}"
+                        Content="Use USB Fallback"
+                        Visibility="{Binding IsFallbackActionsVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                </StackPanel>
             </StackPanel>
         </materialDesign:Card>
 
