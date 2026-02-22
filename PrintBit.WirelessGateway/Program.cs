@@ -120,13 +120,6 @@ app.Run();
 
 static Uri ResolvePublicBaseUrl(HttpContext context)
 {
-    var configuredPublicBaseUrl = Environment.GetEnvironmentVariable("PRINTBIT_WIRELESS_PUBLIC_BASE_URL");
-    if (!string.IsNullOrWhiteSpace(configuredPublicBaseUrl)
-        && Uri.TryCreate(configuredPublicBaseUrl, UriKind.Absolute, out var configuredUri))
-    {
-        return configuredUri;
-    }
-
     var requestUri = new Uri($"{context.Request.Scheme}://{context.Request.Host}");
     if (!requestUri.IsLoopback)
     {
@@ -149,14 +142,6 @@ static Uri ResolvePublicBaseUrl(HttpContext context)
 
 static IPAddress? ResolvePreferredLanAddress()
 {
-    var configuredLocalIp = Environment.GetEnvironmentVariable("PRINTBIT_KIOSK_LOCAL_IP");
-    if (!string.IsNullOrWhiteSpace(configuredLocalIp)
-        && IPAddress.TryParse(configuredLocalIp.Trim(), out var configuredIp)
-        && configuredIp.AddressFamily == AddressFamily.InterNetwork)
-    {
-        return configuredIp;
-    }
-
     var preferredInterface = Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_INTERFACE");
     var routerMode = string.Equals(
         Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_MODE"),

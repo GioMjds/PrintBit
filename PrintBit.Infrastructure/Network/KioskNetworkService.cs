@@ -12,7 +12,6 @@ public sealed class KioskNetworkService : IKioskNetworkService
 {
     private readonly string _hotspotSsid;
     private readonly bool _routerMode;
-    private readonly string? _configuredLocalIp;
     private readonly string? _preferredInterface;
     private readonly string _printerHost;
     private readonly int _printerPingTimeoutMs;
@@ -21,7 +20,6 @@ public sealed class KioskNetworkService : IKioskNetworkService
     {
         _hotspotSsid = ResolveHotspotSsid();
         _routerMode = ResolveRouterMode();
-        _configuredLocalIp = ResolveConfiguredLocalIp();
         _preferredInterface = ResolvePreferredInterface();
         _printerHost = (Environment.GetEnvironmentVariable("PRINTBIT_PRINTER_HOST") ?? string.Empty).Trim();
         _printerPingTimeoutMs = ResolvePrinterPingTimeout();
@@ -131,12 +129,6 @@ public sealed class KioskNetworkService : IKioskNetworkService
         return string.Equals(mode, "router", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? ResolveConfiguredLocalIp()
-    {
-        var localIp = Environment.GetEnvironmentVariable("PRINTBIT_KIOSK_LOCAL_IP");
-        return string.IsNullOrWhiteSpace(localIp) ? null : localIp.Trim();
-    }
-
     private static string? ResolvePreferredInterface()
     {
         var preferredInterface = Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_INTERFACE");
@@ -153,13 +145,6 @@ public sealed class KioskNetworkService : IKioskNetworkService
 
     private string? ResolveLocalIpv4Address()
     {
-        if (!string.IsNullOrWhiteSpace(_configuredLocalIp)
-            && IPAddress.TryParse(_configuredLocalIp, out var configuredIp)
-            && configuredIp.AddressFamily == AddressFamily.InterNetwork)
-        {
-            return configuredIp.ToString();
-        }
-
         if (!string.IsNullOrWhiteSpace(_preferredInterface))
         {
             var preferredAddress = ResolveInterfaceIpv4Address(_preferredInterface);
