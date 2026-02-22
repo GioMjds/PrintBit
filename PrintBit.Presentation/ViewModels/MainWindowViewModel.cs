@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Windows.Input;
@@ -15,6 +17,8 @@ namespace PrintBit.Presentation.ViewModels;
 
 public sealed class MainWindowViewModel : MainViewModel
 {
+    private readonly IKioskNetworkService _kioskNetworkService;
+    private readonly IPrintForwardingService _printForwardingService;
     private readonly IWirelessKioskClient _wirelessKioskClient;
     private readonly DispatcherTimer _networkJoinTimer;
     private readonly DispatcherTimer _sessionCountdownTimer;
@@ -39,6 +43,7 @@ public sealed class MainWindowViewModel : MainViewModel
     private string _documentPreviewStatusMessage = "Select an uploaded file to preview.";
     private string _offlineGuidanceMessage = "Offline print is preparing.";
     private string _sessionCountdownText = "";
+    private string _networkDiagnosticsText = "Diagnostics unavailable.";
     private readonly string _hotspotSsid = "PrintBit-Kiosk";
     private readonly string _hotspotPassword = "PrintBit1234";
     private readonly ImageSource? _hotspotQrCodeImage;
@@ -46,10 +51,17 @@ public sealed class MainWindowViewModel : MainViewModel
     private DateTimeOffset? _activeSessionExpiresAt;
     private bool _isStartingWirelessSession;
     private bool _phoneNetworkJoinConfirmed;
+    private bool _isForwardingPrint;
 
-    public MainWindowViewModel(CoinManager coinManager, IWirelessKioskClient wirelessKioskClient)
+    public MainWindowViewModel(
+        CoinManager coinManager,
+        IKioskNetworkService kioskNetworkService,
+        IPrintForwardingService printForwardingService,
+        IWirelessKioskClient wirelessKioskClient)
         : base(coinManager)
     {
+        _kioskNetworkService = kioskNetworkService;
+        _printForwardingService = printForwardingService;
         _wirelessKioskClient = wirelessKioskClient;
         _wirelessKioskClient.UploadCompleted += HandleWirelessUploadCompleted;
         _wirelessKioskClient.StatusChanged += HandleWirelessStatusChanged;
@@ -105,12 +117,7 @@ public sealed class MainWindowViewModel : MainViewModel
         });
 
         ConfirmPhoneConnectedCommand = new RelayCommand(
-            _ =>
-            {
-                _phoneNetworkJoinConfirmed = true;
-                _networkJoinTimer.Stop();
-                _ = StartWirelessSessionAsync();
-            },
+            _ => ConfirmPhoneConnected(),
             _ => CanConfirmPhoneConnected);
 
         ShowNoNetworkFallbackCommand = new RelayCommand(
@@ -118,9 +125,9 @@ public sealed class MainWindowViewModel : MainViewModel
             {
                 SetOfflineState(
                     OfflinePrintState.NoLocalNetworkFallback,
-                    "Cannot detect local connection. Use USB transfer or reconnect to kiosk Wi-Fi.");
+                    "Cannot detect kiosk network. Use USB transfer or reconnect to kiosk network.");
                 WirelessUploadStatus = "No local network detected for QR upload.";
-                StatusMessage = "Use fallback transfer or reconnect to kiosk Wi-Fi.";
+                StatusMessage = "Use fallback transfer or reconnect to kiosk network.";
             });
 
         RetryPhoneConnectionCommand = new RelayCommand(
@@ -154,7 +161,7 @@ public sealed class MainWindowViewModel : MainViewModel
         IncreaseCopiesCommand = new RelayCommand(_ => Copies++);
         DecreaseCopiesCommand = new RelayCommand(_ => Copies--, _ => Copies > 1);
 
-        StartPrintCommand = new RelayCommand(_ => StartPrint(), _ => CanPrint);
+        StartPrintCommand = new RelayCommand(_ => _ = StartPrintAsync(), _ => CanPrint);
         ResetCoinsCommand = new RelayCommand(_ =>
         {
             ResetBalanceCommand.Execute(null);
@@ -328,6 +335,12 @@ public sealed class MainWindowViewModel : MainViewModel
         private set => SetProperty(ref _sessionCountdownText, value);
     }
 
+    public string NetworkDiagnosticsText
+    {
+        get => _networkDiagnosticsText;
+        private set => SetProperty(ref _networkDiagnosticsText, value);
+    }
+
     public string? SelectedUploadedFile
     {
         get => _selectedUploadedFile;
@@ -447,7 +460,10 @@ public sealed class MainWindowViewModel : MainViewModel
         && Copies > 0
         && (!IsPageRangeSelection || !string.IsNullOrWhiteSpace(PageRange));
 
-    public bool CanPrint => Credit >= Price && Price > 0m && !string.IsNullOrWhiteSpace(SelectedUploadedFile);
+    public bool CanPrint => Credit >= Price
+        && Price > 0m
+        && !string.IsNullOrWhiteSpace(SelectedUploadedFile)
+        && !_isForwardingPrint;
 
     public string? ScannedDocumentName
     {
@@ -531,7 +547,8 @@ public sealed class MainWindowViewModel : MainViewModel
 
     private void EnterOfflinePrintFlow()
     {
-        _phoneNetworkJoinConfirmed = true;
+        var hotspotStatus = _kioskNetworkService.GetHotspotStatus();
+        _phoneNetworkJoinConfirmed = false;
         _networkJoinTimer.Stop();
 
         _ = _wirelessKioskClient.DisconnectAsync();
@@ -540,24 +557,50 @@ public sealed class MainWindowViewModel : MainViewModel
         _uploadedDocumentsByName.Clear();
         WirelessQrCodeImage = null;
         WirelessUploadUrl = null;
-        WirelessUploadStatus = "Preparing upload QR session...";
+        WirelessUploadStatus = "Step 1 required before upload QR is available.";
         SessionCountdownText = string.Empty;
+        NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, null);
 
-        SetOfflineState(OfflinePrintState.SessionCreating, "Step 2: Scan upload QR and send file from your phone.");
-        StatusMessage = "Generating upload QR. Use your phone to open the upload page.";
-        _ = StartWirelessSessionAsync(forceRefresh: true);
+        SetOfflineState(
+            hotspotStatus.IsNetworkAvailable ? OfflinePrintState.HotspotReady : OfflinePrintState.HotspotStarting,
+            BuildStepOneGuidance(hotspotStatus.GuidanceMessage));
+        StatusMessage = hotspotStatus.IsNetworkAvailable
+            ? "Scan Wi-Fi QR, connect, then tap Connected - Continue."
+            : BuildManualJoinHint();
+        BeginWaitingForPhoneNetworkJoin(BuildStepOneGuidance(hotspotStatus.GuidanceMessage));
     }
 
-    private void BeginWaitingForPhoneNetworkJoin()
+    private void BeginWaitingForPhoneNetworkJoin(string? guidanceMessage = null)
     {
         _phoneNetworkJoinConfirmed = false;
         SetOfflineState(
             OfflinePrintState.WaitingForPhoneNetworkJoin,
-            "Step 1: Connect phone to kiosk Wi-Fi. Step 2: tap 'I Connected My Phone'.");
-        StatusMessage = "Waiting for phone to join kiosk network.";
+            guidanceMessage ?? "Step 1 required: scan Wi-Fi QR, connect, then tap Connected - Continue.");
+        StatusMessage = "Waiting for phone and printer to join kiosk network.";
 
         _networkJoinTimer.Stop();
         _networkJoinTimer.Start();
+    }
+
+    private void ConfirmPhoneConnected()
+    {
+        var hotspotStatus = _kioskNetworkService.GetHotspotStatus();
+        NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, WirelessUploadUrl);
+        if (!hotspotStatus.IsNetworkAvailable)
+        {
+            _phoneNetworkJoinConfirmed = false;
+            _networkJoinTimer.Stop();
+            SetOfflineState(OfflinePrintState.NoLocalNetworkFallback, BuildStepOneGuidance(hotspotStatus.GuidanceMessage));
+            WirelessUploadStatus = "Step 1 incomplete. Kiosk network is not ready.";
+            StatusMessage = BuildManualJoinHint();
+            CommandManager.InvalidateRequerySuggested();
+            return;
+        }
+
+        _phoneNetworkJoinConfirmed = true;
+        _networkJoinTimer.Stop();
+        StatusMessage = "Step 1 complete. Generating upload QR...";
+        _ = StartWirelessSessionAsync();
     }
 
     private void HandleNetworkJoinTimeout(object? sender, EventArgs e)
@@ -568,44 +611,106 @@ public sealed class MainWindowViewModel : MainViewModel
             return;
         }
 
-        SetOfflineState(
-            OfflinePrintState.NetworkJoinTimeout,
-            "Phone not yet connected to kiosk network. Retry connection or choose fallback transfer.");
-        WirelessUploadStatus = "Network join timeout.";
-        StatusMessage = "Phone must connect to kiosk Wi-Fi before QR upload works.";
+            SetOfflineState(
+                OfflinePrintState.NetworkJoinTimeout,
+                BuildStepOneGuidance("Phone/printer not yet connected to kiosk network."));
+            WirelessUploadStatus = "Network join timeout. Manual Wi-Fi join may be required.";
+            StatusMessage = BuildManualJoinHint();
     }
 
-    private void StartPrint()
+    private async Task StartPrintAsync()
     {
-        if (!CanPrint)
+        if (!CanPrint || _isForwardingPrint)
         {
             return;
         }
 
-        var changeAmount = Change;
-        ResetBalanceCommand.Execute(null);
-        Copies = 1;
-        SelectedPageSelectionMode = "All Pages";
-        SelectedColorMode = "Colored";
-        PageRange = "1-2";
-        SelectedUploadedFile = null;
-        ScannedDocumentName = null;
+        if (!TryResolveSelectedDocumentPath(out var selectedDocumentPath, out var fileName))
+        {
+            return;
+        }
 
-        _networkJoinTimer.Stop();
-        _sessionCountdownTimer.Stop();
-        _activeWirelessSessionId = null;
-        _activeSessionExpiresAt = null;
-        _phoneNetworkJoinConfirmed = false;
-        WirelessQrCodeImage = null;
-        WirelessUploadUrl = null;
-        WirelessUploadStatus = "Wireless upload not started.";
-        SessionCountdownText = string.Empty;
-        _ = _wirelessKioskClient.DisconnectAsync();
+        var printerValidation = _kioskNetworkService.ValidatePrinterConnection();
+        if (!printerValidation.IsReady)
+        {
+            StatusMessage = printerValidation.Message;
+            return;
+        }
 
-        NavigateTo(KioskScreen.Landing);
-        StatusMessage = changeAmount > 0m
-            ? $"Printing started. Please collect your change: PHP {changeAmount:0.00}."
-            : "Printing started. Exact amount received.";
+        _isForwardingPrint = true;
+        OnPropertyChanged(nameof(CanPrint));
+        CommandManager.InvalidateRequerySuggested();
+
+        try
+        {
+            StatusMessage = $"Sending {fileName} to printer queue...";
+
+            var forwardingResult = await _printForwardingService.ForwardFileAsync(selectedDocumentPath);
+            if (!forwardingResult.IsSuccess)
+            {
+                StatusMessage = forwardingResult.Message;
+                return;
+            }
+
+            var changeAmount = Change;
+            ResetBalanceCommand.Execute(null);
+            Copies = 1;
+            SelectedPageSelectionMode = "All Pages";
+            SelectedColorMode = "Colored";
+            PageRange = "1-2";
+            SelectedUploadedFile = null;
+            ScannedDocumentName = null;
+
+            _networkJoinTimer.Stop();
+            _sessionCountdownTimer.Stop();
+            _activeWirelessSessionId = null;
+            _activeSessionExpiresAt = null;
+            _phoneNetworkJoinConfirmed = false;
+            WirelessQrCodeImage = null;
+            WirelessUploadUrl = null;
+            WirelessUploadStatus = "Wireless upload not started.";
+            SessionCountdownText = string.Empty;
+            _ = _wirelessKioskClient.DisconnectAsync();
+
+            NavigateTo(KioskScreen.Landing);
+            StatusMessage = changeAmount > 0m
+                ? $"Print job queued. Please collect your change: PHP {changeAmount:0.00}."
+                : "Print job queued. Exact amount received.";
+        }
+        finally
+        {
+            _isForwardingPrint = false;
+            OnPropertyChanged(nameof(CanPrint));
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private bool TryResolveSelectedDocumentPath(out string selectedDocumentPath, out string selectedFileName)
+    {
+        selectedDocumentPath = string.Empty;
+        selectedFileName = SelectedUploadedFile ?? "file";
+
+        if (string.IsNullOrWhiteSpace(SelectedUploadedFile))
+        {
+            StatusMessage = "Select a file before printing.";
+            return false;
+        }
+
+        if (!_uploadedDocumentsByName.TryGetValue(SelectedUploadedFile, out var document))
+        {
+            StatusMessage = "Selected file is not available for print forwarding. Re-upload the document.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(document.StoredPath) || !File.Exists(document.StoredPath))
+        {
+            StatusMessage = $"Selected file is missing on kiosk storage: {document.FileName}.";
+            return false;
+        }
+
+        selectedDocumentPath = document.StoredPath;
+        selectedFileName = document.FileName;
+        return true;
     }
 
     private decimal CalculatePrice()
@@ -671,8 +776,31 @@ public sealed class MainWindowViewModel : MainViewModel
         {
             SetOfflineState(
                 OfflinePrintState.WaitingForPhoneNetworkJoin,
-                "No internet is okay, but your phone must connect to kiosk Wi-Fi first.");
-            WirelessUploadStatus = "Phone is not connected to kiosk network yet.";
+                BuildStepOneGuidance(null));
+            WirelessUploadStatus = "Step 1 required before upload QR is available.";
+            NetworkDiagnosticsText = BuildDiagnosticsText(null, WirelessUploadUrl);
+            return;
+        }
+
+        var hotspotStatus = _kioskNetworkService.GetHotspotStatus();
+        if (!hotspotStatus.IsNetworkAvailable)
+        {
+            _phoneNetworkJoinConfirmed = false;
+            SetOfflineState(OfflinePrintState.NoLocalNetworkFallback, BuildStepOneGuidance(hotspotStatus.GuidanceMessage));
+            WirelessUploadStatus = "Kiosk network unavailable. Reconnect before upload QR.";
+            StatusMessage = BuildManualJoinHint();
+            NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, WirelessUploadUrl);
+            _networkJoinTimer.Stop();
+            _networkJoinTimer.Start();
+            return;
+        }
+
+        if (!await IsWirelessGatewayReachableAsync())
+        {
+            SetOfflineState(OfflinePrintState.GatewayUnavailable, "Wireless gateway is not reachable on kiosk network.");
+            WirelessUploadStatus = "Gateway pre-check failed. Verify kiosk gateway service and network IP.";
+            StatusMessage = "Cannot reach upload service. Start/verify gateway and retry.";
+            NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, WirelessUploadUrl);
             return;
         }
 
@@ -695,6 +823,7 @@ public sealed class MainWindowViewModel : MainViewModel
             _activeSessionExpiresAt = null;
             WirelessUploadUrl = session.UploadUrl;
             WirelessQrCodeImage = BuildQrCodeImage(session.UploadUrl);
+            NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, session.UploadUrl);
             await _wirelessKioskClient.ConnectToSessionAsync(session.SessionId);
 
             var uploadedDocuments = await _wirelessKioskClient.GetUploadedDocumentsAsync(session.SessionId);
@@ -714,7 +843,7 @@ public sealed class MainWindowViewModel : MainViewModel
                 SetOfflineState(OfflinePrintState.SessionReady, "Step 2: Scan upload QR and send file from your phone.");
             }
 
-            WirelessUploadStatus = "Session ready. Upload page works without internet when connected to kiosk Wi-Fi.";
+            WirelessUploadStatus = "Session ready. Upload page works offline when connected to kiosk network.";
             StatusMessage = "Scan the upload QR and send your file.";
         }
         catch (HttpRequestException ex)
@@ -724,23 +853,78 @@ public sealed class MainWindowViewModel : MainViewModel
                 "Wireless gateway unreachable. Ensure kiosk and phone are on the same local network.");
             WirelessUploadStatus = $"Wireless server unavailable: {ex.Message}";
             StatusMessage = "Unable to reach wireless upload service.";
+            NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, WirelessUploadUrl);
         }
         catch (InvalidOperationException ex)
         {
             SetOfflineState(OfflinePrintState.GatewayUnavailable, "Wireless upload service returned an invalid response.");
             WirelessUploadStatus = $"Wireless session error: {ex.Message}";
             StatusMessage = "Unable to create wireless upload session.";
+            NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, WirelessUploadUrl);
         }
         catch (TaskCanceledException ex)
         {
             SetOfflineState(OfflinePrintState.GatewayUnavailable, "Wireless session timed out. Retry when local network is stable.");
             WirelessUploadStatus = $"Wireless session timed out: {ex.Message}";
             StatusMessage = "Wireless upload session timed out.";
+            NetworkDiagnosticsText = BuildDiagnosticsText(hotspotStatus.LocalIpv4Address, WirelessUploadUrl);
         }
         finally
         {
             _isStartingWirelessSession = false;
             CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private string BuildManualJoinHint()
+    {
+        return $"If auto-connect fails, open Wi-Fi settings, select \"{_hotspotSsid}\", enter password, then tap Connected - Continue.";
+    }
+
+    private string BuildStepOneGuidance(string? baseGuidance)
+    {
+        var normalized = string.IsNullOrWhiteSpace(baseGuidance)
+            ? $"Scan Wi-Fi QR and connect to \"{_hotspotSsid}\"."
+            : baseGuidance.Trim();
+        return $"{normalized} {BuildManualJoinHint()}";
+    }
+
+    private string BuildDiagnosticsText(string? hotspotIp, string? uploadUrl)
+    {
+        var resolvedHotspotIp = string.IsNullOrWhiteSpace(hotspotIp) ? "not detected" : hotspotIp;
+        var resolvedUploadUrl = string.IsNullOrWhiteSpace(uploadUrl) ? "not generated yet" : uploadUrl;
+        return $"Diagnostics - Network SSID: {_hotspotSsid} | Kiosk IP: {resolvedHotspotIp} | Upload URL: {resolvedUploadUrl}";
+    }
+
+    private static async Task<bool> IsWirelessGatewayReachableAsync()
+    {
+        var wirelessBaseUrl = Environment.GetEnvironmentVariable("PRINTBIT_WIRELESS_BASE_URL");
+        if (string.IsNullOrWhiteSpace(wirelessBaseUrl))
+        {
+            wirelessBaseUrl = "http://127.0.0.1:5058";
+        }
+
+        try
+        {
+            using var httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(3)
+            };
+            var gatewayHealthUrl = new Uri(new Uri(wirelessBaseUrl, UriKind.Absolute), "/");
+            using var response = await httpClient.GetAsync(gatewayHealthUrl);
+            return response.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+        catch (TaskCanceledException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
         }
     }
 
@@ -802,7 +986,7 @@ public sealed class MainWindowViewModel : MainViewModel
 
         if (statusMessage.Contains("reconnecting", StringComparison.OrdinalIgnoreCase))
         {
-            SetOfflineState(OfflinePrintState.ReconnectingRealtime, "Realtime channel reconnecting. Keep phone connected to kiosk Wi-Fi.");
+            SetOfflineState(OfflinePrintState.ReconnectingRealtime, "Realtime channel reconnecting. Keep phone connected to kiosk network.");
             return;
         }
 
@@ -965,13 +1149,164 @@ public sealed class MainWindowViewModel : MainViewModel
 
     private static string ResolveHotspotSsid()
     {
-        var configuredSsid = Environment.GetEnvironmentVariable("PRINTBIT_HOTSPOT_SSID");
+        var overrideSsid = Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_SSID_OVERRIDE");
+        if (!string.IsNullOrWhiteSpace(overrideSsid))
+        {
+            return overrideSsid.Trim();
+        }
+
+        var detectedSsid = TryResolveConnectedWifiSsid();
+        if (!string.IsNullOrWhiteSpace(detectedSsid))
+        {
+            return detectedSsid;
+        }
+
+        var configuredSsid = Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_SSID");
+        if (string.IsNullOrWhiteSpace(configuredSsid))
+        {
+            configuredSsid = Environment.GetEnvironmentVariable("PRINTBIT_HOTSPOT_SSID");
+        }
         return string.IsNullOrWhiteSpace(configuredSsid) ? "PrintBit-Kiosk" : configuredSsid.Trim();
     }
 
     private static string ResolveHotspotPassword()
     {
-        var configuredPassword = Environment.GetEnvironmentVariable("PRINTBIT_HOTSPOT_PASSWORD");
+        var overridePassword = Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_PASSWORD_OVERRIDE");
+        if (!string.IsNullOrWhiteSpace(overridePassword))
+        {
+            return overridePassword.Trim();
+        }
+
+        var detectedSsid = TryResolveConnectedWifiSsid();
+        if (!string.IsNullOrWhiteSpace(detectedSsid))
+        {
+            var detectedPassword = TryResolveWifiPassword(detectedSsid);
+            if (!string.IsNullOrWhiteSpace(detectedPassword))
+            {
+                return detectedPassword;
+            }
+        }
+
+        var configuredPassword = Environment.GetEnvironmentVariable("PRINTBIT_NETWORK_PASSWORD");
+        if (string.IsNullOrWhiteSpace(configuredPassword))
+        {
+            configuredPassword = Environment.GetEnvironmentVariable("PRINTBIT_HOTSPOT_PASSWORD");
+        }
         return string.IsNullOrWhiteSpace(configuredPassword) ? "PrintBit1234" : configuredPassword.Trim();
+    }
+
+    private static string? TryResolveConnectedWifiSsid()
+    {
+        var output = RunNetshCommand("wlan show interfaces");
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return null;
+        }
+
+        foreach (var line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("BSSID", StringComparison.OrdinalIgnoreCase)
+                || !trimmed.StartsWith("SSID", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var separatorIndex = trimmed.IndexOf(':');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var ssid = trimmed[(separatorIndex + 1)..].Trim();
+            if (!string.IsNullOrWhiteSpace(ssid))
+            {
+                return ssid;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryResolveWifiPassword(string ssid)
+    {
+        if (string.IsNullOrWhiteSpace(ssid))
+        {
+            return null;
+        }
+
+        var escapedSsid = ssid.Replace("\"", "\\\"", StringComparison.Ordinal);
+        var output = RunNetshCommand($"wlan show profile name=\"{escapedSsid}\" key=clear");
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return null;
+        }
+
+        foreach (var line in output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("Key Content", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var separatorIndex = trimmed.IndexOf(':');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var password = trimmed[(separatorIndex + 1)..].Trim();
+            if (!string.IsNullOrWhiteSpace(password))
+            {
+                return password;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? RunNetshCommand(string arguments)
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "netsh",
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            if (!process.Start())
+            {
+                return null;
+            }
+
+            var output = process.StandardOutput.ReadToEnd();
+            _ = process.StandardError.ReadToEnd();
+
+            process.WaitForExit(4000);
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                return null;
+            }
+
+            return process.ExitCode == 0 ? output : null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        catch (Win32Exception)
+        {
+            return null;
+        }
     }
 }

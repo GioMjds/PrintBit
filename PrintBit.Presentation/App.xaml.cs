@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.IO;
+using System.Windows;
 using PrintBit.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 using PrintBit.Application.DependencyInjection;
@@ -20,6 +21,7 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        LoadDotEnvIfPresent();
 
         var services = new ServiceCollection();
 
@@ -115,6 +117,66 @@ public partial class App : System.Windows.Application
     private static void HandleSerialProtocolError(string invalidLine)
     {
         Console.WriteLine($"[Serial][ProtocolError] Unsupported line: {invalidLine}");
+    }
+
+    private static void LoadDotEnvIfPresent()
+    {
+        var dotEnvPath = ResolveDotEnvPath();
+        if (string.IsNullOrWhiteSpace(dotEnvPath) || !File.Exists(dotEnvPath))
+        {
+            return;
+        }
+
+        foreach (var rawLine in File.ReadLines(dotEnvPath))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+            {
+                continue;
+            }
+
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..separatorIndex].Trim();
+            if (string.IsNullOrWhiteSpace(key) || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(key)))
+            {
+                continue;
+            }
+
+            var value = line[(separatorIndex + 1)..].Trim();
+            if (value.Length >= 2 &&
+                ((value.StartsWith('"') && value.EndsWith('"')) || (value.StartsWith('\'') && value.EndsWith('\''))))
+            {
+                value = value[1..^1];
+            }
+
+            Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+
+    private static string? ResolveDotEnvPath()
+    {
+        var searchRoots = new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory };
+        foreach (var root in searchRoots)
+        {
+            var current = root;
+            while (!string.IsNullOrWhiteSpace(current))
+            {
+                var candidatePath = Path.Combine(current, ".env");
+                if (File.Exists(candidatePath))
+                {
+                    return candidatePath;
+                }
+
+                current = Directory.GetParent(current)?.FullName;
+            }
+        }
+
+        return null;
     }
 }
 

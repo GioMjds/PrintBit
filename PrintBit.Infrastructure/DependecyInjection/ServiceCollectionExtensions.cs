@@ -4,6 +4,8 @@ using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using PrintBit.Application.Interfaces;
 using PrintBit.Infrastructure.Coin;
+using PrintBit.Infrastructure.Network;
+using PrintBit.Infrastructure.Printing;
 using PrintBit.Infrastructure.Wireless;
 
 namespace PrintBit.Infrastructure.DependencyInjection;
@@ -17,9 +19,11 @@ public static class ServiceCollectionExtensions
         var wirelessBaseUrl = Environment.GetEnvironmentVariable("PRINTBIT_WIRELESS_BASE_URL");
         if (string.IsNullOrWhiteSpace(wirelessBaseUrl))
         {
-            wirelessBaseUrl = "http://192.168.1.2:5058";
+            wirelessBaseUrl = "http://127.0.0.1:5058";
         }
 
+        services.AddSingleton<IKioskNetworkService, KioskNetworkService>();
+        services.AddSingleton<IPrintForwardingService, WindowsPrinterService>();
         services.AddSingleton<IWirelessKioskClient>(_ => new WirelessGatewayClient(wirelessBaseUrl));
 
         // If set, skip serial/Arduino detection so UI can run standalone.
