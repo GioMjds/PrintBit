@@ -1,0 +1,29 @@
+{
+  "name": "printbit-web",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node-dev src/server.ts",
+    "build:client": "esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js"
+  },
+  "keywords": [],
+  "author": "GioMjds",
+  "license": "ISC",
+  "packageManager": "pnpm@10.13.1",
+  "dependencies": {
+    "express": "^5.2.1",
+    "lowdb": "^7.0.1",
+    "multer": "^2.0.2",
+    "serialport": "^13.0.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^25.3.0",
+    "esbuild": "^0.27.3",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}

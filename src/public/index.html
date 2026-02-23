@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>PrintBit</title>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header" role="banner">
+        <h1>Landing Screen</h1>
+        <div class="header-actions" role="toolbar" aria-label="Header actions">
+          <button id="openSettingsBtn" class="icon-btn" aria-label="Settings" title="Settings">
+            <!-- SVG cog -->
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M19.14 12.94a7.07 7.07 0 000-1.88l2.03-1.58a.5.5 0 00.12-.63l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.1 7.1 0 00-1.62-.94l-.36-2.54A.5.5 0 0013.5 2h-3.99a.5.5 0 00-.49.42l-.36 2.54c-.58.24-1.12.56-1.62.94L4.03 5.98a.5.5 0 00-.6.22L1.5 9.52a.5.5 0 00.12.63l2.03 1.58a7.07 7.07 0 000 1.88L1.62 15.2a.5.5 0 00-.12.63l1.92 3.32c.13.22.39.31.6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.26.27.42.49.42h3.99c.22 0 .44-.16.49-.42l.36-2.54c.58-.24 1.12-.56 1.62-.94l2.39.96c.21.09.47 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.63l-2.03-1.58zM12 15.5A3.5 3.5 0 1112 8.5a3.5 3.5 0 010 7z"/>
+            </svg>
+          </button>
+          <button id="powerOffBtn" class="icon-btn" aria-label="Power Off" title="Power">
+            <!-- SVG power -->
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M13 3h-2v10h2V3zm5.07 3.25l-1.41 1.41A7.94 7.94 0 0120 12c0 4.42-3.58 8-8 8s-8-3.58-8-8c0-2.12.83-4.04 2.34-5.45L4.93 6.25A9.97 9.97 0 002 12c0 5.52 4.48 10 10 10s10-4.48 10-10c0-2.76-1.02-5.26-2.93-7z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="cards" role="main" aria-label="Main actions">
+        <div class="card" role="group" aria-labelledby="print-label">
+          <div class="icon" aria-hidden="true">
+            <!-- SVG printer -->
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M19 8H5a1 1 0 00-1 1v6h3v3h10v-3h3V9a1 1 0 00-1-1zm-7 9H8v-4h4v4zM17 3H7v4h10V3z"/>
+            </svg>
+          </div>
+          <h2 id="print-label">Print</h2>
+          <button id="openPrintBtn" class="primary-btn">Open Print</button>
+        </div>
+
+        <div class="card" role="group" aria-labelledby="copy-label">
+          <div class="icon" aria-hidden="true">
+            <!-- SVG copy -->
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M16 1H4a2 2 0 00-2 2v12h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+          </div>
+          <h2 id="copy-label">Copy</h2>
+          <button id="openCopyBtn" class="primary-btn">Open Copy</button>
+        </div>
+
+        <div class="card" role="group" aria-labelledby="scan-label">
+          <div class="icon" aria-hidden="true">
+            <!-- SVG scanner -->
+            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M20 8H4V6h16v2zM20 18H4v-2h16v2zM4 10h16v4H4v-4z"/>
+            </svg>
+          </div>
+          <h2 id="scan-label">Scan</h2>
+          <button id="openScanBtn" class="primary-btn">Open Scan</button>
+        </div>
+      </main>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="bundle.js"></script>
+  </body>
+</html>
