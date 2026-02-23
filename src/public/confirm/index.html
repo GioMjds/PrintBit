@@ -1,39 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/globals.css">
-  <link rel="stylesheet" href="/confirm/styles.css">
-  <title>Confirm & Pay</title>
-</head>
-<body>
-  <main class="page-shell">
-    <section class="page-card">
-      <h1>Confirm & Pay</h1>
-      <p class="subtitle">Review details and insert coins to proceed.</p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/globals.css" />
+    <link rel="stylesheet" href="/confirm/styles.css" />
+    <title>Confirm & Pay</title>
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="page-card">
+        <h1>Confirm & Pay</h1>
+        <p class="subtitle">Review details and insert coins to proceed.</p>
 
-      <dl class="summary-grid">
-        <dt>Mode</dt><dd id="modeValue">-</dd>
-        <dt>File</dt><dd id="fileValue">-</dd>
-        <dt>Color</dt><dd id="colorValue">-</dd>
-        <dt>Copies</dt><dd id="copiesValue">-</dd>
-        <dt>Orientation</dt><dd id="orientationValue">-</dd>
-        <dt>Paper Size</dt><dd id="paperSizeValue">-</dd>
-        <dt>Total Price</dt><dd id="priceValue">-</dd>
-        <dt>Coin Balance</dt><dd id="balanceValue">-</dd>
-      </dl>
+        <dl class="summary-grid">
+          <dt>Mode</dt>
+          <dd id="modeValue">-</dd>
+          <dt>File</dt>
+          <dd id="fileValue">-</dd>
+          <dt>Color</dt>
+          <dd id="colorValue">-</dd>
+          <dt>Copies</dt>
+          <dd id="copiesValue">-</dd>
+          <dt>Orientation</dt>
+          <dd id="orientationValue">-</dd>
+          <dt>Paper Size</dt>
+          <dd id="paperSizeValue">-</dd>
+          <dt>Total Price</dt>
+          <dd id="priceValue">-</dd>
+          <dt>Coin Balance</dt>
+          <dd id="balanceValue">-</dd>
+        </dl>
 
-      <p id="statusMessage" class="status-msg">Waiting for coin balance...</p>
+        <p id="statusMessage" class="status-msg">Waiting for coin balance...</p>
+        <p id="coinEventMessage" class="coin-event-msg">No coin event yet.</p>
 
-      <footer class="actions">
-        <a href="/config" class="text-link">Back</a>
-        <button id="confirmBtn" type="button" disabled>Confirm and Print</button>
-      </footer>
-    </section>
-  </main>
+        <footer class="actions">
+          <a href="/config" class="text-link">Back</a>
+          <button id="resetBalanceBtn" type="button" class="secondary-btn">
+            Reset Balance (Test)
+          </button>
+          <button id="confirmBtn" type="button" disabled>
+            Confirm and Print
+          </button>
+        </footer>
+      </section>
+    </main>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="/confirm/app.js"></script>
-</body>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/confirm/app.js"></script>
+  </body>
 </html>

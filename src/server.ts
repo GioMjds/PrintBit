@@ -75,6 +75,10 @@ for (const page of publicPageRoutes) {
   });
 }
 
+app.use("/fonts", express.static(path.resolve("src/fonts"), {
+  maxAge: "365d",
+  immutable: true,
+}));
 app.use(express.static("src/public"));
 app.use(express.static("dist/public"));
 
@@ -82,6 +86,18 @@ app.get("/api/balance", (_req: Request, res: Response) => {
   res.json({
     balance: db.data?.balance ?? 0,
     earnings: db.data?.earnings ?? 0,
+  });
+});
+
+app.post("/api/balance/reset", async (_req: Request, res: Response) => {
+  db.data!.balance = 0;
+  await db.write();
+  io.emit("balance", 0);
+
+  res.json({
+    ok: true,
+    balance: db.data!.balance,
+    earnings: db.data!.earnings,
   });
 });
 

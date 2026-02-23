@@ -3,22 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="globals.css" />
+    <link rel="stylesheet" href="/globals.css" />
     <title>PrintBit</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="container">
       <header class="header" role="banner">
-        <h1>Landing Screen</h1>
-        <div class="header-actions" role="toolbar" aria-label="Header actions">
-          <button id="powerOffBtn" class="icon-btn" aria-label="Power Off" title="Power">
-            <!-- SVG power -->
-            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M13 3h-2v10h2V3zm5.07 3.25l-1.41 1.41A7.94 7.94 0 0120 12c0 4.42-3.58 8-8 8s-8-3.58-8-8c0-2.12.83-4.04 2.34-5.45L4.93 6.25A9.97 9.97 0 002 12c0 5.52 4.48 10 10 10s10-4.48 10-10c0-2.76-1.02-5.26-2.93-7z"/>
-            </svg>
-          </button>
-        </div>
+        <h1>Welcome to PrintBit</h1>
       </header>
 
       <main class="cards" role="main" aria-label="Main actions">
@@ -31,17 +23,6 @@
           </div>
           <h2 id="print-label">Print</h2>
           <button id="openPrintBtn" class="primary-btn">Open Print</button>
-        </div>
-
-        <div class="card" role="group" aria-labelledby="copy-label">
-          <div class="icon" aria-hidden="true">
-            <!-- SVG copy -->
-            <svg class="icon-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M16 1H4a2 2 0 00-2 2v12h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11v14z"/>
-            </svg>
-          </div>
-          <h2 id="copy-label">Copy</h2>
-          <button id="openCopyBtn" class="primary-btn">Open Copy</button>
         </div>
 
         <div class="card" role="group" aria-labelledby="scan-label">

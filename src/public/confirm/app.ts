@@ -22,7 +22,11 @@ const paperSizeValue = document.getElementById("paperSizeValue");
 const priceValue = document.getElementById("priceValue");
 const balanceValue = document.getElementById("balanceValue");
 const statusMessage = document.getElementById("statusMessage");
-const confirmBtn = document.getElementById("confirmBtn") as HTMLButtonElement | null;
+const coinEventMessage = document.getElementById("coinEventMessage");
+const confirmBtn = document.getElementById("confirmBtn") as HTMLButtonElement;
+const resetBalanceBtn = document.getElementById(
+  "resetBalanceBtn",
+) as HTMLButtonElement;
 
 const rawConfig = sessionStorage.getItem("printbit.config");
 const uploadedFile = sessionStorage.getItem("printbit.uploadedFile");
@@ -43,7 +47,11 @@ if (confirmBtn) {
 }
 
 if (modeValue) modeValue.textContent = config.mode.toUpperCase();
-if (fileValue) fileValue.textContent = config.mode === "print" ? (uploadedFile ?? "No uploaded file") : "Physical document copy";
+if (fileValue)
+  fileValue.textContent =
+    config.mode === "print"
+      ? (uploadedFile ?? "No uploaded file")
+      : "Physical document copy";
 if (colorValue) colorValue.textContent = config.colorMode;
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (orientationValue) orientationValue.textContent = config.orientation;
@@ -55,7 +63,8 @@ function updateBalanceUI(balance: number): void {
   if (!statusMessage || !confirmBtn) return;
 
   if (balance >= totalPrice) {
-    statusMessage.textContent = "Sufficient balance detected. You can confirm now.";
+    statusMessage.textContent =
+      "Sufficient balance detected. You can confirm now.";
     confirmBtn.disabled = false;
   } else {
     const needed = totalPrice - balance;
@@ -64,10 +73,40 @@ function updateBalanceUI(balance: number): void {
   }
 }
 
+function setCoinEventMessage(message: string): void {
+  if (coinEventMessage) coinEventMessage.textContent = message;
+}
+
 async function fetchInitialBalance(): Promise<void> {
   const response = await fetch("/api/balance");
   const data = (await response.json()) as { balance: number };
   updateBalanceUI(data.balance ?? 0);
+}
+
+async function resetBalanceForTesting(): Promise<void> {
+  if (!resetBalanceBtn) return;
+  resetBalanceBtn.disabled = true;
+  if (statusMessage) statusMessage.textContent = "Resetting coin balance...";
+
+  const response = await fetch("/api/balance/reset", { method: "POST" });
+  const payload = (await response.json()) as {
+    balance?: number;
+    error?: string;
+  };
+
+  if (!response.ok) {
+    if (statusMessage)
+      statusMessage.textContent = payload.error ?? "Failed to reset balance.";
+    resetBalanceBtn.disabled = false;
+    return;
+  }
+
+  updateBalanceUI(payload.balance ?? 0);
+  if (statusMessage)
+    statusMessage.textContent =
+      "Coin balance reset to PHP 0.00 (testing mode).";
+  setCoinEventMessage("Balance reset manually for testing.");
+  resetBalanceBtn.disabled = false;
 }
 
 confirmBtn?.addEventListener("click", async () => {
@@ -86,7 +125,9 @@ confirmBtn?.addEventListener("click", async () => {
 
   if (!response.ok) {
     const payload = (await response.json()) as { error?: string };
-    if (statusMessage) statusMessage.textContent = payload.error ?? "Payment confirmation failed.";
+    if (statusMessage)
+      statusMessage.textContent =
+        payload.error ?? "Payment confirmation failed.";
     return;
   }
 
@@ -101,6 +142,10 @@ confirmBtn?.addEventListener("click", async () => {
   sessionStorage.removeItem("printbit.sessionId");
 });
 
+resetBalanceBtn?.addEventListener("click", () => {
+  void resetBalanceForTesting();
+});
+
 const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }
 ).io;
@@ -110,6 +155,31 @@ if (typeof ioFactory === "function") {
   socket.on("balance", (amount: unknown) => {
     if (typeof amount === "number") {
       updateBalanceUI(amount);
+    }
+  });
+
+  socket.on("coinAccepted", (payload: unknown) => {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "value" in payload &&
+      typeof (payload as { value: unknown }).value === "number"
+    ) {
+      const value = (payload as { value: number }).value;
+      setCoinEventMessage(`Last accepted coin: PHP ${value.toFixed(2)}`);
+    }
+  });
+
+  socket.on("coinParserWarning", (payload: unknown) => {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof (payload as { message: unknown }).message === "string"
+    ) {
+      setCoinEventMessage(
+        `Serial note: ${(payload as { message: string }).message}`,
+      );
     }
   });
 }

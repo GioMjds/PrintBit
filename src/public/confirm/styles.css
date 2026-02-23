@@ -48,10 +48,17 @@ h1 {
   color: #313b8f;
 }
 
+.coin-event-msg {
+  margin: 10px 0 0;
+  color: #4f5477;
+  font-size: 0.95rem;
+}
+
 .actions {
   margin-top: 20px;
   display: flex;
   justify-content: space-between;
+  gap: 10px;
   align-items: center;
 }
 
@@ -69,6 +76,11 @@ button {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+}
+
+.secondary-btn {
+  background: #e6e9ff;
+  color: #2f3877;
 }
 
 button:disabled {
