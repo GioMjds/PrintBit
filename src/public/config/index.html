@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../globals.css">
+  <link rel="stylesheet" href="../config/styles.css">
+  <title>Print Configuration</title>
+</head>
+<body>
+  <main class="page-shell">
+    <section class="page-card">
+      <header>
+        <h1>Print Configuration</h1>
+        <p id="modeInfo" class="mode-info">Preparing job details...</p>
+      </header>
+
+      <form id="configForm" class="config-form">
+        <label>
+          Color Mode
+          <select id="colorMode">
+            <option value="colored">Colored</option>
+            <option value="grayscale">Grayscale</option>
+          </select>
+        </label>
+
+        <label>
+          Copies
+          <input id="copies" type="number" min="1" max="100" value="1" />
+        </label>
+
+        <label>
+          Orientation
+          <select id="orientation">
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+        </label>
+
+        <label>
+          Paper Size
+          <select id="paperSize">
+            <option value="A4">A4</option>
+            <option value="Letter">Letter</option>
+            <option value="Legal">Legal</option>
+          </select>
+        </label>
+      </form>
+
+      <section id="previewSection" class="preview-section">
+        <h2>Document Preview</h2>
+        <p id="previewHint" class="preview-hint">Preparing preview...</p>
+        <iframe id="previewFrame" title="Document preview" class="preview-frame"></iframe>
+      </section>
+
+      <footer class="actions">
+        <a id="backLink" href="/" class="text-link">Back</a>
+        <button id="continueBtn" type="button">Continue to Confirm</button>
+      </footer>
+    </section>
+  </main>
+  <script src="../config/app.js"></script>
+</body>
+</html>

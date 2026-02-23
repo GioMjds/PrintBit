@@ -1,0 +1,320 @@
+/* ── Variables ─────────────────────────────────────────── */
+:root {
+  --indigo: #696fc7;
+  --indigo-dark: #5558ad;
+  --indigo-light: #eeeffe;
+  --lavender: #a7aae1;
+  --peach: #f5d3c4;
+  --pink: #f2aebb;
+  --white: #ffffff;
+  --ink: #2c2b4b;
+  --ink-muted: #7a788f;
+  --ink-faint: #b0aec8;
+  --border: #e4e3ef;
+  --drop-bg: #fdf5f2;
+  --drop-border: #e2bdb4;
+  --radius-card: 20px;
+  --radius-zone: 14px;
+  --shadow-card: 0 8px 40px rgba(44, 43, 75, 0.10), 0 2px 8px rgba(44, 43, 75, 0.06);
+}
+
+/* ── Base ──────────────────────────────────────────────── */
+body {
+  margin: 0;
+  font-family: "DM Sans", "Segoe UI", Tahoma, sans-serif;
+  color: var(--ink);
+  background: #f0eff8;
+  min-height: 100vh;
+}
+
+/* ── Mesh background ───────────────────────────────────── */
+.bg-mesh {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 15% 20%, rgba(167,170,225,0.38) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 55% at 85% 75%, rgba(245,211,196,0.35) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 50% 50%, rgba(242,174,187,0.18) 0%, transparent 70%),
+    #eeecf7;
+}
+
+/* ── Shell ─────────────────────────────────────────────── */
+.upload-shell {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 16px;
+}
+
+/* ── Card ──────────────────────────────────────────────── */
+.upload-card {
+  width: min(100%, 480px);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: var(--radius-card);
+  padding: 36px 32px 28px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid rgba(255,255,255,0.7);
+  animation: cardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Icon ──────────────────────────────────────────────── */
+.card-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--indigo) 0%, #8487d4 100%);
+  color: var(--white);
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 14px rgba(105,111,199,0.35);
+}
+
+/* ── Headings ──────────────────────────────────────────── */
+.card-title {
+  font-family: "DM Serif Display", Georgia, serif;
+  font-size: 1.65rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.card-subtitle {
+  font-size: 0.88rem;
+  color: var(--ink-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Divider ───────────────────────────────────────────── */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 22px 0 20px;
+}
+
+/* ── Form ──────────────────────────────────────────────── */
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.file-section-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--indigo);
+  margin-bottom: 10px;
+}
+
+/* ── Drop zone ─────────────────────────────────────────── */
+.drop-zone {
+  position: relative;
+  border: 1.5px dashed var(--drop-border);
+  border-radius: var(--radius-zone);
+  background: var(--drop-bg);
+  padding: 32px 20px 28px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+  outline: none;
+}
+
+.drop-zone:hover,
+.drop-zone:focus-visible {
+  border-color: var(--lavender);
+  background: #fdf0ee;
+}
+
+.drop-zone.drag-over {
+  border-color: var(--indigo);
+  background: var(--indigo-light);
+  transform: scale(1.01);
+}
+
+.hidden-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* ── Drop icon ─────────────────────────────────────────── */
+.drop-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--peach) 0%, var(--pink) 100%);
+  color: var(--white);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 12px;
+}
+
+.drop-text {
+  font-size: 0.92rem;
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+
+.browse-link {
+  color: var(--indigo);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+.browse-link:hover {
+  color: var(--indigo-dark);
+}
+
+.drop-hint {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  margin: 0;
+}
+
+/* ── Selected file name ────────────────────────────────── */
+.selected-file {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  margin: 10px 0 18px;
+  min-height: 1.2em;
+  word-break: break-word;
+}
+
+/* ── Upload button ─────────────────────────────────────── */
+#uploadButton {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--indigo) 0%, #8487d4 100%);
+  color: var(--white);
+  font-family: "DM Sans", sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(105,111,199,0.30);
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+#uploadButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(105,111,199,0.38);
+}
+
+#uploadButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+#uploadButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Status bar ────────────────────────────────────────── */
+.status-bar {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.6);
+  min-height: 44px;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+
+.status-bar:empty {
+  display: none;
+}
+
+.status-bar.ok {
+  background: #ebfff2;
+  border-color: #a3e9c0;
+  color: #0f6e38;
+}
+
+.status-bar.error {
+  background: #fff2f2;
+  border-color: #f1b6b6;
+  color: #8f1f1f;
+}
+
+.status-bar.info {
+  background: rgba(255,255,255,0.6);
+  border-color: var(--border);
+  color: var(--ink-muted);
+}
+
+/* ── Bottom meta ───────────────────────────────────────── */
+.bottom-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 14px;
+}
+
+.meta-line {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin: 0;
+}
+
+.session-id {
+  font-variant-numeric: tabular-nums;
+}
+
+.retry-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-family: "DM Sans", sans-serif;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.retry-btn:hover {
+  border-color: var(--lavender);
+  color: var(--indigo);
+}
+
+/* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .upload-card {
+    padding: 28px 20px 22px;
+  }
+
+  .card-title {
+    font-size: 1.4rem;
+  }
+}

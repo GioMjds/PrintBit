@@ -3,9 +3,49 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Print</title>
+  <link rel="stylesheet" href="/globals.css">
+  <title>Print - PrintBit</title>
+  <link rel="stylesheet" href="/print/styles.css">
 </head>
 <body>
-  <h1>Print</h1>
+  <main class="page-shell">
+    <section class="page-card" aria-labelledby="printTitle">
+      <header class="page-header">
+        <h1 id="printTitle">Print</h1>
+        <p>Upload your file first, then continue to print settings.</p>
+      </header>
+
+      <section class="section-block">
+        <h2>QR Fallback Upload</h2>
+        <p class="helper">
+          Open this upload page on the user device. Upload status here updates automatically.
+        </p>
+        <div class="qr-wrap">
+          <canvas id="uploadQrCanvas" width="220" height="220" aria-label="Upload QR code"></canvas>
+        </div>
+        <div class="upload-link-box">
+          <a id="uploadLink" href="/upload" target="_blank" rel="noopener">/upload</a>
+        </div>
+        <div class="button-row">
+          <button id="openUploadBtn" type="button">Open Upload Page</button>
+          <button id="refreshSessionBtn" type="button" class="secondary">Refresh Session</button>
+        </div>
+      </section>
+
+      <section class="section-block">
+        <h2>Upload Status</h2>
+        <p id="sessionText" class="status-line">Session: preparing...</p>
+        <p id="fileStatus" class="status-line">Waiting for uploaded file.</p>
+      </section>
+
+      <footer class="footer-actions">
+        <a href="/" class="text-link">Back</a>
+        <button id="continueBtn" type="button" disabled>Continue to Config</button>
+      </footer>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/print/app.js"></script>
 </body>
 </html>

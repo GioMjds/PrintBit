@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/globals.css" />
+    <title>PrintBit Upload</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-mesh"></div>
+
+    <main class="upload-shell">
+      <section class="upload-card" aria-labelledby="uploadTitle">
+        <div class="card-icon">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path
+              d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+            ></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </div>
+
+        <h1 id="uploadTitle" class="card-title">Upload Your Documents</h1>
+        <p class="card-subtitle">
+          Accepted formats: PDF, DOC, DOCX — up to 25 MB
+        </p>
+
+        <hr class="divider" />
+
+        <form id="uploadForm" class="upload-form" novalidate>
+          <label class="file-section-label" for="fileInput">Choose File</label>
+
+          <div
+            id="dropZone"
+            class="drop-zone"
+            role="button"
+            tabindex="0"
+            aria-label="Upload area — click or drag file here"
+          >
+            <div class="drop-icon-wrap">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <p class="drop-text">
+              <label for="fileInput" class="browse-link">Browse file</label>
+              <span> or drag &amp; drop here</span>
+            </p>
+            <p class="drop-hint">PDF, DOC or DOCX</p>
+            <input
+              id="fileInput"
+              name="file"
+              type="file"
+              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              required
+              class="hidden-input"
+            />
+          </div>
+
+          <p id="selectedFileName" class="selected-file">No file selected</p>
+
+          <button id="uploadButton" type="submit" disabled>
+            Upload to Kiosk
+          </button>
+        </form>
+
+        <div
+          id="statusBox"
+          class="status-bar"
+          role="status"
+          aria-live="polite"
+        ></div>
+
+        <div class="bottom-meta">
+          <p id="wirelessStatus" class="meta-line" aria-live="polite"></p>
+          <p id="sessionMeta" class="meta-line session-id">
+            Session: checking…
+          </p>
+          <button id="retrySessionButton" type="button" class="retry-btn">
+            ↺ Retry session
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      window.uploadToken = "{{token}}";
+    </script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

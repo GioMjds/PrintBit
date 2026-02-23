@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev src/server.ts",
-    "build:client": "esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js"
+    "build:client": "esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js && esbuild src/public/print/app.ts --bundle --outfile=src/public/print/app.js && esbuild src/public/copy/app.ts --bundle --outfile=src/public/copy/app.js && esbuild src/public/config/app.ts --bundle --outfile=src/public/config/app.js && esbuild src/public/confirm/app.ts --bundle --outfile=src/public/confirm/app.js && esbuild src/public/upload/app.ts --bundle --outfile=src/public/upload/app.js && esbuild src/public/scan/app.ts --bundle --outfile=src/public/scan/app.js",
+    "kiosk": "node ./scripts/launch-kiosk.js"
   },
   "keywords": [],
   "author": "GioMjds",
@@ -15,6 +16,7 @@
     "express": "^5.2.1",
     "lowdb": "^7.0.1",
     "multer": "^2.0.2",
+    "qrcode": "^1.5.4",
     "serialport": "^13.0.0",
     "socket.io": "^4.8.3"
   },
@@ -22,6 +24,7 @@
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.3.0",
+    "@types/qrcode": "^1.5.6",
     "esbuild": "^0.27.3",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"

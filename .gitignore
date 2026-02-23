@@ -3,3 +3,5 @@ node_modules
 dist
 *bundle.js
 db.json
+*app.js
+*uploads

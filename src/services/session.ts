@@ -56,7 +56,7 @@ export class SessionStore {
   createSession(baseUrl: URL): Session {
     const sessionId = randomUUID();
     const token = randomUUID();
-    const uploadUrl = new URL(`/upload/${sessionId}`, baseUrl).toString();
+    const uploadUrl = new URL(`/upload/${token}`, baseUrl).toString();
 
     const session: Session = {
       sessionId,
@@ -87,7 +87,6 @@ export class SessionStore {
     sessionId: string,
     token: string,
     file: Express.Multer.File,
-    publicBaseUrl: URL,
   ): Promise<StoreUploadResult> {
     const session = this.sessions.get(sessionId);
 

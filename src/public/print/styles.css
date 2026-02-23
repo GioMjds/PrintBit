@@ -1,0 +1,114 @@
+.page-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #f4f6ff;
+}
+
+.page-card {
+  width: min(100%, 760px);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(44, 43, 75, 0.12);
+  padding: 24px;
+}
+
+.page-header h1 {
+  margin: 0 0 8px;
+}
+
+.page-header p {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.section-block {
+  margin-top: 18px;
+  border: 1px solid #e8e8f2;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.section-block h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.helper {
+  color: var(--ink-muted);
+  margin: 0 0 12px;
+}
+
+.qr-wrap {
+  width: 236px;
+  height: 236px;
+  margin: 0 0 12px;
+  border-radius: 12px;
+  border: 1px solid #d7dcff;
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+
+#uploadQrCanvas {
+  width: 220px;
+  height: 220px;
+}
+
+.upload-link-box {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f0f2ff;
+  border: 1px solid #d7dcff;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+
+.upload-link-box a {
+  color: #3941b4;
+  font-weight: 600;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #656dd2;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #eceef8;
+  color: #2d3350;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-line {
+  margin: 6px 0 0;
+}
+
+.footer-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.text-link {
+  color: #4d57c7;
+  text-decoration: none;
+  font-weight: 600;
+}

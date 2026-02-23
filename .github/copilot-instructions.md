@@ -18,6 +18,7 @@
 - **Frontend:** static HTML pages in `src/public/**`; `src/public/app.ts` handles kiosk navigation and Socket.IO balance rendering, then is bundled to `src/public/bundle.js`.
 
 ## Key repository conventions
+- Global styling is on `src/globals.css` and component-specific styles are co-located as `*.css` files next to their respective `*.ts` modules in `src/public/`.
 - Keep backend runtime code in `src/` and browser logic in `src/public/`; do not import browser-only code into server modules.
 - If `src/public/app.ts` changes, regenerate `src/public/bundle.js` with `pnpm build:client` (bundle is checked into the repo and loaded directly by HTML).
 - UI event wiring depends on specific element IDs (`openPrintBtn`, `openCopyBtn`, `openScanBtn`, `openSettingsBtn`, `powerOffBtn`, `balance`) referenced in `app.ts`.

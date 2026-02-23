@@ -7,7 +7,7 @@
 }
 
 .page-card {
-  width: min(100%, 640px);
+  width: min(100%, 720px);
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 12px 30px rgba(44, 43, 75, 0.12);
@@ -18,22 +18,38 @@ h1 {
   margin: 0;
 }
 
-.lead {
-  margin: 10px 0 0;
+.subtitle {
+  margin: 8px 0 0;
   color: var(--ink-muted);
 }
 
-.steps {
-  margin: 16px 0 0 20px;
-  color: #33365c;
+.summary-grid {
+  margin: 18px 0 0;
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 8px 12px;
 }
 
-.steps li + li {
-  margin-top: 8px;
+.summary-grid dt {
+  color: #4f5477;
+  font-weight: 600;
+}
+
+.summary-grid dd {
+  margin: 0;
+  color: #1f2444;
+}
+
+.status-msg {
+  margin: 18px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eff2ff;
+  color: #313b8f;
 }
 
 .actions {
-  margin-top: 24px;
+  margin-top: 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -53,4 +69,9 @@ button {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

@@ -1,0 +1,15 @@
+:root {
+  --indigo: #696fc7;
+  --lavender: #a7aae1;
+  --peach: #f5d3c4;
+  --pink: #f2aebb;
+  --white: #ffffff;
+  --ink: #2c2b4b;
+  --ink-muted: #7a788f;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
