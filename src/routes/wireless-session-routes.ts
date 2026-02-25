@@ -1,0 +1,155 @@
+import path from "node:path";
+import type { Express, Request, RequestHandler, Response } from "express";
+import type { Server } from "socket.io";
+import type { SessionStore } from "../services/session";
+
+interface RegisterWirelessSessionRoutesDeps {
+  io: Server;
+  sessionStore: SessionStore;
+  wirelessUploadSingle: RequestHandler;
+  resolvePublicBaseUrl: (req: Request) => URL;
+  convertToPdfPreview: (sourcePath: string) => Promise<string>;
+}
+
+const IMAGE_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+};
+
+const OFFICE_EXTENSIONS = new Set([
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+]);
+
+export function registerWirelessSessionRoutes(
+  app: Express,
+  deps: RegisterWirelessSessionRoutesDeps,
+) {
+  app.get("/api/wireless/sessions", (req: Request, res: Response) => {
+    const publicBaseUrl = deps.resolvePublicBaseUrl(req);
+    const session = deps.sessionStore.createSession(publicBaseUrl);
+    res.status(201).json(session);
+  });
+
+  // Specific sub-routes must be registered before "/:sessionId".
+  app.get(
+    "/api/wireless/sessions/by-token/:token",
+    (req: Request, res: Response) => {
+      const publicBaseUrl = deps.resolvePublicBaseUrl(req);
+      const session = deps.sessionStore.tryGetSessionByToken(
+        req.params.token as string,
+        publicBaseUrl,
+      );
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found." });
+      }
+
+      res.json(session);
+    },
+  );
+
+  app.get(
+    "/api/wireless/sessions/:sessionId/preview",
+    async (req: Request, res: Response) => {
+      const publicBaseUrl = deps.resolvePublicBaseUrl(req);
+      const session = deps.sessionStore.tryGetSession(
+        req.params.sessionId as string,
+        publicBaseUrl,
+      );
+
+      if (!session?.document) {
+        return res.status(404).send("No uploaded file available for preview.");
+      }
+
+      const absolutePath = path.resolve(session.document.filePath);
+      const extension = path.extname(absolutePath).toLowerCase();
+
+      try {
+        if (extension === ".pdf") {
+          res.setHeader("Content-Type", "application/pdf");
+          return res.sendFile(absolutePath);
+        }
+
+        if (IMAGE_TYPES[extension]) {
+          res.setHeader("Content-Type", IMAGE_TYPES[extension]);
+          return res.sendFile(absolutePath);
+        }
+
+        if (OFFICE_EXTENSIONS.has(extension)) {
+          const pdfPreviewPath = await deps.convertToPdfPreview(absolutePath);
+          res.setHeader("Content-Type", "application/pdf");
+          return res.sendFile(pdfPreviewPath);
+        }
+
+        return res.status(400).json({
+          error: `Preview not supported for ${extension}.`,
+          code: "UNSUPPORTED_PREVIEW",
+        });
+      } catch (error) {
+        console.error("Preview error:", error);
+        return res.status(500).json({
+          error: "Preview conversion failed. Ensure LibreOffice is installed.",
+          code: "PREVIEW_CONVERSION_FAILED",
+        });
+      }
+    },
+  );
+
+  app.get("/api/wireless/sessions/:sessionId", (req: Request, res: Response) => {
+    const publicBaseUrl = deps.resolvePublicBaseUrl(req);
+    const session = deps.sessionStore.tryGetSession(
+      req.params.sessionId as string,
+      publicBaseUrl,
+    );
+
+    if (!session) {
+      return res.status(404).json({ error: "Session not found." });
+    }
+
+    res.json(session);
+  });
+
+  app.post(
+    "/api/wireless/sessions/:sessionId/upload",
+    deps.wirelessUploadSingle,
+    async (req: Request, res: Response) => {
+      const { sessionId } = req.params as { sessionId: string };
+      const token = (req.query.token as string) ?? "";
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({ code: "no_file", error: "No file provided." });
+      }
+
+      deps.io.to(`session:${sessionId}`).emit("UploadStarted", file.originalname);
+
+      const result = await deps.sessionStore.storeUpload(sessionId, token, file);
+
+      if (!result.isSuccess || !result.document) {
+        deps.io.to(`session:${sessionId}`).emit("UploadFailed");
+        return res.status(400).json({
+          code: result.errorCode ?? "UPLOAD_FAILED",
+          error: result.errorMsg ?? "Upload failed.",
+        });
+      }
+
+      const doc = result.document;
+      deps.io.to(`session:${sessionId}`).emit("UploadCompleted", doc);
+
+      res.status(200).json({
+        documentId: doc.documentId,
+        sessionId: doc.sessionId,
+        fileName: doc.filename,
+        contentType: doc.contentType,
+        sizeBytes: doc.sizeBytes,
+        uploadedAt: doc.uploadedAt,
+      });
+    },
+  );
+}

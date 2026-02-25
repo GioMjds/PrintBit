@@ -17,6 +17,7 @@
     "express": "^5.2.1",
     "lowdb": "^7.0.1",
     "multer": "^2.0.2",
+    "pdfjs-dist": "^5.4.624",
     "qrcode": "^1.5.4",
     "serialport": "^13.0.0",
     "socket.io": "^4.8.3"
