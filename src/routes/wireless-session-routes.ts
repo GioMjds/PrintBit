@@ -2,6 +2,7 @@ import path from "node:path";
 import type { Express, Request, RequestHandler, Response } from "express";
 import type { Server } from "socket.io";
 import type { SessionStore } from "../services/session";
+import { generateHtmlPreview, supportsHtmlPreview } from "../services/preview";
 
 interface RegisterWirelessSessionRoutesDeps {
   io: Server;
@@ -17,14 +18,8 @@ const IMAGE_TYPES: Record<string, string> = {
   ".png": "image/png",
 };
 
-const OFFICE_EXTENSIONS = new Set([
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-]);
+// Only PPT/PPTX still go through LibreOffice; doc/docx use Word COM → PDF
+const PDF_CONVERT_EXTENSIONS = new Set([".doc", ".docx", ".ppt", ".pptx"]);
 
 export function registerWirelessSessionRoutes(
   app: Express,
@@ -81,7 +76,13 @@ export function registerWirelessSessionRoutes(
           return res.sendFile(absolutePath);
         }
 
-        if (OFFICE_EXTENSIONS.has(extension)) {
+        if (supportsHtmlPreview(extension)) {
+          const html = await generateHtmlPreview(absolutePath);
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          return res.send(html);
+        }
+
+        if (PDF_CONVERT_EXTENSIONS.has(extension)) {
           const pdfPreviewPath = await deps.convertToPdfPreview(absolutePath);
           res.setHeader("Content-Type", "application/pdf");
           return res.sendFile(pdfPreviewPath);

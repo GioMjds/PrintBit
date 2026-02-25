@@ -164,10 +164,10 @@ html, body {
 /* ── Action grid ──────────────────────────────────────────── */
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: clamp(20px, 2.5vw, 40px);
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(16px, 2vw, 36px);
   width: 100%;
-  max-width: 860px;
+  max-width: 1100px;
 }
 
 /* ── Action card (button) ─────────────────────────────────── */
@@ -225,6 +225,19 @@ html, body {
 .action-card--scan:focus-visible {
   box-shadow: 0 20px 56px rgba(242,174,187,.3), inset 0 1px 0 rgba(255,255,255,.1);
   border-color: rgba(242,174,187,.55);
+}
+
+/* Copy card – teal tint */
+.action-card--copy {
+  background: linear-gradient(145deg, rgba(62,207,178,.18) 0%, rgba(62,207,178,.06) 100%);
+  border-color: rgba(62,207,178,.25);
+  color: #3ecfb2;
+}
+
+.action-card--copy:hover,
+.action-card--copy:focus-visible {
+  box-shadow: 0 20px 56px rgba(62,207,178,.28), inset 0 1px 0 rgba(255,255,255,.1);
+  border-color: rgba(62,207,178,.55);
 }
 
 /* Inner glow that appears on hover */

@@ -22,8 +22,8 @@ interface PreviewConfig {
   paperSize: PaperSize;
 }
 
-// PDF.js types (loaded from CDN as global)
-declare const pdfjsLib: {
+// PDF.js types (loaded dynamically from /libs/pdfjs)
+type PdfjsLib = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (src: string | ArrayBuffer | { data: ArrayBuffer }) => {
     promise: Promise<PDFDocumentProxy>;
@@ -66,9 +66,11 @@ function paperPx(size: PaperSize, orientation: Orientation): [number, number] {
 }
 
 class PrintPreview {
+  private viewport: HTMLElement;
   private sheet: HTMLElement;
   private canvas: HTMLCanvasElement;
   private img: HTMLImageElement;
+  private iframe: HTMLIFrameElement;
   private placeholder: HTMLElement;
   private loading: HTMLElement;
   private controls: HTMLElement;
@@ -77,6 +79,9 @@ class PrintPreview {
   private pagePrev: HTMLButtonElement;
   private pageNext: HTMLButtonElement;
 
+  private naturalW = 794; // natural paper width in px (A4 portrait @ 96dpi)
+  private naturalH = 1123; // natural paper height in px
+
   private pdfDoc: PDFDocumentProxy | null = null;
   private currentPage = 1;
   private totalPages = 1;
@@ -84,11 +89,15 @@ class PrintPreview {
   private resizeObserver: ResizeObserver;
 
   constructor() {
+    this.viewport = document.getElementById("paperViewport")! as HTMLElement;
     this.sheet = document.getElementById("paperSheet")! as HTMLElement;
     this.canvas = document.getElementById(
       "previewCanvas",
     )! as HTMLCanvasElement;
     this.img = document.getElementById("previewImg")! as HTMLImageElement;
+    this.iframe = document.getElementById(
+      "previewFrame",
+    )! as HTMLIFrameElement;
     this.placeholder = document.getElementById(
       "paperPlaceholder",
     )! as HTMLElement;
@@ -106,20 +115,33 @@ class PrintPreview {
       this.goToPage(this.currentPage + 1),
     );
 
-    // Re-render PDF when paper sheet is resized (orientation / paper size change)
+    // Observe viewport resize → refit sheet, re-render PDF / recalc HTML pages
     this.resizeObserver = new ResizeObserver(() => {
+      this.resizeSheet();
       if (this.pdfDoc) void this.renderPage(this.currentPage);
+      else if (this.iframe.style.display !== "none") this.recalcHtmlPages();
     });
-    this.resizeObserver.observe(this.sheet);
+    this.resizeObserver.observe(this.viewport);
+  }
+
+  /** Scale the paper sheet to fill the viewport while keeping aspect ratio. */
+  private resizeSheet(): void {
+    const pad = 48; // 24 px padding each side
+    const vpW = this.viewport.clientWidth - pad;
+    const vpH = this.viewport.clientHeight - pad;
+    if (vpW <= 0 || vpH <= 0) return;
+    const scale = Math.min(vpW / this.naturalW, vpH / this.naturalH);
+    this.sheet.style.width = `${Math.floor(this.naturalW * scale)}px`;
+    this.sheet.style.height = `${Math.floor(this.naturalH * scale)}px`;
   }
 
   applyConfig(cfg: PreviewConfig): void {
     const [w, h] = paperPx(cfg.paperSize, cfg.orientation);
 
-    // Aspect ratio as w/h fraction so CSS can maintain proportions
-    this.sheet.style.setProperty("--paper-w", `${w}px`);
-    this.sheet.style.setProperty("--paper-h", `${h}px`);
-    this.sheet.style.setProperty("--paper-ratio", `${w / h}`);
+    // Store natural paper dimensions for resizeSheet()
+    this.naturalW = w;
+    this.naturalH = h;
+    this.resizeSheet();
 
     // Grayscale filter via data attribute → CSS handles the transition
     if (cfg.colorMode === "grayscale") {
@@ -130,6 +152,7 @@ class PrintPreview {
   }
 
   async load(sessionId: string): Promise<void> {
+    this.iframe.onload = null; // clear any stale iframe load handler
     this.showLoading(true);
     this.showCanvas(false);
     this.showImg(false);
@@ -171,6 +194,9 @@ class PrintPreview {
     } else if (contentType.includes("application/pdf")) {
       const buf = await response.arrayBuffer();
       await this.loadPdf(buf);
+    } else if (contentType.includes("text/html")) {
+      const html = await response.text();
+      this.loadHtml(html);
     } else {
       this.showError("Unsupported preview format.");
     }
@@ -183,16 +209,18 @@ class PrintPreview {
       this.pdfDoc = null;
     }
 
-    // Worker served locally — no CDN dependency, works offline
-    if (typeof pdfjsLib !== "undefined") {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "/libs/pdfjs/pdf.worker.min.js";
-    } else {
+    let pdfjs: PdfjsLib;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pdfjs = (await import("/libs/pdfjs/pdf.min.mjs")) as any;
+      pdfjs.GlobalWorkerOptions.workerSrc = "/libs/pdfjs/pdf.worker.min.mjs";
+    } catch {
       this.showError("PDF renderer not loaded.");
       return;
     }
 
     try {
-      this.pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+      this.pdfDoc = await pdfjs.getDocument({ data: buf }).promise;
       this.totalPages = this.pdfDoc.numPages;
       this.currentPage = 1;
       this.updatePager();
@@ -269,12 +297,16 @@ class PrintPreview {
   }
 
   private async goToPage(n: number): Promise<void> {
-    if (!this.pdfDoc) return;
     n = Math.max(1, Math.min(this.totalPages, n));
     if (n === this.currentPage) return;
     this.currentPage = n;
     this.updatePager();
-    await this.renderPage(n);
+    if (this.pdfDoc) {
+      await this.renderPage(n);
+    } else if (this.iframe.style.display !== "none") {
+      const viewH = this.iframe.clientHeight || 1;
+      this.iframe.contentWindow?.scrollTo(0, (n - 1) * viewH);
+    }
   }
 
   private updatePager(): void {
@@ -285,24 +317,58 @@ class PrintPreview {
     this.pageNext.disabled = this.currentPage >= this.totalPages;
   }
 
+  private loadHtml(html: string): void {
+    // Show frame first so its dimensions are available when onload fires
+    this.showCanvas(false);
+    this.showImg(false);
+    this.showFrame(true);
+    this.showLoading(true);
+    this.iframe.onload = () => {
+      this.recalcHtmlPages();
+      this.showLoading(false);
+      this.setHint("Document preview");
+    };
+    this.iframe.srcdoc = html;
+  }
+
+  private recalcHtmlPages(): void {
+    const docEl = this.iframe.contentDocument?.documentElement;
+    if (!docEl) return;
+    const viewH = this.iframe.clientHeight || 1;
+    this.totalPages = Math.max(1, Math.ceil(docEl.scrollHeight / viewH));
+    this.currentPage = 1;
+    this.iframe.contentWindow?.scrollTo(0, 0);
+    this.updatePager();
+  }
+
+  private showFrame(on: boolean): void {
+    this.iframe.style.display = on ? "block" : "none";
+    this.placeholder.classList.toggle("hidden", on);
+  }
+
   private showLoading(on: boolean): void {
     this.loading.classList.toggle("hidden", !on);
   }
 
   private showCanvas(on: boolean): void {
     this.canvas.style.display = on ? "block" : "none";
+    if (on) this.iframe.style.display = "none";
     this.placeholder.classList.toggle("hidden", on);
   }
 
   private showImg(on: boolean): void {
     this.img.style.display = on ? "block" : "none";
-    if (on) this.placeholder.classList.add("hidden");
+    if (on) {
+      this.iframe.style.display = "none";
+      this.placeholder.classList.add("hidden");
+    }
   }
 
   private showError(msg: string): void {
     this.showLoading(false);
     this.showCanvas(false);
     this.showImg(false);
+    this.iframe.style.display = "none";
     const text = document.getElementById("placeholderText");
     if (text) text.textContent = msg;
     this.placeholder.classList.remove("hidden");

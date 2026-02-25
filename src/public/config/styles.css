@@ -175,7 +175,7 @@ body {
 .config-layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 3fr minmax(220px, 1fr);
   gap: 20px;
   padding: 16px 0 8px;
   min-height: 0;
@@ -222,37 +222,27 @@ body {
 }
 
 /* ── Paper viewport ───────────────────────────────────────── */
-/* Scrollable dark "tray" that holds the paper sheet */
+/* Non-scrollable dark "tray" — paper is always fully visible */
 .paper-viewport {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   padding: 24px 20px;
   background: rgba(0, 0, 0, 0.25);
   min-height: 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(167, 170, 225, 0.15) transparent;
 }
 
 /* ── Paper sheet ──────────────────────────────────────────── */
 /*
-  Width and height are set by JS via CSS custom properties:
-    --paper-w  e.g. "595px"   (portrait width in px)
-    --paper-h  e.g. "842px"   (portrait height in px)
-
-  The paper is capped at the viewport so it's always fully visible,
-  then scales proportionally via object-fit on the canvas inside.
-
+  Width and height are set by JS (resizeSheet) to fill the viewport
+  while maintaining the paper aspect ratio.
   Grayscale: JS toggles [data-gray] attribute.
-  Transition on filter gives a smooth colour→grey animation.
 */
 .paper-sheet {
   position: relative;
-  width: min(var(--paper-w, 595px), 100%);
-  /* Maintain paper aspect ratio even when width is constrained */
-  aspect-ratio: var(--paper-ratio, 0.7071); /* default A4 portrait */
+  /* Dimensions injected by JS via inline style — no CSS sizing here */
   background: #fff;
   border-radius: 3px;
   box-shadow:
@@ -265,7 +255,7 @@ body {
   /* Smooth transition when paper size / orientation changes */
   transition:
     width 280ms cubic-bezier(0.4, 0, 0.2, 1),
-    aspect-ratio 280ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 280ms cubic-bezier(0.4, 0, 0.2, 1),
     filter 320ms ease;
 }
 
@@ -292,6 +282,18 @@ body {
   object-fit: contain;
   position: absolute;
   inset: 0;
+}
+
+/* ── HTML document preview (Word / Excel) ─────────────────── */
+.paper-iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  overflow: hidden;
 }
 
 /* ── Placeholder ──────────────────────────────────────────── */
@@ -603,7 +605,6 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 0 20px;
-  border-top: 1px solid rgba(167, 170, 225, 0.1);
   flex-shrink: 0;
 }
 .footer-summary {
