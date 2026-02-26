@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { Express, Request, RequestHandler, Response } from "express";
 import type { Server } from "socket.io";
+import { appendAdminLog } from "../services/admin";
 import type { SessionStore } from "../services/session";
 import { generateHtmlPreview, supportsHtmlPreview } from "../services/preview";
 
@@ -28,6 +29,9 @@ export function registerWirelessSessionRoutes(
   app.get("/api/wireless/sessions", (req: Request, res: Response) => {
     const publicBaseUrl = deps.resolvePublicBaseUrl(req);
     const session = deps.sessionStore.createSession(publicBaseUrl);
+    void appendAdminLog("session_created", "Wireless upload session created.", {
+      sessionId: session.sessionId,
+    });
     res.status(201).json(session);
   });
 
@@ -125,15 +129,28 @@ export function registerWirelessSessionRoutes(
       const file = req.file;
 
       if (!file) {
+        void appendAdminLog("upload_failed", "Wireless upload failed: no file provided.", {
+          sessionId,
+        });
         return res.status(400).json({ code: "no_file", error: "No file provided." });
       }
 
       deps.io.to(`session:${sessionId}`).emit("UploadStarted", file.originalname);
+      void appendAdminLog("upload_started", "Wireless upload started.", {
+        sessionId,
+        filename: file.originalname,
+        sizeBytes: file.size,
+      });
 
       const result = await deps.sessionStore.storeUpload(sessionId, token, file);
 
       if (!result.isSuccess || !result.document) {
         deps.io.to(`session:${sessionId}`).emit("UploadFailed");
+        await appendAdminLog("upload_failed", "Wireless upload failed.", {
+          sessionId,
+          filename: file.originalname,
+          errorCode: result.errorCode ?? null,
+        });
         return res.status(400).json({
           code: result.errorCode ?? "UPLOAD_FAILED",
           error: result.errorMsg ?? "Upload failed.",
@@ -142,6 +159,12 @@ export function registerWirelessSessionRoutes(
 
       const doc = result.document;
       deps.io.to(`session:${sessionId}`).emit("UploadCompleted", doc);
+      await appendAdminLog("upload_completed", "Wireless upload completed.", {
+        sessionId,
+        filename: doc.filename,
+        documentId: doc.documentId,
+        sizeBytes: doc.sizeBytes,
+      });
 
       res.status(200).json({
         documentId: doc.documentId,

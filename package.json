@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev src/server.ts",
-    "build:client": "esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js && esbuild src/public/print/app.ts --bundle --outfile=src/public/print/app.js && esbuild src/public/copy/app.ts --bundle --outfile=src/public/copy/app.js && esbuild src/public/config/app.ts --bundle --outfile=src/public/config/app.js && esbuild src/public/confirm/app.ts --bundle --outfile=src/public/confirm/app.js && esbuild src/public/upload/app.ts --bundle --outfile=src/public/upload/app.js && esbuild src/public/scan/app.ts --bundle --outfile=src/public/scan/app.js",
+    "build:client": "esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js && esbuild src/public/print/app.ts --bundle --outfile=src/public/print/app.js && esbuild src/public/copy/app.ts --bundle --outfile=src/public/copy/app.js && esbuild src/public/config/app.ts --bundle --outfile=src/public/config/app.js && esbuild src/public/confirm/app.ts --bundle --outfile=src/public/confirm/app.js && esbuild src/public/upload/app.ts --bundle --outfile=src/public/upload/app.js && esbuild src/public/scan/app.ts --bundle --outfile=src/public/scan/app.js && esbuild src/public/admin/app.ts --bundle --outfile=src/public/admin/app.js",
     "kiosk": "node ./scripts/launch-kiosk.js"
   },
   "keywords": [],
@@ -18,6 +18,7 @@
     "lowdb": "^7.0.1",
     "mammoth": "^1.11.0",
     "multer": "^2.0.2",
+    "node-thermal-printer": "^4.6.0",
     "pdfjs": "^2.5.4",
     "pdfjs-dist": "^5.4.624",
     "qrcode": "^1.5.4",

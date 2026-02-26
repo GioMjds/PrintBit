@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Panel · PrintBit</title>
+    <link rel="stylesheet" href="/globals.css" />
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <main class="admin-shell">
+      <header class="admin-header">
+        <h1>PrintBit Admin</h1>
+        <p class="admin-subtitle">Local management dashboard</p>
+      </header>
+
+      <section id="adminAuthView" class="admin-auth">
+        <h2>Admin PIN Required</h2>
+        <p>Enter the local admin PIN to access settings and machine controls.</p>
+        <form id="adminAuthForm" class="auth-form">
+          <input
+            id="adminPinInput"
+            type="password"
+            inputmode="numeric"
+            autocomplete="off"
+            minlength="4"
+            required
+            placeholder="Enter admin PIN"
+          />
+          <button id="adminPinSubmit" type="submit">Unlock Admin Panel</button>
+        </form>
+      </section>
+
+      <section id="adminDashboard" class="admin-dashboard hidden">
+        <div class="toolbar">
+          <button id="refreshBtn" type="button">Refresh</button>
+          <button id="exportLogsBtn" type="button">Export Logs (CSV)</button>
+          <button id="logoutBtn" type="button">Lock</button>
+        </div>
+
+        <div class="grid">
+          <section class="card">
+            <h3>Earnings</h3>
+            <ul class="stats-list">
+              <li>Balance: <strong id="metricBalance">₱ 0.00</strong></li>
+              <li>Today: <strong id="earningsToday">₱ 0.00</strong></li>
+              <li>Week: <strong id="earningsWeek">₱ 0.00</strong></li>
+              <li>All time: <strong id="earningsAll">₱ 0.00</strong></li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Jobs</h3>
+            <ul class="stats-list">
+              <li>Total: <strong id="jobsTotal">0</strong></li>
+              <li>Print: <strong id="jobsPrint">0</strong></li>
+              <li>Copy: <strong id="jobsCopy">0</strong></li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Coin Breakdown</h3>
+            <ul class="stats-list">
+              <li>₱1: <strong id="coins1">0</strong></li>
+              <li>₱5: <strong id="coins5">0</strong></li>
+              <li>₱10: <strong id="coins10">0</strong></li>
+              <li>₱20: <strong id="coins20">0</strong></li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>System Status</h3>
+            <ul class="stats-list">
+              <li>Server: <strong id="serverStatus">Running</strong></li>
+              <li>Host: <strong id="hostStatus">-</strong></li>
+              <li>WiFi: <strong id="wifiStatus">Inactive</strong></li>
+              <li>Arduino: <strong id="serialStatus">Disconnected</strong></li>
+              <li>Serial Port: <strong id="serialPortStatus">-</strong></li>
+              <li>Printer: <strong id="printerStatus">Pending integration</strong></li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Storage</h3>
+            <ul class="stats-list">
+              <li>Files: <strong id="storageFiles">0</strong></li>
+              <li>Usage: <strong id="storageBytes">0 B</strong></li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <h3>Machine Actions</h3>
+            <div class="actions">
+              <button id="resetBalanceBtn" type="button">Reset Balance</button>
+              <button id="clearStorageBtn" type="button">Clear Upload Storage</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <h3>Admin Settings</h3>
+          <form id="settingsForm" class="settings-form">
+            <label>
+              Print price per page
+              <input id="settingPrintPerPage" type="number" min="0" step="0.01" required />
+            </label>
+            <label>
+              Copy price per page
+              <input id="settingCopyPerPage" type="number" min="0" step="0.01" required />
+            </label>
+            <label>
+              Color surcharge
+              <input id="settingColorSurcharge" type="number" min="0" step="0.01" required />
+            </label>
+            <label>
+              Idle timeout (seconds)
+              <input id="settingIdleTimeout" type="number" min="15" step="1" required />
+            </label>
+            <label>
+              Admin PIN
+              <input id="settingAdminPin" type="password" minlength="4" required />
+            </label>
+            <label class="checkbox-row">
+              <input id="settingAdminLocalOnly" type="checkbox" />
+              Restrict admin to local network only
+            </label>
+            <button type="submit">Save Settings</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <h3>Recent Logs</h3>
+          <div class="logs-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Type</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody id="logsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <p id="adminMessage" class="admin-message" aria-live="polite"></p>
+    </main>
+
+    <script src="/admin/app.js"></script>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { requireAdminLocalAccess } from "../middleware/admin-auth";
 import type { SessionStore } from "../services/session";
 
 type PageRoute = { route: string; filePath: string };
@@ -20,7 +21,12 @@ export function registerPageRoutes(app: Express, deps: RegisterPageRoutesDeps) {
   });
 
   for (const page of deps.publicPageRoutes) {
-    app.get(page.route, (_req: Request, res: Response) => {
+    const routeHandlers =
+      page.route === "/admin"
+        ? [requireAdminLocalAccess]
+        : [];
+
+    app.get(page.route, ...routeHandlers, (_req: Request, res: Response) => {
       res.sendFile(page.filePath);
     });
   }

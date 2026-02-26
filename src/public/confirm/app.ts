@@ -13,6 +13,12 @@ type ConfirmConfig = {
   paperSize: "A4" | "Letter" | "Legal";
 };
 
+type PricingResponse = {
+  printPerPage: number;
+  copyPerPage: number;
+  colorSurcharge: number;
+};
+
 const modeValue = document.getElementById("modeValue");
 const fileValue = document.getElementById("fileValue");
 const colorValue = document.getElementById("colorValue");
@@ -30,6 +36,13 @@ const resetBalanceBtn = document.getElementById(
 
 const rawConfig = sessionStorage.getItem("printbit.config");
 const uploadedFile = sessionStorage.getItem("printbit.uploadedFile");
+const DEFAULT_PRICING: PricingResponse = {
+  printPerPage: 5,
+  copyPerPage: 3,
+  colorSurcharge: 2,
+};
+let totalPrice = 0;
+let pricingLoaded = false;
 
 if (!rawConfig) {
   window.location.href = "/config";
@@ -37,9 +50,12 @@ if (!rawConfig) {
 }
 
 const config = JSON.parse(rawConfig ?? "{}") as ConfirmConfig;
-const basePrice = config.mode === "copy" ? 3 : 5;
-const colorSurcharge = config.colorMode === "colored" ? 2 : 0;
-const totalPrice = (basePrice + colorSurcharge) * Math.max(1, config.copies);
+
+function calculateTotalPrice(pricing: PricingResponse): number {
+  const base = config.mode === "copy" ? pricing.copyPerPage : pricing.printPerPage;
+  const color = config.colorMode === "colored" ? pricing.colorSurcharge : 0;
+  return Number(((base + color) * Math.max(1, config.copies)).toFixed(2));
+}
 
 if (confirmBtn) {
   confirmBtn.textContent =
@@ -56,20 +72,28 @@ if (colorValue) colorValue.textContent = config.colorMode;
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (orientationValue) orientationValue.textContent = config.orientation;
 if (paperSizeValue) paperSizeValue.textContent = config.paperSize;
-if (priceValue) priceValue.textContent = `PHP ${totalPrice.toFixed(2)}`;
+if (priceValue) priceValue.textContent = "Loading...";
 
 function updateBalanceUI(balance: number): void {
-  if (balanceValue) balanceValue.textContent = `PHP ${balance.toFixed(2)}`;
+  if (balanceValue) balanceValue.textContent = `₱ ${balance.toFixed(2)}`;
   if (!statusMessage || !confirmBtn) return;
+  if (!pricingLoaded) {
+    statusMessage.textContent = "Loading pricing...";
+    confirmBtn.disabled = true;
+    confirmBtn.setAttribute("aria-disabled", "true");
+    return;
+  }
 
   if (balance >= totalPrice) {
     statusMessage.textContent =
       "Sufficient balance detected. You can confirm now.";
     confirmBtn.disabled = false;
+    confirmBtn.setAttribute("aria-disabled", "false");
   } else {
     const needed = totalPrice - balance;
-    statusMessage.textContent = `Insert more coins: PHP ${needed.toFixed(2)} remaining.`;
+    statusMessage.textContent = `Insert more coins: ₱ ${needed.toFixed(2)} remaining.`;
     confirmBtn.disabled = true;
+    confirmBtn.setAttribute("aria-disabled", "true");
   }
 }
 
@@ -81,6 +105,41 @@ async function fetchInitialBalance(): Promise<void> {
   const response = await fetch("/api/balance");
   const data = (await response.json()) as { balance: number };
   updateBalanceUI(data.balance ?? 0);
+}
+
+async function loadPricing(): Promise<void> {
+  let pricing = DEFAULT_PRICING;
+
+  try {
+    const response = await fetch("/api/pricing");
+    if (!response.ok) throw new Error("Pricing request failed.");
+
+    const payload = (await response.json()) as Partial<PricingResponse>;
+    const safePrint =
+      typeof payload.printPerPage === "number" && Number.isFinite(payload.printPerPage)
+        ? payload.printPerPage
+        : DEFAULT_PRICING.printPerPage;
+    const safeCopy =
+      typeof payload.copyPerPage === "number" && Number.isFinite(payload.copyPerPage)
+        ? payload.copyPerPage
+        : DEFAULT_PRICING.copyPerPage;
+    const safeColor =
+      typeof payload.colorSurcharge === "number" && Number.isFinite(payload.colorSurcharge)
+        ? payload.colorSurcharge
+        : DEFAULT_PRICING.colorSurcharge;
+
+    pricing = {
+      printPerPage: safePrint,
+      copyPerPage: safeCopy,
+      colorSurcharge: safeColor,
+    };
+  } catch {
+    // Keep kiosk usable with safe defaults if admin pricing endpoint is unavailable.
+  }
+
+  totalPrice = calculateTotalPrice(pricing);
+  pricingLoaded = true;
+  if (priceValue) priceValue.textContent = `₱ ${totalPrice.toFixed(2)}`;
 }
 
 async function resetBalanceForTesting(): Promise<void> {
@@ -104,7 +163,7 @@ async function resetBalanceForTesting(): Promise<void> {
   updateBalanceUI(payload.balance ?? 0);
   if (statusMessage)
     statusMessage.textContent =
-      "Coin balance reset to PHP 0.00 (testing mode).";
+      "Coin balance reset to ₱ 0.00 (testing mode).";
   setCoinEventMessage("Balance reset manually for testing.");
   resetBalanceBtn.disabled = false;
 }
@@ -120,6 +179,8 @@ confirmBtn?.addEventListener("click", async () => {
       amount: totalPrice,
       mode: config.mode,
       sessionId: config.sessionId,
+      copies: config.copies,
+      colorMode: config.colorMode,
     }),
   });
 
@@ -166,7 +227,7 @@ if (typeof ioFactory === "function") {
       typeof (payload as { value: unknown }).value === "number"
     ) {
       const value = (payload as { value: number }).value;
-      setCoinEventMessage(`Last accepted coin: PHP ${value.toFixed(2)}`);
+      setCoinEventMessage(`Last accepted coin: ₱ ${value.toFixed(2)}`);
     }
   });
 
@@ -184,4 +245,9 @@ if (typeof ioFactory === "function") {
   });
 }
 
-void fetchInitialBalance();
+async function boot(): Promise<void> {
+  await loadPricing();
+  await fetchInitialBalance();
+}
+
+void boot();

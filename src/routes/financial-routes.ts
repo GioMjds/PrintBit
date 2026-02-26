@@ -2,6 +2,12 @@ import type { Express, Request, RequestHandler, Response } from "express";
 import path from "node:path";
 import type { Server } from "socket.io";
 import { db } from "../services/db";
+import {
+  appendAdminLog,
+  calculateJobAmount,
+  getPricingSettings,
+  incrementJobStats,
+} from "../services/admin";
 import { printFile } from "../services/printer";
 import type { SessionStore } from "../services/session";
 
@@ -23,10 +29,19 @@ export function registerFinancialRoutes(
     });
   });
 
+  app.get("/api/pricing", (_req: Request, res: Response) => {
+    res.json(getPricingSettings());
+  });
+
   app.post("/api/balance/reset", async (_req: Request, res: Response) => {
+    const previousBalance = db.data!.balance;
     db.data!.balance = 0;
     await db.write();
     deps.io.emit("balance", 0);
+    await appendAdminLog("balance_reset", "Balance reset from admin/testing.", {
+      previousBalance,
+      newBalance: 0,
+    });
 
     res.json({
       ok: true,
@@ -37,9 +52,15 @@ export function registerFinancialRoutes(
 
   app.post("/upload", deps.uploadSingle, (req: Request, res: Response) => {
     if (!req.file) {
+      void appendAdminLog("upload_failed", "Upload failed: no file provided.");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    void appendAdminLog("upload_completed", "Upload completed via /upload.", {
+      filename: req.file.originalname,
+      storedFilename: req.file.filename,
+      sizeBytes: req.file.size,
+    });
     res.status(200).json({ filename: req.file.filename });
   });
 
@@ -47,18 +68,31 @@ export function registerFinancialRoutes(
     const { filename } = req.body as { filename?: string };
 
     if (!filename) {
+      void appendAdminLog("print_failed", "Legacy print failed: filename missing.");
       return res.status(400).json({ error: "Filename is required" });
     }
 
-    if ((db.data?.balance ?? 0) < 5) {
+    const minimumAmount = calculateJobAmount("print", "grayscale", 1);
+    if ((db.data?.balance ?? 0) < minimumAmount) {
+      void appendAdminLog(
+        "print_failed",
+        "Legacy print failed: insufficient balance.",
+        { balance: db.data?.balance ?? 0, required: minimumAmount },
+      );
       return res.status(400).json({ error: "Insufficient balance" });
     }
 
     printFile(filename);
 
-    db.data!.earnings += db.data!.balance;
+    const chargedAmount = db.data!.balance;
+    db.data!.earnings += chargedAmount;
     db.data!.balance = 0;
     await db.write();
+    await appendAdminLog("print_completed", "Legacy print completed and charged.", {
+      filename,
+      chargedAmount,
+    });
+    await incrementJobStats("print");
 
     deps.io.emit("balance", 0);
     res.sendStatus(200);
@@ -70,24 +104,55 @@ export function registerFinancialRoutes(
       mode?: "print" | "copy";
       sessionId?: string;
       filename?: string;
+      copies?: number;
+      colorMode?: "colored" | "grayscale";
     };
 
-    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
-    }
-
     if (mode !== "print" && mode !== "copy") {
+      void appendAdminLog("payment_failed", "Confirm payment failed: invalid mode.", {
+        mode: mode ?? null,
+      });
       return res.status(400).json({ error: "Invalid mode" });
     }
 
-    if ((db.data?.balance ?? 0) < amount) {
+    const copies =
+      typeof req.body?.copies === "number" && Number.isFinite(req.body.copies)
+        ? Math.max(1, Math.floor(req.body.copies))
+        : 1;
+    const colorMode =
+      req.body?.colorMode === "colored" || req.body?.colorMode === "grayscale"
+        ? req.body.colorMode
+        : "grayscale";
+    const requiredAmount = calculateJobAmount(mode, colorMode, copies);
+
+    if ((db.data?.balance ?? 0) < requiredAmount) {
+      void appendAdminLog(
+        "payment_failed",
+        "Confirm payment failed: insufficient balance.",
+        { balance: db.data?.balance ?? 0, requiredAmount },
+      );
       return res
         .status(400)
-        .json({ error: "Insufficient balance", balance: db.data?.balance ?? 0 });
+        .json({
+          error: "Insufficient balance",
+          balance: db.data?.balance ?? 0,
+          requiredAmount,
+        });
+    }
+
+    if (typeof amount === "number" && Number.isFinite(amount) && amount !== requiredAmount) {
+      void appendAdminLog("payment_amount_mismatch", "Client amount differed from server pricing.", {
+        amount,
+        requiredAmount,
+      });
     }
 
     if (mode === "print") {
       if (!sessionId) {
+        void appendAdminLog(
+          "payment_failed",
+          "Confirm payment failed: missing print session.",
+        );
         return res.status(400).json({ error: "Print session is required" });
       }
 
@@ -96,6 +161,11 @@ export function registerFinancialRoutes(
         deps.resolvePublicBaseUrl(req),
       );
       if (!session) {
+        void appendAdminLog(
+          "payment_failed",
+          "Confirm payment failed: session not found.",
+          { sessionId },
+        );
         return res.status(404).json({ error: "Session not found" });
       }
 
@@ -107,6 +177,11 @@ export function registerFinancialRoutes(
             : [];
 
       if (allDocs.length === 0) {
+        void appendAdminLog(
+          "payment_failed",
+          "Confirm payment failed: no uploaded document in session.",
+          { sessionId },
+        );
         return res
           .status(400)
           .json({ error: "No uploaded document found for this session" });
@@ -117,6 +192,11 @@ export function registerFinancialRoutes(
         : allDocs[allDocs.length - 1];
 
       if (!target) {
+        void appendAdminLog(
+          "payment_failed",
+          "Confirm payment failed: target document not found.",
+          { sessionId, filename: filename ?? null },
+        );
         return res
           .status(400)
           .json({ error: `Document "${filename}" not found in session` });
@@ -126,13 +206,24 @@ export function registerFinancialRoutes(
       printFile(serverFilename);
     }
 
-    db.data!.balance -= amount;
-    db.data!.earnings += amount;
+    db.data!.balance -= requiredAmount;
+    db.data!.earnings += requiredAmount;
     await db.write();
+    await incrementJobStats(mode);
+    await appendAdminLog("payment_confirmed", "Payment confirmed.", {
+      mode,
+      amount: requiredAmount,
+      copies,
+      colorMode,
+      sessionId: sessionId ?? null,
+      filename: filename ?? null,
+      remainingBalance: db.data!.balance,
+    });
 
     deps.io.emit("balance", db.data!.balance);
     res.json({
       ok: true,
+      chargedAmount: requiredAmount,
       balance: db.data!.balance,
       earnings: db.data!.earnings,
     });

@@ -2,15 +2,31 @@ import { SerialPort } from "serialport";
 import { ReadlineParser } from "@serialport/parser-readline";
 import { db } from "./db";
 import { Server } from "socket.io";
+import { appendAdminLog, incrementCoinStats } from "./admin";
 
 const ACCEPTED_COINS = new Set([1, 5, 10, 20]);
 const FRAGMENT_WINDOW_MS = 140;
+
+let serialConnected = false;
+let serialPortPath: string | null = null;
+let serialLastError: string | null = null;
+
+export function getSerialStatus() {
+  return {
+    connected: serialConnected,
+    portPath: serialPortPath,
+    lastError: serialLastError,
+  };
+}
 
 export async function initSerial(io: Server) {
   try {
     const ports = await SerialPort.list();
 
     if (!ports.length) {
+      serialConnected = false;
+      serialPortPath = null;
+      serialLastError = "No serial ports found.";
       console.warn(
         "No serial ports found. Continuing without serial connection.",
       );
@@ -18,11 +34,30 @@ export async function initSerial(io: Server) {
     }
 
     const portPath = ports[0].path;
+    serialPortPath = portPath;
     const port = new SerialPort({
       path: portPath,
       baudRate: 9600,
     });
     const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
+
+    port.on("open", () => {
+      serialConnected = true;
+      serialLastError = null;
+      io.emit("serialStatus", getSerialStatus());
+    });
+
+    port.on("close", () => {
+      serialConnected = false;
+      io.emit("serialStatus", getSerialStatus());
+    });
+
+    port.on("error", (error) => {
+      serialConnected = false;
+      serialLastError = error.message;
+      io.emit("serialStatus", getSerialStatus());
+      console.error("Serial port runtime error:", error);
+    });
 
     let pendingPrefix: "1" | "2" | null = null;
     let pendingTimer: NodeJS.Timeout | null = null;
@@ -35,7 +70,11 @@ export async function initSerial(io: Server) {
 
     const persistBalance = async (coinValue: number) => {
       db.data!.balance += coinValue;
-      await db.write();
+      await incrementCoinStats(coinValue);
+      await appendAdminLog("coin_accepted", `Accepted coin: ${coinValue}`, {
+        coinValue,
+        balance: db.data!.balance,
+      });
       io.emit("balance", db.data!.balance);
       io.emit("coinAccepted", { value: coinValue, balance: db.data!.balance });
     };
@@ -54,6 +93,11 @@ export async function initSerial(io: Server) {
         code: "INVALID_FRAGMENT",
         message: `Ignored fragment '${prefix}' (${reason}).`,
       });
+      void appendAdminLog(
+        "coin_parser_warning",
+        `Ignored fragment '${prefix}' (${reason}).`,
+        { reason },
+      );
     };
 
     const armPending = (prefix: "1" | "2") => {
@@ -76,6 +120,11 @@ export async function initSerial(io: Server) {
               code: "INVALID_COMBINATION",
               message: `Ignored invalid coin '${combined}'.`,
             });
+            void appendAdminLog(
+              "coin_parser_warning",
+              `Ignored invalid coin '${combined}'.`,
+              { combined },
+            );
           }
           return;
         }
@@ -94,6 +143,11 @@ export async function initSerial(io: Server) {
           code: "NON_NUMERIC",
           message: `Ignored serial token '${token}'.`,
         });
+        void appendAdminLog(
+          "coin_parser_warning",
+          `Ignored non-numeric serial token '${token}'.`,
+          { token },
+        );
         return;
       }
 
@@ -102,6 +156,11 @@ export async function initSerial(io: Server) {
           code: "UNSUPPORTED_COIN",
           message: `Ignored unsupported coin '${value}'.`,
         });
+        void appendAdminLog(
+          "coin_parser_warning",
+          `Ignored unsupported coin '${value}'.`,
+          { value },
+        );
         return;
       }
 
@@ -115,10 +174,20 @@ export async function initSerial(io: Server) {
     });
 
     console.log(`Serial port initialized on ${portPath}`);
+    void appendAdminLog("serial_connected", `Serial port initialized on ${portPath}`, {
+      portPath,
+    });
   } catch (error) {
+    serialConnected = false;
+    serialLastError = error instanceof Error ? error.message : "Unknown serial error.";
     console.error(
       "Error initializing serial port. Continuing without serial connection.",
       error,
+    );
+    void appendAdminLog(
+      "serial_init_error",
+      "Error initializing serial port. Continuing without serial connection.",
+      { message: serialLastError },
     );
   }
 }

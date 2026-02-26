@@ -1,0 +1,139 @@
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #0e0d1f;
+  color: #f8f8ff;
+  font-family: "Plus Jakarta Sans", sans-serif;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.admin-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.admin-subtitle {
+  margin: 6px 0 0;
+  color: #a7aae1;
+}
+
+.admin-auth,
+.card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.2);
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.auth-form {
+  display: flex;
+  gap: 10px;
+}
+
+.auth-form input,
+.settings-form input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(167, 170, 225, 0.25);
+  border-radius: 10px;
+  color: #fff;
+  padding: 10px 12px;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  background: #696fc7;
+  color: #fff;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #7b81d6;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.card h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.stats-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.settings-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.logs-wrap {
+  max-height: 260px;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid rgba(167, 170, 225, 0.15);
+  padding: 8px 6px;
+}
+
+.admin-message {
+  min-height: 22px;
+  margin: 14px 2px 0;
+  color: #f2aebb;
+}

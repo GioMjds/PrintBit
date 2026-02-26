@@ -211,8 +211,7 @@ class PrintPreview {
 
     let pdfjs: PdfjsLib;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pdfjs = (await import("/libs/pdfjs/pdf.min.mjs")) as any;
+      pdfjs = (await import("/libs/pdfjs/pdf.min.mjs"));
       pdfjs.GlobalWorkerOptions.workerSrc = "/libs/pdfjs/pdf.worker.min.mjs";
     } catch {
       this.showError("PDF renderer not loaded.");

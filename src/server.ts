@@ -13,11 +13,12 @@ import {
 import { registerStaticAssets } from "./middleware/static-assets";
 import { registerFinancialRoutes } from "./routes/financial-routes";
 import { registerPageRoutes } from "./routes/page-routes";
+import { registerAdminRoutes } from "./routes/admin-routes";
 import { registerUploadPortalRoutes } from "./routes/upload-portal-routes";
 import { registerWirelessSessionRoutes } from "./routes/wireless-session-routes";
 import { initDB } from "./services/db";
 import { convertToPdfPreview } from "./services/preview";
-import { initSerial } from "./services/serial";
+import { getSerialStatus, initSerial } from "./services/serial";
 import {
   SessionStore,
   renderUploadPortal,
@@ -58,6 +59,10 @@ registerPageRoutes(app, {
   resolvePublicBaseUrl,
 });
 registerStaticAssets(app);
+registerAdminRoutes(app, {
+  uploadDir: UPLOAD_DIR,
+  getSerialStatus,
+});
 registerFinancialRoutes(app, {
   io,
   sessionStore,
