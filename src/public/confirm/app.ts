@@ -59,7 +59,7 @@ function calculateTotalPrice(pricing: PricingResponse): number {
 
 if (confirmBtn) {
   confirmBtn.textContent =
-    config.mode === "print" ? "Confirm and Print" : "Confirm and Copy";
+    config.mode === "print" ? "Confirm & Print" : "Confirm & Copy";
 }
 
 if (modeValue) modeValue.textContent = config.mode.toUpperCase();
@@ -168,9 +168,51 @@ async function resetBalanceForTesting(): Promise<void> {
   resetBalanceBtn.disabled = false;
 }
 
-confirmBtn?.addEventListener("click", async () => {
-  confirmBtn.disabled = true;
+const confirmModal = document.getElementById("confirmModal");
+const modalCancelBtn = document.getElementById("modalCancelBtn") as HTMLButtonElement;
+const modalConfirmBtn = document.getElementById("modalConfirmBtn") as HTMLButtonElement;
+const modalFile = document.getElementById("modalFile");
+const modalMode = document.getElementById("modalMode");
+const modalColor = document.getElementById("modalColor");
+const modalCopies = document.getElementById("modalCopies");
+const modalOrientation = document.getElementById("modalOrientation");
+const modalPaper = document.getElementById("modalPaper");
+const modalPrice = document.getElementById("modalPrice");
+
+function showModal(): void {
+  if (!confirmModal) return;
+  if (modalFile) modalFile.textContent = config.mode === "print"
+    ? (uploadedFile ?? "No file")
+    : "Physical document copy";
+  if (modalMode) modalMode.textContent = config.mode.toUpperCase();
+  if (modalColor) modalColor.textContent = config.colorMode;
+  if (modalCopies) modalCopies.textContent = String(config.copies);
+  if (modalOrientation) modalOrientation.textContent = config.orientation;
+  if (modalPaper) modalPaper.textContent = config.paperSize;
+  if (modalPrice) modalPrice.textContent = `₱ ${totalPrice.toFixed(2)}`;
+  confirmModal.classList.add("is-visible");
+  confirmModal.setAttribute("aria-hidden", "false");
+}
+
+function hideModal(): void {
+  if (!confirmModal) return;
+  confirmModal.classList.remove("is-visible");
+  confirmModal.setAttribute("aria-hidden", "true");
+}
+
+confirmBtn?.addEventListener("click", () => {
+  showModal();
+});
+
+modalCancelBtn?.addEventListener("click", () => {
+  hideModal();
+});
+
+modalConfirmBtn?.addEventListener("click", async () => {
+  modalConfirmBtn.disabled = true;
   if (statusMessage) statusMessage.textContent = "Processing payment...";
+  hideModal();
+  confirmBtn.disabled = true;
 
   const response = await fetch("/api/confirm-payment", {
     method: "POST",
@@ -181,6 +223,8 @@ confirmBtn?.addEventListener("click", async () => {
       sessionId: config.sessionId,
       copies: config.copies,
       colorMode: config.colorMode,
+      orientation: config.orientation,
+      paperSize: config.paperSize,
     }),
   });
 
@@ -189,6 +233,8 @@ confirmBtn?.addEventListener("click", async () => {
     if (statusMessage)
       statusMessage.textContent =
         payload.error ?? "Payment confirmation failed.";
+    confirmBtn.disabled = false;
+    modalConfirmBtn.disabled = false;
     return;
   }
 

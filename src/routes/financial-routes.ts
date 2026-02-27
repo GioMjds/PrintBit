@@ -8,7 +8,7 @@ import {
   getPricingSettings,
   incrementJobStats,
 } from "../services/admin";
-import { printFile } from "../services/printer";
+import { printFile, type PrintJobOptions } from "../services/printer";
 import type { SessionStore } from "../services/session";
 
 interface RegisterFinancialRoutesDeps {
@@ -82,7 +82,22 @@ export function registerFinancialRoutes(
       return res.status(400).json({ error: "Insufficient balance" });
     }
 
-    printFile(filename);
+    const defaultOptions: PrintJobOptions = {
+      copies: 1,
+      colorMode: "grayscale",
+      orientation: "portrait",
+      paperSize: "A4",
+    };
+
+    try {
+      await printFile(filename, defaultOptions);
+    } catch (err) {
+      void appendAdminLog("print_failed", "Legacy print failed: printer error.", {
+        filename,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+      return res.status(500).json({ error: "Print failed" });
+    }
 
     const chargedAmount = db.data!.balance;
     db.data!.earnings += chargedAmount;
@@ -106,6 +121,8 @@ export function registerFinancialRoutes(
       filename?: string;
       copies?: number;
       colorMode?: "colored" | "grayscale";
+      orientation?: "portrait" | "landscape";
+      paperSize?: "A4" | "Letter" | "Legal";
     };
 
     if (mode !== "print" && mode !== "copy") {
@@ -123,6 +140,14 @@ export function registerFinancialRoutes(
       req.body?.colorMode === "colored" || req.body?.colorMode === "grayscale"
         ? req.body.colorMode
         : "grayscale";
+    const orientation =
+      req.body?.orientation === "portrait" || req.body?.orientation === "landscape"
+        ? req.body.orientation
+        : "portrait";
+    const paperSize =
+      req.body?.paperSize === "A4" || req.body?.paperSize === "Letter" || req.body?.paperSize === "Legal"
+        ? req.body.paperSize
+        : "A4";
     const requiredAmount = calculateJobAmount(mode, colorMode, copies);
 
     if ((db.data?.balance ?? 0) < requiredAmount) {
@@ -203,7 +228,23 @@ export function registerFinancialRoutes(
       }
 
       const serverFilename = path.basename(target.filePath);
-      printFile(serverFilename);
+      const printOptions: PrintJobOptions = {
+        copies,
+        colorMode,
+        orientation,
+        paperSize,
+      };
+
+      try {
+        await printFile(serverFilename, printOptions);
+      } catch (err) {
+        void appendAdminLog("print_failed", "Print failed: printer error.", {
+          sessionId,
+          filename: serverFilename,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+        return res.status(500).json({ error: "Print failed. Please try again." });
+      }
     }
 
     db.data!.balance -= requiredAmount;

@@ -135,3 +135,17 @@ Admin Panel
 - System status
 
 If these are solid, integrating the real printer becomes only one module.
+
+🖨️ Printer Integration (SumatraPDF Silent Printing)
+
+Setup:
+- Download SumatraPDF portable 64-bit from https://www.sumatrapdfreader.org/
+- Place the .exe as bin/SumatraPDF.exe in the project root
+- The bin/ directory is gitignored — each kiosk machine needs its own copy
+
+How it works:
+- src/services/printer.ts uses SumatraPDF CLI for silent, dialog-free printing
+- Command: SumatraPDF.exe -print-to-default -print-settings "<settings>" "<file>"
+- Settings from /config page (color, copies, orientation, paper size) are passed programmatically
+- No OS print dialog (Ctrl+P) appears — everything is controlled by the kiosk system
+- Prints to the OS default printer automatically
