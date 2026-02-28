@@ -88,13 +88,26 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
     earnings: finiteOr(data?.earnings, DEFAULT_DATA.earnings),
     settings: {
       pricing: {
-        printPerPage: finiteOr(pricing?.printPerPage, DEFAULT_DATA.settings.pricing.printPerPage),
-        copyPerPage: finiteOr(pricing?.copyPerPage, DEFAULT_DATA.settings.pricing.copyPerPage),
-        colorSurcharge: finiteOr(pricing?.colorSurcharge, DEFAULT_DATA.settings.pricing.colorSurcharge),
+        printPerPage: finiteOr(
+          pricing?.printPerPage,
+          DEFAULT_DATA.settings.pricing.printPerPage,
+        ),
+        copyPerPage: finiteOr(
+          pricing?.copyPerPage,
+          DEFAULT_DATA.settings.pricing.copyPerPage,
+        ),
+        colorSurcharge: finiteOr(
+          pricing?.colorSurcharge,
+          DEFAULT_DATA.settings.pricing.colorSurcharge,
+        ),
       },
-      idleTimeoutSeconds: finiteOr(data?.settings?.idleTimeoutSeconds, DEFAULT_DATA.settings.idleTimeoutSeconds),
+      idleTimeoutSeconds: finiteOr(
+        data?.settings?.idleTimeoutSeconds,
+        DEFAULT_DATA.settings.idleTimeoutSeconds,
+      ),
       adminPin:
-        typeof data?.settings?.adminPin === "string" && data.settings.adminPin.trim()
+        typeof data?.settings?.adminPin === "string" &&
+        data.settings.adminPin.trim()
           ? data.settings.adminPin
           : DEFAULT_DATA.settings.adminPin,
       adminLocalOnly:

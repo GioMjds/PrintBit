@@ -20,7 +20,9 @@ export async function detectDefaultPrinter(): Promise<void> {
 
   // Check SumatraPDF existence
   const sumatraExists = fs.existsSync(SUMATRA_PATH);
-  console.log(`[PRINTER] SumatraPDF: ${SUMATRA_PATH} (exists: ${sumatraExists})`);
+  console.log(
+    `[PRINTER] SumatraPDF: ${SUMATRA_PATH} (exists: ${sumatraExists})`,
+  );
 
   try {
     const json = await new Promise<string>((resolve, reject) => {
@@ -94,12 +96,16 @@ export function printFile(
     }
 
     const sumatraExists = fs.existsSync(SUMATRA_PATH);
-    console.log(`[PRINTER] SumatraPDF path: ${SUMATRA_PATH} (exists: ${sumatraExists})`);
+    console.log(
+      `[PRINTER] SumatraPDF path: ${SUMATRA_PATH} (exists: ${sumatraExists})`,
+    );
 
     if (!sumatraExists) {
       console.error("[PRINTER] ✗ SumatraPDF not found — aborting");
       return reject(
-        new Error(`SumatraPDF not found at ${SUMATRA_PATH}. Place the portable exe in bin/.`),
+        new Error(
+          `SumatraPDF not found at ${SUMATRA_PATH}. Place the portable exe in bin/.`,
+        ),
       );
     }
 
@@ -116,21 +122,30 @@ export function printFile(
     console.log(`[PRINTER] Executing: ${SUMATRA_PATH} ${args.join(" ")}`);
 
     const startMs = Date.now();
-    execFile(SUMATRA_PATH, args, { timeout: 60_000, windowsHide: true }, (error, stdout, stderr) => {
-      const elapsed = Date.now() - startMs;
+    execFile(
+      SUMATRA_PATH,
+      args,
+      { timeout: 60_000, windowsHide: true },
+      (error, stdout, stderr) => {
+        const elapsed = Date.now() - startMs;
 
-      if (stdout) console.log(`[PRINTER] stdout: ${stdout}`);
-      if (stderr) console.warn(`[PRINTER] stderr: ${stderr}`);
+        if (stdout) console.log(`[PRINTER] stdout: ${stdout}`);
+        if (stderr) console.warn(`[PRINTER] stderr: ${stderr}`);
 
-      if (error) {
-        console.error(`[PRINTER] ✗ Print failed after ${elapsed}ms: ${error.message}`);
-        return reject(
-          new Error(`Print failed: ${error.message}${stderr ? ` — ${stderr}` : ""}`),
-        );
-      }
+        if (error) {
+          console.error(
+            `[PRINTER] ✗ Print failed after ${elapsed}ms: ${error.message}`,
+          );
+          return reject(
+            new Error(
+              `Print failed: ${error.message}${stderr ? ` — ${stderr}` : ""}`,
+            ),
+          );
+        }
 
-      console.log(`[PRINTER] ✓ Print job sent to spooler in ${elapsed}ms`);
-      resolve();
-    });
+        console.log(`[PRINTER] ✓ Print job sent to spooler in ${elapsed}ms`);
+        resolve();
+      },
+    );
   });
 }

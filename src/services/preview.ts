@@ -57,7 +57,10 @@ export async function convertToPdfPreview(sourcePath: string): Promise<string> {
   // a standard Windows + Office install.
   if ((ext === ".doc" || ext === ".docx") && process.platform === "win32") {
     try {
-      await convertViaWordCom(path.resolve(cacheSource), path.resolve(cachePdf));
+      await convertViaWordCom(
+        path.resolve(cacheSource),
+        path.resolve(cachePdf),
+      );
       if (fs.existsSync(cachePdf)) return cachePdf;
     } catch {
       // Word not installed or COM failed — fall through to LibreOffice
@@ -105,7 +108,10 @@ export async function convertToPdfPreview(sourcePath: string): Promise<string> {
 
 /** Drive Microsoft Word via COM automation to export a document as PDF.
  *  Only available on Windows with Microsoft Word installed. */
-async function convertViaWordCom(absSource: string, absOutput: string): Promise<void> {
+async function convertViaWordCom(
+  absSource: string,
+  absOutput: string,
+): Promise<void> {
   // In PowerShell single-quoted strings, only ' needs escaping (as '').
   const esc = (p: string) => p.replace(/'/g, "''");
 
@@ -116,7 +122,7 @@ async function convertViaWordCom(absSource: string, absOutput: string): Promise<
     "$word.DisplayAlerts = 0",
     "try {",
     `  $doc = $word.Documents.Open('${esc(absSource)}')`,
-    `  $doc.SaveAs2('${esc(absOutput)}', 17)`,   // 17 = wdFormatPDF
+    `  $doc.SaveAs2('${esc(absOutput)}', 17)`, // 17 = wdFormatPDF
     "  $doc.Close([ref]$false)",
     "} finally {",
     "  $word.Quit()",

@@ -4,149 +4,632 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="/globals.css" />
+    <title>Scan · PrintBit</title>
     <link rel="stylesheet" href="/scan/styles.css" />
-    <title>Scan Document · PrintBit</title>
   </head>
   <body>
-    <main class="page-shell">
-      <!-- Setup Section (visible by default) -->
-      <section class="page-card" id="setupSection">
-        <h1>Scan Document</h1>
-        <p class="lead">
-          Place your document on the scanner, choose your settings, then tap
-          Start Scan.
-        </p>
+    <div class="kiosk-bg" aria-hidden="true">
+      <div class="bg-circle bg-circle--1"></div>
+      <div class="bg-circle bg-circle--2"></div>
+      <div class="bg-circle bg-circle--3"></div>
+    </div>
 
-        <!-- Source: ADF / Flatbed -->
-        <div class="option-group">
-          <label class="option-label">Source</label>
-          <div class="option-row">
-            <label class="option-chip"
-              ><input type="radio" name="source" value="adf" checked />
-              ADF</label
-            >
-            <label class="option-chip"
-              ><input type="radio" name="source" value="flatbed" />
-              Flatbed</label
-            >
-          </div>
+    <div class="page-shell">
+      <!-- Topbar -->
+      <header class="topbar">
+        <a href="/" class="back-btn" aria-label="Back to home">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M19 12H5M11 6l-6 6 6 6" />
+          </svg>
+          <span>Back</span>
+        </a>
+
+        <div class="page-title-block">
+          <svg
+            class="page-title-icon"
+            viewBox="0 0 32 32"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect
+              x="4"
+              y="8"
+              width="24"
+              height="16"
+              rx="3"
+              stroke="currentColor"
+              stroke-width="2"
+              fill="currentColor"
+              opacity=".1"
+            />
+            <line
+              x1="4"
+              y1="16"
+              x2="28"
+              y2="16"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-dasharray="3 2"
+            />
+            <rect
+              x="8"
+              y="4"
+              width="16"
+              height="6"
+              rx="1.5"
+              fill="currentColor"
+              opacity=".4"
+            />
+            <circle cx="25" cy="25" r="4" fill="var(--peach)" opacity=".9" />
+            <path
+              d="M23.5 25h3M25 23.5v3"
+              stroke="#0e0d1f"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          <h1>Scan &amp; Print</h1>
         </div>
 
-        <!-- Color: Colored / Grayscale -->
-        <div class="option-group">
-          <label class="option-label">Color</label>
-          <div class="option-row">
-            <label class="option-chip"
-              ><input type="radio" name="colorMode" value="colored" />
-              Colored</label
-            >
-            <label class="option-chip"
-              ><input type="radio" name="colorMode" value="grayscale" checked />
-              Grayscale</label
-            >
-          </div>
+        <!-- Scanner status pill -->
+        <div
+          class="scanner-pill"
+          id="scannerPill"
+          data-state="checking"
+          aria-live="polite"
+        >
+          <span class="scanner-pill__dot" aria-hidden="true"></span>
+          <span class="scanner-pill__text" id="scannerPillText">Checking…</span>
         </div>
+      </header>
 
-        <!-- DPI: 150 / 300 / 600 -->
-        <div class="option-group">
-          <label class="option-label">Resolution (DPI)</label>
-          <div class="option-row">
-            <label class="option-chip"
-              ><input type="radio" name="dpi" value="150" /> 150</label
+      <!-- Main: two-column layout -->
+      <main class="scan-layout" role="main">
+        <!-- ── LEFT: Scanner preview panel ── -->
+        <section class="preview-col" aria-label="Scan preview">
+          <div class="preview-panel">
+            <div class="preview-panel__header">
+              <span class="preview-panel__eyebrow">Scan Preview</span>
+              <span class="preview-hint" id="previewHint" aria-live="polite"
+                >No scan yet</span
+              >
+            </div>
+
+            <!-- Preview area — shows placeholder, scan animation, or result -->
+            <div class="preview-area" id="previewArea">
+              <!-- Idle / ready state -->
+              <div class="preview-state" id="stateIdle">
+                <div class="scan-bed" aria-hidden="true">
+                  <div class="scan-bed__frame">
+                    <!-- Corner marks -->
+                    <div class="scan-bed__corner scan-bed__corner--tl"></div>
+                    <div class="scan-bed__corner scan-bed__corner--tr"></div>
+                    <div class="scan-bed__corner scan-bed__corner--bl"></div>
+                    <div class="scan-bed__corner scan-bed__corner--br"></div>
+                    <!-- Document silhouette -->
+                    <div class="scan-bed__doc">
+                      <div class="scan-bed__line"></div>
+                      <div class="scan-bed__line scan-bed__line--short"></div>
+                      <div class="scan-bed__line"></div>
+                      <div class="scan-bed__line scan-bed__line--mid"></div>
+                      <div class="scan-bed__line"></div>
+                      <div class="scan-bed__line scan-bed__line--short"></div>
+                    </div>
+                  </div>
+                </div>
+                <p class="preview-state__label">
+                  Place your document face-down on the scanner
+                </p>
+              </div>
+
+              <!-- Scanning animation state -->
+              <div class="preview-state hidden" id="stateScanning">
+                <div class="scanning-anim" aria-hidden="true">
+                  <div class="scanning-anim__page">
+                    <div class="scanning-anim__beam"></div>
+                  </div>
+                </div>
+                <p class="preview-state__label">Scanning your document…</p>
+                <p class="preview-state__sub" id="scanProgress">
+                  Initialising scanner
+                </p>
+              </div>
+
+              <!-- Scanned result state -->
+              <div class="preview-state hidden" id="stateResult">
+                <div class="scanned-result" id="scannedResult">
+                  <!-- Scanned image injected here by app.ts -->
+                  <img
+                    id="scannedImage"
+                    class="scanned-result__img"
+                    src=""
+                    alt="Scanned document preview"
+                  />
+                  <!-- Page-turn overlay for multi-page -->
+                  <div
+                    class="scanned-result__badge"
+                    id="pageCountBadge"
+                    style="display: none"
+                    aria-label="Page count"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M4 2a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2
+                      0 002-2V5.414A2 2 0 0013.414 4L11 1.586A2 2 0 009.586 1H4zm4
+                      9a1 1 0 100-2 1 1 0 000 2zm1-5a1 1 0 10-2 0v2a1 1 0 102 0V6z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                    <span id="pageCountText">1 page</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Error state -->
+              <div class="preview-state hidden" id="stateError">
+                <div class="error-icon" aria-hidden="true">
+                  <svg viewBox="0 0 48 48" fill="none">
+                    <circle
+                      cx="24"
+                      cy="24"
+                      r="20"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      opacity=".4"
+                    />
+                    <path
+                      d="M24 15v10M24 31v2"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </div>
+                <p
+                  class="preview-state__label preview-state__label--error"
+                  id="errorText"
+                >
+                  Scanner not connected
+                </p>
+                <p class="preview-state__sub">
+                  Check the USB connection and try again
+                </p>
+              </div>
+            </div>
+            <!-- /preview-area -->
+
+            <!-- Page navigation for multi-page scans -->
+            <div
+              class="preview-controls"
+              id="previewControls"
+              style="display: none"
+              role="toolbar"
+              aria-label="Page navigation"
             >
-            <label class="option-chip"
-              ><input type="radio" name="dpi" value="300" checked /> 300</label
-            >
-            <label class="option-chip"
-              ><input type="radio" name="dpi" value="600" /> 600</label
-            >
+              <button
+                class="pager-btn"
+                id="pagePrev"
+                aria-label="Previous page"
+                disabled
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M12.707 5.293a1 1 0 010 1.414L9.414
+                  10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1
+                  1 0 011.414 0z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </button>
+              <span class="pager-label" id="pagerLabel" aria-live="polite"
+                >1 / 1</span
+              >
+              <button
+                class="pager-btn"
+                id="pageNext"
+                aria-label="Next page"
+                disabled
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M7.293 14.707a1 1 0 010-1.414L10.586
+                  10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1
+                  1 0 01-1.414 0z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <!-- Format: PDF / JPG / PNG -->
-        <div class="option-group">
-          <label class="option-label">Output Format</label>
-          <div class="option-row">
-            <label class="option-chip"
-              ><input type="radio" name="format" value="pdf" checked />
-              PDF</label
-            >
-            <label class="option-chip"
-              ><input type="radio" name="format" value="jpg" /> JPG</label
-            >
-            <label class="option-chip"
-              ><input type="radio" name="format" value="png" /> PNG</label
-            >
+        <!-- ── RIGHT: Controls panel ── -->
+        <section class="controls-col" aria-label="Scan controls">
+          <!-- Scanner status card -->
+          <div class="status-card" id="scannerStatusCard" data-state="checking">
+            <div class="status-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" fill="none">
+                <rect
+                  x="2"
+                  y="8"
+                  width="28"
+                  height="16"
+                  rx="3.5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="currentColor"
+                  opacity=".08"
+                />
+                <line
+                  x1="2"
+                  y1="16"
+                  x2="30"
+                  y2="16"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  opacity=".4"
+                />
+                <rect
+                  x="8"
+                  y="4"
+                  width="16"
+                  height="5"
+                  rx="1.5"
+                  fill="currentColor"
+                  opacity=".35"
+                />
+                <rect
+                  x="8"
+                  y="23"
+                  width="16"
+                  height="5"
+                  rx="1.5"
+                  fill="currentColor"
+                  opacity=".35"
+                />
+              </svg>
+            </div>
+            <div class="status-card__body">
+              <span class="status-card__title" id="scannerStatusLabel"
+                >Checking scanner…</span
+              >
+              <span class="status-card__detail" id="scannerStatusDetail"
+                >Please wait</span
+              >
+            </div>
+            <div class="status-card__indicator" aria-hidden="true">
+              <div class="status-dot" id="statusDot"></div>
+            </div>
           </div>
-        </div>
 
-        <div class="actions">
-          <a href="/" class="text-link">Back</a>
-          <button id="startScanBtn" type="button" class="primary-btn">
-            Start Scan
+          <!-- Scan mode selector -->
+          <fieldset class="option-group">
+            <legend class="option-label">Scan Mode</legend>
+            <div class="option-grid">
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanMode"
+                  value="single"
+                  checked
+                  class="sr-only"
+                />
+                <div class="option-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 36 36" fill="none">
+                    <rect
+                      x="9"
+                      y="4"
+                      width="18"
+                      height="28"
+                      rx="2.5"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      fill="currentColor"
+                      opacity=".1"
+                    />
+                    <rect
+                      x="12"
+                      y="10"
+                      width="12"
+                      height="2"
+                      rx="1"
+                      fill="currentColor"
+                      opacity=".5"
+                    />
+                    <rect
+                      x="12"
+                      y="15"
+                      width="12"
+                      height="2"
+                      rx="1"
+                      fill="currentColor"
+                      opacity=".35"
+                    />
+                    <rect
+                      x="12"
+                      y="20"
+                      width="8"
+                      height="2"
+                      rx="1"
+                      fill="currentColor"
+                      opacity=".25"
+                    />
+                  </svg>
+                </div>
+                <span class="option-card__label">Single Page</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanMode"
+                  value="multi"
+                  class="sr-only"
+                />
+                <div class="option-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 36 36" fill="none">
+                    <rect
+                      x="5"
+                      y="7"
+                      width="18"
+                      height="24"
+                      rx="2"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      fill="currentColor"
+                      opacity=".06"
+                    />
+                    <rect
+                      x="9"
+                      y="4"
+                      width="18"
+                      height="24"
+                      rx="2.5"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      fill="currentColor"
+                      opacity=".1"
+                    />
+                    <rect
+                      x="12"
+                      y="10"
+                      width="12"
+                      height="2"
+                      rx="1"
+                      fill="currentColor"
+                      opacity=".5"
+                    />
+                    <rect
+                      x="12"
+                      y="15"
+                      width="9"
+                      height="2"
+                      rx="1"
+                      fill="currentColor"
+                      opacity=".35"
+                    />
+                  </svg>
+                </div>
+                <span class="option-card__label">Multi-Page</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Colour mode selector -->
+          <fieldset class="option-group">
+            <legend class="option-label">Color Mode</legend>
+            <div class="option-grid">
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanColor"
+                  value="color"
+                  checked
+                  class="sr-only"
+                />
+                <div class="option-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 36 36" fill="none">
+                    <circle cx="13" cy="14" r="8" fill="#f2aebb" opacity=".9" />
+                    <circle
+                      cx="23"
+                      cy="14"
+                      r="8"
+                      fill="#696fc7"
+                      opacity=".75"
+                    />
+                    <circle
+                      cx="18"
+                      cy="23"
+                      r="8"
+                      fill="#f5d3c4"
+                      opacity=".85"
+                    />
+                  </svg>
+                </div>
+                <span class="option-card__label">Color</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanColor"
+                  value="grayscale"
+                  class="sr-only"
+                />
+                <div class="option-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 36 36" fill="none">
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="11"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      opacity=".4"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="5"
+                      fill="currentColor"
+                      opacity=".3"
+                    />
+                  </svg>
+                </div>
+                <span class="option-card__label">Grayscale</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Resolution selector -->
+          <fieldset class="option-group">
+            <legend class="option-label">Resolution</legend>
+            <div class="option-grid option-grid--3">
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanDpi"
+                  value="150"
+                  class="sr-only"
+                />
+                <div
+                  class="option-card__icon option-card__icon--text"
+                  aria-hidden="true"
+                >
+                  150
+                  <span class="option-card__unit">dpi</span>
+                </div>
+                <span class="option-card__label">Draft</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanDpi"
+                  value="300"
+                  checked
+                  class="sr-only"
+                />
+                <div
+                  class="option-card__icon option-card__icon--text"
+                  aria-hidden="true"
+                >
+                  300
+                  <span class="option-card__unit">dpi</span>
+                </div>
+                <span class="option-card__label">Standard</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+              <label class="option-card">
+                <input
+                  type="radio"
+                  name="scanDpi"
+                  value="600"
+                  class="sr-only"
+                />
+                <div
+                  class="option-card__icon option-card__icon--text"
+                  aria-hidden="true"
+                >
+                  600
+                  <span class="option-card__unit">dpi</span>
+                </div>
+                <span class="option-card__label">High</span>
+                <span class="option-card__radio" aria-hidden="true"></span>
+              </label>
+            </div>
+          </fieldset>
+        </section>
+      </main>
+
+      <!-- Footer -->
+      <footer class="scan-footer">
+        <div class="scan-footer__left">
+          <button
+            type="button"
+            id="rescanBtn"
+            class="rescan-btn"
+            style="display: none"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601
+              2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0
+              01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001
+              13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0
+              01-11.601-2.566 1 1 0 01.61-1.276z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            Rescan
           </button>
         </div>
-      </section>
 
-      <!-- Progress Overlay (hidden by default) -->
-      <div class="scan-overlay" id="scanProgressOverlay" aria-hidden="true">
-        <div class="overlay-card">
-          <div class="spinner" aria-hidden="true"></div>
-          <h2 id="scanProgressTitle">Scanner is preparing...</h2>
-          <p id="scanProgressMessage">
-            Please wait while your document is being scanned.
-          </p>
-          <p class="hint">Do not remove the document.</p>
-          <button id="cancelScanBtn" type="button" class="cancel-btn">
-            Cancel Scan
-          </button>
-        </div>
-      </div>
+        <button
+          type="button"
+          id="scanBtn"
+          class="scan-btn"
+          disabled
+          aria-disabled="true"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="7" width="18" height="13" rx="2" />
+            <path d="M3 12h18" />
+            <path d="M8 3h8" />
+          </svg>
+          <span id="scanBtnLabel">Scan Document</span>
+        </button>
 
-      <!-- Result Section (hidden by default) -->
-      <section class="page-card" id="resultSection" style="display: none">
-        <h1>Scan Complete</h1>
-        <p class="lead" id="resultSummary">
-          Your document has been scanned successfully.
-        </p>
+        <button
+          type="button"
+          id="proceedBtn"
+          class="proceed-btn"
+          style="display: none"
+          disabled
+          aria-disabled="true"
+        >
+          <span>Print this Scan</span>
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </button>
+      </footer>
+    </div>
 
-        <div class="result-details">
-          <div class="result-row">
-            <span>Pages</span><span id="resultPages">—</span>
-          </div>
-          <div class="result-row">
-            <span>Format</span><span id="resultFormat">—</span>
-          </div>
-        </div>
-
-        <div class="result-actions">
-          <a id="downloadBtn" href="#" class="primary-btn" download>Download</a>
-          <button id="sendToPrintBtn" type="button" class="secondary-btn">
-            Send to Print
-          </button>
-        </div>
-        <div class="actions" style="margin-top: 12px">
-          <button id="scanAgainBtn" type="button" class="text-link-btn">
-            Scan Another
-          </button>
-          <a href="/" class="text-link">Back to Home</a>
-        </div>
-      </section>
-
-      <!-- Error Section (hidden by default) -->
-      <section class="page-card" id="errorSection" style="display: none">
-        <h1>Scan Failed</h1>
-        <p class="lead error-text" id="errorMessage">
-          Something went wrong while scanning.
-        </p>
-        <div class="actions">
-          <button id="retryBtn" type="button" class="primary-btn">
-            Try Again
-          </button>
-          <a href="/" class="text-link">Back to Home</a>
-        </div>
-      </section>
-    </main>
     <script src="/scan/app.js"></script>
   </body>
 </html>
