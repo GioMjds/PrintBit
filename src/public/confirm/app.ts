@@ -230,7 +230,10 @@ modalConfirmBtn?.addEventListener("click", async () => {
 
   // Show printing in progress overlay
   showOverlay(printingOverlay);
-  if (statusMessage) statusMessage.textContent = "Processing payment...";
+  if (statusMessage) statusMessage.textContent = "Printing your document…";
+
+  const MIN_OVERLAY_MS = 3_000;
+  const overlayStart = Date.now();
 
   const response = await fetch("/api/confirm-payment", {
     method: "POST",
@@ -245,6 +248,10 @@ modalConfirmBtn?.addEventListener("click", async () => {
       paperSize: config.paperSize,
     }),
   });
+
+  // Ensure the printing overlay is visible for at least MIN_OVERLAY_MS
+  const remaining = MIN_OVERLAY_MS - (Date.now() - overlayStart);
+  if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
   hideOverlay(printingOverlay);
 
