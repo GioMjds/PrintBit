@@ -222,13 +222,10 @@ class PrintPreview {
 
     let pdfjs: PdfjsLib;
     try {
-      // Use new Function to prevent esbuild from attempting to bundle this
-      // absolute URL path at compile time — it must remain a runtime browser import.
       const dynImport = new Function("u", "return import(u)") as (
         u: string,
       ) => Promise<Record<string, unknown>>;
       const mod = await dynImport("/libs/pdfjs/pdf.min.mjs");
-      // pdfjs-dist v5 uses named ESM exports; fall back to .default for older builds.
       pdfjs = (mod.default ?? mod) as PdfjsLib;
       pdfjs.GlobalWorkerOptions.workerSrc = `${window.location.origin}/libs/pdfjs/pdf.worker.min.mjs`;
     } catch (e) {
