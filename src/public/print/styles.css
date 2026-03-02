@@ -434,7 +434,7 @@ body {
 }
 
 .files-empty__title {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--white);
   opacity: 0.5;

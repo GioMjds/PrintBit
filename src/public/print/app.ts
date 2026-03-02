@@ -1,10 +1,8 @@
 import QRCode from "qrcode";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
 type UploadedFile = {
   filename: string;
-  size?: number; // bytes, optional
+  size?: number;
   sizeBytes?: number;
 };
 
@@ -306,8 +304,6 @@ continueBtn?.addEventListener("click", () => {
   if (!activeSessionId || !selectedFilename) return;
   window.location.href = `/config?mode=print&sessionId=${encodeURIComponent(activeSessionId)}&file=${encodeURIComponent(selectedFilename)}`;
 });
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
 
 void createSession();
 

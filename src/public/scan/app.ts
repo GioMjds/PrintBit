@@ -1,7 +1,5 @@
 export {};
 
-// ── Types ──────────────────────────────────────────────────────
-
 type ScannerState = "checking" | "ready" | "scanning" | "done" | "error";
 type ScanMode = "single" | "multi";
 type ScanColor = "color" | "grayscale";
@@ -14,7 +12,7 @@ interface ScanStatusResponse {
 }
 
 interface ScanResponse {
-  pages: string[]; // Array of data-URLs or server paths, one per scanned page
+  pages: string[];
   sessionId?: string;
   filename?: string;
 }
@@ -61,8 +59,6 @@ const scanBtn = document.getElementById("scanBtn") as HTMLButtonElement;
 const scanBtnLabel = document.getElementById("scanBtnLabel") as HTMLElement;
 const rescanBtn = document.getElementById("rescanBtn") as HTMLButtonElement;
 const proceedBtn = document.getElementById("proceedBtn") as HTMLButtonElement;
-
-// ── Radio helpers ──────────────────────────────────────────────
 
 function getRadio<T extends string>(name: string): T {
   return document.querySelector<HTMLInputElement>(
@@ -157,9 +153,6 @@ function updatePager(): void {
 pagePrev.addEventListener("click", () => goToPage(currentPage - 1));
 pageNext.addEventListener("click", () => goToPage(currentPage + 1));
 
-// ── Grayscale live toggle ──────────────────────────────────────
-
-// When user changes color mode after a scan, update the preview image immediately
 document
   .querySelectorAll<HTMLInputElement>('input[name="scanColor"]')
   .forEach((el) => {

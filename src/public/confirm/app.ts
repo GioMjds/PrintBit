@@ -28,6 +28,10 @@ const orientationValue = document.getElementById("orientationValue");
 const paperSizeValue = document.getElementById("paperSizeValue");
 const priceValue = document.getElementById("priceValue");
 const balanceValue = document.getElementById("balanceValue");
+const changeValue = document.getElementById("changeValue");
+const changeRow = document.getElementById("changeRow");
+const modalChange = document.getElementById("modalChange");
+const modalChangeRow = document.getElementById("modalChangeRow");
 const statusMessage = document.getElementById("statusMessage");
 const coinEventMessage = document.getElementById("coinEventMessage");
 const confirmBtn = document.getElementById("confirmBtn") as HTMLButtonElement;
@@ -44,6 +48,7 @@ const DEFAULT_PRICING: PricingResponse = {
 };
 let totalPrice = 0;
 let pricingLoaded = false;
+let currentBalance = 0;
 
 if (!rawConfig) {
   window.location.href = "/config";
@@ -53,7 +58,8 @@ if (!rawConfig) {
 const config = JSON.parse(rawConfig ?? "{}") as ConfirmConfig;
 
 function calculateTotalPrice(pricing: PricingResponse): number {
-  const base = config.mode === "copy" ? pricing.copyPerPage : pricing.printPerPage;
+  const base =
+    config.mode === "copy" ? pricing.copyPerPage : pricing.printPerPage;
   const color = config.colorMode === "colored" ? pricing.colorSurcharge : 0;
   return Number(((base + color) * Math.max(1, config.copies)).toFixed(2));
 }
@@ -65,7 +71,8 @@ if (confirmBtn) {
 
 const modalConfirmBtnSpan = document.querySelector("#modalConfirmBtn span");
 if (modalConfirmBtnSpan) {
-  modalConfirmBtnSpan.textContent = config.mode === "print" ? "Yes, Print" : "Yes, Copy";
+  modalConfirmBtnSpan.textContent =
+    config.mode === "print" ? "Yes, Print" : "Yes, Copy";
 }
 
 if (modeValue) modeValue.textContent = config.mode.toUpperCase();
@@ -80,8 +87,25 @@ if (orientationValue) orientationValue.textContent = config.orientation;
 if (paperSizeValue) paperSizeValue.textContent = config.paperSize;
 if (priceValue) priceValue.textContent = "Loading...";
 
+function updateChangeDisplay(balance: number): void {
+  const change = balance - totalPrice;
+  const hasChange = pricingLoaded && change > 0;
+  if (changeRow) {
+    if (hasChange) {
+      changeRow.removeAttribute("hidden");
+    } else {
+      changeRow.setAttribute("hidden", "");
+    }
+  }
+  if (changeValue) {
+    changeValue.textContent = hasChange ? `₱ ${change.toFixed(2)}` : "—";
+  }
+}
+
 function updateBalanceUI(balance: number): void {
+  currentBalance = balance;
   if (balanceValue) balanceValue.textContent = `₱ ${balance.toFixed(2)}`;
+  updateChangeDisplay(balance);
   if (!statusMessage || !confirmBtn) return;
   if (!pricingLoaded) {
     statusMessage.textContent = "Loading pricing...";
@@ -116,32 +140,31 @@ async function fetchInitialBalance(): Promise<void> {
 async function loadPricing(): Promise<void> {
   let pricing = DEFAULT_PRICING;
 
-  try {
-    const response = await fetch("/api/pricing");
-    if (!response.ok) throw new Error("Pricing request failed.");
+  const response = await fetch("/api/pricing");
+  if (!response.ok) throw new Error("Pricing request failed.");
 
-    const payload = (await response.json()) as Partial<PricingResponse>;
-    const safePrint =
-      typeof payload.printPerPage === "number" && Number.isFinite(payload.printPerPage)
-        ? payload.printPerPage
-        : DEFAULT_PRICING.printPerPage;
-    const safeCopy =
-      typeof payload.copyPerPage === "number" && Number.isFinite(payload.copyPerPage)
-        ? payload.copyPerPage
-        : DEFAULT_PRICING.copyPerPage;
-    const safeColor =
-      typeof payload.colorSurcharge === "number" && Number.isFinite(payload.colorSurcharge)
-        ? payload.colorSurcharge
-        : DEFAULT_PRICING.colorSurcharge;
+  const payload = (await response.json()) as Partial<PricingResponse>;
+  const safePrint =
+    typeof payload.printPerPage === "number" &&
+    Number.isFinite(payload.printPerPage)
+      ? payload.printPerPage
+      : DEFAULT_PRICING.printPerPage;
+  const safeCopy =
+    typeof payload.copyPerPage === "number" &&
+    Number.isFinite(payload.copyPerPage)
+      ? payload.copyPerPage
+      : DEFAULT_PRICING.copyPerPage;
+  const safeColor =
+    typeof payload.colorSurcharge === "number" &&
+    Number.isFinite(payload.colorSurcharge)
+      ? payload.colorSurcharge
+      : DEFAULT_PRICING.colorSurcharge;
 
-    pricing = {
-      printPerPage: safePrint,
-      copyPerPage: safeCopy,
-      colorSurcharge: safeColor,
-    };
-  } catch {
-    // Keep kiosk usable with safe defaults if admin pricing endpoint is unavailable.
-  }
+  pricing = {
+    printPerPage: safePrint,
+    copyPerPage: safeCopy,
+    colorSurcharge: safeColor,
+  };
 
   totalPrice = calculateTotalPrice(pricing);
   pricingLoaded = true;
@@ -168,15 +191,18 @@ async function resetBalanceForTesting(): Promise<void> {
 
   updateBalanceUI(payload.balance ?? 0);
   if (statusMessage)
-    statusMessage.textContent =
-      "Coin balance reset to ₱ 0.00 (testing mode).";
+    statusMessage.textContent = "Coin balance reset to ₱ 0.00 (testing mode).";
   setCoinEventMessage("Balance reset manually for testing.");
   resetBalanceBtn.disabled = false;
 }
 
 const confirmModal = document.getElementById("confirmModal");
-const modalCancelBtn = document.getElementById("modalCancelBtn") as HTMLButtonElement;
-const modalConfirmBtn = document.getElementById("modalConfirmBtn") as HTMLButtonElement;
+const modalCancelBtn = document.getElementById(
+  "modalCancelBtn",
+) as HTMLButtonElement;
+const modalConfirmBtn = document.getElementById(
+  "modalConfirmBtn",
+) as HTMLButtonElement;
 const modalFile = document.getElementById("modalFile");
 const modalMode = document.getElementById("modalMode");
 const modalColor = document.getElementById("modalColor");
@@ -186,19 +212,33 @@ const modalPaper = document.getElementById("modalPaper");
 const modalPrice = document.getElementById("modalPrice");
 const printingOverlay = document.getElementById("printingOverlay");
 const thankYouOverlay = document.getElementById("thankYouOverlay");
-const thankYouDoneBtn = document.getElementById("thankYouDoneBtn") as HTMLButtonElement;
+const thankYouDoneBtn = document.getElementById(
+  "thankYouDoneBtn",
+) as HTMLButtonElement;
 
 function showModal(): void {
   if (!confirmModal) return;
-  if (modalFile) modalFile.textContent = config.mode === "print"
-    ? (uploadedFile ?? "No file")
-    : "Physical document copy";
+  if (modalFile)
+    modalFile.textContent =
+      config.mode === "print"
+        ? (uploadedFile ?? "No file")
+        : "Physical document copy";
   if (modalMode) modalMode.textContent = config.mode.toUpperCase();
   if (modalColor) modalColor.textContent = config.colorMode;
   if (modalCopies) modalCopies.textContent = String(config.copies);
   if (modalOrientation) modalOrientation.textContent = config.orientation;
   if (modalPaper) modalPaper.textContent = config.paperSize;
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice.toFixed(2)}`;
+  const change = currentBalance - totalPrice;
+  if (modalChangeRow && modalChange) {
+    if (change > 0) {
+      modalChangeRow.removeAttribute("hidden");
+      modalChange.textContent = `₱ ${change.toFixed(2)}`;
+    } else {
+      modalChangeRow.setAttribute("hidden", "");
+      modalChange.textContent = "—";
+    }
+  }
   confirmModal.classList.add("is-visible");
   confirmModal.setAttribute("aria-hidden", "false");
 }
@@ -251,7 +291,8 @@ modalConfirmBtn?.addEventListener("click", async () => {
       return;
     }
 
-    if (statusMessage) statusMessage.textContent = "Sending checked document to printer...";
+    if (statusMessage)
+      statusMessage.textContent = "Sending checked document to printer...";
 
     try {
       const createRes = await fetch("/api/copy/jobs", {
@@ -270,13 +311,18 @@ modalConfirmBtn?.addEventListener("click", async () => {
       if (!createRes.ok) {
         const payload = (await createRes.json()) as { error?: string };
         hideOverlay(printingOverlay);
-        if (statusMessage) statusMessage.textContent = payload.error ?? "Failed to start copy job.";
+        if (statusMessage)
+          statusMessage.textContent =
+            payload.error ?? "Failed to start copy job.";
         confirmBtn.disabled = false;
         modalConfirmBtn.disabled = false;
         return;
       }
 
-      const createData = (await createRes.json()) as { id: string; state: string };
+      const createData = (await createRes.json()) as {
+        id: string;
+        state: string;
+      };
       const jobId = createData.id;
 
       // Poll job status
@@ -294,7 +340,8 @@ modalConfirmBtn?.addEventListener("click", async () => {
         sessionStorage.removeItem("printbit.uploadedFile");
         sessionStorage.removeItem("printbit.sessionId");
       } else if (pollResult === "failed") {
-        if (statusMessage) statusMessage.textContent = "Copy job failed. Please try again.";
+        if (statusMessage)
+          statusMessage.textContent = "Copy job failed. Please try again.";
         confirmBtn.disabled = false;
         modalConfirmBtn.disabled = false;
       } else {
@@ -304,7 +351,8 @@ modalConfirmBtn?.addEventListener("click", async () => {
       }
     } catch {
       hideOverlay(printingOverlay);
-      if (statusMessage) statusMessage.textContent = "Network error during copy job.";
+      if (statusMessage)
+        statusMessage.textContent = "Network error during copy job.";
       confirmBtn.disabled = false;
       modalConfirmBtn.disabled = false;
     }
@@ -364,9 +412,14 @@ async function pollCopyJob(jobId: string): Promise<string> {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
-        if (!res.ok) { clearInterval(interval); resolve("failed"); return; }
+        if (!res.ok) {
+          clearInterval(interval);
+          resolve("failed");
+          return;
+        }
         const data = (await res.json()) as {
-          state: string; progress?: { pagesCompleted: number; pagesTotal: number | null }
+          state: string;
+          progress?: { pagesCompleted: number; pagesTotal: number | null };
         };
         const { state, progress } = data;
 
@@ -380,7 +433,11 @@ async function pollCopyJob(jobId: string): Promise<string> {
           }
         }
 
-        if (state === "succeeded" || state === "failed" || state === "cancelled") {
+        if (
+          state === "succeeded" ||
+          state === "failed" ||
+          state === "cancelled"
+        ) {
           clearInterval(interval);
           resolve(state);
         }
@@ -412,7 +469,10 @@ async function insertTestCoin(value: number): Promise<void> {
       body: JSON.stringify({ value }),
     });
 
-    const payload = (await response.json()) as { balance?: number; error?: string };
+    const payload = (await response.json()) as {
+      balance?: number;
+      error?: string;
+    };
     if (!response.ok) {
       setCoinEventMessage(payload.error ?? "Failed to insert coin.");
     }

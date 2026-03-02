@@ -541,9 +541,8 @@ body {
 
 .summary-row__value--file {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--lavender);
-  font-style: italic;
 }
 
 /* ── Divider ──────────────────────────────────────────────── */
@@ -567,6 +566,18 @@ body {
   font-size: 22px;
   font-weight: 800;
   color: var(--peach);
+  letter-spacing: -0.5px;
+}
+
+/* ── Change row ───────────────────────────────────────────── */
+.summary-row--change .summary-row__label {
+  color: #a3e6ac;
+  font-size: 14px;
+}
+.summary-row__value--change {
+  font-size: 22px;
+  font-weight: 800;
+  color: #6ac47a;
   letter-spacing: -0.5px;
 }
 
@@ -762,6 +773,16 @@ body {
   font-size: 20px;
   font-weight: 800;
   color: var(--peach);
+}
+.modal-summary__row--change dt {
+  font-size: 14px;
+  color: #a3e6ac;
+  font-weight: 700;
+}
+.modal-summary__row--change dd {
+  font-size: 20px;
+  font-weight: 800;
+  color: #6ac47a;
 }
 .modal-summary__divider {
   height: 1px;

@@ -151,6 +151,12 @@ export function registerAdminRoutes(
     res.send(csv);
   });
 
+  app.delete("/api/admin/logs", requireAdminLocalAccess, requireAdminPin, async (_req: Request, res: Response) => {
+    db.data!.logs = [];
+    await db.write();
+    res.json({ ok: true });
+  });
+
   app.post("/api/admin/balance/reset", requireAdminLocalAccess, requireAdminPin, async (_req: Request, res: Response) => {
     const previousBalance = db.data!.balance;
     db.data!.balance = 0;

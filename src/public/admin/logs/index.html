@@ -274,9 +274,6 @@
         <header class="topbar">
           <div class="topbar__left">
             <h2 class="topbar__title">Logs</h2>
-            <div class="live-pill">
-              <span class="live-pill__dot" aria-hidden="true"></span>Live
-            </div>
           </div>
           <div class="topbar__right">
             <p
@@ -305,28 +302,34 @@
               </svg>
               <span>Export CSV</span>
             </button>
+            <button id="clearLogsBtn" class="topbar-btn topbar-btn--danger">
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+              </svg>
+              <span>Clear All</span>
+            </button>
           </div>
         </header>
 
         <div class="content">
           <section class="page">
             <div class="logs-panel">
-              <div class="logs-panel__bar">
-                <span class="logs-panel__hint"
-                  >Latest 120 entries · auto-refreshes every 10 s</span
-                >
-              </div>
               <div class="logs-scroll">
                 <table class="logs-table">
                   <thead>
                     <tr>
                       <th class="logs-th logs-th--ts">Timestamp</th>
-                      <th class="logs-th logs-th--type">Type</th>
                       <th class="logs-th">Message</th>
+                      <th class="logs-th logs-th--action"></th>
                     </tr>
                   </thead>
                   <tbody id="logsBody"></tbody>
                 </table>
+              </div>
+              <div class="logs-pagination">
+                <button id="prevPageBtn" class="logs-pagination__btn" disabled>← Prev</button>
+                <span id="pageInfo" class="logs-pagination__info">Page 1 of 1</span>
+                <button id="nextPageBtn" class="logs-pagination__btn" disabled>Next →</button>
               </div>
             </div>
           </section>

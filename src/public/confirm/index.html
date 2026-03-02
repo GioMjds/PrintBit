@@ -388,6 +388,31 @@
                   —
                 </dd>
               </div>
+
+              <div class="summary-row summary-row--change" id="changeRow" hidden>
+                <dt class="summary-row__label">
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
+                    1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0 000-.7l-2.5-2.5a.5.5
+                    0 00-.7.7L10.3 7.5H4.5z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  Change
+                </dt>
+                <dd
+                  class="summary-row__value summary-row__value--change"
+                  id="changeValue"
+                >
+                  —
+                </dd>
+              </div>
             </dl>
           </div>
         </section>
@@ -429,10 +454,6 @@
 
         <dl class="modal-summary">
           <div class="modal-summary__row">
-            <dt>File</dt>
-            <dd id="modalFile">—</dd>
-          </div>
-          <div class="modal-summary__row">
             <dt>Mode</dt>
             <dd id="modalMode">—</dd>
           </div>
@@ -456,6 +477,10 @@
           <div class="modal-summary__row modal-summary__row--total">
             <dt>Total Price</dt>
             <dd id="modalPrice">—</dd>
+          </div>
+          <div class="modal-summary__row modal-summary__row--change" id="modalChangeRow" hidden>
+            <dt>Coin Change</dt>
+            <dd id="modalChange">—</dd>
           </div>
         </dl>
 

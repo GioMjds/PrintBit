@@ -1,13 +1,27 @@
 export {};
 
-const continueBtn = document.getElementById("continueBtn") as HTMLButtonElement | null;
-const checkDocBtn = document.getElementById("checkDocBtn") as HTMLButtonElement | null;
-const scanOverlay = document.getElementById("scanOverlay") as HTMLElement | null;
-const errorBanner = document.getElementById("errorBanner") as HTMLElement | null;
+const continueBtn = document.getElementById(
+  "continueBtn",
+) as HTMLButtonElement | null;
+const checkDocBtn = document.getElementById(
+  "checkDocBtn",
+) as HTMLButtonElement | null;
+const scanOverlay = document.getElementById(
+  "scanOverlay",
+) as HTMLElement | null;
+const errorBanner = document.getElementById(
+  "errorBanner",
+) as HTMLElement | null;
 const errorText = document.getElementById("errorText") as HTMLElement | null;
-const retryBtn = document.getElementById("retryBtn") as HTMLButtonElement | null;
-const previewSection = document.getElementById("previewSection") as HTMLElement | null;
-const previewFrame = document.getElementById("previewFrame") as HTMLIFrameElement | null;
+const retryBtn = document.getElementById(
+  "retryBtn",
+) as HTMLButtonElement | null;
+const previewSection = document.getElementById(
+  "previewSection",
+) as HTMLElement | null;
+const previewFrame = document.getElementById(
+  "previewFrame",
+) as HTMLIFrameElement | null;
 
 let previewPath: string | null = null;
 
@@ -37,7 +51,8 @@ function hideError(): void {
 function showPreview(filename: string): void {
   hideError();
   if (previewSection) previewSection.style.display = "";
-  if (previewFrame) previewFrame.src = `/api/scan/preview/${encodeURIComponent(filename)}`;
+  if (previewFrame)
+    previewFrame.src = `/api/scan/preview/${encodeURIComponent(filename)}`;
   if (continueBtn) {
     continueBtn.style.display = "";
     continueBtn.disabled = false;

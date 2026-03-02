@@ -1,0 +1,32 @@
+# Print Methods
+
+1. Print
+
+- Has QR code for upload web page
+- Has received file(s) that upload page
+- Can do select a single file first
+
+2. Copy
+
+- End-users must open the photocopy in the printer, facing document
+- In the Kiosk and if the document is ready, press "Check Document"
+- Displays and end-users must confirm the document if anything's correct.
+
+3. Scan
+
+- End-users chooses if they want to scan front, back, or both sides of the document
+- End-users must open the scanner in the printer, facing document
+- The kiosk must display the scanned document and end-users must confirm if anything's correct.
+
+# Step 2: Config
+
+- Configure the selected files in either of 3 print methods (Print, Copy, Scan)
+- Choose color mode, orientation, paper size, and number of copy
+
+# Step 3: Confirm
+
+- End-users must insert coins for payment
+- Shows inserted coins
+- Has "Confirm" pressable for confimation dialog if total price >= coin(s) inserted
+- If coin(s) inserted > total price, the machine drops the change.
+- [Print]: If too many files uploaded at one session and confirms the print, must redirect to '/print' to choose remaining files, prompting end-users to decide if they want to print remaining files in the '/print'.

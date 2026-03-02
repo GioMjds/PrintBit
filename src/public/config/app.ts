@@ -83,6 +83,11 @@ class PrintPreview {
   private naturalW = 794; // natural paper width in px (A4 portrait @ 96dpi)
   private naturalH = 1123; // natural paper height in px
 
+  private zoomScale = 1.0;
+  private readonly ZOOM_MIN = 0.5;
+  private readonly ZOOM_MAX = 3.0;
+  private readonly ZOOM_STEP = 0.25;
+
   private pdfDoc: PDFDocumentProxy | null = null;
   private currentPage = 1;
   private totalPages = 1;
@@ -96,9 +101,7 @@ class PrintPreview {
       "previewCanvas",
     )! as HTMLCanvasElement;
     this.img = document.getElementById("previewImg")! as HTMLImageElement;
-    this.iframe = document.getElementById(
-      "previewFrame",
-    )! as HTMLIFrameElement;
+    this.iframe = document.getElementById("previewFrame")! as HTMLIFrameElement;
     this.placeholder = document.getElementById(
       "paperPlaceholder",
     )! as HTMLElement;
@@ -116,6 +119,13 @@ class PrintPreview {
       this.goToPage(this.currentPage + 1),
     );
 
+    const zoomInBtn = document.getElementById("zoomIn") as HTMLButtonElement | null;
+    const zoomOutBtn = document.getElementById("zoomOut") as HTMLButtonElement | null;
+    const zoomResetBtn = document.getElementById("zoomReset") as HTMLButtonElement | null;
+    zoomInBtn?.addEventListener("click", () => this.zoomIn());
+    zoomOutBtn?.addEventListener("click", () => this.zoomOut());
+    zoomResetBtn?.addEventListener("click", () => this.zoomReset());
+
     // Observe viewport resize → refit sheet, re-render PDF / recalc HTML pages
     this.resizeObserver = new ResizeObserver(() => {
       this.resizeSheet();
@@ -127,13 +137,14 @@ class PrintPreview {
 
   /** Scale the paper sheet to fill the viewport while keeping aspect ratio. */
   private resizeSheet(): void {
-    const pad = 48; // 24 px padding each side
+    const pad = 40;
     const vpW = this.viewport.clientWidth - pad;
     const vpH = this.viewport.clientHeight - pad;
     if (vpW <= 0 || vpH <= 0) return;
-    const scale = Math.min(vpW / this.naturalW, vpH / this.naturalH);
-    this.sheet.style.width = `${Math.floor(this.naturalW * scale)}px`;
-    this.sheet.style.height = `${Math.floor(this.naturalH * scale)}px`;
+    const fitScale = Math.min(vpW / this.naturalW, vpH / this.naturalH);
+    const finalScale = fitScale * this.zoomScale;
+    this.sheet.style.width = `${Math.floor(this.naturalW * finalScale)}px`;
+    this.sheet.style.height = `${Math.floor(this.naturalH * finalScale)}px`;
   }
 
   applyConfig(cfg: PreviewConfig): void {
@@ -204,7 +215,6 @@ class PrintPreview {
   }
 
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
-    // Destroy any existing document
     if (this.pdfDoc) {
       this.pdfDoc.destroy();
       this.pdfDoc = null;
@@ -212,9 +222,17 @@ class PrintPreview {
 
     let pdfjs: PdfjsLib;
     try {
-      pdfjs = (await import("/libs/pdfjs/pdf.min.mjs"));
-      pdfjs.GlobalWorkerOptions.workerSrc = "/libs/pdfjs/pdf.worker.min.mjs";
-    } catch {
+      // Use new Function to prevent esbuild from attempting to bundle this
+      // absolute URL path at compile time — it must remain a runtime browser import.
+      const dynImport = new Function("u", "return import(u)") as (
+        u: string,
+      ) => Promise<Record<string, unknown>>;
+      const mod = await dynImport("/libs/pdfjs/pdf.min.mjs");
+      // pdfjs-dist v5 uses named ESM exports; fall back to .default for older builds.
+      pdfjs = (mod.default ?? mod) as PdfjsLib;
+      pdfjs.GlobalWorkerOptions.workerSrc = `${window.location.origin}/libs/pdfjs/pdf.worker.min.mjs`;
+    } catch (e) {
+      console.error("PDF.js load error:", e);
       this.showError("PDF renderer not loaded.");
       return;
     }
@@ -384,6 +402,38 @@ class PrintPreview {
     this.pdfDoc?.destroy();
   }
 
+  zoomIn(): void {
+    this.zoomScale = Math.min(
+      this.ZOOM_MAX,
+      parseFloat((this.zoomScale + this.ZOOM_STEP).toFixed(2)),
+    );
+    this.resizeSheet();
+    if (this.pdfDoc) void this.renderPage(this.currentPage);
+    this.updateZoomDisplay();
+  }
+
+  zoomOut(): void {
+    this.zoomScale = Math.max(
+      this.ZOOM_MIN,
+      parseFloat((this.zoomScale - this.ZOOM_STEP).toFixed(2)),
+    );
+    this.resizeSheet();
+    if (this.pdfDoc) void this.renderPage(this.currentPage);
+    this.updateZoomDisplay();
+  }
+
+  zoomReset(): void {
+    this.zoomScale = 1.0;
+    this.resizeSheet();
+    if (this.pdfDoc) void this.renderPage(this.currentPage);
+    this.updateZoomDisplay();
+  }
+
+  private updateZoomDisplay(): void {
+    const el = document.getElementById("zoomLevel");
+    if (el) el.textContent = `${Math.round(this.zoomScale * 100)}%`;
+  }
+
   /** Load from a raw ArrayBuffer (used by copy preview) */
   async loadFromBuffer(buf: ArrayBuffer, mime: string): Promise<void> {
     if (mime === "application/pdf") {
@@ -535,7 +585,8 @@ async function loadPreview(): Promise<void> {
     }
 
     if (footerSummary)
-      footerSummary.textContent = "Copy preview loaded — adjust settings above.";
+      footerSummary.textContent =
+        "Copy preview loaded — adjust settings above.";
     return;
   }
 
