@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import type { Request } from "express";
+import { PUBLIC_URL } from "../config/http";
 
 export interface UploadedDocument {
   documentId: string;
@@ -167,6 +168,17 @@ export class SessionStore {
     const freshUrl = new URL(`/upload/${encodeURIComponent(session.token)}`, publicBaseUrl).toString();
     return { ...session, uploadUrl: freshUrl };
   }
+
+  /** Return the token of the most recently created session (for captive portal redirect). */
+  getActiveSessionToken(): string | null {
+    let latest: Session | null = null;
+    for (const session of this.sessions.values()) {
+      if (!latest || session.createdAt > latest.createdAt) {
+        latest = session;
+      }
+    }
+    return latest?.token ?? null;
+  }
 }
 
 export function renderUploadPortal(token: string, portalHtmlPath: string) {
@@ -191,6 +203,8 @@ export function renderUploadPortal(token: string, portalHtmlPath: string) {
 }
 
 export function resolvePublicBaseUrl(req: Request): URL {
+  if (PUBLIC_URL) return new URL(PUBLIC_URL);
+
   const protocol = req.protocol;
   const host = req.get("host") ?? "localhost";
 

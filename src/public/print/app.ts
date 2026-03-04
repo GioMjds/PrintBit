@@ -17,6 +17,11 @@ type SessionResponse = {
   documents?: UploadedFile[];
 };
 
+type HotspotConfig = {
+  ssid: string;
+  password: string;
+};
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const uploadLink = document.getElementById(
@@ -50,6 +55,7 @@ let pollHandle: number | null = null;
 let selectedFilename = "";
 let knownFiles = new Set<string>();
 let attachedSessionId: string | null = null;
+let hotspotConfig: HotspotConfig | null = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -155,11 +161,9 @@ function addFileToList(file: UploadedFile): void {
   const total = knownFiles.size;
   setFilesCount(total);
 
-  // Show list, hide empty state
   filesEmpty?.classList.add("hidden");
   fileList.classList.remove("hidden");
 
-  // Auto-select first file
   if (total === 1) selectFile(file.filename);
 }
 
@@ -173,13 +177,31 @@ function escapeHtml(str: string): string {
 
 // ── Session management ────────────────────────────────────────────────────────
 
-function updateUploadLink(token: string): void {
-  const href = `/upload/${encodeURIComponent(token)}`;
-  const absoluteUrl = `${window.location.origin}${href}`;
+function updateUploadLink(uploadUrl: string): void {
+  // Extract relative path for same-origin navigation
+  let href: string;
+  try {
+    href = new URL(uploadUrl).pathname;
+  } catch {
+    href = uploadUrl;
+  }
 
-  if (uploadLink) {
-    uploadLink.href = href;
-    uploadLink.textContent = absoluteUrl;
+  const eyebrow = document.querySelector(".qr-panel__eyebrow");
+
+  if (hotspotConfig) {
+    // Wi-Fi QR mode — update UI to reflect "connect to Wi-Fi" flow
+    if (eyebrow) eyebrow.textContent = `Scan to connect to "${hotspotConfig.ssid}"`;
+    if (uploadLink) {
+      uploadLink.href = href;
+      uploadLink.textContent = `Wi-Fi: ${hotspotConfig.ssid}`;
+    }
+  } else {
+    // URL QR mode — show direct upload link
+    if (eyebrow) eyebrow.textContent = "Scan to upload";
+    if (uploadLink) {
+      uploadLink.href = href;
+      uploadLink.textContent = uploadUrl;
+    }
   }
 
   if (openUploadBtn) {
@@ -187,7 +209,13 @@ function updateUploadLink(token: string): void {
   }
 
   if (uploadQrCanvas) {
-    void QRCode.toCanvas(uploadQrCanvas, absoluteUrl, {
+    // When hotspot config is available, QR encodes Wi-Fi credentials
+    // so phones auto-connect; the captive portal then opens the upload page.
+    const qrData = hotspotConfig
+      ? `WIFI:T:WPA;S:${escapeWifi(hotspotConfig.ssid)};P:${escapeWifi(hotspotConfig.password)};;`
+      : uploadUrl;
+
+    void QRCode.toCanvas(uploadQrCanvas, qrData, {
       width: 220,
       margin: 1,
       color: { dark: "#1a1a2e", light: "#ffffff" },
@@ -196,10 +224,25 @@ function updateUploadLink(token: string): void {
   }
 }
 
+/** Escape special chars in Wi-Fi QR string fields. */
+function escapeWifi(s: string): string {
+  return s.replace(/([\\;,:"'])/g, "\\$1");
+}
+
 async function createSession(): Promise<void> {
   if (pollHandle !== null) {
     window.clearInterval(pollHandle);
     pollHandle = null;
+  }
+
+  // Fetch hotspot config (for Wi-Fi QR code)
+  if (!hotspotConfig) {
+    try {
+      const cfgRes = await fetch("/api/config/hotspot");
+      if (cfgRes.ok) hotspotConfig = (await cfgRes.json()) as HotspotConfig;
+    } catch {
+      /* non-critical — falls back to URL QR */
+    }
   }
 
   // Reset UI
@@ -237,7 +280,7 @@ async function createSession(): Promise<void> {
 
   setSessionText(session.sessionId);
   setSessionActive(true);
-  updateUploadLink(session.token);
+  updateUploadLink(session.uploadUrl);
 
   attachSocket(session.sessionId);
   void checkUploadStatus();

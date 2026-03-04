@@ -9,8 +9,12 @@ import {
   PORTAL_DIR,
   PUBLIC_PAGE_ROUTES,
   UPLOAD_DIR,
+  HOTSPOT_SSID,
+  HOTSPOT_PASSWORD,
+  CAPTIVE_PORTAL_ENABLED,
 } from "./config/http";
 import { registerStaticAssets } from "./middleware/static-assets";
+import { createCaptivePortalMiddleware } from "./middleware/captive-portal";
 import { registerFinancialRoutes } from "./routes/financial-routes";
 import { registerPageRoutes } from "./routes/page-routes";
 import { registerAdminRoutes } from "./routes/admin-routes";
@@ -23,6 +27,7 @@ import { detectDefaultPrinter } from "./services/printer";
 import { detectScanner } from "./services/scanner";
 import { convertToPdfPreview } from "./services/preview";
 import { getSerialStatus, initSerial } from "./services/serial";
+import { startHotspot } from "./services/hotspot";
 import {
   SessionStore,
   renderUploadPortal,
@@ -35,16 +40,24 @@ const io = new Server(server);
 
 function getLocalIPv4(): string | null {
   const interfaces = os.networkInterfaces();
+  let fallback: string | null = null;
 
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]!) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        return iface.address;
-      }
+      if (iface.family !== "IPv4" || iface.internal) continue;
+
+      // Prefer hotspot adapter: MyPublicWiFi (192.168.5.x) or Windows Mobile Hotspot (192.168.137.x)
+      const isHotspot =
+        /Wi-Fi Direct|Local Area Connection\*/i.test(name) ||
+        iface.address.startsWith("192.168.5.") ||
+        iface.address.startsWith("192.168.137.");
+      if (isHotspot) return iface.address;
+
+      if (!fallback) fallback = iface.address;
     }
   }
 
-  return null;
+  return fallback;
 }
 
 const upload = multer({ dest: UPLOAD_DIR });
@@ -56,6 +69,28 @@ const wirelessUpload = multer({
 const sessionStore = new SessionStore(UPLOAD_DIR);
 
 app.use(express.json());
+
+// Captive-portal middleware — fallback for direct captive probes on port 3000
+if (CAPTIVE_PORTAL_ENABLED) {
+  app.use(createCaptivePortalMiddleware(sessionStore));
+}
+
+// Hotspot config API (used by print page to generate Wi-Fi QR)
+app.get("/api/config/hotspot", (_req, res) => {
+  res.json({ ssid: HOTSPOT_SSID, password: HOTSPOT_PASSWORD });
+});
+
+// Active session API (used by MyPublicWiFi captive portal redirect page)
+app.get("/api/session/active", (_req, res) => {
+  const token = sessionStore.getActiveSessionToken();
+  if (token) {
+    const localIP = getLocalIPv4() ?? "192.168.5.1";
+    const uploadUrl = `http://${localIP}:${PORT}/upload/${encodeURIComponent(token)}`;
+    res.json({ token, uploadUrl });
+  } else {
+    res.status(404).json({ error: "No active session" });
+  }
+});
 
 registerPageRoutes(app, {
   sessionStore,
@@ -99,6 +134,9 @@ async function start() {
   await detectDefaultPrinter();
   await detectScanner();
   initSerial(io);
+
+  // Launch MyPublicWiFi hotspot (configures SSID, DHCP, captive portal)
+  await startHotspot();
 
   server.listen(PORT, "0.0.0.0", () => {
     const localIP = getLocalIPv4();
