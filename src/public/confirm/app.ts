@@ -241,12 +241,16 @@ function showModal(): void {
   }
   confirmModal.classList.add("is-visible");
   confirmModal.setAttribute("aria-hidden", "false");
+  // Move focus into modal for accessibility
+  (modalCancelBtn as HTMLElement | null)?.focus();
 }
 
 function hideModal(): void {
   if (!confirmModal) return;
   confirmModal.classList.remove("is-visible");
   confirmModal.setAttribute("aria-hidden", "true");
+  // Return focus to the trigger button
+  (confirmBtn as HTMLElement | null)?.focus();
 }
 
 function showOverlay(el: HTMLElement | null): void {

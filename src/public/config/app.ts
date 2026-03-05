@@ -484,7 +484,16 @@ const copiesInc = document.getElementById(
   "copiesInc",
 ) as HTMLButtonElement | null;
 
-if (backLink) backLink.href = mode === "copy" ? "/copy" : "/print";
+if (backLink) {
+  const fallbackHref = mode === "copy" ? "/copy" : "/print";
+  backLink.href = fallbackHref;
+  backLink.addEventListener("click", (e) => {
+    if (window.history.length > 1) {
+      e.preventDefault();
+      window.history.back();
+    }
+  });
+}
 if (filePillLabel) filePillLabel.textContent = selectedFile ?? "—";
 
 if (mode === "print" && continueBtn) {

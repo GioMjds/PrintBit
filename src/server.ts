@@ -23,6 +23,7 @@ import { registerWirelessSessionRoutes } from "./routes/wireless-session-routes"
 import { registerScanRoutes } from "./routes/scan-routes";
 import { registerCopyRoutes } from "./routes/copy-routes";
 import { initDB } from "./services/db";
+import { appendAdminLog } from "./services/admin";
 import { detectDefaultPrinter } from "./services/printer";
 import { detectScanner } from "./services/scanner";
 import { convertToPdfPreview } from "./services/preview";
@@ -139,6 +140,12 @@ app.get("/portal", (req, res) => {
   const isAndroid = ua.includes("android");
   const isIOS = /iphone|ipad|ipod/.test(ua);
 
+  const platform = isIOS ? "ios" : isAndroid ? "android" : "other";
+  void appendAdminLog("portal_opened", `Captive portal bridge opened (${platform}).`, {
+    platform,
+    token: token.slice(0, 8) + "…",
+  });
+
   // Android: intent:// URI opens real Chrome from inside the captive portal webview
   const intentUrl = `intent://${localIP}:${PORT}${uploadPath}#Intent;scheme=http;package=com.android.chrome;end`;
 
@@ -189,22 +196,31 @@ app.get("/portal", (req, res) => {
   .copy-btn.copied { background: #d4edda; color: #155724; }
   .steps { text-align: left; margin: 1rem 0 0.5rem; padding: 0; list-style: none; }
   .steps li {
-    position: relative; padding: 0.4rem 0 0.4rem 2rem; font-size: 0.85rem; color: #555; line-height: 1.4;
+    position: relative; padding: 0.5rem 0 0.5rem 2.2rem; font-size: 0.85rem; color: #555; line-height: 1.4;
   }
   .steps li::before {
-    content: attr(data-step); position: absolute; left: 0; top: 0.35rem;
-    width: 1.4rem; height: 1.4rem; background: #1a73e8; color: #fff;
-    border-radius: 50%; font-size: 0.7rem; font-weight: 700;
+    content: attr(data-step); position: absolute; left: 0; top: 0.45rem;
+    width: 1.5rem; height: 1.5rem; background: #1a73e8; color: #fff;
+    border-radius: 50%; font-size: 0.75rem; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
   }
+  .steps li.done::before { background: #34a853; content: '✓'; }
   .note { color: #999; font-size: 0.75rem; margin-top: 0.75rem; line-height: 1.4; }
+  .status-bar {
+    background: #fff3cd; color: #856404; border-radius: 8px; padding: 8px 12px;
+    font-size: 0.8rem; margin-bottom: 0.75rem; display: none; line-height: 1.4;
+  }
+  .status-bar.visible { display: block; }
+  .status-bar.success { background: #d4edda; color: #155724; }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="icon">✅</div>
   <h2>Connected to PrintBit!</h2>
-  <p class="sub">Open the upload page in your browser to send files.</p>
+  <p class="sub">${isIOS ? 'Follow the steps below to open the upload page in Safari.' : 'Open the upload page in your browser to send files.'}</p>
+
+  <div class="status-bar" id="statusBar"></div>
 
   ${
     isAndroid
@@ -214,14 +230,33 @@ app.get("/portal", (req, res) => {
     Open in Chrome
   </a>
   `
-      : `
+      : isIOS
+        ? `
+  <!-- iOS: primary action copies URL, then guides to Safari -->
+  <button type="button" class="open-btn" id="iosCopyBtn">
+    📋 Copy Link to Clipboard
+  </button>
+  `
+        : `
   <a class="open-btn" id="openBtn" href="${uploadUrl}">
     Open Upload Page
   </a>
   `
   }
 
-  <div class="divider">or copy the link</div>
+  <div class="divider">${isIOS ? 'then follow these steps' : 'or copy the link'}</div>
+
+  ${
+    isIOS
+      ? `
+  <ol class="steps" id="iosSteps">
+    <li data-step="1" id="step1">Tap <strong>"Copy Link"</strong> above</li>
+    <li data-step="2" id="step2">Tap <strong>Done</strong> (top-right) to close this popup</li>
+    <li data-step="3" id="step3">Open <strong>Safari</strong> → tap the address bar → <strong>Paste &amp; Go</strong></li>
+  </ol>
+  `
+      : ``
+  }
 
   <div class="url-row">
     <span class="url-text" id="urlText">${uploadUrl}</span>
@@ -229,30 +264,24 @@ app.get("/portal", (req, res) => {
   </div>
 
   ${
-    isIOS
+    !isIOS && !isAndroid
       ? `
-  <ol class="steps">
-    <li data-step="1">Tap <strong>Copy</strong> above</li>
-    <li data-step="2">Tap <strong>Done</strong> (top-right corner) to close this popup</li>
-    <li data-step="3">Open <strong>Safari</strong> and paste the URL</li>
-  </ol>
-  `
-      : !isAndroid
-        ? `
   <ol class="steps">
     <li data-step="1">Tap <strong>Copy</strong> above</li>
     <li data-step="2">Close this popup</li>
     <li data-step="3">Open your browser and paste the URL</li>
   </ol>
   `
-        : ``
+      : ``
   }
 
   <p class="note">
     ${
       isAndroid
         ? "If Chrome does not open, copy the URL above and paste it in your browser."
-        : "The upload page needs a real browser to select files from your phone."
+        : isIOS
+          ? "This popup cannot upload files directly — Safari is needed to select and send your documents."
+          : "The upload page needs a real browser to select files from your phone."
     }
   </p>
 </div>
@@ -260,42 +289,96 @@ app.get("/portal", (req, res) => {
 (function() {
   var url = '${uploadUrl}';
   var copyBtn = document.getElementById('copyBtn');
+  var statusBar = document.getElementById('statusBar');
+  var isIOS = ${isIOS};
 
-  copyBtn.addEventListener('click', function() {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).then(done, fallback);
-    } else {
-      fallback();
-    }
-  });
-
-  function done() {
-    copyBtn.textContent = '✓ Copied';
-    copyBtn.classList.add('copied');
-    setTimeout(function() {
-      copyBtn.textContent = 'Copy';
-      copyBtn.classList.remove('copied');
-    }, 3000);
+  function showStatus(msg, type) {
+    if (!statusBar) return;
+    statusBar.textContent = msg;
+    statusBar.className = 'status-bar visible' + (type === 'success' ? ' success' : '');
   }
 
-  function fallback() {
-    // Fallback for restricted webviews where clipboard API is blocked
+  function copyUrl(onDone) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function() { onDone(true); }, function() { fallbackCopy(onDone); });
+    } else {
+      fallbackCopy(onDone);
+    }
+  }
+
+  function fallbackCopy(onDone) {
     var ta = document.createElement('textarea');
     ta.value = url;
     ta.style.cssText = 'position:fixed;opacity:0';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); done(); } catch(e) {
-      // Select the URL text so user can manually copy
-      var sel = window.getSelection();
-      var range = document.createRange();
-      range.selectNodeContents(document.getElementById('urlText'));
-      sel.removeAllRanges();
-      sel.addRange(range);
-      copyBtn.textContent = 'Selected!';
-      setTimeout(function() { copyBtn.textContent = 'Copy'; }, 3000);
-    }
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
     document.body.removeChild(ta);
+    if (ok) { onDone(true); return; }
+    // Last resort: select the URL text for manual copy
+    var sel = window.getSelection();
+    var range = document.createRange();
+    range.selectNodeContents(document.getElementById('urlText'));
+    sel.removeAllRanges();
+    sel.addRange(range);
+    onDone(false);
+  }
+
+  function markCopied(btn) {
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 3000);
+  }
+
+  // Standard copy button (shown for all platforms)
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function() {
+      copyUrl(function(ok) {
+        if (ok) {
+          markCopied(copyBtn);
+          if (isIOS) { showStatus('✓ Link copied! Now tap Done and open Safari.', 'success'); markStep(1); }
+        } else {
+          copyBtn.textContent = 'Select & copy manually';
+          setTimeout(function() { copyBtn.textContent = 'Copy'; }, 3000);
+        }
+      });
+    });
+  }
+
+  // iOS: prominent copy button + step tracking
+  var iosCopyBtn = document.getElementById('iosCopyBtn');
+  if (iosCopyBtn) {
+    iosCopyBtn.addEventListener('click', function() {
+      copyUrl(function(ok) {
+        if (ok) {
+          iosCopyBtn.textContent = '✓ Copied! Now tap Done ↗';
+          iosCopyBtn.style.background = '#34a853';
+          showStatus('✓ Link copied! Now tap Done (top-right) and open Safari.', 'success');
+          markStep(1);
+        } else {
+          showStatus('Could not copy automatically. Long-press the URL below to copy it.', '');
+        }
+      });
+    });
+  }
+
+  function markStep(n) {
+    var el = document.getElementById('step' + n);
+    if (el) el.classList.add('done');
+  }
+
+  // iOS: attempt auto-copy on load (best-effort; many webviews block this)
+  if (isIOS) {
+    setTimeout(function() {
+      copyUrl(function(ok) {
+        if (ok) {
+          showStatus('✓ Link auto-copied! Tap Done (top-right) then open Safari.', 'success');
+          markStep(1);
+          if (iosCopyBtn) { iosCopyBtn.textContent = '✓ Copied! Now tap Done ↗'; iosCopyBtn.style.background = '#34a853'; }
+        }
+      });
+    }, 500);
   }
 })();
 </script>
@@ -323,6 +406,7 @@ registerUploadPortalRoutes(app, {
   portalDir: PORTAL_DIR,
   portalAssets: PORTAL_ASSETS,
   renderUploadPortal,
+  sessionStore,
 });
 registerWirelessSessionRoutes(app, {
   io,

@@ -707,12 +707,12 @@ body {
 }
 
 .modal-card {
-  width: 420px;
+  width: 560px;
   max-width: 92vw;
   background: #181730;
   border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 24px;
-  padding: 32px 28px 24px;
+  border-radius: 28px;
+  padding: 44px 40px 36px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   transform: translateY(16px) scale(0.97);
   transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -722,17 +722,18 @@ body {
 }
 
 .modal-title {
-  font-size: 20px;
+  font-size: 28px;
   font-weight: 800;
   color: var(--white);
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   letter-spacing: -0.3px;
 }
 .modal-subtitle {
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 500;
   color: var(--ink-muted);
-  margin: 0 0 20px;
+  margin: 0 0 28px;
+  line-height: 1.55;
 }
 
 /* ── Modal summary list ───────────────────────────────────── */
@@ -747,40 +748,40 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 12px 0;
   border-bottom: 1px solid rgba(167, 170, 225, 0.08);
 }
 .modal-summary__row:last-child {
   border-bottom: none;
 }
 .modal-summary__row dt {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--ink-muted);
 }
 .modal-summary__row dd {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--white);
   margin: 0;
   text-transform: capitalize;
 }
 .modal-summary__row--total dt {
-  font-size: 14px;
+  font-size: 17px;
   color: var(--white);
 }
 .modal-summary__row--total dd {
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 800;
   color: var(--peach);
 }
 .modal-summary__row--change dt {
-  font-size: 14px;
+  font-size: 17px;
   color: #a3e6ac;
   font-weight: 700;
 }
 .modal-summary__row--change dd {
-  font-size: 20px;
+  font-size: 26px;
   font-weight: 800;
   color: #6ac47a;
 }
@@ -793,19 +794,19 @@ body {
 /* ── Modal actions ────────────────────────────────────────── */
 .modal-actions {
   display: flex;
-  gap: 10px;
+  gap: 14px;
 }
 .modal-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 14px 20px;
+  gap: 10px;
+  padding: 18px 28px;
   border: none;
-  border-radius: 14px;
+  border-radius: 16px;
   font-family: "Plus Jakarta Sans", sans-serif;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   transition: background 150ms, transform 120ms cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 150ms;
@@ -833,8 +834,8 @@ body {
   box-shadow: 0 8px 24px rgba(58, 158, 82, 0.5);
 }
 .modal-btn--confirm svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
 }
 .modal-btn:disabled {
   opacity: 0.5;
@@ -844,13 +845,13 @@ body {
 /* ── Status modal (printing / thank you) ──────────────────── */
 .modal-card--status {
   text-align: center;
-  padding: 40px 28px 32px;
+  padding: 52px 40px 40px;
 }
 
 .status-icon {
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 20px;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 28px;
 }
 .status-icon svg {
   width: 100%;
@@ -874,17 +875,17 @@ body {
 }
 
 .modal-subtitle--hint {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--lavender);
   opacity: 0.5;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .modal-subtitle--brand {
-  font-size: 15px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--peach);
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .modal-btn--wide {
