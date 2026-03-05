@@ -1,9 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { SessionStore } from "../services/session";
 import { CAPTIVE_PORTAL_ENABLED } from "../config/http";
-
-const IOS_SUCCESS_HTML =
-  "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>";
+import { appendAdminLog } from "../services/admin";
 
 const CAPTIVE_PATHS = new Set([
   "/hotspot-detect.html",
@@ -18,6 +16,13 @@ const CAPTIVE_PATHS = new Set([
   "/check_network_status.txt",
 ]);
 
+// iOS-specific probe paths — redirect to /portal so the captive sheet
+// shows the guided bridge page instead of silently dismissing.
+const IOS_PROBE_PATHS = new Set([
+  "/hotspot-detect.html",
+  "/library/test/success.html",
+]);
+
 const CAPTIVE_HOSTS = new Set([
   "captive.apple.com",
   "www.apple.com",
@@ -30,6 +35,11 @@ const CAPTIVE_HOSTS = new Set([
   "network-test.debian.org",
 ]);
 
+const APPLE_HOSTS = new Set([
+  "captive.apple.com",
+  "www.apple.com",
+]);
+
 export function createCaptivePortalMiddleware(_sessionStore: SessionStore) {
   return function captivePortal(req: Request, res: Response, next: NextFunction): void {
     if (!CAPTIVE_PORTAL_ENABLED) { next(); return; }
@@ -40,11 +50,13 @@ export function createCaptivePortalMiddleware(_sessionStore: SessionStore) {
     const isCaptiveProbe = CAPTIVE_HOSTS.has(host) || CAPTIVE_PATHS.has(pathname);
     if (!isCaptiveProbe) { next(); return; }
 
-    if (
-      pathname === "/hotspot-detect.html" ||
-      pathname === "/library/test/success.html"
-    ) {
-      res.status(200).type("html").send(IOS_SUCCESS_HTML);
+    // iOS probes: redirect to /portal so the captive sheet shows guided upload instructions
+    if (IOS_PROBE_PATHS.has(pathname) || APPLE_HOSTS.has(host)) {
+      void appendAdminLog("captive_ios_redirect", "iOS captive probe redirected to /portal.", {
+        path: pathname,
+        host,
+      });
+      res.redirect(302, "/portal");
       return;
     }
 
@@ -69,7 +81,7 @@ export function createCaptivePortalMiddleware(_sessionStore: SessionStore) {
     }
 
     if (pathname === "/canonical.html" || pathname === "/redirect") {
-      res.status(200).type("html").send(IOS_SUCCESS_HTML);
+      res.redirect(302, "/portal");
       return;
     }
 

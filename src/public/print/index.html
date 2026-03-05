@@ -85,22 +85,11 @@
         <!-- ── LEFT: QR panel ── -->
         <section class="qr-panel" aria-label="Upload via QR code">
           <div class="qr-panel__inner">
-
             <!-- Step 1: Connect to Wi-Fi -->
             <div class="step-block" id="wifiStep">
               <div class="step-badge">
                 <span class="step-number">1</span>
                 <span class="step-label">Connect to Wi-Fi</span>
-              </div>
-              <div class="wifi-credentials" id="wifiCredentials">
-                <div class="wifi-credential">
-                  <span class="wifi-label">Network</span>
-                  <span class="wifi-value" id="wifiSsid">—</span>
-                </div>
-                <div class="wifi-credential">
-                  <span class="wifi-label">Password</span>
-                  <span class="wifi-value" id="wifiPassword">—</span>
-                </div>
               </div>
             </div>
 
@@ -126,6 +115,7 @@
             </div>
 
             <div class="qr-actions">
+              <!-- Upload page for testing only -->
               <button
                 id="openUploadBtn"
                 type="button"
@@ -221,7 +211,7 @@
             </div>
             <p class="files-empty__title">Waiting for files…</p>
             <p class="files-empty__sub">
-              Scan the QR code or open the upload page from your phone.
+              Scan the QR code with your phone's camera to upload.<br />
             </p>
           </div>
 
@@ -428,6 +418,49 @@
         />
       </symbol>
     </svg>
+    <!-- New-session confirmation dialog -->
+    <div class="modal-overlay" id="newSessionOverlay" aria-hidden="true">
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-labelledby="nsTitle"
+        aria-describedby="nsDesc"
+      >
+        <h3 class="modal-title" id="nsTitle">Start a new session?</h3>
+        <p class="modal-subtitle" id="nsDesc">
+          All uploaded files in this session will be removed. This cannot be
+          undone.
+        </p>
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="modal-btn modal-btn--cancel"
+            id="newSessionCancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="modal-btn modal-btn--danger"
+            id="newSessionConfirm"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601
+                2.566 1 1 0 11-1.885.666A5.002 5.002 0
+                005.999 7H9a1 1 0 010 2H4a1 1
+                0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0
+                0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002
+                7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            New Session
+          </button>
+        </div>
+      </div>
+    </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="/print/app.js"></script>

@@ -2,7 +2,12 @@ import type { Express, Request, Response } from "express";
 import type { Server } from "socket.io";
 import { jobStore } from "../services/job-store";
 import { printFile, type PrintJobOptions } from "../services/printer";
-import { db } from "../services/db";
+import {
+  db,
+  withBalanceLock,
+  checkIdempotencyKey,
+  storeIdempotencyKey,
+} from "../services/db";
 import {
   appendAdminLog,
   calculateJobAmount,
@@ -16,8 +21,18 @@ const VALID_ORIENTATIONS = new Set(["portrait", "landscape"]);
 const VALID_PAPER_SIZES = new Set(["A4", "Letter", "Legal"]);
 
 export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
-  // ── POST /api/copy/jobs — Start a copy job (charge + print checked scan) ─
+  // ── POST /api/copy/jobs — Start a copy job (print checked scan, then charge) ─
   app.post("/api/copy/jobs", async (req: Request, res: Response) => {
+    // ── Idempotency guard ──────────────────────────────────────────────
+    const idempotencyKey = req.get("Idempotency-Key") ?? "";
+    if (idempotencyKey) {
+      const cached = checkIdempotencyKey(idempotencyKey);
+      if (cached) {
+        res.status(cached.statusCode).json(cached.response);
+        return;
+      }
+    }
+
     const { copies, colorMode, orientation, paperSize, amount, previewPath } =
       req.body as {
         copies?: number;
@@ -75,6 +90,7 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
       safeCopies,
     );
 
+    // Pre-check balance (will re-verify inside lock after print succeeds)
     if ((db.data?.balance ?? 0) < requiredAmount) {
       void appendAdminLog(
         "payment_failed",
@@ -106,17 +122,6 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
       );
     }
 
-    // Deduct balance and record earnings
-    db.data!.balance -= requiredAmount;
-    db.data!.earnings += requiredAmount;
-    await db.write();
-    deps.io.emit("balance", db.data!.balance);
-
-    const payment = {
-      chargedAmount: requiredAmount,
-      remainingBalance: db.data!.balance,
-    };
-
     const settings = {
       copies: safeCopies,
       colorMode: safeColorMode,
@@ -124,15 +129,8 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
       paperSize: safePaperSize,
     };
 
-    const job = jobStore.createCopyJob(settings, payment);
-
-    void appendAdminLog("payment_confirmed", "Copy payment confirmed.", {
-      jobId: job.id,
-      amount: requiredAmount,
-      copies: safeCopies,
-      colorMode: safeColorMode,
-      remainingBalance: db.data!.balance,
-    });
+    // Create job with payment pending (charged after successful dispatch)
+    const job = jobStore.createCopyJob(settings, null);
 
     void appendAdminLog("copy_job_created", "Copy job created.", {
       jobId: job.id,
@@ -142,11 +140,10 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
       paperSize: safePaperSize,
     });
 
-    // Start copy asynchronously (print already-checked scan)
+    // Start copy asynchronously — charge AFTER successful print dispatch
     void (async () => {
       jobStore.updateJobState(job.id, "running");
       try {
-        // Print phase from the checked-scan file
         const printOptions: PrintJobOptions = {
           copies: safeCopies,
           colorMode: safeColorMode,
@@ -156,13 +153,41 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
         const relPath = path.join("scans", previewFilename);
         await printFile(relPath, printOptions);
 
+        // Print succeeded — charge balance inside the lock
+        await withBalanceLock(async () => {
+          if ((db.data?.balance ?? 0) < requiredAmount) {
+            // Rare edge: balance was spent between pre-check and print completion
+            void appendAdminLog(
+              "payment_failed",
+              "Copy charge failed post-print: balance drained.",
+              {
+                jobId: job.id,
+                balance: db.data?.balance ?? 0,
+                requiredAmount,
+              },
+            );
+            return;
+          }
+          db.data!.balance -= requiredAmount;
+          db.data!.earnings += requiredAmount;
+          await db.write();
+          deps.io.emit("balance", db.data!.balance);
+        });
+
+        job.payment = {
+          chargedAmount: requiredAmount,
+          remainingBalance: db.data!.balance,
+        };
+
         jobStore.updateJobState(job.id, "succeeded");
         await incrementJobStats("copy");
         void appendAdminLog(
           "copy_job_completed",
-          "Copy job completed successfully.",
+          "Copy job completed and charged.",
           {
             jobId: job.id,
+            chargedAmount: requiredAmount,
+            remainingBalance: db.data!.balance,
           },
         );
       } catch (err) {
@@ -175,14 +200,22 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
             stage: "running",
           },
         });
-        void appendAdminLog("copy_job_failed", "Copy job failed.", {
-          jobId: job.id,
-          error: message,
-        });
+        void appendAdminLog(
+          "copy_job_failed",
+          "Copy job failed — balance NOT charged.",
+          {
+            jobId: job.id,
+            error: message,
+          },
+        );
       }
     })();
 
-    res.status(201).json(job);
+    const responseBody = job;
+    if (idempotencyKey) {
+      storeIdempotencyKey(idempotencyKey, 201, responseBody);
+    }
+    res.status(201).json(responseBody);
   });
 
   // ── GET /api/copy/jobs/:id — Get copy job status ───────────────────

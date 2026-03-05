@@ -146,3 +146,67 @@ export async function initDB() {
   db.data = normalizeSchema(db.data);
   await db.write();
 }
+
+// ── Balance mutex ─────────────────────────────────────────────────────────────
+// Serialises concurrent balance/earnings mutations to prevent interleaving
+// at async boundaries (e.g. two simultaneous confirm-payment requests).
+
+let balanceLockPromise = Promise.resolve();
+
+export async function withBalanceLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = balanceLockPromise;
+  let release: () => void;
+  balanceLockPromise = new Promise<void>((r) => {
+    release = r;
+  });
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release!();
+  }
+}
+
+// ── Idempotency key store ────────────────────────────────────────────────────
+// Prevents double-charge from retry/double-click on payment endpoints.
+// Keys are kept for a short window and then evicted.
+
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface IdempotencyEntry {
+  response: unknown;
+  statusCode: number;
+  expiresAt: number;
+}
+
+const idempotencyStore = new Map<string, IdempotencyEntry>();
+
+export function checkIdempotencyKey(key: string): IdempotencyEntry | null {
+  const entry = idempotencyStore.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    idempotencyStore.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+export function storeIdempotencyKey(
+  key: string,
+  statusCode: number,
+  response: unknown,
+): void {
+  idempotencyStore.set(key, {
+    response,
+    statusCode,
+    expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+  });
+}
+
+// Periodic cleanup of expired idempotency keys
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of idempotencyStore) {
+    if (now > entry.expiresAt) idempotencyStore.delete(key);
+  }
+}, IDEMPOTENCY_TTL_MS);

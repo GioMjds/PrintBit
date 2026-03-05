@@ -54,15 +54,37 @@ const ALLOWED_TYPES = new Map<string, string>([
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB
 
+// Session limits
+const SESSION_TTL_MS = 15 * 60 * 1000;          // 15 minutes
+const MAX_FILES_PER_SESSION = 10;
+const MAX_CUMULATIVE_BYTES = 50 * 1024 * 1024;   // 50MB total per session
+const CLEANUP_INTERVAL_MS = 2 * 60 * 1000;       // run cleanup every 2 minutes
+
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
 
   private readonly byToken = new Map<string, string>();
   private readonly uploadDir: string;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(uploadDir = "uploads") {
     this.uploadDir = uploadDir;
     fs.mkdirSync(uploadDir, { recursive: true });
+    this.cleanupTimer = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS);
+  }
+
+  /** Check whether a session is still within its TTL window. */
+  isSessionExpired(session: Session): boolean {
+    return Date.now() - session.createdAt.getTime() > SESSION_TTL_MS;
+  }
+
+  /** Check if a token maps to a valid, non-expired session. */
+  isTokenValid(token: string): boolean {
+    const sessionId = this.byToken.get(token);
+    if (!sessionId) return false;
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+    return !this.isSessionExpired(session);
   }
 
   createSession(baseUrl: URL): Session {
@@ -86,6 +108,7 @@ export class SessionStore {
   tryGetSession(sessionId: string, publicBaseUrl: URL): Session | null {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
+    if (this.isSessionExpired(session)) return null;
     return this.withFreshUrl(session, publicBaseUrl);
   }
 
@@ -110,6 +133,14 @@ export class SessionStore {
       };
     }
 
+    if (this.isSessionExpired(session)) {
+      return {
+        isSuccess: false,
+        errorMsg: "Session has expired. Please start a new session from the kiosk.",
+        errorCode: "SESSION_EXPIRED",
+      };
+    }
+
     if (session.token !== token) {
       return {
         isSuccess: false,
@@ -123,6 +154,26 @@ export class SessionStore {
         isSuccess: false,
         errorMsg: `File size exceeds limit of ${MAX_BYTES} bytes`,
         errorCode: "FILE_TOO_LARGE",
+      };
+    }
+
+    // Per-session file count limit
+    const existingDocs = session.documents ?? (session.document ? [session.document] : []);
+    if (existingDocs.length >= MAX_FILES_PER_SESSION) {
+      return {
+        isSuccess: false,
+        errorMsg: `Maximum of ${MAX_FILES_PER_SESSION} files per session reached.`,
+        errorCode: "MAX_FILES_REACHED",
+      };
+    }
+
+    // Per-session cumulative size limit
+    const cumulativeBytes = existingDocs.reduce((sum, d) => sum + d.sizeBytes, 0);
+    if (cumulativeBytes + file.size > MAX_CUMULATIVE_BYTES) {
+      return {
+        isSuccess: false,
+        errorMsg: `Total upload size would exceed ${MAX_CUMULATIVE_BYTES / (1024 * 1024)}MB session limit.`,
+        errorCode: "SESSION_SIZE_LIMIT",
       };
     }
 
@@ -169,15 +220,41 @@ export class SessionStore {
     return { ...session, uploadUrl: freshUrl };
   }
 
-  /** Return the token of the most recently created session (for captive portal redirect). */
+  /** Return the token of the most recently created non-expired session (for captive portal redirect). */
   getActiveSessionToken(): string | null {
     let latest: Session | null = null;
     for (const session of this.sessions.values()) {
+      if (this.isSessionExpired(session)) continue;
       if (!latest || session.createdAt > latest.createdAt) {
         latest = session;
       }
     }
     return latest?.token ?? null;
+  }
+
+  /** Remove expired sessions and their uploaded files from disk. */
+  private cleanupExpired(): void {
+    const now = Date.now();
+    for (const [id, session] of this.sessions) {
+      if (now - session.createdAt.getTime() <= SESSION_TTL_MS) continue;
+
+      // Delete uploaded files
+      const docs = session.documents ?? (session.document ? [session.document] : []);
+      for (const doc of docs) {
+        try { fs.unlinkSync(doc.filePath); } catch { /* already gone */ }
+      }
+
+      this.byToken.delete(session.token);
+      this.sessions.delete(id);
+    }
+  }
+
+  /** Stop the cleanup timer (for graceful shutdown). */
+  dispose(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 }
 

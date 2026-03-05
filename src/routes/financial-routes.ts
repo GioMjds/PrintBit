@@ -1,7 +1,7 @@
 import type { Express, Request, RequestHandler, Response } from "express";
 import path from "node:path";
 import type { Server } from "socket.io";
-import { db } from "../services/db";
+import { db, withBalanceLock, checkIdempotencyKey, storeIdempotencyKey } from "../services/db";
 import {
   appendAdminLog,
   calculateJobAmount,
@@ -145,6 +145,16 @@ export function registerFinancialRoutes(
   });
 
   app.post("/api/confirm-payment", async (req: Request, res: Response) => {
+    // ── Idempotency guard ──────────────────────────────────────────────
+    const idempotencyKey = req.get("Idempotency-Key") ?? "";
+    if (idempotencyKey) {
+      const cached = checkIdempotencyKey(idempotencyKey);
+      if (cached) {
+        res.status(cached.statusCode).json(cached.response);
+        return;
+      }
+    }
+
     const { amount, mode, sessionId, filename } = req.body as {
       amount?: number;
       mode?: "print" | "copy";
@@ -181,123 +191,137 @@ export function registerFinancialRoutes(
         : "A4";
     const requiredAmount = calculateJobAmount(mode, colorMode, copies);
 
-    if ((db.data?.balance ?? 0) < requiredAmount) {
-      void appendAdminLog(
-        "payment_failed",
-        "Confirm payment failed: insufficient balance.",
-        { balance: db.data?.balance ?? 0, requiredAmount },
-      );
-      return res
-        .status(400)
-        .json({
-          error: "Insufficient balance",
-          balance: db.data?.balance ?? 0,
+    // ── Balance lock: serialise all balance mutations ─────────────────
+    const result = await withBalanceLock(async () => {
+      if ((db.data?.balance ?? 0) < requiredAmount) {
+        void appendAdminLog(
+          "payment_failed",
+          "Confirm payment failed: insufficient balance.",
+          { balance: db.data?.balance ?? 0, requiredAmount },
+        );
+        return {
+          status: 400,
+          body: {
+            error: "Insufficient balance",
+            balance: db.data?.balance ?? 0,
+            requiredAmount,
+          },
+        };
+      }
+
+      if (typeof amount === "number" && Number.isFinite(amount) && amount !== requiredAmount) {
+        void appendAdminLog("payment_amount_mismatch", "Client amount differed from server pricing.", {
+          amount,
           requiredAmount,
         });
-    }
-
-    if (typeof amount === "number" && Number.isFinite(amount) && amount !== requiredAmount) {
-      void appendAdminLog("payment_amount_mismatch", "Client amount differed from server pricing.", {
-        amount,
-        requiredAmount,
-      });
-    }
-
-    if (mode === "print") {
-      if (!sessionId) {
-        void appendAdminLog(
-          "payment_failed",
-          "Confirm payment failed: missing print session.",
-        );
-        return res.status(400).json({ error: "Print session is required" });
       }
 
-      const session = deps.sessionStore.tryGetSession(
-        sessionId,
-        deps.resolvePublicBaseUrl(req),
-      );
-      if (!session) {
-        void appendAdminLog(
-          "payment_failed",
-          "Confirm payment failed: session not found.",
-          { sessionId },
+      if (mode === "print") {
+        if (!sessionId) {
+          void appendAdminLog(
+            "payment_failed",
+            "Confirm payment failed: missing print session.",
+          );
+          return { status: 400, body: { error: "Print session is required" } };
+        }
+
+        const session = deps.sessionStore.tryGetSession(
+          sessionId,
+          deps.resolvePublicBaseUrl(req),
         );
-        return res.status(404).json({ error: "Session not found" });
+        if (!session) {
+          void appendAdminLog(
+            "payment_failed",
+            "Confirm payment failed: session not found.",
+            { sessionId },
+          );
+          return { status: 404, body: { error: "Session not found" } };
+        }
+
+        const allDocs =
+          session.documents && session.documents.length > 0
+            ? session.documents
+            : session.document
+              ? [session.document]
+              : [];
+
+        if (allDocs.length === 0) {
+          void appendAdminLog(
+            "payment_failed",
+            "Confirm payment failed: no uploaded document in session.",
+            { sessionId },
+          );
+          return {
+            status: 400,
+            body: { error: "No uploaded document found for this session" },
+          };
+        }
+
+        const target = filename
+          ? allDocs.find((d) => d.filename === filename)
+          : allDocs[allDocs.length - 1];
+
+        if (!target) {
+          void appendAdminLog(
+            "payment_failed",
+            "Confirm payment failed: target document not found.",
+            { sessionId, filename: filename ?? null },
+          );
+          return {
+            status: 400,
+            body: { error: `Document "${filename}" not found in session` },
+          };
+        }
+
+        const serverFilename = path.basename(target.filePath);
+        const printOptions: PrintJobOptions = {
+          copies,
+          colorMode,
+          orientation,
+          paperSize,
+        };
+
+        try {
+          await printFile(serverFilename, printOptions);
+        } catch (err) {
+          void appendAdminLog("print_failed", "Print failed: printer error.", {
+            sessionId,
+            filename: serverFilename,
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+          return { status: 500, body: { error: "Print failed. Please try again." } };
+        }
       }
 
-      const allDocs =
-        session.documents && session.documents.length > 0
-          ? session.documents
-          : session.document
-            ? [session.document]
-            : [];
-
-      if (allDocs.length === 0) {
-        void appendAdminLog(
-          "payment_failed",
-          "Confirm payment failed: no uploaded document in session.",
-          { sessionId },
-        );
-        return res
-          .status(400)
-          .json({ error: "No uploaded document found for this session" });
-      }
-
-      const target = filename
-        ? allDocs.find((d) => d.filename === filename)
-        : allDocs[allDocs.length - 1];
-
-      if (!target) {
-        void appendAdminLog(
-          "payment_failed",
-          "Confirm payment failed: target document not found.",
-          { sessionId, filename: filename ?? null },
-        );
-        return res
-          .status(400)
-          .json({ error: `Document "${filename}" not found in session` });
-      }
-
-      const serverFilename = path.basename(target.filePath);
-      const printOptions: PrintJobOptions = {
+      db.data!.balance -= requiredAmount;
+      db.data!.earnings += requiredAmount;
+      await db.write();
+      await incrementJobStats(mode);
+      await appendAdminLog("payment_confirmed", "Payment confirmed.", {
+        mode,
+        amount: requiredAmount,
         copies,
         colorMode,
-        orientation,
-        paperSize,
+        sessionId: sessionId ?? null,
+        filename: filename ?? null,
+        remainingBalance: db.data!.balance,
+      });
+
+      deps.io.emit("balance", db.data!.balance);
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          chargedAmount: requiredAmount,
+          balance: db.data!.balance,
+          earnings: db.data!.earnings,
+        },
       };
+    });
 
-      try {
-        await printFile(serverFilename, printOptions);
-      } catch (err) {
-        void appendAdminLog("print_failed", "Print failed: printer error.", {
-          sessionId,
-          filename: serverFilename,
-          error: err instanceof Error ? err.message : "Unknown error",
-        });
-        return res.status(500).json({ error: "Print failed. Please try again." });
-      }
+    if (idempotencyKey) {
+      storeIdempotencyKey(idempotencyKey, result.status, result.body);
     }
-
-    db.data!.balance -= requiredAmount;
-    db.data!.earnings += requiredAmount;
-    await db.write();
-    await incrementJobStats(mode);
-    await appendAdminLog("payment_confirmed", "Payment confirmed.", {
-      mode,
-      amount: requiredAmount,
-      copies,
-      colorMode,
-      sessionId: sessionId ?? null,
-      filename: filename ?? null,
-      remainingBalance: db.data!.balance,
-    });
-
-    deps.io.emit("balance", db.data!.balance);
-    res.json({
-      ok: true,
-      chargedAmount: requiredAmount,
-      balance: db.data!.balance,
-      earnings: db.data!.earnings,
-    });
+    res.status(result.status).json(result.body);
   });
 }

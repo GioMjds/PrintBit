@@ -332,16 +332,81 @@ function attachSocket(sid: string): void {
   socket.on("UploadCompleted", () => void checkUploadStatus());
 }
 
+// ── New-session confirmation dialog ───────────────────────────────────────────
+
+const dialogOverlay = document.getElementById("newSessionOverlay") as HTMLElement | null;
+const dialogConfirmBtn = document.getElementById("newSessionConfirm") as HTMLButtonElement | null;
+const dialogCancelBtn = document.getElementById("newSessionCancel") as HTMLButtonElement | null;
+
+function showNewSessionDialog(): void {
+  dialogOverlay?.classList.add("is-visible");
+}
+
+function hideNewSessionDialog(): void {
+  dialogOverlay?.classList.remove("is-visible");
+}
+
+dialogCancelBtn?.addEventListener("click", hideNewSessionDialog);
+dialogOverlay?.addEventListener("click", (e) => {
+  if (e.target === dialogOverlay) hideNewSessionDialog();
+});
+dialogConfirmBtn?.addEventListener("click", () => {
+  hideNewSessionDialog();
+  void createSession();
+});
+
+// ── Session restore ───────────────────────────────────────────────────────────
+
+async function restoreSession(sid: string): Promise<void> {
+  activeSessionId = sid;
+
+  if (!hotspotConfig) {
+    try {
+      const cfgRes = await fetch("/api/config/hotspot");
+      if (cfgRes.ok) hotspotConfig = (await cfgRes.json()) as HotspotConfig;
+    } catch { /* non-critical */ }
+  }
+
+  setSessionText(sid);
+  setSessionActive(true);
+
+  sessionStorage.setItem("printbit.mode", "print");
+  sessionStorage.setItem("printbit.sessionId", sid);
+
+  attachSocket(sid);
+  await checkUploadStatus();
+
+  const response = await fetch(`/api/wireless/sessions/${encodeURIComponent(sid)}`);
+  if (response.ok) {
+    const session = (await response.json()) as SessionResponse;
+    updateUploadLink(session.uploadUrl);
+  }
+
+  if (pollHandle !== null) window.clearInterval(pollHandle);
+  pollHandle = window.setInterval(() => void checkUploadStatus(), 2000);
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
-refreshSessionBtn?.addEventListener("click", () => void createSession());
+refreshSessionBtn?.addEventListener("click", () => {
+  if (knownFiles.size > 0) {
+    showNewSessionDialog();
+  } else {
+    void createSession();
+  }
+});
 
 continueBtn?.addEventListener("click", () => {
   if (!activeSessionId || !selectedFilename) return;
   window.location.href = `/config?mode=print&sessionId=${encodeURIComponent(activeSessionId)}&file=${encodeURIComponent(selectedFilename)}`;
 });
 
-void createSession();
+const savedSessionId = sessionStorage.getItem("printbit.sessionId");
+if (savedSessionId) {
+  void restoreSession(savedSessionId);
+} else {
+  void createSession();
+}
 
 export { navigateTo };
 function navigateTo(path: string) {
