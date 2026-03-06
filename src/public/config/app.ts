@@ -527,14 +527,7 @@ const singlePageInc = document.getElementById(
 ) as HTMLButtonElement | null;
 
 if (backLink) {
-  const fallbackHref = mode === "copy" ? "/copy" : "/print";
-  backLink.href = fallbackHref;
-  backLink.addEventListener("click", (e) => {
-    if (window.history.length > 1) {
-      e.preventDefault();
-      window.history.back();
-    }
-  });
+  backLink.href = mode === "copy" ? "/copy" : "/print";
 }
 if (filePillLabel) filePillLabel.textContent = selectedFile ?? "—";
 
