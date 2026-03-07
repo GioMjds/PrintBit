@@ -15,6 +15,7 @@ export type SummaryResponse = {
     total: number;
     print: number;
     copy: number;
+    scan: number;
   };
   storage: {
     fileCount: number;

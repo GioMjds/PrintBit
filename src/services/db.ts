@@ -1,7 +1,7 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 
-export type PrintMode = "print" | "copy";
+export type PrintMode = "print" | "copy" | "scan";
 export type ColorMode = "colored" | "grayscale";
 
 export interface PricingSettings {
@@ -28,6 +28,7 @@ export interface JobStats {
   total: number;
   print: number;
   copy: number;
+  scan: number;
 }
 
 export type LogMeta = Record<string, string | number | boolean | null>;
@@ -72,6 +73,7 @@ const DEFAULT_DATA: Schema = {
     total: 0,
     print: 0,
     copy: 0,
+    scan: 0,
   },
   logs: [],
 };
@@ -125,6 +127,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       total: finiteOr(data?.jobStats?.total, DEFAULT_DATA.jobStats.total),
       print: finiteOr(data?.jobStats?.print, DEFAULT_DATA.jobStats.print),
       copy: finiteOr(data?.jobStats?.copy, DEFAULT_DATA.jobStats.copy),
+      scan: finiteOr(data?.jobStats?.scan, DEFAULT_DATA.jobStats.scan),
     },
     logs: Array.isArray(data?.logs) ? data.logs : DEFAULT_DATA.logs,
   };
