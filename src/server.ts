@@ -25,6 +25,7 @@ import { registerCopyRoutes } from "./routes/copy-routes";
 import { initDB } from "./services/db";
 import { detectDefaultPrinter } from "./services/printer";
 import { detectScanner } from "./services/scanner";
+import { startScanStorageCleanup } from "./services/scan-storage";
 import { convertToPdfPreview } from "./services/preview";
 import { getSerialStatus, initSerial } from "./services/serial";
 import {
@@ -141,7 +142,7 @@ registerWirelessSessionRoutes(app, {
   resolvePublicBaseUrl,
   convertToPdfPreview,
 });
-registerScanRoutes(app);
+registerScanRoutes(app, { resolvePublicBaseUrl });
 registerCopyRoutes(app, { io });
 
 io.on("connection", (socket) => {
@@ -154,6 +155,7 @@ async function start() {
   await initDB();
   await detectDefaultPrinter();
   await detectScanner();
+  startScanStorageCleanup();
   initSerial(io);
 
   // Launch MyPublicWiFi hotspot on startup (idempotent — Print page can re-call safely)

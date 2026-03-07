@@ -135,6 +135,29 @@ Serves a saved preview scan file.
 ### `POST /api/scan/jobs/:id/cancel`
 Requests scan job cancellation.
 
+### `GET /api/scanner/status`
+Returns scanner readiness for scan UI compatibility, including preferred device and basic capability info.
+
+### `POST /api/scanner/scan`
+Runs an interactive scan for the `/scan` page and returns preview page URLs + filename.
+
+**Body parameters:**
+- `source` — `"feeder"` (ADF document feeder) or `"glass"` (flatbed scanner glass). **Required.**
+- `color` — `"color"` or `"grayscale"`. **Required.**
+- `dpi` — `150`, `300`, or `600`. **Required.**
+
+### `GET /api/scanner/wired/drives`
+Lists currently detected removable USB drives.
+
+### `POST /api/scanner/wired/export`
+Exports a scanned file from `uploads/scans` to a selected removable USB drive.
+
+### `POST /api/scanner/wireless-link`
+Creates a temporary tokenized download link for a scanned file.
+
+### `GET /scan/download/:token`
+Downloads a scanned file using a temporary tokenized link.
+
 ---
 
 ## Copy APIs

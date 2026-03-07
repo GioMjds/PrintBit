@@ -1,16 +1,24 @@
 import { SummaryResponse, apiFetch, setMessage, initAuth } from "../shared";
 
 const serverStatus = document.getElementById("serverStatus") as HTMLElement;
-const serverBadge = document.getElementById("serverBadge") as HTMLElement | null;
+const serverBadge = document.getElementById(
+  "serverBadge",
+) as HTMLElement | null;
 const hostStatus = document.getElementById("hostStatus") as HTMLElement;
 const wifiStatus = document.getElementById("wifiStatus") as HTMLElement;
 const wifiBadge = document.getElementById("wifiBadge") as HTMLElement | null;
 const serialStatus = document.getElementById("serialStatus") as HTMLElement;
-const serialBadge = document.getElementById("serialBadge") as HTMLElement | null;
-const serialPortStatus = document.getElementById("serialPortStatus") as HTMLElement;
+const serialBadge = document.getElementById(
+  "serialBadge",
+) as HTMLElement | null;
+const serialPortStatus = document.getElementById(
+  "serialPortStatus",
+) as HTMLElement;
 
 const printerStatus = document.getElementById("printerStatus") as HTMLElement;
-const printerBadge = document.getElementById("printerBadge") as HTMLElement | null;
+const printerBadge = document.getElementById(
+  "printerBadge",
+) as HTMLElement | null;
 const printerNameEl = document.getElementById("printerName") as HTMLElement;
 const inkGrid = document.getElementById("inkGrid") as HTMLElement;
 
@@ -23,7 +31,9 @@ function applySystem(summary: SummaryResponse): void {
   hostStatus.textContent = summary.status.host;
   wifiStatus.textContent = summary.status.wifiActive ? "Active" : "Inactive";
   wifiBadge?.setAttribute("data-ok", String(summary.status.wifiActive));
-  serialStatus.textContent = summary.status.serial.connected ? "Connected" : "Disconnected";
+  serialStatus.textContent = summary.status.serial.connected
+    ? "Connected"
+    : "Disconnected";
   serialBadge?.setAttribute("data-ok", String(summary.status.serial.connected));
   serialPortStatus.textContent = summary.status.serial.portPath ?? "—";
 
@@ -47,7 +57,11 @@ function applySystem(summary: SummaryResponse): void {
     const pct = ink.level !== null ? ink.level : 0;
     const statusCls = `ink-bar--${ink.status}`;
     const label =
-      ink.level !== null ? `${ink.level}%` : ink.status === "unknown" ? "N/A" : ink.status;
+      ink.level !== null
+        ? `${ink.level}%`
+        : ink.status === "unknown"
+          ? "N/A"
+          : ink.status;
 
     bar.innerHTML =
       `<span class="ink-item__name">${ink.name}</span>` +
@@ -72,7 +86,9 @@ refreshBtn.addEventListener("click", () => {
   setMessage("Refreshing...");
   void loadData()
     .then(() => setMessage("System refreshed."))
-    .catch((e: unknown) => setMessage(e instanceof Error ? e.message : "Refresh failed."));
+    .catch((e: unknown) =>
+      setMessage(e instanceof Error ? e.message : "Refresh failed."),
+    );
 });
 
 initAuth(async () => {
