@@ -3,7 +3,12 @@ import { Server } from "socket.io";
 import path from "node:path";
 import fs from "node:fs";
 import { jobStore } from "../services/job-store";
-import { appendAdminLog, incrementJobStats } from "../services/admin";
+import { db, withBalanceLock } from "../services/db";
+import {
+  appendAdminLog,
+  incrementJobStats,
+  getPricingSettings,
+} from "../services/admin";
 import {
   getAdapter,
   getScannerStatus,
