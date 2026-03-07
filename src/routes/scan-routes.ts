@@ -1,9 +1,15 @@
 import type { Express, Request, Response } from "express";
-import { jobStore } from "../services/job-store";
-import { getAdapter } from "../services/scanner";
-import { appendAdminLog } from "../services/admin";
 import path from "node:path";
 import fs from "node:fs";
+import { jobStore } from "../services/job-store";
+import { appendAdminLog } from "../services/admin";
+import {
+  getAdapter,
+  getScannerStatus,
+  type ScannerCapabilities,
+} from "../services/scanner";
+import { createScanDownloadLink, resolveScanDownload } from "../services/scan-delivery";
+import { exportScanToUsbDrive, listRemovableDrives } from "../services/usb-drives";
 
 const VALID_SOURCES = new Set(["adf", "flatbed"]);
 const VALID_DPI = new Set([150, 300, 600]);
@@ -13,10 +19,245 @@ const VALID_FORMATS = new Set(["pdf", "jpg", "png"]);
 const FORMAT_CONTENT_TYPES: Record<string, string> = {
   pdf: "application/pdf",
   jpg: "image/jpeg",
+  jpeg: "image/jpeg",
   png: "image/png",
 };
 
-export function registerScanRoutes(app: Express): void {
+interface RegisterScanRoutesDeps {
+  resolvePublicBaseUrl: (req: Request) => URL;
+}
+
+type ScannerPageSource = "feeder" | "glass";
+type ScannerPageColor = "color" | "grayscale";
+
+function toSafeScanFilename(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const safe = path.basename(trimmed);
+  return safe === trimmed ? safe : null;
+}
+
+function toScanSource(source: ScannerPageSource): "flatbed" | "adf" {
+  return source === "feeder" ? "adf" : "flatbed";
+}
+
+function toColorMode(color: ScannerPageColor): "colored" | "grayscale" {
+  return color === "grayscale" ? "grayscale" : "colored";
+}
+
+function mapCapabilitiesForUi(caps: ScannerCapabilities | null): {
+  sources: string[];
+  colorModes: string[];
+  dpiOptions: number[];
+  duplex: boolean;
+} {
+  if (!caps) {
+    return {
+      sources: [],
+      colorModes: [],
+      dpiOptions: [150, 300, 600],
+      duplex: false,
+    };
+  }
+  return {
+    sources: caps.sources,
+    colorModes: caps.colorModes,
+    dpiOptions: caps.dpiOptions,
+    duplex: caps.duplex,
+  };
+}
+
+export function registerScanRoutes(
+  app: Express,
+  deps: RegisterScanRoutesDeps,
+): void {
+  // ── GET /api/scanner/status — UI compatibility status endpoint ──────
+  app.get("/api/scanner/status", async (_req: Request, res: Response) => {
+    const runtime = getScannerStatus();
+    const probeCaps = await getAdapter().probe().catch(() => null);
+    const capabilities = mapCapabilitiesForUi(probeCaps ?? runtime.capabilities);
+
+    const connected = runtime.adapter === "naps2" && Boolean(probeCaps?.available);
+    const error = connected
+      ? undefined
+      : runtime.lastError ??
+        "Scanner unavailable. Check Epson driver, NAPS2 installation, and USB connection.";
+
+    res.json({
+      connected,
+      name: connected ? runtime.deviceName : undefined,
+      driver: runtime.driver,
+      preferredName: runtime.preferredName,
+      sources: capabilities.sources,
+      colorModes: capabilities.colorModes,
+      dpiOptions: capabilities.dpiOptions,
+      duplex: capabilities.duplex,
+      preflight: runtime.preflight,
+      error,
+    });
+  });
+
+  // ── POST /api/scanner/scan — UI compatibility scan endpoint ────────
+  app.post("/api/scanner/scan", async (req: Request, res: Response) => {
+    const { source, color, dpi } = req.body as {
+      source?: ScannerPageSource;
+      color?: ScannerPageColor;
+      dpi?: string | number;
+    };
+
+    const runtime = getScannerStatus();
+    if (runtime.adapter !== "naps2") {
+      return res.status(409).json({
+        error:
+          runtime.lastError ??
+          "No scanner device is currently available. Please check your Epson scanner connection.",
+      });
+    }
+
+    if (!source || (source !== "feeder" && source !== "glass")) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid source. Accepted: "feeder", "glass"' });
+    }
+    if (!color || (color !== "color" && color !== "grayscale")) {
+      return res
+        .status(400)
+        .json({ error: 'Invalid color. Accepted: "color", "grayscale"' });
+    }
+
+    const safeDpi =
+      typeof dpi === "number" ? dpi : typeof dpi === "string" ? Number(dpi) : NaN;
+    if (!VALID_DPI.has(safeDpi)) {
+      return res.status(400).json({ error: "Invalid dpi. Accepted: 150, 300, 600" });
+    }
+
+    const settings = {
+      source: toScanSource(source),
+      dpi: safeDpi,
+      colorMode: toColorMode(color),
+      duplex: false,
+      format: "jpg" as const,
+    };
+
+    try {
+      const result = await getAdapter().scan(settings, "uploads/scans");
+      const filename = path.basename(result.outputPath);
+
+      void appendAdminLog("scan_completed", "Interactive scan completed.", {
+        source: settings.source,
+        dpi: settings.dpi,
+        colorMode: settings.colorMode,
+        filename,
+      });
+
+      res.json({
+        pages: [`/api/scan/preview/${encodeURIComponent(filename)}`],
+        filename,
+        pageCount: result.pageCount,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown scan error";
+      void appendAdminLog("scan_failed", "Interactive scan failed.", {
+        error: message,
+        source: settings.source,
+        dpi: settings.dpi,
+        colorMode: settings.colorMode,
+      });
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── GET /api/scanner/wired/drives — Detect removable USB drives ─────
+  app.get("/api/scanner/wired/drives", async (_req: Request, res: Response) => {
+    try {
+      const drives = await listRemovableDrives();
+      res.json({ drives });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not list USB drives.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── POST /api/scanner/wired/export — Copy scan to USB drive ─────────
+  app.post("/api/scanner/wired/export", async (req: Request, res: Response) => {
+    const safeFilename = toSafeScanFilename(req.body?.filename);
+    const drive = typeof req.body?.drive === "string" ? req.body.drive : "";
+
+    if (!safeFilename) {
+      return res.status(400).json({ error: "Invalid filename." });
+    }
+
+    const sourcePath = path.resolve("uploads", "scans", safeFilename);
+    if (!fs.existsSync(sourcePath)) {
+      return res.status(404).json({ error: "Scanned file not found." });
+    }
+
+    try {
+      const exported = await exportScanToUsbDrive(sourcePath, drive);
+      await appendAdminLog("scan_usb_exported", "Scanned file exported to USB.", {
+        filename: safeFilename,
+        drive: exported.drive,
+        exportPath: exported.exportPath,
+      });
+      res.json({
+        ok: true,
+        drive: exported.drive,
+        exportPath: exported.exportPath,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "USB export failed.";
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // ── POST /api/scanner/wireless-link — Create temporary download link ─
+  app.post("/api/scanner/wireless-link", (req: Request, res: Response) => {
+    const safeFilename = toSafeScanFilename(req.body?.filename);
+    if (!safeFilename) {
+      return res.status(400).json({ error: "Invalid filename." });
+    }
+
+    const sourcePath = path.resolve("uploads", "scans", safeFilename);
+    if (!fs.existsSync(sourcePath)) {
+      return res.status(404).json({ error: "Scanned file not found." });
+    }
+
+    try {
+      const link = createScanDownloadLink(sourcePath, deps.resolvePublicBaseUrl(req));
+      void appendAdminLog(
+        "scan_wireless_link_created",
+        "Wireless scan download link created.",
+        {
+          filename: safeFilename,
+          expiresAt: link.expiresAt,
+        },
+      );
+      res.json(link);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create link.";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // ── GET /scan/download/:token — Download scanned file by token ──────
+  app.get("/scan/download/:token", (req: Request, res: Response) => {
+    const token = String(req.params.token ?? "");
+    const session = resolveScanDownload(token);
+    if (!session) {
+      return res.status(410).send("This scan download link has expired.");
+    }
+
+    const ext = path.extname(session.filename).slice(1).toLowerCase();
+    const contentType = FORMAT_CONTENT_TYPES[ext] ?? "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${session.filename}"`,
+    );
+    res.sendFile(path.resolve(session.filePath));
+  });
+
   // ── POST /api/scan/jobs — Start a scan job ─────────────────────────
   app.post("/api/scan/jobs", async (req: Request, res: Response) => {
     const { source, dpi, colorMode, duplex, format } = req.body as {

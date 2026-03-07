@@ -13,6 +13,7 @@
 3. Serial coin hardware is connected (if coin mode is used).
 4. Scanner is connected (for copy/scan features).
 5. MyPublicWiFi is installed (if hotspot/captive flow is enabled).
+6. NAPS2 is installed (`C:\Program Files\NAPS2\NAPS2.Console.exe`) with Epson scanner drivers.
 
 ## Common checks
 
@@ -54,10 +55,17 @@
 - Retry `/api/scan/preview`.
 - Check logs for `scan_preview_failed` entries.
 
+## Scan soft-copy delivery fails
+
+- Check scanner readiness from `GET /api/scanner/status`.
+- For wireless delivery, regenerate the link from `POST /api/scanner/wireless-link` and retry `/scan/download/:token`.
+- For USB delivery, verify removable drive detection via `GET /api/scanner/wired/drives` before calling `POST /api/scanner/wired/export`.
+
 ## Storage and state safety
 
 - Runtime artifacts:
   - `uploads/`
   - `db.json`
+- Scanned files in `uploads/scans` are auto-cleaned based on `PRINTBIT_SCAN_FILE_RETENTION_MS` (default 24 hours).
 - Back up `db.json` before maintenance.
 - Use admin endpoints to clear storage instead of manual destructive deletes when possible.

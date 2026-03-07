@@ -13,6 +13,7 @@ import {
 } from "../services/admin";
 import { db } from "../services/db";
 import { getPrinterTelemetry } from "../services/printer-status";
+import { getScannerStatus } from "../services/scanner";
 
 interface RegisterAdminRoutesDeps {
   uploadDir: string;
@@ -54,6 +55,7 @@ export function registerAdminRoutes(
       const wifiActive =
         !host.startsWith("localhost") && !host.startsWith("127.0.0.1");
       const printer = getPrinterTelemetry();
+      const scanner = getScannerStatus();
       res.json({
         balance: db.data!.balance,
         earnings: computeEarningsBuckets(),
@@ -65,6 +67,7 @@ export function registerAdminRoutes(
           uptimeSeconds: Math.floor(process.uptime()),
           serial: deps.getSerialStatus(),
           printer,
+          scanner,
           host,
           wifiActive,
         },
@@ -82,11 +85,13 @@ export function registerAdminRoutes(
       const wifiActive =
         !host.startsWith("localhost") && !host.startsWith("127.0.0.1");
       const printer = getPrinterTelemetry();
+      const scanner = getScannerStatus();
       res.json({
         serverRunning: true,
         uptimeSeconds: Math.floor(process.uptime()),
         serial: deps.getSerialStatus(),
         printer,
+        scanner,
         storage,
         host,
         wifiActive,

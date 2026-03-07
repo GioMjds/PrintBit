@@ -23,13 +23,58 @@ export interface ScannerAdapter {
   cancel(): void;
 }
 
+type ScannerDriver = "twain" | "wia";
+
+export interface ScannerRuntimeStatus {
+  connected: boolean;
+  adapter: "naps2" | "stub";
+  driver: ScannerDriver | "stub" | "none";
+  deviceName: string | null;
+  preferredName: string;
+  probes: {
+    twain: string[];
+    wia: string[];
+  };
+  capabilities: ScannerCapabilities | null;
+  usingStub: boolean;
+  lastCheckedAt: string;
+  lastError: string | null;
+  preflight: {
+    naps2Path: string;
+    naps2Exists: boolean;
+    scanDir: string;
+  };
+}
+
+const NAPS2_PATH =
+  process.env.PRINTBIT_NAPS2_PATH ?? "C:\\Program Files\\NAPS2\\NAPS2.Console.exe";
+const SCAN_TIMEOUT_MS = 90_000;
+const PREFERRED_SCANNER_NAME = process.env.PRINTBIT_SCANNER_NAME ?? "EPSON L5290 Series";
+
+let runtimeStatus: ScannerRuntimeStatus = {
+  connected: false,
+  adapter: "stub",
+  driver: "none",
+  deviceName: null,
+  preferredName: PREFERRED_SCANNER_NAME,
+  probes: { twain: [], wia: [] },
+  capabilities: null,
+  usingStub: true,
+  lastCheckedAt: new Date().toISOString(),
+  lastError: null,
+  preflight: {
+    naps2Path: NAPS2_PATH,
+    naps2Exists: false,
+    scanDir: path.resolve("uploads", "scans"),
+  },
+};
+
 // ── Stub adapter (testing / no-hardware fallback) ────────────────────
 
 export class StubScannerAdapter implements ScannerAdapter {
   private cancelled = false;
 
   async probe(): Promise<ScannerCapabilities> {
-    console.log("[SCANNER] Probing stub scanner capabilities…");
     const caps: ScannerCapabilities = {
       available: true,
       sources: ["adf", "flatbed"],
@@ -50,11 +95,8 @@ export class StubScannerAdapter implements ScannerAdapter {
     console.log("[SCANNER] Settings:", JSON.stringify(settings));
     console.log("[SCANNER] Output dir:", outputDir);
 
-    // Ensure output directory exists
     fs.mkdirSync(outputDir, { recursive: true });
 
-    // Simulate scan delay
-    console.log("[SCANNER] Simulating 2-second scan…");
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(resolve, 2_000);
       const check = setInterval(() => {
@@ -64,7 +106,6 @@ export class StubScannerAdapter implements ScannerAdapter {
           reject(new Error("Scan cancelled by user"));
         }
       }, 100);
-      // Clear interval when timer fires normally
       timer.unref?.();
       void new Promise<void>((r) => setTimeout(r, 2_000)).then(() =>
         clearInterval(check),
@@ -73,7 +114,6 @@ export class StubScannerAdapter implements ScannerAdapter {
 
     const filename = `stub-scan-${Date.now()}.${settings.format}`;
     const outputPath = path.join(outputDir, filename);
-
     fs.writeFileSync(outputPath, "Stub scan output", "utf-8");
     console.log(`[SCANNER] ✓ Stub scan complete → ${outputPath}`);
 
@@ -85,35 +125,29 @@ export class StubScannerAdapter implements ScannerAdapter {
   }
 
   cancel(): void {
-    console.log("[SCANNER] Cancel requested on stub adapter");
     this.cancelled = true;
   }
 }
 
 // ── NAPS2 adapter (real hardware via NAPS2.Console.exe) ──────────────
 
-const NAPS2_PATH = "C:\\Program Files\\NAPS2\\NAPS2.Console.exe";
-const SCAN_TIMEOUT_MS = 90_000;
-
 export class Naps2ScannerAdapter implements ScannerAdapter {
-  private deviceName: string;
+  private readonly deviceName: string;
+  private readonly driver: ScannerDriver;
   private childProc: ChildProcess | null = null;
 
-  constructor(deviceName: string) {
+  constructor(deviceName: string, driver: ScannerDriver) {
     this.deviceName = deviceName;
+    this.driver = driver;
   }
 
   async probe(): Promise<ScannerCapabilities> {
-    console.log("[SCANNER] Probing NAPS2 scanner capabilities…");
-    console.log(`[SCANNER] Device: ${this.deviceName}`);
-
-    const devices = await listNaps2Devices();
+    const devices = await listNaps2Devices(this.driver);
     const found = devices.some(
       (d) => d.toLowerCase() === this.deviceName.toLowerCase(),
     );
 
     if (!found) {
-      console.log(`[SCANNER] ✗ Device "${this.deviceName}" not found in TWAIN list`);
       return {
         available: false,
         sources: [],
@@ -123,33 +157,30 @@ export class Naps2ScannerAdapter implements ScannerAdapter {
       };
     }
 
-    const caps: ScannerCapabilities = {
+    return {
       available: true,
       sources: ["adf", "flatbed"],
       colorModes: ["colored", "grayscale"],
       dpiOptions: [150, 300, 600],
       duplex: false,
     };
-    console.log("[SCANNER] ✓ NAPS2 capabilities:", JSON.stringify(caps));
-    return caps;
   }
 
   async scan(
     settings: ScanJobSettings,
     outputDir: string,
   ): Promise<ScanResult> {
-    console.log("[SCANNER] ── New NAPS2 scan job ────────────────────────");
-    console.log("[SCANNER] Settings:", JSON.stringify(settings));
-    console.log("[SCANNER] Output dir:", outputDir);
-
     fs.mkdirSync(outputDir, { recursive: true });
 
-    const ext = settings.format === "jpg" ? "jpg" : settings.format === "png" ? "png" : "pdf";
+    const ext =
+      settings.format === "jpg"
+        ? "jpg"
+        : settings.format === "png"
+          ? "png"
+          : "pdf";
     const filename = `scan-${Date.now()}.${ext}`;
     const outputPath = path.join(outputDir, filename);
-
-    const args = buildNaps2Args(this.deviceName, settings, outputPath);
-    console.log(`[SCANNER] Command: "${NAPS2_PATH}" ${args.join(" ")}`);
+    const args = buildNaps2Args(this.deviceName, this.driver, settings, outputPath);
 
     const startMs = Date.now();
 
@@ -166,14 +197,12 @@ export class Naps2ScannerAdapter implements ScannerAdapter {
           if (stderr) console.warn(`[SCANNER] stderr: ${stderr.trim()}`);
 
           if (error) {
-            console.error(`[SCANNER] ✗ Scan failed after ${elapsed}ms: ${error.message}`);
             return reject(
               new Error(`Scan failed: ${error.message}${stderr ? ` — ${stderr.trim()}` : ""}`),
             );
           }
 
           if (!fs.existsSync(outputPath)) {
-            console.error(`[SCANNER] ✗ Output file not created: ${outputPath}`);
             return reject(new Error("Scan completed but no output file was created"));
           }
 
@@ -193,9 +222,7 @@ export class Naps2ScannerAdapter implements ScannerAdapter {
   }
 
   cancel(): void {
-    console.log("[SCANNER] Cancel requested on NAPS2 adapter");
     if (this.childProc && !this.childProc.killed) {
-      console.log(`[SCANNER] Killing NAPS2 process (PID: ${this.childProc.pid})`);
       this.childProc.kill("SIGTERM");
       this.childProc = null;
     }
@@ -204,12 +231,13 @@ export class Naps2ScannerAdapter implements ScannerAdapter {
 
 function buildNaps2Args(
   deviceName: string,
+  driver: ScannerDriver,
   settings: ScanJobSettings,
   outputPath: string,
 ): string[] {
   const args = [
     "-o", outputPath,
-    "--driver", "twain",
+    "--driver", driver,
     "--device", deviceName,
     "--source", settings.source === "adf" ? "feeder" : "glass",
     "--dpi", String(settings.dpi),
@@ -218,7 +246,6 @@ function buildNaps2Args(
     "--verbose",
   ];
 
-  // Paper size (optional field from ScanJobSettings)
   if (settings.paperSize) {
     args.push("--pagesize", settings.paperSize.toLowerCase());
   }
@@ -226,28 +253,45 @@ function buildNaps2Args(
   return args;
 }
 
-async function listNaps2Devices(): Promise<string[]> {
+function parseDeviceLines(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+async function listNaps2Devices(driver: ScannerDriver): Promise<string[]> {
   return new Promise((resolve) => {
     execFile(
       NAPS2_PATH,
-      ["--listdevices", "--driver", "twain"],
+      ["--listdevices", "--driver", driver],
       { timeout: 15_000, windowsHide: true },
       (error, stdout) => {
         if (error) {
-          console.log(`[SCANNER] ⚠ NAPS2 --listdevices failed: ${error.message}`);
+          console.log(`[SCANNER] ⚠ NAPS2 --listdevices (${driver}) failed: ${error.message}`);
           resolve([]);
           return;
         }
-        const devices = stdout
-          .trim()
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean);
-        console.log(`[SCANNER] NAPS2 TWAIN devices: [${devices.join(", ")}]`);
-        resolve(devices);
+        resolve(parseDeviceLines(stdout));
       },
     );
   });
+}
+
+function selectPreferredDevice(devices: string[], preferredName: string): string | null {
+  if (devices.length === 0) return null;
+
+  const preferredLower = preferredName.toLowerCase();
+  const exact = devices.find((device) => device.toLowerCase() === preferredLower);
+  if (exact) return exact;
+
+  const partial = devices.find((device) => device.toLowerCase().includes(preferredLower));
+  if (partial) return partial;
+
+  const epson = devices.find((device) => device.toLowerCase().includes("epson"));
+  if (epson) return epson;
+
+  return devices[0] ?? null;
 }
 
 // ── Module-level active adapter ──────────────────────────────────────
@@ -255,7 +299,6 @@ async function listNaps2Devices(): Promise<string[]> {
 let activeAdapter: ScannerAdapter = new StubScannerAdapter();
 
 export function setAdapter(adapter: ScannerAdapter): void {
-  console.log("[SCANNER] Adapter replaced");
   activeAdapter = adapter;
 }
 
@@ -263,59 +306,100 @@ export function getAdapter(): ScannerAdapter {
   return activeAdapter;
 }
 
+export function getScannerStatus(): ScannerRuntimeStatus {
+  return {
+    ...runtimeStatus,
+    probes: {
+      twain: [...runtimeStatus.probes.twain],
+      wia: [...runtimeStatus.probes.wia],
+    },
+    capabilities: runtimeStatus.capabilities
+      ? { ...runtimeStatus.capabilities }
+      : null,
+  };
+}
+
 export async function detectScanner(): Promise<void> {
   console.log("[SCANNER] ── Detecting scanner ──────────────────────────");
 
-  // Ensure default scan output directory exists
   const scanDir = path.resolve("uploads", "scans");
   fs.mkdirSync(scanDir, { recursive: true });
-  console.log(`[SCANNER] Scan output directory: ${scanDir}`);
 
-  // Check if NAPS2.Console.exe exists
   const naps2Exists = fs.existsSync(NAPS2_PATH);
-  console.log(`[SCANNER] NAPS2.Console: ${NAPS2_PATH} (exists: ${naps2Exists})`);
+  runtimeStatus = {
+    connected: false,
+    adapter: "stub",
+    driver: "none",
+    deviceName: null,
+    preferredName: PREFERRED_SCANNER_NAME,
+    probes: { twain: [], wia: [] },
+    capabilities: null,
+    usingStub: true,
+    lastCheckedAt: new Date().toISOString(),
+    lastError: null,
+    preflight: {
+      naps2Path: NAPS2_PATH,
+      naps2Exists,
+      scanDir,
+    },
+  };
 
   if (naps2Exists) {
-    try {
-      const devices = await listNaps2Devices();
-      if (devices.length > 0) {
-        const deviceName = devices[0]!;
-        console.log(`[SCANNER] ✓ Using NAPS2 adapter with device: "${deviceName}"`);
-        const adapter = new Naps2ScannerAdapter(deviceName);
-        setAdapter(adapter);
+    for (const driver of ["twain", "wia"] as const) {
+      try {
+        const devices = await listNaps2Devices(driver);
+        runtimeStatus.probes[driver] = devices;
+        console.log(`[SCANNER] NAPS2 ${driver.toUpperCase()} devices: [${devices.join(", ")}]`);
 
+        const deviceName = selectPreferredDevice(devices, PREFERRED_SCANNER_NAME);
+        if (!deviceName) continue;
+
+        const adapter = new Naps2ScannerAdapter(deviceName, driver);
         const caps = await adapter.probe();
-        console.log("[SCANNER] ✓ Scanner ready:");
-        console.log(`[SCANNER]   Sources: ${caps.sources.join(", ")}`);
-        console.log(`[SCANNER]   Color modes: ${caps.colorModes.join(", ")}`);
-        console.log(`[SCANNER]   DPI options: ${caps.dpiOptions.join(", ")}`);
-        console.log(`[SCANNER]   Duplex: ${caps.duplex}`);
+        if (!caps.available) continue;
+
+        setAdapter(adapter);
+        runtimeStatus = {
+          ...runtimeStatus,
+          connected: true,
+          adapter: "naps2",
+          driver,
+          deviceName,
+          capabilities: caps,
+          usingStub: false,
+          lastCheckedAt: new Date().toISOString(),
+          lastError: null,
+        };
+
+        console.log(`[SCANNER] ✓ Using ${driver.toUpperCase()} scanner: "${deviceName}"`);
         return;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        runtimeStatus = {
+          ...runtimeStatus,
+          lastError: message,
+          lastCheckedAt: new Date().toISOString(),
+        };
       }
-      console.log("[SCANNER] ⚠ NAPS2 found but no TWAIN devices detected");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`[SCANNER] ⚠ NAPS2 detection failed: ${msg}`);
     }
   }
 
-  // Fallback to stub adapter
-  console.log("[SCANNER] ⚠ Falling back to stub scanner adapter (no real hardware)");
-  try {
-    const caps = await activeAdapter.probe();
-
-    if (!caps.available) {
-      console.log("[SCANNER] ✗ No scanner available");
-      return;
-    }
-
-    console.log("[SCANNER] ✓ Stub scanner active:");
-    console.log(`[SCANNER]   Sources: ${caps.sources.join(", ")}`);
-    console.log(`[SCANNER]   Color modes: ${caps.colorModes.join(", ")}`);
-    console.log(`[SCANNER]   DPI options: ${caps.dpiOptions.join(", ")}`);
-    console.log(`[SCANNER]   Duplex: ${caps.duplex}`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.log(`[SCANNER] ⚠ Could not detect scanner: ${msg}`);
-  }
+  setAdapter(new StubScannerAdapter());
+  const caps = await activeAdapter.probe();
+  runtimeStatus = {
+    ...runtimeStatus,
+    connected: false,
+    adapter: "stub",
+    driver: "stub",
+    deviceName: "Stub scanner",
+    capabilities: caps,
+    usingStub: true,
+    lastCheckedAt: new Date().toISOString(),
+    lastError:
+      runtimeStatus.lastError ??
+      (naps2Exists
+        ? "No TWAIN/WIA scanner device was found."
+        : `NAPS2 not found at ${NAPS2_PATH}`),
+  };
+  console.log("[SCANNER] ⚠ Falling back to stub scanner adapter");
 }
