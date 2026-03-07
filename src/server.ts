@@ -27,7 +27,11 @@ import { detectDefaultPrinter } from "./services/printer";
 import { detectScanner } from "./services/scanner";
 import { startScanStorageCleanup } from "./services/scan-storage";
 import { convertToPdfPreview } from "./services/preview";
-import { getHopperStatus, getSerialStatus, initSerial } from "./services/serial";
+import {
+  getHopperStatus,
+  getSerialStatus,
+  initSerial,
+} from "./services/serial";
 import { runHopperSelfTest } from "./services/hopper";
 import {
   startHotspot,
