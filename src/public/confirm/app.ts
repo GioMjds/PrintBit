@@ -606,6 +606,17 @@ const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
 let isProcessingPayment = false;
+let activeSpoolerCorrelationKey: string | null = null;
+
+function createSpoolerCorrelationKey(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
+  }
+  return `spooler_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 if (config.mode === 'copy' || config.mode === 'scan') {
   modalPagesRow?.setAttribute('hidden', '');
@@ -681,6 +692,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   hideModal();
   confirmBtn.disabled = true;
   isProcessingPayment = true;
+  activeSpoolerCorrelationKey = null;
 
   showOverlay(printingOverlay);
 
@@ -698,7 +710,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     setPrintingPhase('printing');
   }
-  const MIN_OVERLAY_MS = 3_000;
+  const MIN_OVERLAY_MS = 500;
   const overlayStart = Date.now();
 
   if (config.mode === 'scan') {
@@ -864,6 +876,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     // Print flow: existing behavior
     if (statusMessage) statusMessage.textContent = 'Sending to printer…';
+    const spoolerCorrelationKey = createSpoolerCorrelationKey();
+    activeSpoolerCorrelationKey = spoolerCorrelationKey;
 
     const response = await fetch('/api/confirm-payment', {
       method: 'POST',
@@ -879,10 +893,12 @@ modalConfirmBtn?.addEventListener('click', async () => {
         paperSize: config.paperSize,
         pageRange: config.pageRange,
         duplex: config.duplex === true,
+        spoolerCorrelationKey,
       }),
     });
 
     if (!response.ok) {
+      activeSpoolerCorrelationKey = null;
       hideOverlay(printingOverlay);
       const payload = (await response.json()) as { error?: string };
       if (statusMessage)
@@ -1144,6 +1160,40 @@ if (typeof ioFactory === 'function') {
     applyConfirmGate();
     setCoinEventMessage('✓ Printer connected. You may now insert coins.');
   });
+
+  socket.on('printJobDispatched', (payload: unknown) => {
+    const spoolerCorrelationKey =
+      payload &&
+      typeof payload === 'object' &&
+      'spoolerCorrelationKey' in payload &&
+      typeof (payload as { spoolerCorrelationKey: unknown })
+        .spoolerCorrelationKey === 'string'
+        ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+        : null;
+
+    if (
+      !activeSpoolerCorrelationKey ||
+      spoolerCorrelationKey !== activeSpoolerCorrelationKey
+    ) {
+      return;
+    }
+
+    const printerName =
+      payload &&
+      typeof payload === 'object' &&
+      'printerName' in payload &&
+      typeof (payload as { printerName: unknown }).printerName === 'string'
+        ? (payload as { printerName: string }).printerName
+        : null;
+
+    if (statusMessage) {
+      statusMessage.textContent = printerName
+        ? `✓ Job sent to "${printerName}". Printing...`
+        : '✓ Job sent to printer. Printing...';
+    }
+    activeSpoolerCorrelationKey = null;
+    setPrintingPhase('printing');
+  });
 }
 
 // [PRINTER GUARD] Fetches current printer readiness on page load.
@@ -1172,9 +1222,12 @@ async function loadPrinterStatus(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  await loadPrinterStatus(); // [PRINTER GUARD] must run first
-  await loadPricing();
-  await fetchInitialBalance();
+  await Promise.all([
+    loadPrinterStatus(), // [PRINTER GUARD] must run first
+    loadPricing(),
+    fetchInitialBalance(),
+  ]);
+  applyConfirmGate();
 }
 
 void boot();
