@@ -2,19 +2,19 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import {
-  db,
   type AdminLogEntry,
   type ColorMode,
   type LogMeta,
   type PrintMode,
   type PricingSettings,
 } from './db';
+import { settingsRepository, stateRepository } from '@/state/repositories';
 
 class AdminService {
   private readonly MAX_LOGS = 3000;
 
   getPricingSettings(): PricingSettings {
-    return db.data!.settings.pricing;
+    return settingsRepository.getPricingSettings();
   }
 
   calculateJobAmount(
@@ -82,11 +82,12 @@ class AdminService {
       meta,
     };
 
-    db.data!.logs.unshift(entry);
-    if (db.data!.logs.length > this.MAX_LOGS) {
-      db.data!.logs.length = this.MAX_LOGS;
+    const state = stateRepository.getState();
+    state.logs.unshift(entry);
+    if (state.logs.length > this.MAX_LOGS) {
+      state.logs.length = this.MAX_LOGS;
     }
-    await db.write();
+    await stateRepository.write();
     return entry;
   }
 
@@ -96,44 +97,48 @@ class AdminService {
     // else if (coinValue === 10) db.data!.coinStats.ten += 1;
     // else if (coinValue === 20) db.data!.coinStats.twenty += 1;
     // else return;
+    const state = stateRepository.getState();
+
     switch (coinValue) {
       case 1:
-        db.data!.coinStats.one += 1;
+        state.coinStats.one += 1;
         break;
       case 5:
-        db.data!.coinStats.five += 1;
+        state.coinStats.five += 1;
         break;
       case 10:
-        db.data!.coinStats.ten += 1;
+        state.coinStats.ten += 1;
         break;
       case 20:
-        db.data!.coinStats.twenty += 1;
+        state.coinStats.twenty += 1;
         break;
       default:
         return;
     }
 
-    await db.write();
+    await stateRepository.write();
   }
 
   async incrementJobStats(mode: PrintMode): Promise<void> {
-    db.data!.jobStats.total += 1;
+    const state = stateRepository.getState();
+    state.jobStats.total += 1;
     switch (mode) {
       case 'print':
-        db.data!.jobStats.print += 1;
+        state.jobStats.print += 1;
         break;
       case 'copy':
-        db.data!.jobStats.copy += 1;
+        state.jobStats.copy += 1;
         break;
       case 'scan':
-        db.data!.jobStats.scan += 1;
+        state.jobStats.scan += 1;
         break;
     }
-    await db.write();
+    await stateRepository.write();
   }
 
   computeEarningsBuckets(now = new Date()) {
-    const allTime = db.data!.earnings;
+    const state = stateRepository.getState();
+    const allTime = state.earnings;
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
     const startOfWeek = new Date(startOfToday);
@@ -142,7 +147,7 @@ class AdminService {
     let today = 0;
     let week = 0;
 
-    for (const log of db.data!.logs) {
+    for (const log of state.logs) {
       if (log.type !== 'payment_confirmed') continue;
       const amountRaw = log.meta?.amount;
       const amount =

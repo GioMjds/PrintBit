@@ -9,6 +9,7 @@ import {
 } from '@/services/db';
 import { getPrinterTelemetry } from '@/services';
 import { adminService } from '@/services/admin';
+import { financialService } from '@/services/financial';
 import { settlementService } from '@/services/settlement';
 import { printFile, type PrintJobOptions } from '@/services/printer';
 import { monitorSpoolerJob } from '@/services/print-spooler';
@@ -51,10 +52,7 @@ export function registerFinancialRoutes(
   deps: RegisterFinancialRoutesDeps,
 ) {
   app.get('/api/balance', (_req: Request, res: Response) => {
-    res.json({
-      balance: db.data?.balance ?? 0,
-      earnings: db.data?.earnings ?? 0,
-    });
+    res.json(financialService.getBalanceSummary());
   });
 
   app.get('/api/pricing', (_req: Request, res: Response) => {
@@ -62,110 +60,49 @@ export function registerFinancialRoutes(
   });
 
   app.post('/api/print/quote', (req: Request, res: Response) => {
-    const { sessionId, documentId } = req.body as {
-      sessionId?: string;
-      documentId?: string;
-      copies?: number;
-      colorMode?: 'colored' | 'grayscale';
-      pageRange?: unknown;
-      duplex?: boolean;
-    };
-
-    if (!sessionId) {
-      return res.status(400).json({ error: 'Print session is required' });
-    }
-
-    const sessionState = deps.sessionStore.getSessionState(sessionId);
-    if (sessionState === 'expired') {
-      return res.status(410).json({
-        code: 'SESSION_EXPIRED',
-        error: 'Session has expired. Please start a new upload session.',
-      });
-    }
-    if (sessionState === 'missing') {
-      return res.status(404).json({ error: 'Session not found' });
-    }
-
-    const session = deps.sessionStore.tryGetSession(
-      sessionId,
-      deps.resolvePublicBaseUrl(req),
-    );
-    if (!session) {
-      return res.status(410).json({
-        code: 'SESSION_EXPIRED',
-        error: 'Session has expired. Please start a new upload session.',
-      });
-    }
-    deps.sessionStore.touchSession(sessionId);
-
-    const target = resolveTargetDocument(session, documentId);
-    if (!target) {
-      return res.status(400).json({
-        error: documentId
-          ? `Document "${documentId}" not found in session`
-          : 'No uploaded document found for this session',
-      });
-    }
-
-    if (!target.analysis) {
-      return res.status(409).json({
-        error:
-          'Document analysis is unavailable. Re-upload the file and try again.',
-      });
-    }
-
-    const safeCopies =
-      typeof req.body?.copies === 'number' && Number.isFinite(req.body.copies)
-        ? Math.max(1, Math.floor(req.body.copies))
-        : 1;
-    const requestedColorMode =
-      req.body?.colorMode === 'colored' || req.body?.colorMode === 'grayscale'
-        ? req.body.colorMode
-        : 'grayscale';
-    const duplex = req.body?.duplex === true;
-
-    const quoteComputation = buildPrintQuote({
-      analysis: target.analysis,
-      copies: safeCopies,
-      colorMode: requestedColorMode,
-      pageRange: req.body?.pageRange,
-      duplex,
+    const quoteResult = financialService.buildPrintQuoteFromSession({
+      req,
+      sessionStore: deps.sessionStore,
+      resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
+      sessionId: (req.body as { sessionId?: string })?.sessionId,
+      documentId: (req.body as { documentId?: string })?.documentId,
+      copies: (req.body as { copies?: number })?.copies,
+      colorMode: (req.body as { colorMode?: unknown })?.colorMode,
+      pageRange: (req.body as { pageRange?: unknown })?.pageRange,
+      duplex: (req.body as { duplex?: unknown })?.duplex,
     });
-    if (!quoteComputation.ok) {
-      return res.status(400).json({ error: quoteComputation.error });
+
+    if (!quoteResult.ok) {
+      return res.status(quoteResult.status).json(quoteResult.body);
     }
 
     return res.json({
       ok: true,
-      sessionId,
-      documentId: target.documentId,
-      filename: target.filename,
-      quote: quoteComputation.quote,
+      sessionId: quoteResult.data.sessionId,
+      documentId: quoteResult.data.documentId,
+      filename: quoteResult.data.filename,
+      quote: quoteResult.data.quote,
     });
   });
 
   app.post('/api/balance/reset', async (_req: Request, res: Response) => {
-    const previousBalance = db.data!.balance;
-    db.data!.balance = 0;
-    await db.write();
+    const reset = await financialService.resetBalance();
     deps.io.emit('balance', 0);
     await adminService.appendAdminLog(
       'balance_reset',
       'Balance reset from admin/testing.',
       {
-        previousBalance,
+        previousBalance: reset.previousBalance,
         newBalance: 0,
       },
     );
 
     res.json({
       ok: true,
-      balance: db.data!.balance,
-      earnings: db.data!.earnings,
+      balance: reset.balance,
+      earnings: reset.earnings,
     });
   });
-
-  const ACCEPTED_TEST_COINS = new Set([1, 5, 10, 20]);
 
   // This route is for testing/demo purposes only, allowing insertion of test coins without real payment processing.
   app.post(
@@ -175,35 +112,37 @@ export function registerFinancialRoutes(
       const coinValue =
         typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-      if (coinValue === null || !ACCEPTED_TEST_COINS.has(coinValue)) {
+      if (
+        coinValue === null ||
+        !financialService.isAcceptedTestCoin(coinValue)
+      ) {
         return res
           .status(400)
           .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
       }
 
-      db.data!.balance += coinValue;
-      await db.write();
+      const newBalance = await financialService.addTestCoin(coinValue);
 
       await adminService.appendAdminLog(
         'coin_accepted',
         `Test coin inserted: ${coinValue}`,
         {
           coinValue,
-          balance: db.data!.balance,
+          balance: newBalance,
           source: 'test-ui',
         },
       );
 
-      deps.io.emit('balance', db.data!.balance);
+      deps.io.emit('balance', newBalance);
       deps.io.emit('coinAccepted', {
         value: coinValue,
-        balance: db.data!.balance,
+        balance: newBalance,
       });
 
       res.json({
         ok: true,
         coinValue,
-        balance: db.data!.balance,
+        balance: newBalance,
       });
     },
   );
