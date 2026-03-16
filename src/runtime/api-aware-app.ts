@@ -37,7 +37,10 @@ export function createApiAwareApp(
   apiRouter: unknown,
   apiBasePath: string,
 ): Express {
-  if (!apiRouter || typeof apiRouter !== 'object') {
+  if (
+    !apiRouter ||
+    (typeof apiRouter !== 'function' && typeof apiRouter !== 'object')
+  ) {
     throw new Error('apiRouter must be a valid Express Router');
   }
 
