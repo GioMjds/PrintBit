@@ -639,6 +639,7 @@ export function registerFinancialRoutes(
     const settledChangeAttempts = settlement.change.attempts ?? 0;
     const settledOwedChangeId = settlement.change.owedChangeId ?? null;
     const settledChangeMessage = settlement.change.message ?? null;
+    const settledRemainingBalance = settlement.remainingBalance;
 
     void (async () => {
       try {
@@ -663,7 +664,7 @@ export function registerFinancialRoutes(
             documentId: targetDocumentId ?? null,
             sessionId: sessionId ?? null,
             filename: serverFilename ?? null,
-            remainingBalance: settlement.remainingBalance,
+            remainingBalance: settledRemainingBalance,
             changeState: settledChangeState,
             changeRequested: settledChangeRequested,
             changeDispensed: settledChangeDispensed,

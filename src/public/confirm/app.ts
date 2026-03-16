@@ -698,7 +698,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     setPrintingPhase('printing');
   }
-  const MIN_OVERLAY_MS = 500;
+  const MIN_OVERLAY_MS = 300;
   const overlayStart = Date.now();
 
   if (config.mode === 'scan') {
@@ -1194,6 +1194,7 @@ async function boot(): Promise<void> {
     loadPricing(),
     fetchInitialBalance(),
   ]);
+  applyConfirmGate();
 }
 
 void boot();

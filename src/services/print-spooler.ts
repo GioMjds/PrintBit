@@ -9,6 +9,8 @@ const POLL_INTERVAL_MS = 1_500;
 const MONITOR_WINDOW_MS = 3 * 60 * 1_000; // 3 minutes
 /** How far back (in minutes) to look for print jobs when querying the spooler */
 const JOB_LOOKBACK_MINUTES = 3;
+/** Allowed clock skew between app dispatch time and spooler submitted time */
+const JOB_SUBMITTED_TIME_SKEW_MS = 5_000;
 
 // Windows JobStatus enum values (comma-separated string from PowerShell)
 
@@ -49,6 +51,7 @@ interface SpoolerJobRow {
   status: string;
   totalPages: number;
   pagesPrinted: number;
+  submittedTime: string | null;
 }
 
 // Persistent PowerShell
@@ -72,6 +75,8 @@ function createPersistentPS(): PersistentPS {
   let disposed = false;
 
   function run(script: string, timeoutMs = 10_000): Promise<string> {
+    // NOTE: This implementation is NOT safe for concurrent calls.
+    // Always await the previous run() before calling again.
     if (disposed) {
       return Promise.reject(
         new Error('[SPOOLER-MONITOR] PS runspace already disposed'),
@@ -86,6 +91,7 @@ function createPersistentPS(): PersistentPS {
 
       const timer = setTimeout(() => {
         ps.stdout.off('data', onData);
+        dispose();
         reject(new Error('[SPOOLER-MONITOR] PS runspace query timed out'));
       }, timeoutMs);
 
@@ -135,7 +141,7 @@ async function queryRecentPrintJobs(
       `$cutoff = (Get-Date).AddMinutes(-${JOB_LOOKBACK_MINUTES}); ` +
       `Get-PrintJob -PrinterName '${escaped}' -ErrorAction SilentlyContinue ` +
       `| Where-Object { $_.SubmittedTime -ge $cutoff } ` +
-      `| Select-Object Id, @{N='Status';E={$_.JobStatus.ToString()}}, TotalPages, PagesPrinted ` +
+      `| Select-Object Id, @{N='Status';E={$_.JobStatus.ToString()}}, TotalPages, PagesPrinted, @{N='SubmittedTime';E={$_.SubmittedTime.ToUniversalTime().ToString('o')}} ` +
       `| ConvertTo-Json -Depth 2 -Compress`;
 
     const json = await ps.run(script, 10_000);
@@ -149,12 +155,16 @@ async function queryRecentPrintJobs(
         (item): item is Record<string, unknown> =>
           !!item && typeof item === 'object',
       )
-      .map((item) => ({
-        id: Number(item.Id ?? 0),
-        status: String(item.Status ?? 'Unknown').trim(),
-        totalPages: Number(item.TotalPages ?? 0),
-        pagesPrinted: Number(item.PagesPrinted ?? 0),
-      }));
+        .map((item) => ({
+          id: Number(item.Id ?? 0),
+          status: String(item.Status ?? 'Unknown').trim(),
+          totalPages: Number(item.TotalPages ?? 0),
+          pagesPrinted: Number(item.PagesPrinted ?? 0),
+          submittedTime:
+            typeof item.SubmittedTime === 'string'
+              ? item.SubmittedTime
+              : null,
+        }));
   } catch {
     console.warn('[SPOOLER-MONITOR] Failed to query print jobs');
     return [];
@@ -197,6 +207,11 @@ export async function monitorSpoolerJob(
   let lastStatus: string | null = null;
   let lastPagesPrinted = 0;
   let trackedJobId: number | null = null;
+  const dispatchedAtMs = Date.parse(jobDispatchedAt);
+  const submittedTimeCutoffMs = Number.isFinite(dispatchedAtMs)
+    ? dispatchedAtMs - JOB_SUBMITTED_TIME_SKEW_MS
+    : null;
+  let warnedSubmittedTimeFallback = false;
 
   const ps = createPersistentPS();
 
@@ -213,12 +228,44 @@ export async function monitorSpoolerJob(
         continue;
       }
 
-      // Latch onto the highest job ID seen (most recently submitted)
+      const scopedJobs =
+        submittedTimeCutoffMs === null
+          ? jobs
+          : (() => {
+              const recentJobs = jobs.filter((candidate) => {
+                const submittedAtMs = candidate.submittedTime
+                  ? Date.parse(candidate.submittedTime)
+                  : Number.NaN;
+                return (
+                  Number.isFinite(submittedAtMs) &&
+                  submittedAtMs >= submittedTimeCutoffMs
+                );
+              });
+
+              if (recentJobs.length === 0 && !warnedSubmittedTimeFallback) {
+                console.warn(
+                  '[SPOOLER-MONITOR] No spooler jobs met submitted-time cutoff; falling back to ID-based selection',
+                );
+                warnedSubmittedTimeFallback = true;
+              }
+
+              return recentJobs.length > 0 ? recentJobs : jobs;
+            })();
+
+      // Prefer the newest eligible job around dispatch time; if tracked job disappears, fallback to highest ID.
       const job: SpoolerJobRow =
         trackedJobId !== null
-          ? (jobs.find((j) => j.id === trackedJobId) ??
-            jobs.reduce((a, b) => (b.id > a.id ? b : a)))
-          : jobs.reduce((a, b) => (b.id > a.id ? b : a));
+          ? (scopedJobs.find((j) => j.id === trackedJobId) ??
+            (() => {
+              const fallback = scopedJobs.reduce((a, b) =>
+                b.id > a.id ? b : a,
+              );
+              console.warn(
+                `[SPOOLER-MONITOR] Tracked job #${trackedJobId} no longer in spooler, falling back to #${fallback.id}`,
+              );
+              return fallback;
+            })())
+          : scopedJobs.reduce((a, b) => (b.id > a.id ? b : a));
 
       if (trackedJobId === null) {
         trackedJobId = job.id;
@@ -270,6 +317,18 @@ export async function monitorSpoolerJob(
             printerName,
           } as Record<string, string | number | boolean | null>,
         };
+
+        if (!db.data) {
+          console.error(
+            '[SPOOLER-MONITOR] DB not initialized, cannot create refund entry',
+          );
+          return {
+            detected: true,
+            jobStatus: job.status,
+            pagesPrinted: job.pagesPrinted,
+            failed: true,
+          };
+        }
 
         db.data!.pendingRefunds.unshift(refundEntry);
         await db.write();
