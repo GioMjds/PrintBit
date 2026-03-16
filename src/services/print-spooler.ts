@@ -394,15 +394,4 @@ export async function monitorSpoolerJob(
     // or an unexpected error was thrown. Without this the process leaks.
     ps.dispose();
   }
-
-  // Monitor window expired — job probably succeeded (or spooler cleared it already)
-  console.log(
-    `[SPOOLER-MONITOR] Window expired. Last known status: "${lastStatus ?? 'none'}"`,
-  );
-  return {
-    detected: lastStatus !== null,
-    jobStatus: lastStatus,
-    pagesPrinted: lastPagesPrinted,
-    failed: false,
-  };
 }
