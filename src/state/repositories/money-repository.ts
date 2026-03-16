@@ -1,3 +1,4 @@
+import { withBalanceLock } from '@/runtime';
 import { stateRepository } from './state-repository';
 
 class MoneyRepository {
@@ -10,10 +11,12 @@ class MoneyRepository {
   }
 
   async incrementBalance(amount: number): Promise<number> {
-    const state = stateRepository.getState();
-    state.balance += amount;
-    await stateRepository.write();
-    return state.balance;
+    return withBalanceLock(async () => {
+      const state = stateRepository.getState();
+      state.balance += amount;
+      await stateRepository.write();
+      return state.balance;
+    });
   }
 
   async resetBalance(): Promise<{ previousBalance: number; balance: number }> {

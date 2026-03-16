@@ -73,10 +73,17 @@ export function createKioskAppRuntime(): KioskAppRuntime {
     dest: path.join(UPLOAD_DIR, 'report-issues'),
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-      cb(null, ALLOWED_REPORT_IMAGE_TYPES.has(file.mimetype));
+      if (ALLOWED_REPORT_IMAGE_TYPES.has(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(
+          new Error(
+            `Invalid file type: ${file.mimetype}. Allowed: JPEG, PNG, WebP`,
+          ),
+        );
+      }
     },
   });
-
   const sessionStore = new SessionStore(UPLOAD_DIR);
 
   app.use(express.json());
@@ -137,7 +144,10 @@ export function createKioskAppRuntime(): KioskAppRuntime {
   registerPrinterRoutes(routeApp);
 
   io.on('connection', (socket) => {
-    socket.on('joinSession', (sessionId: string) => {
+    socket.on('joinSession', async (sessionId: string) => {
+      if (typeof sessionId !== 'string' || !sessionId.trim()) {
+        return;
+      }
       socket.join(`session:${sessionId}`);
     });
   });

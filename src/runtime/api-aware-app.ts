@@ -37,6 +37,10 @@ export function createApiAwareApp(
   apiRouter: unknown,
   apiBasePath: string,
 ): Express {
+  if (!apiRouter || typeof apiRouter !== 'object') {
+    throw new Error('apiRouter must be a valid Express Router');
+  }
+
   const routed = Object.create(app) as Express;
   const routerMethods = apiRouter as Record<string, Function>;
 
@@ -44,7 +48,11 @@ export function createApiAwareApp(
     const appMethod = (app as unknown as Record<string, Function>)[method].bind(
       app,
     );
-    const routerMethod = routerMethods[method].bind(apiRouter);
+    const routerFn = routerMethods[method];
+    const routerMethod = routerFn?.bind(apiRouter);
+    if (typeof routerFn !== 'function') {
+      throw new Error(`apiRouter is missing method: ${method}`);
+    }
 
     (routed as unknown as Record<string, Function>)[method] = (
       ...args: unknown[]

@@ -18,7 +18,9 @@ export function checkLockout(): { locked: boolean; remainingMs?: number } {
   // Lock expired — auto-clear
   state.adminLockout.failedAttempts = 0;
   state.adminLockout.lockedUntil = null;
-  void stateRepository.write();
+  void stateRepository.write().catch((error: unknown) => {
+    console.error('Failed to persist admin lockout auto-clear', error);
+  });
   return { locked: false };
 }
 

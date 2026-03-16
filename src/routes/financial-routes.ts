@@ -87,13 +87,13 @@ export function registerFinancialRoutes(
 
   app.post('/api/balance/reset', async (_req: Request, res: Response) => {
     const reset = await financialService.resetBalance();
-    deps.io.emit('balance', 0);
+    deps.io.emit('balance', reset.balance);
     await adminService.appendAdminLog(
       'balance_reset',
       'Balance reset from admin/testing.',
       {
         previousBalance: reset.previousBalance,
-        newBalance: 0,
+        newBalance: reset.balance,
       },
     );
 

@@ -5,7 +5,9 @@ export function getLocalIPv4(): string | null {
   let fallback: string | null = null;
 
   for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]!) {
+    const entries = interfaces[name];
+    if (!entries) continue;
+    for (const iface of entries) {
       if (iface.family !== 'IPv4' || iface.internal) continue;
 
       const isHotspot =

@@ -9,6 +9,7 @@ export interface IdempotencyEntry {
 interface InFlightEntry {
   promise: Promise<IdempotencyEntry | null>;
   resolve: (entry: IdempotencyEntry | null) => void;
+  expiresAt: number;
 }
 
 const idempotencyStore = new Map<string, IdempotencyEntry>();
@@ -47,10 +48,18 @@ export function acquireIdempotencyKey(
   }
 
   const inFlight = idempotencyInFlight.get(nk);
-  if (inFlight) return { type: 'inflight', promise: inFlight.promise };
-
+  if (inFlight) {
+    if (Date.now() <= inFlight.expiresAt) {
+      return { type: 'inflight', promise: inFlight.promise };
+    }
+    inFlight.resolve(null);
+    idempotencyInFlight.delete(nk);
+  }
   const deferred = makeDeferred();
-  idempotencyInFlight.set(nk, deferred);
+  idempotencyInFlight.set(nk, {
+    ...deferred,
+    expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
+  });
   return { type: 'claimed' };
 }
 
@@ -87,5 +96,11 @@ setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of idempotencyStore) {
     if (now > entry.expiresAt) idempotencyStore.delete(key);
+  }
+  for (const [key, inFlight] of idempotencyInFlight) {
+    if (now > inFlight.expiresAt) {
+      inFlight.resolve(null);
+      idempotencyInFlight.delete(key);
+    }
   }
 }, IDEMPOTENCY_TTL_MS);
