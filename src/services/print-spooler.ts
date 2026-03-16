@@ -342,18 +342,22 @@ export async function monitorSpoolerJob(
         db.data!.pendingRefunds.unshift(refundEntry);
         await db.write();
 
-        await adminService.appendAdminLog(
-          'print_spooler_job_failed',
-          `Print spooler failure detected: ${job.status}. Pending refund ₱${chargedAmount} created.`,
-          {
-            spoolerJobId: job.id,
-            spoolerStatus: job.status,
-            chargedAmount,
-            refundId: refundEntry.id,
-            pagesPrinted: job.pagesPrinted,
-            printerName,
-          },
-        );
+        try {
+          await adminService.appendAdminLog(
+            'print_spooler_job_failed',
+            `Print spooler failure detected: ${job.status}. Pending refund ₱${chargedAmount} created.`,
+            {
+              spoolerJobId: job.id,
+              spoolerStatus: job.status,
+              chargedAmount,
+              refundId: refundEntry.id,
+              pagesPrinted: job.pagesPrinted,
+              printerName,
+            },
+          );
+        } catch (error) {
+          console.error('[SPOOLER-MONITOR] Failed to append admin log', error);
+        }
 
         io.emit('printerSpoolerFailure', {
           jobStatus: job.status,
