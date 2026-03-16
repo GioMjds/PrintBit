@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express';
-import { db } from '@/services/db';
+import { settingsRepository } from '@/state/repositories';
 import { validateAdminSession } from '@/utils/admin-session';
 
 function isPrivateIpv4(ip: string): boolean {
@@ -26,7 +26,7 @@ function isLocalRequestIp(rawIp: string): boolean {
 }
 
 export const requireAdminLocalAccess: RequestHandler = (req, res, next) => {
-  if (!db.data!.settings.adminLocalOnly) return next();
+  if (!settingsRepository.isAdminLocalOnly()) return next();
 
   const remoteIp = req.ip || req.socket.remoteAddress || '';
   if (!isLocalRequestIp(remoteIp)) {
@@ -40,7 +40,8 @@ export const requireAdminLocalAccess: RequestHandler = (req, res, next) => {
 
 export const requireAdminPin: RequestHandler = async (req, res, next) => {
   const headerToken = req.get('x-admin-token') || undefined;
-  const cookieToken = (req.cookies?.['adminToken'] as string | undefined) || undefined;
+  const cookieToken =
+    (req.cookies?.['adminToken'] as string | undefined) || undefined;
   const token = headerToken ?? cookieToken;
   if (!token || !validateAdminSession(token)) {
     return res.status(401).json({

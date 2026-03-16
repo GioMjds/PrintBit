@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { requireAdminLocalAccess } from '@/middleware/admin-auth';
 import type { SessionStore } from '@/services/session';
-import { db } from '@/services/db';
+import { settingsRepository } from '@/state/repositories';
 
 type PageRoute = { route: string; filePath: string };
 
@@ -25,7 +25,9 @@ export function registerPageRoutes(app: Express, deps: RegisterPageRoutesDeps) {
 
   // Public endpoint to get idle timeout configuration (for client-side idle detection)
   app.get('/api/settings/idle-timeout', (_req: Request, res: Response) => {
-    res.json({ idleTimeoutSeconds: db.data!.settings.idleTimeoutSeconds });
+    res.json({
+      idleTimeoutSeconds: settingsRepository.getIdleTimeoutSeconds(),
+    });
   });
 
   // Redirect /admin to /admin/dashboard

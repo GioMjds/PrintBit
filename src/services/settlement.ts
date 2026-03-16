@@ -1,5 +1,6 @@
 import type { Server } from 'socket.io';
-import { db, withBalanceLock } from './db';
+import { withBalanceLock } from './db';
+import { moneyRepository } from '@/state/repositories';
 import { adminService } from './admin';
 import { hopperService, type HopperDispenseResult } from './hopper';
 
@@ -35,7 +36,7 @@ class SettlementService {
     const { requiredAmount, io, jobContext } = input;
 
     return withBalanceLock(async () => {
-      const currentBalance = db.data?.balance ?? 0;
+      const currentBalance = moneyRepository.getBalance();
 
       if (currentBalance < requiredAmount) {
         void adminService.appendAdminLog(
@@ -53,17 +54,15 @@ class SettlementService {
           chargedAmount: 0,
           previousBalance: currentBalance,
           remainingBalance: currentBalance,
-          earnings: db.data!.earnings,
+          earnings: moneyRepository.getEarnings(),
           change: { requested: 0, dispensed: 0, state: 'none' as const },
           error: 'Insufficient balance',
         };
       }
 
-      const previousBalance = db.data!.balance;
+      const { previousBalance, earnings } =
+        await moneyRepository.applyChargeAndResetBalance(requiredAmount);
       const changeAmount = previousBalance - requiredAmount;
-      db.data!.balance = 0;
-      db.data!.earnings += requiredAmount;
-      await db.write();
       io.emit('balance', 0);
 
       if (changeAmount <= 0) {
@@ -72,7 +71,7 @@ class SettlementService {
           chargedAmount: requiredAmount,
           previousBalance,
           remainingBalance: 0,
-          earnings: db.data!.earnings,
+          earnings,
           change: { requested: 0, dispensed: 0, state: 'none' as const },
         };
       }
@@ -96,7 +95,7 @@ class SettlementService {
           chargedAmount: requiredAmount,
           previousBalance,
           remainingBalance: 0,
-          earnings: db.data!.earnings,
+          earnings,
           change: {
             requested: changeAmount,
             dispensed: changeAmount,
@@ -118,7 +117,7 @@ class SettlementService {
         chargedAmount: requiredAmount,
         previousBalance,
         remainingBalance: 0,
-        earnings: db.data!.earnings,
+        earnings,
         change: {
           requested: changeAmount,
           dispensed: 0,

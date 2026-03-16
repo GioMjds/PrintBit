@@ -1,5 +1,4 @@
 import path from 'node:path';
-import fs from 'node:fs';
 import type { Express, Request, Response } from 'express';
 import type { Server } from 'socket.io';
 import { jobStore } from '@/services/job-store';
@@ -12,15 +11,12 @@ import {
 } from '@/services/db';
 import { adminService } from '@/services/admin';
 import {
+  copyService,
   getPrinterTelemetry,
   settlementService,
   watchJobForMalfunction,
 } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
-
-const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
-const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
-const VALID_PAPER_SIZES = new Set(['A4', 'Letter', 'Legal']);
 
 export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
   // ── POST /api/copy/jobs — Start a copy job (print checked scan, then charge) ─
@@ -51,83 +47,30 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
       idempotencyClaimed = true;
     }
 
-    const { copies, colorMode, orientation, paperSize, amount, previewPath } =
-      req.body as {
-        copies?: number;
-        colorMode?: string;
-        orientation?: string;
-        paperSize?: string;
-        amount?: number;
-        previewPath?: string;
-      };
+    const { amount } = req.body as { amount?: number };
+    const normalized = copyService.normalizeJobRequest(req.body);
+    const safeCopies = normalized.copies;
+    const safeColorMode = normalized.colorMode;
+    const safeOrientation = normalized.orientation;
+    const safePaperSize = normalized.paperSize;
 
-    const safeCopies =
-      typeof copies === 'number' && Number.isFinite(copies)
-        ? Math.max(1, Math.floor(copies))
-        : 1;
-    const safeColorMode =
-      colorMode && VALID_COLOR_MODES.has(colorMode)
-        ? (colorMode as 'colored' | 'grayscale')
-        : 'grayscale';
-    const safeOrientation =
-      orientation && VALID_ORIENTATIONS.has(orientation)
-        ? (orientation as 'portrait' | 'landscape')
-        : 'portrait';
-    const safePaperSize =
-      paperSize && VALID_PAPER_SIZES.has(paperSize)
-        ? (paperSize as 'A4' | 'Letter' | 'Legal')
-        : 'A4';
-    const safePreviewPath =
-      typeof previewPath === 'string' ? previewPath.trim() : '';
-
-    if (!safePreviewPath) {
-      const errorBody = {
-        error:
-          'Missing checked document. Please go back to /copy and tap Check for Document again.',
-      };
+    const previewValidation = copyService.validatePreviewPath(
+      normalized.previewPath,
+    );
+    if (!previewValidation.ok) {
+      const errorBody = { error: previewValidation.error };
       if (idempotencyClaimed)
         storeIdempotencyKey(
           idempotencyKey,
           'POST:/api/copy/jobs',
-          400,
+          previewValidation.status,
           errorBody,
         );
-      return res.status(400).json(errorBody);
+      return res.status(previewValidation.status).json(errorBody);
     }
+    const previewFilename = previewValidation.previewFilename;
 
-    const previewFilename = path.basename(safePreviewPath);
-    if (previewFilename !== safePreviewPath) {
-      const errorBody = {
-        error: 'Invalid preview path. Please check your document again.',
-      };
-      if (idempotencyClaimed)
-        storeIdempotencyKey(
-          idempotencyKey,
-          'POST:/api/copy/jobs',
-          400,
-          errorBody,
-        );
-      return res.status(400).json(errorBody);
-    }
-
-    const previewAbsPath = path.resolve('uploads', 'scans', previewFilename);
-    if (!fs.existsSync(previewAbsPath)) {
-      const errorBody = {
-        error:
-          'Checked document not found. Please go back to /copy and scan again.',
-      };
-      if (idempotencyClaimed)
-        storeIdempotencyKey(
-          idempotencyKey,
-          'POST:/api/copy/jobs',
-          409,
-          errorBody,
-        );
-      return res.status(409).json(errorBody);
-    }
-
-    const requiredAmount = adminService.calculateJobAmount(
-      'copy',
+    const requiredAmount = copyService.calculateRequiredAmount(
       safeColorMode,
       safeCopies,
     );
