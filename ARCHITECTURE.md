@@ -17,13 +17,6 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
   - upload status notifications,
   - serial status.
 
-## 1.5) Bootstrap layer (`src/bootstrap`)
-
-- `app.ts`: builds Express + Socket.IO runtime, composes route/controller registration, and mounts the centralized API router.
-- `startup.ts`: infrastructure lifecycle (DB init, hardware detection, serial init, monitor startup, hotspot/clamd startup).
-- `network.ts`: local IPv4 discovery for operator/network logging and upload URL generation.
-- `server.ts` now orchestrates bootstrap + listen only.
-
 ## 2) Route layer (`src/routes`)
 
 - `financial-routes.ts`: balance, pricing, payment confirm, legacy upload/print.
@@ -33,16 +26,6 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `scan-routes.ts`: scan and preview job lifecycle.
 - `admin-routes.ts`: protected settings, status, logs, and maintenance endpoints.
 - `page-routes.ts`: HTML page routing.
-- API endpoints are now centrally mounted in `server.ts` via `app.use('/api', apiRouter)` using an API-aware route registration adapter.
-
-## 2.5) Controller + runtime foundation (`src/controllers`, `src/domain`, `src/runtime`)
-
-- `controllers/`: HTTP endpoint handlers/registration extracted from `server.ts` and route files.
-  - Current foundation: `system-api-controller.ts` (hotspot/session system APIs).
-- `domain/`: backend layer-boundary contracts for business/service ownership.
-- `runtime/`: cross-cutting runtime primitives and API-path helpers used during migration.
-
-This foundation is intentionally compatibility-first; existing endpoint contracts stay unchanged while internals are decomposed incrementally.
 
 ## 3) Service layer (`src/services`)
 

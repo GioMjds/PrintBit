@@ -1,11 +1,10 @@
-import { stateRepository } from '@/state/repositories';
+import { db } from '@/services/db';
 
 export const MAX_ATTEMPTS = 3;
 export const LOCKOUT_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 
 export function checkLockout(): { locked: boolean; remainingMs?: number } {
-  const state = stateRepository.getState();
-  const { lockedUntil } = state.adminLockout;
+  const { lockedUntil } = db.data!.adminLockout;
   if (!lockedUntil) return { locked: false };
 
   const expiry = new Date(lockedUntil).getTime();
@@ -16,34 +15,30 @@ export function checkLockout(): { locked: boolean; remainingMs?: number } {
   }
 
   // Lock expired — auto-clear
-  state.adminLockout.failedAttempts = 0;
-  state.adminLockout.lockedUntil = null;
-  void stateRepository.write().catch((error: unknown) => {
-    console.error('Failed to persist admin lockout auto-clear', error);
-  });
+  db.data!.adminLockout.failedAttempts = 0;
+  db.data!.adminLockout.lockedUntil = null;
+  db.write();
   return { locked: false };
 }
 
 export async function recordFailedAttempt(): Promise<number> {
-  const state = stateRepository.getState();
-  state.adminLockout.failedAttempts += 1;
-  const attempts = state.adminLockout.failedAttempts;
+  db.data!.adminLockout.failedAttempts += 1;
+  const attempts = db.data!.adminLockout.failedAttempts;
 
   if (attempts >= MAX_ATTEMPTS) {
-    state.adminLockout.lockedUntil = new Date(
+    db.data!.adminLockout.lockedUntil = new Date(
       Date.now() + LOCKOUT_DURATION_MS,
     ).toISOString();
   }
 
-  await stateRepository.write();
+  await db.write();
   return attempts;
 }
 
 export async function clearLockout(): Promise<void> {
-  const state = stateRepository.getState();
-  state.adminLockout.failedAttempts = 0;
-  state.adminLockout.lockedUntil = null;
-  await stateRepository.write();
+  db.data!.adminLockout.failedAttempts = 0;
+  db.data!.adminLockout.lockedUntil = null;
+  await db.write();
 }
 
 export function formatRemainingTime(ms: number): string {
