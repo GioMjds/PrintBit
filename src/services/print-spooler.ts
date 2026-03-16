@@ -33,6 +33,7 @@ export interface SpoolerMonitorOptions {
   printerName: string;
   chargedAmount: number;
   jobDispatchedAt: string;
+  spoolerCorrelationKey?: string | null;
   io: Server;
   jobContext: Record<string, string | number | boolean | null | undefined>;
 }
@@ -155,16 +156,14 @@ async function queryRecentPrintJobs(
         (item): item is Record<string, unknown> =>
           !!item && typeof item === 'object',
       )
-        .map((item) => ({
-          id: Number(item.Id ?? 0),
-          status: String(item.Status ?? 'Unknown').trim(),
-          totalPages: Number(item.TotalPages ?? 0),
-          pagesPrinted: Number(item.PagesPrinted ?? 0),
-          submittedTime:
-            typeof item.SubmittedTime === 'string'
-              ? item.SubmittedTime
-              : null,
-        }));
+      .map((item) => ({
+        id: Number(item.Id ?? 0),
+        status: String(item.Status ?? 'Unknown').trim(),
+        totalPages: Number(item.TotalPages ?? 0),
+        pagesPrinted: Number(item.PagesPrinted ?? 0),
+        submittedTime:
+          typeof item.SubmittedTime === 'string' ? item.SubmittedTime : null,
+      }));
   } catch {
     console.warn('[SPOOLER-MONITOR] Failed to query print jobs');
     return [];
@@ -187,8 +186,14 @@ function matchesStatusSet(status: string, set: Set<string>): boolean {
 export async function monitorSpoolerJob(
   options: SpoolerMonitorOptions,
 ): Promise<SpoolerMonitorResult> {
-  const { printerName, chargedAmount, jobDispatchedAt, io, jobContext } =
-    options;
+  const {
+    printerName,
+    chargedAmount,
+    jobDispatchedAt,
+    spoolerCorrelationKey,
+    io,
+    jobContext,
+  } = options;
 
   console.log(
     `[SPOOLER-MONITOR] Starting — printer="${printerName}" chargedAmount=${chargedAmount}`,
@@ -197,6 +202,7 @@ export async function monitorSpoolerJob(
   io.emit('printJobDispatched', {
     printerName,
     jobDispatchedAt,
+    spoolerCorrelationKey: spoolerCorrelationKey ?? null,
   });
 
   if (!printerName) {
@@ -252,20 +258,23 @@ export async function monitorSpoolerJob(
               return recentJobs.length > 0 ? recentJobs : jobs;
             })();
 
-      // Prefer the newest eligible job around dispatch time; if tracked job disappears, fallback to highest ID.
-      const job: SpoolerJobRow =
+      // Latch to the highest ID only before we have a tracked job.
+      // Once tracked, never rebind to a different spooler job.
+      const job: SpoolerJobRow | null =
         trackedJobId !== null
-          ? (scopedJobs.find((j) => j.id === trackedJobId) ??
-            (() => {
-              const fallback = scopedJobs.reduce((a, b) =>
-                b.id > a.id ? b : a,
-              );
-              console.warn(
-                `[SPOOLER-MONITOR] Tracked job #${trackedJobId} no longer in spooler, falling back to #${fallback.id}`,
-              );
-              return fallback;
-            })())
+          ? (scopedJobs.find((j) => j.id === trackedJobId) ?? null)
           : scopedJobs.reduce((a, b) => (b.id > a.id ? b : a));
+
+      if (job === null) {
+        console.warn(
+          `[SPOOLER-MONITOR] Tracked job #${trackedJobId} not found in current spooler snapshot; skipping this tick`,
+        );
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, POLL_INTERVAL_MS),
+        );
+        jobs = await queryRecentPrintJobs(printerName, ps);
+        continue;
+      }
 
       if (trackedJobId === null) {
         trackedJobId = job.id;

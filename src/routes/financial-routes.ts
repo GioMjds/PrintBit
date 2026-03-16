@@ -343,6 +343,7 @@ export function registerFinancialRoutes(
       mode?: 'print' | 'copy';
       sessionId?: string;
       documentId?: string;
+      spoolerCorrelationKey?: string;
       copies?: number;
       colorMode?: 'colored' | 'grayscale';
       orientation?: 'portrait' | 'landscape';
@@ -350,6 +351,11 @@ export function registerFinancialRoutes(
       pageRange?: unknown;
       duplex?: boolean;
     };
+    const spoolerCorrelationKey =
+      typeof req.body?.spoolerCorrelationKey === 'string' &&
+      req.body.spoolerCorrelationKey.trim()
+        ? req.body.spoolerCorrelationKey.trim()
+        : null;
 
     if (mode !== 'print' && mode !== 'copy') {
       void adminService.appendAdminLog(
@@ -642,37 +648,51 @@ export function registerFinancialRoutes(
     const settledRemainingBalance = settlement.remainingBalance;
 
     void (async () => {
-      try {
-        await adminService.incrementJobStats(mode);
+      const runAuditStep = async (
+        step: string,
+        operation: () => Promise<unknown>,
+      ): Promise<void> => {
+        try {
+          await operation();
+        } catch (err) {
+          console.error(
+            `[CONFIRM-PAYMENT] Audit step failed (${step}):`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      };
 
-        await adminService.appendAdminLog(
-          'payment_confirmed',
-          'Payment confirmed.',
-          {
-            transactionId,
-            mode,
-            amount: requiredAmount,
-            copies,
-            colorMode: printOptions?.colorMode ?? colorMode,
-            duplex: printOptions?.duplex ?? false,
-            pageRange: printOptions?.pageRange ?? null,
-            selectedPages: printQuotePages?.selectedPages ?? null,
-            selectedColorPages: printQuotePages?.selectedColorPages ?? null,
-            selectedBwPages: printQuotePages?.selectedBwPages ?? null,
-            billableColorPages: printQuotePages?.billableColorPages ?? null,
-            billableBwPages: printQuotePages?.billableBwPages ?? null,
-            documentId: targetDocumentId ?? null,
-            sessionId: sessionId ?? null,
-            filename: serverFilename ?? null,
-            remainingBalance: settledRemainingBalance,
-            changeState: settledChangeState,
-            changeRequested: settledChangeRequested,
-            changeDispensed: settledChangeDispensed,
-          },
-        );
+      await runAuditStep('increment_job_stats', () =>
+        adminService.incrementJobStats(mode),
+      );
 
-        if (settledChangeState === 'dispensed') {
-          await adminService.appendAdminLog(
+      await runAuditStep('payment_confirmed', () =>
+        adminService.appendAdminLog('payment_confirmed', 'Payment confirmed.', {
+          transactionId,
+          mode,
+          amount: requiredAmount,
+          copies,
+          colorMode: printOptions?.colorMode ?? colorMode,
+          duplex: printOptions?.duplex ?? false,
+          pageRange: printOptions?.pageRange ?? null,
+          selectedPages: printQuotePages?.selectedPages ?? null,
+          selectedColorPages: printQuotePages?.selectedColorPages ?? null,
+          selectedBwPages: printQuotePages?.selectedBwPages ?? null,
+          billableColorPages: printQuotePages?.billableColorPages ?? null,
+          billableBwPages: printQuotePages?.billableBwPages ?? null,
+          documentId: targetDocumentId ?? null,
+          sessionId: sessionId ?? null,
+          filename: serverFilename ?? null,
+          remainingBalance: settledRemainingBalance,
+          changeState: settledChangeState,
+          changeRequested: settledChangeRequested,
+          changeDispensed: settledChangeDispensed,
+        }),
+      );
+
+      if (settledChangeState === 'dispensed') {
+        await runAuditStep('hopper_dispense_succeeded', () =>
+          adminService.appendAdminLog(
             'hopper_dispense_succeeded',
             'Coin change dispensed.',
             {
@@ -681,11 +701,13 @@ export function registerFinancialRoutes(
               dispensed: settledChangeDispensed,
               attempts: settledChangeAttempts,
             },
-          );
-        }
+          ),
+        );
+      }
 
-        if (settledChangeState === 'failed') {
-          await adminService.appendAdminLog(
+      if (settledChangeState === 'failed') {
+        await runAuditStep('hopper_dispense_failed', () =>
+          adminService.appendAdminLog(
             'hopper_dispense_failed',
             'Coin change dispense failed.',
             {
@@ -696,12 +718,7 @@ export function registerFinancialRoutes(
               owedChangeId: settledOwedChangeId,
               message: settledChangeMessage,
             },
-          );
-        }
-      } catch (err) {
-        console.error(
-          '[CONFIRM-PAYMENT] Post-response audit log failed:',
-          err instanceof Error ? err.message : err,
+          ),
         );
       }
     })();
@@ -715,6 +732,7 @@ export function registerFinancialRoutes(
         printerName: telemetry.name,
         chargedAmount: settledAmount,
         jobDispatchedAt,
+        spoolerCorrelationKey,
         io: deps.io,
         jobContext: {
           transactionId,
@@ -722,6 +740,7 @@ export function registerFinancialRoutes(
           copies,
           colorMode: printOptions?.colorMode ?? colorMode,
           duplex: printOptions?.duplex ?? false,
+          spoolerCorrelationKey,
           sessionId: sessionId ?? null,
           documentId: targetDocumentId ?? null,
           filename: serverFilename ?? null,
