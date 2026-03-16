@@ -1,11 +1,9 @@
 export { adminService } from './admin';
-export * from './copy';
 export * from './db';
 export * from './clamd';
 export * from './clamd-process';
 export * from './document-analysis';
 export * from './feedback';
-export * from './financial';
 export * from './hopper';
 export * from './hopper-protocol';
 export * from './hotspot';

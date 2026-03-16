@@ -1,5 +1,6 @@
 import { SerialPort } from 'serialport';
 import { ReadlineParser } from '@serialport/parser-readline';
+import { db } from './db';
 import { Server } from 'socket.io';
 import { adminService } from './admin';
 import {
@@ -14,7 +15,6 @@ import {
 // so we can refuse coin credits when the printer is offline or faulted.
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
-import { moneyRepository } from '@/state/repositories';
 
 const ACCEPTED_COINS = new Set([1, 5, 10, 20]);
 const FRAGMENT_WINDOW_MS = 140;
@@ -376,23 +376,23 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       };
 
       const persistBalance = async (coinValue: number) => {
-        const newBalance = await moneyRepository.incrementBalance(coinValue);
+        db.data!.balance += coinValue;
         await adminService.incrementCoinStats(coinValue);
         await adminService.appendAdminLog(
           'coin_accepted',
           `Accepted coin: ${coinValue}`,
           {
             coinValue,
-            balance: newBalance,
+            balance: db.data!.balance,
           },
         );
         console.log(
-          `[SERIAL] ✓ Coin accepted: ₱${coinValue} → new balance: ₱${newBalance}`,
+          `[SERIAL] ✓ Coin accepted: ₱${coinValue} → new balance: ₱${db.data!.balance}`,
         );
-        io.emit('balance', newBalance);
+        io.emit('balance', db.data!.balance);
         io.emit('coinAccepted', {
           value: coinValue,
-          balance: newBalance,
+          balance: db.data!.balance,
         });
       };
 

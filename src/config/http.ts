@@ -2,7 +2,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const PORT = 3000;
-export const API_BASE_PATH = '/api';
 export const UPLOAD_DIR = 'uploads/';
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PORTAL_DIR = path.resolve('src/public/upload');
