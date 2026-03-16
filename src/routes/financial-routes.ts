@@ -621,62 +621,6 @@ export function registerFinancialRoutes(
       return;
     }
 
-    await adminService.incrementJobStats(mode);
-
-    await adminService.appendAdminLog(
-      'payment_confirmed',
-      'Payment confirmed.',
-      {
-        transactionId,
-        mode,
-        amount: requiredAmount,
-        copies,
-        colorMode: printOptions?.colorMode ?? colorMode,
-        duplex: printOptions?.duplex ?? false,
-        pageRange: printOptions?.pageRange ?? null,
-        selectedPages: printQuotePages?.selectedPages ?? null,
-        selectedColorPages: printQuotePages?.selectedColorPages ?? null,
-        selectedBwPages: printQuotePages?.selectedBwPages ?? null,
-        billableColorPages: printQuotePages?.billableColorPages ?? null,
-        billableBwPages: printQuotePages?.billableBwPages ?? null,
-        documentId: targetDocumentId ?? null,
-        sessionId: sessionId ?? null,
-        filename: serverFilename ?? null,
-        remainingBalance: settlement.remainingBalance,
-        changeState: settlement.change.state,
-        changeRequested: settlement.change.requested,
-        changeDispensed: settlement.change.dispensed,
-      },
-    );
-
-    if (settlement.change.state === 'dispensed') {
-      await adminService.appendAdminLog(
-        'hopper_dispense_succeeded',
-        'Coin change dispensed.',
-        {
-          transactionId,
-          requested: settlement.change.requested,
-          dispensed: settlement.change.dispensed,
-          attempts: settlement.change.attempts ?? 0,
-        },
-      );
-    }
-
-    if (settlement.change.state === 'failed') {
-      await adminService.appendAdminLog(
-        'hopper_dispense_failed',
-        'Coin change dispense failed.',
-        {
-          transactionId,
-          requested: settlement.change.requested,
-          dispensed: settlement.change.dispensed,
-          attempts: settlement.change.attempts ?? 0,
-          owedChangeId: settlement.change.owedChangeId ?? null,
-          message: settlement.change.message ?? null,
-        },
-      );
-    }
-
     sendResponse(200, {
       ok: true,
       chargedAmount: settlement.chargedAmount,
@@ -685,6 +629,82 @@ export function registerFinancialRoutes(
       change: settlement.change,
     });
 
+    // ── Fire-and-forget: audit logs ──────────────────────────────────────────
+    // Capture settlement snapshot in local variables so the async IIFE below
+    // closes over stable values and not over mutable route-handler state.
+    const settledAmount = settlement.chargedAmount;
+    const settledChangeState = settlement.change.state;
+    const settledChangeRequested = settlement.change.requested;
+    const settledChangeDispensed = settlement.change.dispensed;
+    const settledChangeAttempts = settlement.change.attempts ?? 0;
+    const settledOwedChangeId = settlement.change.owedChangeId ?? null;
+    const settledChangeMessage = settlement.change.message ?? null;
+
+    void (async () => {
+      try {
+        await adminService.incrementJobStats(mode);
+
+        await adminService.appendAdminLog(
+          'payment_confirmed',
+          'Payment confirmed.',
+          {
+            transactionId,
+            mode,
+            amount: requiredAmount,
+            copies,
+            colorMode: printOptions?.colorMode ?? colorMode,
+            duplex: printOptions?.duplex ?? false,
+            pageRange: printOptions?.pageRange ?? null,
+            selectedPages: printQuotePages?.selectedPages ?? null,
+            selectedColorPages: printQuotePages?.selectedColorPages ?? null,
+            selectedBwPages: printQuotePages?.selectedBwPages ?? null,
+            billableColorPages: printQuotePages?.billableColorPages ?? null,
+            billableBwPages: printQuotePages?.billableBwPages ?? null,
+            documentId: targetDocumentId ?? null,
+            sessionId: sessionId ?? null,
+            filename: serverFilename ?? null,
+            remainingBalance: settlement.remainingBalance,
+            changeState: settledChangeState,
+            changeRequested: settledChangeRequested,
+            changeDispensed: settledChangeDispensed,
+          },
+        );
+
+        if (settledChangeState === 'dispensed') {
+          await adminService.appendAdminLog(
+            'hopper_dispense_succeeded',
+            'Coin change dispensed.',
+            {
+              transactionId,
+              requested: settledChangeRequested,
+              dispensed: settledChangeDispensed,
+              attempts: settledChangeAttempts,
+            },
+          );
+        }
+
+        if (settledChangeState === 'failed') {
+          await adminService.appendAdminLog(
+            'hopper_dispense_failed',
+            'Coin change dispense failed.',
+            {
+              transactionId,
+              requested: settledChangeRequested,
+              dispensed: settledChangeDispensed,
+              attempts: settledChangeAttempts,
+              owedChangeId: settledOwedChangeId,
+              message: settledChangeMessage,
+            },
+          );
+        }
+      } catch (err) {
+        console.error(
+          '[CONFIRM-PAYMENT] Post-response audit log failed:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    })();
+
     // ── Fire-and-forget: monitor the Windows print spooler for post-settlement failures ──
     // Settlement has already completed and the response is sent. This runs in the
     // background — if the spooler reports the job as failed (Paper Jam, Offline, etc.)
@@ -692,7 +712,7 @@ export function registerFinancialRoutes(
     if (mode === 'print' && jobDispatchedAt && telemetry.name) {
       void monitorSpoolerJob({
         printerName: telemetry.name,
-        chargedAmount: settlement.chargedAmount,
+        chargedAmount: settledAmount,
         jobDispatchedAt,
         io: deps.io,
         jobContext: {

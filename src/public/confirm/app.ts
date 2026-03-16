@@ -698,7 +698,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     setPrintingPhase('printing');
   }
-  const MIN_OVERLAY_MS = 3_000;
+  const MIN_OVERLAY_MS = 500;
   const overlayStart = Date.now();
 
   if (config.mode === 'scan') {
@@ -1144,6 +1144,23 @@ if (typeof ioFactory === 'function') {
     applyConfirmGate();
     setCoinEventMessage('✓ Printer connected. You may now insert coins.');
   });
+
+  socket.on('printJobDispatched', (payload: unknown) => {
+    const printerName =
+      payload &&
+      typeof payload === 'object' &&
+      'printerName' in payload &&
+      typeof (payload as { printerName: unknown }).printerName === 'string'
+        ? (payload as { printerName: string }).printerName
+        : null;
+
+    if (statusMessage) {
+      statusMessage.textContent = printerName
+        ? `✓ Job sent to "${printerName}". Printing...`
+        : '✓ Job sent to printer. Printing...';
+    }
+    setPrintingPhase('printing');
+  });
 }
 
 // [PRINTER GUARD] Fetches current printer readiness on page load.
@@ -1172,9 +1189,11 @@ async function loadPrinterStatus(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  await loadPrinterStatus(); // [PRINTER GUARD] must run first
-  await loadPricing();
-  await fetchInitialBalance();
+  await Promise.all([
+    loadPrinterStatus(), // [PRINTER GUARD] must run first
+    loadPricing(),
+    fetchInitialBalance(),
+  ]);
 }
 
 void boot();

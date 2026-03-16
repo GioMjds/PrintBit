@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import type { Server } from 'socket.io';
-import { runPowerShell } from '@/utils';
 import { db } from './db';
 import { adminService } from './admin';
 
-const POLL_INTERVAL_MS = 4_000;
+const POLL_INTERVAL_MS = 1_500;
 /** Total window to watch the spooler before giving up */
 const MONITOR_WINDOW_MS = 3 * 60 * 1_000; // 3 minutes
 /** How far back (in minutes) to look for print jobs when querying the spooler */
@@ -51,10 +51,83 @@ interface SpoolerJobRow {
   pagesPrinted: number;
 }
 
+// Persistent PowerShell
+
+interface PersistentPS {
+  run: (script: string, timeoutMs?: number) => Promise<string>;
+  dispose: () => void;
+}
+
+function createPersistentPS(): PersistentPS {
+  const ps = spawn(
+    'powershell.exe',
+    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '-'],
+    { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
+  );
+
+  // Drain stderr so the process never blocks on a full stderr pipe buffer.
+  // We don't need it — non-fatal PS warnings go there and can be ignored.
+  ps.stderr.resume();
+
+  let disposed = false;
+
+  function run(script: string, timeoutMs = 10_000): Promise<string> {
+    if (disposed) {
+      return Promise.reject(
+        new Error('[SPOOLER-MONITOR] PS runspace already disposed'),
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      // A unique sentinel lets us know exactly when this command's output ends,
+      // since stdout is a continuous stream shared across all run() calls.
+      const sentinel = `__PS_DONE_${Date.now()}_${Math.random().toString(36).slice(2)}__`;
+      let output = '';
+
+      const timer = setTimeout(() => {
+        ps.stdout.off('data', onData);
+        reject(new Error('[SPOOLER-MONITOR] PS runspace query timed out'));
+      }, timeoutMs);
+
+      const onData = (chunk: Buffer): void => {
+        output += chunk.toString();
+        if (output.includes(sentinel)) {
+          clearTimeout(timer);
+          ps.stdout.off('data', onData);
+          // Return everything before the sentinel line, trimmed
+          resolve(output.slice(0, output.indexOf(sentinel)).trim());
+        }
+      };
+
+      ps.stdout.on('data', onData);
+      // Append Write-Output of the sentinel so we detect end-of-output
+      ps.stdin.write(`${script}\nWrite-Output '${sentinel}'\n`);
+    });
+  }
+
+  function dispose(): void {
+    if (disposed) return;
+    disposed = true;
+    try {
+      ps.stdin.end();
+    } catch {
+      /* ignore — process may already be gone */
+    }
+    try {
+      ps.kill();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { run, dispose };
+}
+
 // ── PowerShell helper ───────────────────────────────────────────────────────
 
 async function queryRecentPrintJobs(
   printerName: string,
+  ps: PersistentPS,
 ): Promise<SpoolerJobRow[]> {
   try {
     const escaped = printerName.replace(/'/g, "''").replace(/`/g, '``');
@@ -65,7 +138,7 @@ async function queryRecentPrintJobs(
       `| Select-Object Id, @{N='Status';E={$_.JobStatus.ToString()}}, TotalPages, PagesPrinted ` +
       `| ConvertTo-Json -Depth 2 -Compress`;
 
-    const json = await runPowerShell(script, 10_000);
+    const json = await ps.run(script, 10_000);
     if (!json || json === 'null' || json === '[]') return [];
 
     const raw: unknown = JSON.parse(json);
@@ -107,6 +180,15 @@ export async function monitorSpoolerJob(
   const { printerName, chargedAmount, jobDispatchedAt, io, jobContext } =
     options;
 
+  console.log(
+    `[SPOOLER-MONITOR] Starting — printer="${printerName}" chargedAmount=${chargedAmount}`,
+  );
+
+  io.emit('printJobDispatched', {
+    printerName,
+    jobDispatchedAt,
+  });
+
   if (!printerName) {
     return { detected: false, jobStatus: null, pagesPrinted: 0, failed: false };
   }
@@ -116,105 +198,133 @@ export async function monitorSpoolerJob(
   let lastPagesPrinted = 0;
   let trackedJobId: number | null = null;
 
-  console.log(
-    `[SPOOLER-MONITOR] Starting — printer="${printerName}" chargedAmount=${chargedAmount}`,
-  );
+  const ps = createPersistentPS();
 
-  while (Date.now() < deadline) {
-    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  try {
+    // Step 1: first query fires immediately — no upfront 4 s sleep
+    let jobs = await queryRecentPrintJobs(printerName, ps);
 
-    const jobs = await queryRecentPrintJobs(printerName);
-    if (jobs.length === 0) continue;
+    while (Date.now() < deadline) {
+      if (jobs.length === 0) {
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, POLL_INTERVAL_MS),
+        );
+        jobs = await queryRecentPrintJobs(printerName, ps);
+        continue;
+      }
 
-    // Latch onto the highest job ID seen (most recently submitted)
-    const job: SpoolerJobRow =
-      trackedJobId !== null
-        ? (jobs.find((j) => j.id === trackedJobId) ??
-          jobs.reduce((a, b) => (b.id > a.id ? b : a)))
-        : jobs.reduce((a, b) => (b.id > a.id ? b : a));
+      // Latch onto the highest job ID seen (most recently submitted)
+      const job: SpoolerJobRow =
+        trackedJobId !== null
+          ? (jobs.find((j) => j.id === trackedJobId) ??
+            jobs.reduce((a, b) => (b.id > a.id ? b : a)))
+          : jobs.reduce((a, b) => (b.id > a.id ? b : a));
 
-    if (trackedJobId === null) {
-      trackedJobId = job.id;
+      if (trackedJobId === null) {
+        trackedJobId = job.id;
+        console.log(
+          `[SPOOLER-MONITOR] Latched onto spooler job #${trackedJobId}`,
+        );
+      }
+
+      lastStatus = job.status;
+      lastPagesPrinted = job.pagesPrinted;
+
       console.log(
-        `[SPOOLER-MONITOR] Latched onto spooler job #${trackedJobId}`,
-      );
-    }
-
-    lastStatus = job.status;
-    lastPagesPrinted = job.pagesPrinted;
-
-    console.log(
-      `[SPOOLER-MONITOR] Job #${job.id} status="${job.status}" pages=${job.pagesPrinted}/${job.totalPages}`,
-    );
-
-    if (matchesStatusSet(job.status, TERMINAL_SUCCESS_TOKENS)) {
-      console.log(`[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`);
-      return {
-        detected: true,
-        jobStatus: job.status,
-        pagesPrinted: job.pagesPrinted,
-        failed: false,
-      };
-    }
-
-    if (matchesStatusSet(job.status, TERMINAL_FAILURE_TOKENS)) {
-      console.error(
-        `[SPOOLER-MONITOR] ✗ Job #${job.id} FAILED — status="${job.status}"`,
+        `[SPOOLER-MONITOR] Job #${job.id} status="${job.status}" pages=${job.pagesPrinted}/${job.totalPages}`,
       );
 
-      // Build pending refund record
-      const refundEntry = {
-        id: randomUUID(),
-        timestamp: new Date().toISOString(),
-        chargedAmount,
-        reason: `Print spooler reported failure: ${job.status}`,
-        status: 'open' as const,
-        closedAt: null as string | null,
-        jobContext: {
-          ...Object.fromEntries(
-            Object.entries(jobContext).map(([k, v]) => [k, v ?? null]),
-          ),
-          spoolerJobId: job.id,
-          spoolerStatus: job.status,
+      if (matchesStatusSet(job.status, TERMINAL_SUCCESS_TOKENS)) {
+        console.log(
+          `[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`,
+        );
+        return {
+          detected: true,
+          jobStatus: job.status,
           pagesPrinted: job.pagesPrinted,
-          totalPages: job.totalPages,
-          jobDispatchedAt,
-          printerName,
-        } as Record<string, string | number | boolean | null>,
-      };
+          failed: false,
+        };
+      }
 
-      db.data!.pendingRefunds.unshift(refundEntry);
-      await db.write();
+      if (matchesStatusSet(job.status, TERMINAL_FAILURE_TOKENS)) {
+        console.error(
+          `[SPOOLER-MONITOR] ✗ Job #${job.id} FAILED — status="${job.status}"`,
+        );
 
-      await adminService.appendAdminLog(
-        'print_spooler_job_failed',
-        `Print spooler failure detected: ${job.status}. Pending refund ₱${chargedAmount} created.`,
-        {
-          spoolerJobId: job.id,
-          spoolerStatus: job.status,
+        const refundEntry = {
+          id: randomUUID(),
+          timestamp: new Date().toISOString(),
+          chargedAmount,
+          reason: `Print spooler reported failure: ${job.status}`,
+          status: 'open' as const,
+          closedAt: null as string | null,
+          jobContext: {
+            ...Object.fromEntries(
+              Object.entries(jobContext).map(([k, v]) => [k, v ?? null]),
+            ),
+            spoolerJobId: job.id,
+            spoolerStatus: job.status,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+            jobDispatchedAt,
+            printerName,
+          } as Record<string, string | number | boolean | null>,
+        };
+
+        db.data!.pendingRefunds.unshift(refundEntry);
+        await db.write();
+
+        await adminService.appendAdminLog(
+          'print_spooler_job_failed',
+          `Print spooler failure detected: ${job.status}. Pending refund ₱${chargedAmount} created.`,
+          {
+            spoolerJobId: job.id,
+            spoolerStatus: job.status,
+            chargedAmount,
+            refundId: refundEntry.id,
+            pagesPrinted: job.pagesPrinted,
+            printerName,
+          },
+        );
+
+        io.emit('printerSpoolerFailure', {
+          jobStatus: job.status,
           chargedAmount,
           refundId: refundEntry.id,
           pagesPrinted: job.pagesPrinted,
           printerName,
-        },
+        });
+
+        return {
+          detected: true,
+          jobStatus: job.status,
+          pagesPrinted: job.pagesPrinted,
+          failed: true,
+          refundId: refundEntry.id,
+        };
+      }
+
+      // Job is still in a transient state — sleep then re-query
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, POLL_INTERVAL_MS),
       );
-
-      io.emit('printerSpoolerFailure', {
-        jobStatus: job.status,
-        chargedAmount,
-        refundId: refundEntry.id,
-        pagesPrinted: job.pagesPrinted,
-        printerName,
-      });
-
-      return {
-        detected: true,
-        jobStatus: job.status,
-        pagesPrinted: job.pagesPrinted,
-        failed: true,
-        refundId: refundEntry.id,
-      };
+      jobs = await queryRecentPrintJobs(printerName, ps);
     }
+
+    // Monitor window expired
+    console.log(
+      `[SPOOLER-MONITOR] Window expired. Last known status: "${lastStatus ?? 'none'}"`,
+    );
+    return {
+      detected: lastStatus !== null,
+      jobStatus: lastStatus,
+      pagesPrinted: lastPagesPrinted,
+      failed: false,
+    };
+  } finally {
+    // Always clean up the PS process — whether we returned early, timed out,
+    // or an unexpected error was thrown. Without this the process leaks.
+    ps.dispose();
   }
 
   // Monitor window expired — job probably succeeded (or spooler cleared it already)
