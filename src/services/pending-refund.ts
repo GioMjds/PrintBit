@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { db, type PendingRefundEntry } from './db';
+import { db, type PendingRefundEntry, withBalanceLock } from './db';
 
 export class PendingRefundServiceError extends Error {
   constructor(
@@ -18,7 +18,7 @@ function ensureDb(): void {
       'Database not initialized for refund operation.',
     );
   }
-  db.data!.pendingRefunds = [];
+  db.data!.pendingRefunds = db.data!.pendingRefunds ?? [];
 }
 
 function normalizeJobContext(
@@ -121,11 +121,11 @@ export async function upsertSpoolerFailureRefund(input: {
   if (duplicate) {
     const autoRefunded =
       duplicate.jobContext.refundDisposition === 'auto_refunded';
-    const restoredBalanceAmount = 
+    const restoredBalanceAmount =
       autoRefunded &&
-        typeof duplicate.jobContext.restoredBalanceAmount === 'number'
-          ? duplicate.jobContext.restoredBalanceAmount
-          : 0;
+      typeof duplicate.jobContext.restoredBalanceAmount === 'number'
+        ? duplicate.jobContext.restoredBalanceAmount
+        : 0;
 
     return {
       entry: duplicate,
@@ -156,9 +156,11 @@ export async function upsertSpoolerFailureRefund(input: {
 
   let restoredBalanceAmount = 0;
   if (autoRefunded) {
-    db.data!.balance += input.chargedAmount;
-    db.data!.earnings = Math.max(0, db.data!.earnings - input.chargedAmount);
-    restoredBalanceAmount = input.chargedAmount;
+    await withBalanceLock(async () => {
+      db.data!.balance += input.chargedAmount;
+      db.data!.earnings = Math.max(0, db.data!.earnings - input.chargedAmount);
+      restoredBalanceAmount = input.chargedAmount;
+    });
   }
 
   db.data!.pendingRefunds.unshift(entry);
@@ -202,8 +204,10 @@ export async function processPendingRefund(input: {
   entry.closedAt = new Date().toISOString();
 
   if (input.restoreBalance) {
-    db.data!.balance += entry.chargedAmount;
-    db.data!.earnings = Math.max(0, db.data!.earnings - entry.chargedAmount);
+    await withBalanceLock(async () => {
+      db.data!.balance += entry.chargedAmount;
+      db.data!.earnings = Math.max(0, db.data!.earnings - entry.chargedAmount);
+    });
   }
 
   await db.write();

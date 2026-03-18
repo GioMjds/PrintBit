@@ -625,6 +625,11 @@ type PendingPrintOutcomeWait = {
   resolve: (outcome: PrintOutcome) => void;
 };
 let pendingPrintOutcomeWait: PendingPrintOutcomeWait | null = null;
+let pendingTerminalOutcome: {
+  outcome: Exclude<PrintOutcome, 'timeout'>;
+  correlationKey: string | null;
+} | null = null;
+let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 
 type SpoolerFailureEvent = {
   jobStatus: string;
@@ -784,12 +789,12 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
   setPrintingPhase('failed');
   printerReady = false;
   applyConfirmGate();
-  showOverlay(jamRefundOverlay);
-  if (jamRefundDoneBtn) {
-    window.requestAnimationFrame(() => {
-      jamRefundDoneBtn.focus();
-    });
+  if (jamRefundOverlay && jamRefundFocusTrapHandler) {
+    jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
+    jamRefundFocusTrapHandler = null;
   }
+  showOverlay(jamRefundOverlay);
+  setupJamRefundFocusTrap();
 }
 
 function clearConfirmSessionStorage(): void {
@@ -801,11 +806,69 @@ function clearConfirmSessionStorage(): void {
   sessionStorage.removeItem('printbit.sessionToken');
 }
 
+function setupJamRefundFocusTrap(): void {
+  if (!jamRefundOverlay) return;
+  const getFocusableElements = (): HTMLElement[] => {
+    const selector =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    return Array.from(jamRefundOverlay.querySelectorAll<HTMLElement>(selector));
+  };
+
+  if (jamRefundFocusTrapHandler) {
+    jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
+  }
+
+  jamRefundFocusTrapHandler = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
+    const focusable = getFocusableElements();
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+
+    if (event.shiftKey) {
+      if (active === first || !jamRefundOverlay.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+
+    if (active === last || !jamRefundOverlay.contains(active)) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  jamRefundOverlay.addEventListener('keydown', jamRefundFocusTrapHandler);
+  if (jamRefundDoneBtn) {
+    window.requestAnimationFrame(() => {
+      jamRefundDoneBtn.focus();
+    });
+  }
+}
+
+function teardownJamRefundFocusTrap(): void {
+  if (!jamRefundOverlay || !jamRefundFocusTrapHandler) return;
+  jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
+  jamRefundFocusTrapHandler = null;
+}
+
 function settlePendingPrintOutcome(
   outcome: PrintOutcome,
   spoolerCorrelationKey: string | null,
 ): void {
-  if (!pendingPrintOutcomeWait || !spoolerCorrelationKey) return;
+  if (!spoolerCorrelationKey) return;
+  if (!pendingPrintOutcomeWait) {
+    if (outcome === 'confirmed' || outcome === 'failure') {
+      pendingTerminalOutcome = {
+        outcome,
+        correlationKey: spoolerCorrelationKey,
+      };
+    }
+    return;
+  }
   if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey) return;
   if (pendingPrintOutcomeWait.settled) return;
 
@@ -813,6 +876,7 @@ function settlePendingPrintOutcome(
   window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
   const { resolve } = pendingPrintOutcomeWait;
   pendingPrintOutcomeWait = null;
+  pendingTerminalOutcome = null;
   resolve(outcome);
 }
 
@@ -844,6 +908,15 @@ async function awaitPrintOutcomeOrTimeout(
       timeoutId,
       resolve,
     };
+
+    if (
+      pendingTerminalOutcome &&
+      pendingTerminalOutcome.correlationKey === spoolerCorrelationKey
+    ) {
+      const bufferedOutcome = pendingTerminalOutcome.outcome;
+      pendingTerminalOutcome = null;
+      settlePendingPrintOutcome(bufferedOutcome, spoolerCorrelationKey);
+    }
   });
 }
 
@@ -857,6 +930,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   isProcessingPayment = true;
   activeSpoolerCorrelationKey = null;
   lastSpoolerCorrelationKey = null;
+  pendingTerminalOutcome = null;
 
   showOverlay(printingOverlay);
 
@@ -1166,6 +1240,7 @@ thankYouDoneBtn?.addEventListener('click', () => {
   window.location.href = '/';
 });
 jamRefundDoneBtn?.addEventListener('click', () => {
+  teardownJamRefundFocusTrap();
   hideOverlay(jamRefundOverlay);
   clearConfirmSessionStorage();
   window.location.href = '/';
@@ -1261,21 +1336,25 @@ if (typeof ioFactory === 'function') {
       'faultLock' in payload &&
       (payload as { faultLock: unknown }).faultLock &&
       typeof (payload as { faultLock: unknown }).faultLock === 'object'
-        ? ((payload as {
-            faultLock: {
-              source?: unknown;
-              reason?: unknown;
-              status?: unknown;
-              lockedAt?: unknown;
-            };
-          }).faultLock ?? null)
+        ? ((
+            payload as {
+              faultLock: {
+                source?: unknown;
+                reason?: unknown;
+                status?: unknown;
+                lockedAt?: unknown;
+              };
+            }
+          ).faultLock ?? null)
         : null;
     const fallbackStatusLower =
       typeof printerStatus === 'string' && printerStatus.trim()
         ? printerStatus.trim().toLowerCase()
         : null;
     const faultStatusLower =
-      faultLock && typeof faultLock.status === 'string' && faultLock.status.trim()
+      faultLock &&
+      typeof faultLock.status === 'string' &&
+      faultLock.status.trim()
         ? faultLock.status.trim().toLowerCase()
         : fallbackStatusLower;
 
