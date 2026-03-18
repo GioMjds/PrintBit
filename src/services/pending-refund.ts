@@ -18,6 +18,7 @@ function ensureDb(): void {
       'Database not initialized for refund operation.',
     );
   }
+  db.data!.pendingRefunds = [];
 }
 
 function normalizeJobContext(
