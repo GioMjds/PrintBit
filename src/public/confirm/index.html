@@ -660,6 +660,53 @@
       </div>
     </div>
 
+    <!-- Printer Jam / Refund Notice Overlay -->
+    <div
+      class="modal-overlay"
+      id="jamRefundOverlay"
+      aria-hidden="true"
+      role="dialog"
+      aria-labelledby="jamRefundTitle"
+      aria-modal="true"
+    >
+      <div class="modal-card modal-card--status">
+        <div class="status-icon status-icon--error" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="22" fill="rgba(242,110,107,0.16)" />
+            <circle
+              cx="24"
+              cy="24"
+              r="22"
+              stroke="#f26e6b"
+              stroke-width="2.5"
+              fill="none"
+            />
+            <path
+              d="M24 13v14"
+              stroke="#f26e6b"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <circle cx="24" cy="33" r="2" fill="#f26e6b" />
+          </svg>
+        </div>
+        <h2 class="modal-title" id="jamRefundTitle">Printer Issue Detected</h2>
+        <p class="modal-subtitle" id="jamRefundMessage">
+          A printer fault was detected while processing your print job.
+        </p>
+        <p class="modal-subtitle modal-subtitle--hint" id="jamRefundHint">
+          Please contact staff if you need manual refund assistance.
+        </p>
+        <button
+          id="jamRefundDoneBtn"
+          type="button"
+          class="modal-btn modal-btn--alert modal-btn--wide"
+        >
+          <span>Understood</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Scan QR Download Overlay (scan mode only) -->
     <div
       class="modal-overlay"

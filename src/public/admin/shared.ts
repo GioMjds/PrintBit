@@ -28,6 +28,19 @@ export type SummaryResponse = {
     lastSelfTestAt: string | null;
   };
   owedChangeOpenCount: number;
+  pendingRefundOpenCount: number;
+  refundStats: {
+    totalCount: number;
+    openCount: number;
+    refundedCount: number;
+    dismissedCount: number;
+    autoRefundedCount: number;
+  };
+  jamStats: {
+    totalEvents: number;
+    recent24h: number;
+    lastJamAt: string | null;
+  };
   storage: {
     fileCount: number;
     bytes: number;

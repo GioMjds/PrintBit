@@ -602,11 +602,33 @@ const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
 const thankYouOverlay = document.getElementById('thankYouOverlay');
+const jamRefundOverlay = document.getElementById('jamRefundOverlay');
+const jamRefundTitle = document.getElementById('jamRefundTitle');
+const jamRefundMessage = document.getElementById('jamRefundMessage');
+const jamRefundHint = document.getElementById('jamRefundHint');
+const jamRefundDoneBtn = document.getElementById(
+  'jamRefundDoneBtn',
+) as HTMLButtonElement | null;
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
+let lastSpoolerCorrelationKey: string | null = null;
+
+type SpoolerFailureEvent = {
+  jobStatus: string;
+  chargedAmount: number;
+  refundId: string;
+  pagesPrinted: number;
+  totalPages: number;
+  printerName: string | null;
+  reason: string;
+  refundDisposition: 'auto_refunded' | 'pending_admin_review';
+  restoredBalanceAmount: number;
+  transactionId: string | null;
+  spoolerCorrelationKey: string | null;
+};
 
 function createSpoolerCorrelationKey(): string {
   if (
@@ -679,6 +701,56 @@ function hideOverlay(el: HTMLElement | null): void {
   el.setAttribute('aria-hidden', 'true');
 }
 
+function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
+  hideOverlay(printingOverlay);
+  hideOverlay(thankYouOverlay);
+
+  const shortRefundId = ev.refundId ? ev.refundId.slice(0, 8) : 'unknown';
+  const pagesMessage =
+    ev.pagesPrinted > 0
+      ? `${ev.pagesPrinted} of ${Math.max(ev.totalPages, ev.pagesPrinted)} page(s) were printed.`
+      : 'No pages were printed.';
+
+  if (jamRefundTitle) {
+    jamRefundTitle.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? 'Print Failed — Refund Applied'
+        : 'Print Failed — Refund Pending Review';
+  }
+
+  if (jamRefundMessage) {
+    jamRefundMessage.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} ₱${ev.chargedAmount.toFixed(2)} was returned to your machine balance.`
+        : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${shortRefundId}).`;
+  }
+
+  if (jamRefundHint) {
+    jamRefundHint.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? 'You may retry once the printer recovers. If the issue persists, contact staff.'
+        : 'Please contact staff and provide the refund ID shown above for manual refund handling.';
+  }
+
+  if (statusMessage) {
+    statusMessage.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? `Printer issue detected. ₱ ${ev.restoredBalanceAmount.toFixed(2)} returned to balance.`
+        : 'Printer issue detected. Staff review is required for refund processing.';
+  }
+
+  setCoinEventMessage(
+    ev.refundDisposition === 'auto_refunded'
+      ? `Auto-refund applied: ₱ ${ev.restoredBalanceAmount.toFixed(2)}`
+      : `Pending refund recorded (ID: ${shortRefundId}).`,
+  );
+
+  setPrintingPhase('failed');
+  printerReady = false;
+  applyConfirmGate();
+  showOverlay(jamRefundOverlay);
+}
+
 confirmBtn?.addEventListener('click', () => {
   showModal();
 });
@@ -693,6 +765,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   confirmBtn.disabled = true;
   isProcessingPayment = true;
   activeSpoolerCorrelationKey = null;
+  lastSpoolerCorrelationKey = null;
 
   showOverlay(printingOverlay);
 
@@ -878,6 +951,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
     if (statusMessage) statusMessage.textContent = 'Sending to printer…';
     const spoolerCorrelationKey = createSpoolerCorrelationKey();
     activeSpoolerCorrelationKey = spoolerCorrelationKey;
+    lastSpoolerCorrelationKey = spoolerCorrelationKey;
 
     const response = await fetch('/api/confirm-payment', {
       method: 'POST',
@@ -899,6 +973,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
     if (!response.ok) {
       activeSpoolerCorrelationKey = null;
+      lastSpoolerCorrelationKey = null;
       hideOverlay(printingOverlay);
       const payload = (await response.json()) as { error?: string };
       if (statusMessage)
@@ -1004,6 +1079,10 @@ thankYouDoneBtn?.addEventListener('click', () => {
   hideOverlay(thankYouOverlay);
   window.location.href = '/';
 });
+jamRefundDoneBtn?.addEventListener('click', () => {
+  hideOverlay(jamRefundOverlay);
+  window.location.href = '/';
+});
 const scanQrDoneBtn = document.getElementById(
   'scanQrDoneBtn',
 ) as HTMLButtonElement | null;
@@ -1067,6 +1146,37 @@ if (typeof ioFactory === 'function') {
     ) {
       const value = (payload as { value: number }).value;
       setCoinEventMessage(`Last accepted coin: ₱ ${value}`);
+    }
+  });
+
+  socket.on('coinRejected', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const reason =
+      'reason' in payload &&
+      typeof (payload as { reason: unknown }).reason === 'string'
+        ? (payload as { reason: string }).reason
+        : 'Coin rejected by machine safety checks.';
+    const printerStatus =
+      'printerStatus' in payload &&
+      typeof (payload as { printerStatus: unknown }).printerStatus === 'string'
+        ? (payload as { printerStatus: string }).printerStatus
+        : null;
+
+    setCoinEventMessage(`Coin rejected: ${reason}.`);
+    if (statusMessage) {
+      statusMessage.textContent = printerStatus
+        ? `Coin rejected. Printer status: ${printerStatus}.`
+        : `Coin rejected. ${reason}.`;
+    }
+
+    const reasonLower = reason.toLowerCase();
+    if (
+      reasonLower.includes('fault lock') ||
+      reasonLower.includes('paper jam') ||
+      reasonLower.includes('printer')
+    ) {
+      printerReady = false;
+      applyConfirmGate();
     }
   });
 
@@ -1193,6 +1303,86 @@ if (typeof ioFactory === 'function') {
     }
     activeSpoolerCorrelationKey = null;
     setPrintingPhase('printing');
+  });
+
+  socket.on('printerSpoolerFailure', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    const spoolerCorrelationKey =
+      'spoolerCorrelationKey' in payload &&
+      typeof (payload as { spoolerCorrelationKey: unknown })
+        .spoolerCorrelationKey === 'string'
+        ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+        : null;
+    const correlationMatches = Boolean(
+      spoolerCorrelationKey &&
+      (spoolerCorrelationKey === activeSpoolerCorrelationKey ||
+        spoolerCorrelationKey === lastSpoolerCorrelationKey),
+    );
+    if (!correlationMatches) {
+      return;
+    }
+
+    const event: SpoolerFailureEvent = {
+      jobStatus:
+        'jobStatus' in payload &&
+        typeof (payload as { jobStatus: unknown }).jobStatus === 'string'
+          ? (payload as { jobStatus: string }).jobStatus
+          : 'Unknown',
+      chargedAmount:
+        'chargedAmount' in payload &&
+        typeof (payload as { chargedAmount: unknown }).chargedAmount ===
+          'number'
+          ? (payload as { chargedAmount: number }).chargedAmount
+          : 0,
+      refundId:
+        'refundId' in payload &&
+        typeof (payload as { refundId: unknown }).refundId === 'string'
+          ? (payload as { refundId: string }).refundId
+          : '',
+      pagesPrinted:
+        'pagesPrinted' in payload &&
+        typeof (payload as { pagesPrinted: unknown }).pagesPrinted === 'number'
+          ? (payload as { pagesPrinted: number }).pagesPrinted
+          : 0,
+      totalPages:
+        'totalPages' in payload &&
+        typeof (payload as { totalPages: unknown }).totalPages === 'number'
+          ? (payload as { totalPages: number }).totalPages
+          : 0,
+      printerName:
+        'printerName' in payload &&
+        typeof (payload as { printerName: unknown }).printerName === 'string'
+          ? (payload as { printerName: string }).printerName
+          : null,
+      reason:
+        'reason' in payload &&
+        typeof (payload as { reason: unknown }).reason === 'string'
+          ? (payload as { reason: string }).reason
+          : 'Print spooler reported a failure.',
+      refundDisposition:
+        'refundDisposition' in payload &&
+        (payload as { refundDisposition: unknown }).refundDisposition ===
+          'pending_admin_review'
+          ? 'pending_admin_review'
+          : 'auto_refunded',
+      restoredBalanceAmount:
+        'restoredBalanceAmount' in payload &&
+        typeof (payload as { restoredBalanceAmount: unknown })
+          .restoredBalanceAmount === 'number'
+          ? (payload as { restoredBalanceAmount: number }).restoredBalanceAmount
+          : 0,
+      transactionId:
+        'transactionId' in payload &&
+        typeof (payload as { transactionId: unknown }).transactionId ===
+          'string'
+          ? (payload as { transactionId: string }).transactionId
+          : null,
+      spoolerCorrelationKey,
+    };
+
+    activeSpoolerCorrelationKey = null;
+    showSpoolerFailureNotice(event);
   });
 }
 
