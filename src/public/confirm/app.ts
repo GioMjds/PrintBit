@@ -615,6 +615,16 @@ const thankYouDoneBtn = document.getElementById(
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 let lastSpoolerCorrelationKey: string | null = null;
+const SPOOLER_CLEANUP_WAIT_MS = 6_000;
+
+type PrintOutcome = 'confirmed' | 'failure' | 'timeout';
+type PendingPrintOutcomeWait = {
+  correlationKey: string;
+  settled: boolean;
+  timeoutId: number;
+  resolve: (outcome: PrintOutcome) => void;
+};
+let pendingPrintOutcomeWait: PendingPrintOutcomeWait | null = null;
 
 type SpoolerFailureEvent = {
   jobStatus: string;
@@ -629,6 +639,32 @@ type SpoolerFailureEvent = {
   transactionId: string | null;
   spoolerCorrelationKey: string | null;
 };
+
+type SpoolerConfirmedEvent = {
+  jobStatus: string;
+  pagesPrinted: number;
+  totalPages: number;
+  printerName: string | null;
+  transactionId: string | null;
+  spoolerCorrelationKey: string | null;
+};
+
+const CANONICAL_PRINTER_FAULT_STATUSES = new Set([
+  'offline',
+  'error',
+  'paper jam',
+  'paper out',
+  'door open',
+  'user intervention required',
+  'paused',
+  'not connected',
+  'no default printer',
+]);
+
+const CANONICAL_COIN_REJECTION_FAULT_REASONS = new Set([
+  'printer telemetry is stale',
+  'printer not connected',
+]);
 
 function createSpoolerCorrelationKey(): string {
   if (
@@ -754,6 +790,61 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
       jamRefundDoneBtn.focus();
     });
   }
+}
+
+function clearConfirmSessionStorage(): void {
+  sessionStorage.removeItem('printbit.config');
+  sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.uploadedFile');
+  sessionStorage.removeItem('printbit.uploadedDocumentId');
+  sessionStorage.removeItem('printbit.sessionId');
+  sessionStorage.removeItem('printbit.sessionToken');
+}
+
+function settlePendingPrintOutcome(
+  outcome: PrintOutcome,
+  spoolerCorrelationKey: string | null,
+): void {
+  if (!pendingPrintOutcomeWait || !spoolerCorrelationKey) return;
+  if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey) return;
+  if (pendingPrintOutcomeWait.settled) return;
+
+  pendingPrintOutcomeWait.settled = true;
+  window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
+  const { resolve } = pendingPrintOutcomeWait;
+  pendingPrintOutcomeWait = null;
+  resolve(outcome);
+}
+
+async function awaitPrintOutcomeOrTimeout(
+  spoolerCorrelationKey: string,
+): Promise<PrintOutcome> {
+  if (pendingPrintOutcomeWait && !pendingPrintOutcomeWait.settled) {
+    pendingPrintOutcomeWait.settled = true;
+    window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
+    pendingPrintOutcomeWait.resolve('timeout');
+    pendingPrintOutcomeWait = null;
+  }
+
+  return await new Promise<PrintOutcome>((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      if (!pendingPrintOutcomeWait) return;
+      if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey)
+        return;
+      if (pendingPrintOutcomeWait.settled) return;
+
+      pendingPrintOutcomeWait.settled = true;
+      pendingPrintOutcomeWait = null;
+      resolve('timeout');
+    }, SPOOLER_CLEANUP_WAIT_MS);
+
+    pendingPrintOutcomeWait = {
+      correlationKey: spoolerCorrelationKey,
+      settled: false,
+      timeoutId,
+      resolve,
+    };
+  });
 }
 
 confirmBtn?.addEventListener('click', () => showModal());
@@ -923,12 +1014,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (pollResult === 'succeeded') {
         showOverlay(thankYouOverlay);
         if (statusMessage) statusMessage.textContent = 'Your copies are ready!';
-        sessionStorage.removeItem('printbit.config');
-        sessionStorage.removeItem('printbit.copyPreviewPath');
-        sessionStorage.removeItem('printbit.uploadedFile');
-        sessionStorage.removeItem('printbit.uploadedDocumentId');
-        sessionStorage.removeItem('printbit.sessionId');
-        sessionStorage.removeItem('printbit.sessionToken');
+        clearConfirmSessionStorage();
       } else if (pollResult === 'failed') {
         if (statusMessage)
           statusMessage.textContent = 'Copy job failed. Please try again.';
@@ -1022,12 +1108,12 @@ modalConfirmBtn?.addEventListener('click', async () => {
     if (statusMessage) {
       statusMessage.textContent = 'Your document has been sent to the printer!';
     }
-    sessionStorage.removeItem('printbit.config');
-    sessionStorage.removeItem('printbit.copyPreviewPath');
-    sessionStorage.removeItem('printbit.uploadedFile');
-    sessionStorage.removeItem('printbit.uploadedDocumentId');
-    sessionStorage.removeItem('printbit.sessionId');
-    sessionStorage.removeItem('printbit.sessionToken');
+    const printOutcome = await awaitPrintOutcomeOrTimeout(
+      spoolerCorrelationKey,
+    );
+    if (printOutcome !== 'failure') {
+      clearConfirmSessionStorage();
+    }
   }
   isProcessingPayment = false;
   applyConfirmGate();
@@ -1081,12 +1167,7 @@ thankYouDoneBtn?.addEventListener('click', () => {
 });
 jamRefundDoneBtn?.addEventListener('click', () => {
   hideOverlay(jamRefundOverlay);
-  sessionStorage.removeItem('printbit.config');
-  sessionStorage.removeItem('printbit.copyPreviewPath');
-  sessionStorage.removeItem('printbit.uploadedFile');
-  sessionStorage.removeItem('printbit.uploadedDocumentId');
-  sessionStorage.removeItem('printbit.sessionId');
-  sessionStorage.removeItem('printbit.sessionToken');
+  clearConfirmSessionStorage();
   window.location.href = '/';
 });
 const scanQrDoneBtn = document.getElementById(
@@ -1175,12 +1256,40 @@ if (typeof ioFactory === 'function') {
         : `Coin rejected. ${reason}.`;
     }
 
-    const reasonLower = reason.toLowerCase();
-    if (
-      reasonLower.includes('fault lock') ||
-      reasonLower.includes('paper jam') ||
-      reasonLower.includes('printer')
-    ) {
+    const reasonLower = reason.trim().toLowerCase();
+    const faultLock =
+      'faultLock' in payload &&
+      (payload as { faultLock: unknown }).faultLock &&
+      typeof (payload as { faultLock: unknown }).faultLock === 'object'
+        ? ((payload as {
+            faultLock: {
+              source?: unknown;
+              reason?: unknown;
+              status?: unknown;
+              lockedAt?: unknown;
+            };
+          }).faultLock ?? null)
+        : null;
+    const fallbackStatusLower =
+      typeof printerStatus === 'string' && printerStatus.trim()
+        ? printerStatus.trim().toLowerCase()
+        : null;
+    const faultStatusLower =
+      faultLock && typeof faultLock.status === 'string' && faultLock.status.trim()
+        ? faultLock.status.trim().toLowerCase()
+        : fallbackStatusLower;
+
+    const hasCanonicalFaultStatus =
+      faultStatusLower !== null &&
+      CANONICAL_PRINTER_FAULT_STATUSES.has(faultStatusLower);
+    const hasCanonicalFaultReason =
+      CANONICAL_COIN_REJECTION_FAULT_REASONS.has(reasonLower) ||
+      /^printer fault lock active:\s.+$/.test(reasonLower) ||
+      (reasonLower.startsWith('printer status:') &&
+        faultStatusLower !== null &&
+        CANONICAL_PRINTER_FAULT_STATUSES.has(faultStatusLower));
+
+    if (hasCanonicalFaultStatus || hasCanonicalFaultReason) {
       printerReady = false;
       applyConfirmGate();
     }
@@ -1311,6 +1420,47 @@ if (typeof ioFactory === 'function') {
     setPrintingPhase('printing');
   });
 
+  socket.on('printerSpoolerConfirmed', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    const event: SpoolerConfirmedEvent = {
+      jobStatus:
+        'jobStatus' in payload &&
+        typeof (payload as { jobStatus: unknown }).jobStatus === 'string'
+          ? (payload as { jobStatus: string }).jobStatus
+          : 'Printed',
+      pagesPrinted:
+        'pagesPrinted' in payload &&
+        typeof (payload as { pagesPrinted: unknown }).pagesPrinted === 'number'
+          ? (payload as { pagesPrinted: number }).pagesPrinted
+          : 0,
+      totalPages:
+        'totalPages' in payload &&
+        typeof (payload as { totalPages: unknown }).totalPages === 'number'
+          ? (payload as { totalPages: number }).totalPages
+          : 0,
+      printerName:
+        'printerName' in payload &&
+        typeof (payload as { printerName: unknown }).printerName === 'string'
+          ? (payload as { printerName: string }).printerName
+          : null,
+      transactionId:
+        'transactionId' in payload &&
+        typeof (payload as { transactionId: unknown }).transactionId ===
+          'string'
+          ? (payload as { transactionId: string }).transactionId
+          : null,
+      spoolerCorrelationKey:
+        'spoolerCorrelationKey' in payload &&
+        typeof (payload as { spoolerCorrelationKey: unknown })
+          .spoolerCorrelationKey === 'string'
+          ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+          : null,
+    };
+
+    settlePendingPrintOutcome('confirmed', event.spoolerCorrelationKey);
+  });
+
   socket.on('printerSpoolerFailure', (payload: unknown) => {
     if (!payload || typeof payload !== 'object') return;
 
@@ -1388,6 +1538,7 @@ if (typeof ioFactory === 'function') {
     };
 
     activeSpoolerCorrelationKey = null;
+    settlePendingPrintOutcome('failure', event.spoolerCorrelationKey);
     showSpoolerFailureNotice(event);
   });
 }

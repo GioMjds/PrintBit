@@ -295,6 +295,17 @@ export async function monitorSpoolerJob(
         console.log(
           `[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`,
         );
+        io.emit('printerSpoolerConfirmed', {
+          jobStatus: job.status,
+          pagesPrinted: job.pagesPrinted,
+          totalPages: job.totalPages,
+          printerName,
+          transactionId:
+            typeof jobContext.transactionId === 'string'
+              ? jobContext.transactionId
+              : null,
+          spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+        });
         return {
           detected: true,
           jobStatus: job.status,
