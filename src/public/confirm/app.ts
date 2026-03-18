@@ -705,7 +705,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
   hideOverlay(printingOverlay);
   hideOverlay(thankYouOverlay);
 
-  const shortRefundId = ev.refundId ? ev.refundId.slice(0, 8) : 'unknown';
+  const refundReference = ev.refundId || 'unknown';
   const pagesMessage =
     ev.pagesPrinted > 0
       ? `${ev.pagesPrinted} of ${Math.max(ev.totalPages, ev.pagesPrinted)} page(s) were printed.`
@@ -722,7 +722,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
     jamRefundMessage.textContent =
       ev.refundDisposition === 'auto_refunded'
         ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} ₱${ev.chargedAmount.toFixed(2)} was returned to your machine balance.`
-        : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${shortRefundId}).`;
+        : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${refundReference}).`;
   }
 
   if (jamRefundHint) {
@@ -742,7 +742,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
   setCoinEventMessage(
     ev.refundDisposition === 'auto_refunded'
       ? `Auto-refund applied: ₱ ${ev.restoredBalanceAmount.toFixed(2)}`
-      : `Pending refund recorded (ID: ${shortRefundId}).`,
+      : `Pending refund recorded (ID: ${refundReference}).`,
   );
 
   setPrintingPhase('failed');
@@ -1081,6 +1081,12 @@ thankYouDoneBtn?.addEventListener('click', () => {
 });
 jamRefundDoneBtn?.addEventListener('click', () => {
   hideOverlay(jamRefundOverlay);
+  sessionStorage.removeItem('printbit.config');
+  sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.uploadedFile');
+  sessionStorage.removeItem('printbit.uploadedDocumentId');
+  sessionStorage.removeItem('printbit.sessionId');
+  sessionStorage.removeItem('printbit.sessionToken');
   window.location.href = '/';
 });
 const scanQrDoneBtn = document.getElementById(

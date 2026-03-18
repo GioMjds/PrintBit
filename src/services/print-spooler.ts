@@ -335,6 +335,7 @@ export async function monitorSpoolerJob(
             totalPages: job.totalPages,
             jobDispatchedAt,
             printerName,
+            spoolerCorrelationKey: spoolerCorrelationKey ?? null,
           },
         });
 
@@ -349,10 +350,7 @@ export async function monitorSpoolerJob(
           typeof jobContext.transactionId === 'string'
             ? jobContext.transactionId
             : null;
-        const correlationKey =
-          typeof jobContext.spoolerCorrelationKey === 'string'
-            ? jobContext.spoolerCorrelationKey
-            : null;
+        const correlationKey = spoolerCorrelationKey ?? null;
         const refundDisposition = refundOutcome.autoRefunded
           ? 'auto_refunded'
           : 'pending_admin_review';

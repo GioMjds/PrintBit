@@ -159,7 +159,7 @@ export function registerAdminRoutes(
         !host.startsWith('localhost') && !host.startsWith('127.0.0.1');
       const printer = getPrinterTelemetry();
       const scanner = getScannerStatus();
-      const pendingRefunds = db.data!.pendingRefunds;
+      const pendingRefunds = db.data!.pendingRefunds ?? [];
       const openRefunds = pendingRefunds.filter((entry) => entry.status === 'open');
       const refundedEntries = pendingRefunds.filter(
         (entry) => entry.status === 'refunded',

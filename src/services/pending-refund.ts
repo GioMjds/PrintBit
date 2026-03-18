@@ -135,21 +135,25 @@ export async function upsertSpoolerFailureRefund(input: {
     refundDisposition: autoRefunded ? 'auto_refunded' : 'pending_admin_review',
     restoredBalanceAmount: autoRefunded ? input.chargedAmount : 0,
   };
-  const entry = await createPendingRefund({
+  const entry: PendingRefundEntry = {
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
     chargedAmount: input.chargedAmount,
     reason: input.reason,
-    jobContext: contextWithDisposition,
     status: autoRefunded ? 'refunded' : 'open',
     closedAt: autoRefunded ? new Date().toISOString() : null,
-  });
+    jobContext: normalizeJobContext(contextWithDisposition),
+  };
 
   let restoredBalanceAmount = 0;
   if (autoRefunded) {
     db.data!.balance += input.chargedAmount;
     db.data!.earnings = Math.max(0, db.data!.earnings - input.chargedAmount);
     restoredBalanceAmount = input.chargedAmount;
-    await db.write();
   }
+
+  db.data!.pendingRefunds.unshift(entry);
+  await db.write();
 
   return {
     entry,
