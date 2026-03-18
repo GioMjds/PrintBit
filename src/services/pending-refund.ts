@@ -118,11 +118,19 @@ export async function upsertSpoolerFailureRefund(input: {
   const normalizedContext = normalizeJobContext(input.jobContext);
   const duplicate = findDuplicateByCorrelation(normalizedContext);
   if (duplicate) {
+    const autoRefunded =
+      duplicate.jobContext.refundDisposition === 'auto_refunded';
+    const restoredBalanceAmount = 
+      autoRefunded &&
+        typeof duplicate.jobContext.restoredBalanceAmount === 'number'
+          ? duplicate.jobContext.restoredBalanceAmount
+          : 0;
+
     return {
       entry: duplicate,
       created: false,
-      autoRefunded: duplicate.status === 'refunded',
-      restoredBalanceAmount: 0,
+      autoRefunded,
+      restoredBalanceAmount,
     };
   }
 

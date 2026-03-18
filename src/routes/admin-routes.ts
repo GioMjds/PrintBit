@@ -160,7 +160,9 @@ export function registerAdminRoutes(
       const printer = getPrinterTelemetry();
       const scanner = getScannerStatus();
       const pendingRefunds = db.data!.pendingRefunds ?? [];
-      const openRefunds = pendingRefunds.filter((entry) => entry.status === 'open');
+      const openRefunds = pendingRefunds.filter(
+        (entry) => entry.status === 'open',
+      );
       const refundedEntries = pendingRefunds.filter(
         (entry) => entry.status === 'refunded',
       );
@@ -176,7 +178,9 @@ export function registerAdminRoutes(
         'printer_malfunction_detected',
         'printer_midjob_malfunction',
       ]);
-      const jamEvents = db.data!.logs.filter((entry) => jamLogTypes.has(entry.type));
+      const jamEvents = db.data!.logs.filter((entry) =>
+        jamLogTypes.has(entry.type),
+      );
       const nowMs = Date.now();
       const recentJamEvents = jamEvents.filter((entry) => {
         const tsMs = Date.parse(entry.timestamp);
@@ -722,17 +726,24 @@ export function registerAdminRoutes(
         const result = await processPendingRefund({ entryId, restoreBalance });
         deps.io.emit('balance', result.balance);
 
-        await adminService.appendAdminLog(
-          'pending_refund_processed',
-          `Pending refund ₱${result.entry.chargedAmount} processed by admin.`,
-          {
-            refundId: result.entry.id,
-            chargedAmount: result.entry.chargedAmount,
-            restoreBalance,
-            newBalance: result.balance,
-            reason: result.entry.reason,
-          },
-        );
+        try {
+          await adminService.appendAdminLog(
+            'pending_refund_processed',
+            `Pending refund ₱${result.entry.chargedAmount} processed by admin.`,
+            {
+              refundId: result.entry.id,
+              chargedAmount: result.entry.chargedAmount,
+              restoreBalance,
+              newBalance: result.balance,
+              reason: result.entry.reason,
+            },
+          );
+        } catch (error) {
+          console.error(
+            '[ADMIN] Failed to log pending refund processing',
+            error,
+          );
+        }
 
         res.json({
           ok: true,
@@ -764,15 +775,22 @@ export function registerAdminRoutes(
       const entryId = req.params.id as string;
       try {
         const entry = await dismissPendingRefund(entryId);
-        await adminService.appendAdminLog(
-          'pending_refund_dismissed',
-          `Pending refund ₱${entry.chargedAmount} dismissed by admin (no balance restored).`,
-          {
-            refundId: entry.id,
-            chargedAmount: entry.chargedAmount,
-            reason: entry.reason,
-          },
-        );
+        try {
+          await adminService.appendAdminLog(
+            'pending_refund_dismissed',
+            `Pending refund ₱${entry.chargedAmount} dismissed by admin (no balance restored).`,
+            {
+              refundId: entry.id,
+              chargedAmount: entry.chargedAmount,
+              reason: entry.reason,
+            },
+          );
+        } catch (error) {
+          console.error(
+            '[ADMIN] Failed to log pending refund dismissal',
+            error,
+          );
+        }
 
         res.json({ ok: true, entry });
       } catch (error) {

@@ -749,15 +749,15 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
   printerReady = false;
   applyConfirmGate();
   showOverlay(jamRefundOverlay);
+  if (jamRefundDoneBtn) {
+    window.requestAnimationFrame(() => {
+      jamRefundDoneBtn.focus();
+    });
+  }
 }
 
-confirmBtn?.addEventListener('click', () => {
-  showModal();
-});
-
-modalCancelBtn?.addEventListener('click', () => {
-  hideModal();
-});
+confirmBtn?.addEventListener('click', () => showModal());
+modalCancelBtn?.addEventListener('click', () => hideModal());
 
 modalConfirmBtn?.addEventListener('click', async () => {
   modalConfirmBtn.disabled = true;
