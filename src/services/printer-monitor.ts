@@ -4,6 +4,10 @@ import {
   queryLivePrinterStatus,
   type PrinterTelemetry,
 } from './printer-status';
+import {
+  clearPrinterFaultLock,
+  setPrinterFaultLock,
+} from './printer-fault-lock';
 import { adminService } from './admin';
 import { BLOCKED_STATUSES } from '@/utils';
 
@@ -149,6 +153,15 @@ class PrinterMonitorService {
     telemetry: PrinterTelemetry,
     timestamp: string,
   ): Promise<void> {
+    setPrinterFaultLock({
+      source: 'printer_monitor_startup',
+      reason: `Printer faulted on startup: ${telemetry.status}`,
+      status: telemetry.status,
+      context: {
+        printerName: telemetry.name ?? null,
+      },
+    });
+
     console.warn(
       `[PRINTER-MONITOR] ⚠ Printer already faulted at startup: ${telemetry.status}`,
     );
@@ -169,6 +182,12 @@ class PrinterMonitorService {
   }
 
   private async onStartupDisconnected(timestamp: string): Promise<void> {
+    setPrinterFaultLock({
+      source: 'printer_monitor_startup',
+      reason: 'Printer disconnected on startup',
+      status: 'Not Connected',
+    });
+
     console.warn('[PRINTER-MONITOR] ⚠ No printer detected at startup.');
 
     await appendAdminLogBestEffort(
@@ -199,6 +218,16 @@ class PrinterMonitorService {
     telemetry: PrinterTelemetry,
     timestamp: string,
   ): Promise<void> {
+    setPrinterFaultLock({
+      source: 'printer_monitor_transition',
+      reason: `Printer transitioned into faulted state: ${telemetry.status}`,
+      status: telemetry.status,
+      context: {
+        previousStatus: this.previousStatus ?? null,
+        printerName: telemetry.name ?? null,
+      },
+    });
+
     console.warn(
       `[PRINTER-MONITOR] 🚨 Printer malfunction detected: ${this.previousStatus} → ${telemetry.status}`,
     );
@@ -223,6 +252,8 @@ class PrinterMonitorService {
     telemetry: PrinterTelemetry,
     timestamp: string,
   ): Promise<void> {
+    clearPrinterFaultLock();
+
     console.log(
       `[PRINTER-MONITOR] ✓ Printer recovered: ${this.previousStatus} → ${telemetry.status}`,
     );
@@ -245,6 +276,13 @@ class PrinterMonitorService {
     lastStatus: string,
     timestamp: string,
   ): Promise<void> {
+    setPrinterFaultLock({
+      source: 'printer_monitor_disconnect',
+      reason: 'Printer connection was lost',
+      status: 'Offline',
+      context: { lastStatus },
+    });
+
     console.warn('[PRINTER-MONITOR] ✗ Printer disconnected.');
 
     await appendAdminLogBestEffort(
@@ -275,6 +313,8 @@ class PrinterMonitorService {
     telemetry: PrinterTelemetry,
     timestamp: string,
   ): Promise<void> {
+    clearPrinterFaultLock();
+
     console.log(
       `[PRINTER-MONITOR] ✓ Printer reconnected: ${telemetry.name ?? 'Unknown'} (${telemetry.status})`,
     );
@@ -392,6 +432,17 @@ export async function watchJobForMalfunction(
     const { connected, status, statusFlags } = liveStatus;
 
     if (!connected || BLOCKED_STATUSES.has(status)) {
+      setPrinterFaultLock({
+        source: 'printer_watchdog',
+        reason: `Mid-job fault detected: ${status}`,
+        status,
+        context: {
+          connected,
+          jobId: opts.jobId,
+          sessionId: opts.sessionId ?? null,
+        },
+      });
+
       const timestamp = new Date().toISOString();
       const fault: PrinterFault = {
         timestamp,

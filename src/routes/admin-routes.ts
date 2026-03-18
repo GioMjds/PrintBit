@@ -9,6 +9,11 @@ import {
 import { adminService } from '@/services/admin';
 import { db } from '@/services/db';
 import {
+  PendingRefundServiceError,
+  dismissPendingRefund,
+  processPendingRefund,
+} from '@/services/pending-refund';
+import {
   getPrinterTelemetry,
   refreshPrinterTelemetry,
 } from '@/services/printer-status';
@@ -154,6 +159,33 @@ export function registerAdminRoutes(
         !host.startsWith('localhost') && !host.startsWith('127.0.0.1');
       const printer = getPrinterTelemetry();
       const scanner = getScannerStatus();
+      const pendingRefunds = db.data!.pendingRefunds ?? [];
+      const openRefunds = pendingRefunds.filter(
+        (entry) => entry.status === 'open',
+      );
+      const refundedEntries = pendingRefunds.filter(
+        (entry) => entry.status === 'refunded',
+      );
+      const dismissedEntries = pendingRefunds.filter(
+        (entry) => entry.status === 'dismissed',
+      );
+      const autoRefundedEntries = refundedEntries.filter(
+        (entry) => entry.jobContext.refundDisposition === 'auto_refunded',
+      );
+      const jamLogTypes = new Set([
+        'print_spooler_job_failed',
+        'print_spooler_auto_refund',
+        'printer_malfunction_detected',
+        'printer_midjob_malfunction',
+      ]);
+      const jamEvents = db.data!.logs.filter((entry) =>
+        jamLogTypes.has(entry.type),
+      );
+      const nowMs = Date.now();
+      const recentJamEvents = jamEvents.filter((entry) => {
+        const tsMs = Date.parse(entry.timestamp);
+        return Number.isFinite(tsMs) && nowMs - tsMs <= 24 * 60 * 60 * 1000;
+      });
       res.json({
         balance: db.data!.balance,
         earnings: adminService.computeEarningsBuckets(),
@@ -163,9 +195,19 @@ export function registerAdminRoutes(
         owedChangeOpenCount: db.data!.owedChanges.filter(
           (entry) => entry.status === 'open',
         ).length,
-        pendingRefundOpenCount: db.data!.pendingRefunds.filter(
-          (entry) => entry.status === 'open',
-        ).length,
+        pendingRefundOpenCount: openRefunds.length,
+        refundStats: {
+          totalCount: pendingRefunds.length,
+          openCount: openRefunds.length,
+          refundedCount: refundedEntries.length,
+          dismissedCount: dismissedEntries.length,
+          autoRefundedCount: autoRefundedEntries.length,
+        },
+        jamStats: {
+          totalEvents: jamEvents.length,
+          recent24h: recentJamEvents.length,
+          lastJamAt: jamEvents[0]?.timestamp ?? null,
+        },
         storage,
         status: {
           serverRunning: true,
@@ -675,55 +717,47 @@ export function registerAdminRoutes(
     requireAdminPin,
     async (req: Request, res: Response) => {
       const entryId = req.params.id as string;
-      const entry = db.data!.pendingRefunds.find((e) => e.id === entryId);
-
-      if (!entry) {
-        return res.status(404).json({ error: 'Pending refund not found.' });
-      }
-      if (entry.status !== 'open') {
-        return res
-          .status(409)
-          .json({ error: `Entry is already ${entry.status}.` });
-      }
-
       const restoreBalance =
         typeof req.body?.restoreBalance === 'boolean'
           ? req.body.restoreBalance
           : true;
 
-      entry.status = 'refunded';
-      entry.closedAt = new Date().toISOString();
+      try {
+        const result = await processPendingRefund({ entryId, restoreBalance });
+        deps.io.emit('balance', result.balance);
 
-      if (restoreBalance) {
-        db.data!.balance += entry.chargedAmount;
-        // Subtract from earnings so the books stay balanced
-        db.data!.earnings = Math.max(
-          0,
-          db.data!.earnings - entry.chargedAmount,
-        );
-      }
+        try {
+          await adminService.appendAdminLog(
+            'pending_refund_processed',
+            `Pending refund ₱${result.entry.chargedAmount} processed by admin.`,
+            {
+              refundId: result.entry.id,
+              chargedAmount: result.entry.chargedAmount,
+              restoreBalance,
+              newBalance: result.balance,
+              reason: result.entry.reason,
+            },
+          );
+        } catch (error) {
+          console.error(
+            '[ADMIN] Failed to log pending refund processing',
+            error,
+          );
+        }
 
-      await db.write();
-      deps.io.emit('balance', db.data!.balance);
-
-      await adminService.appendAdminLog(
-        'pending_refund_processed',
-        `Pending refund ₱${entry.chargedAmount} processed by admin.`,
-        {
-          refundId: entry.id,
-          chargedAmount: entry.chargedAmount,
+        res.json({
+          ok: true,
+          entry: result.entry,
+          balance: result.balance,
           restoreBalance,
-          newBalance: db.data!.balance,
-          reason: entry.reason,
-        },
-      );
-
-      res.json({
-        ok: true,
-        entry,
-        balance: db.data!.balance,
-        restoreBalance,
-      });
+        });
+      } catch (error) {
+        if (error instanceof PendingRefundServiceError) {
+          return res.status(error.statusCode).json({ error: error.message });
+        }
+        console.error('[ADMIN] Failed to process pending refund', error);
+        return res.status(500).json({ error: 'Failed to process refund.' });
+      }
     },
   );
 
@@ -739,32 +773,33 @@ export function registerAdminRoutes(
     requireAdminPin,
     async (req: Request, res: Response) => {
       const entryId = req.params.id as string;
-      const entry = db.data!.pendingRefunds.find((e) => e.id === entryId);
+      try {
+        const entry = await dismissPendingRefund(entryId);
+        try {
+          await adminService.appendAdminLog(
+            'pending_refund_dismissed',
+            `Pending refund ₱${entry.chargedAmount} dismissed by admin (no balance restored).`,
+            {
+              refundId: entry.id,
+              chargedAmount: entry.chargedAmount,
+              reason: entry.reason,
+            },
+          );
+        } catch (error) {
+          console.error(
+            '[ADMIN] Failed to log pending refund dismissal',
+            error,
+          );
+        }
 
-      if (!entry) {
-        return res.status(404).json({ error: 'Pending refund not found.' });
+        res.json({ ok: true, entry });
+      } catch (error) {
+        if (error instanceof PendingRefundServiceError) {
+          return res.status(error.statusCode).json({ error: error.message });
+        }
+        console.error('[ADMIN] Failed to dismiss pending refund', error);
+        return res.status(500).json({ error: 'Failed to dismiss refund.' });
       }
-      if (entry.status !== 'open') {
-        return res
-          .status(409)
-          .json({ error: `Entry is already ${entry.status}.` });
-      }
-
-      entry.status = 'dismissed';
-      entry.closedAt = new Date().toISOString();
-      await db.write();
-
-      await adminService.appendAdminLog(
-        'pending_refund_dismissed',
-        `Pending refund ₱${entry.chargedAmount} dismissed by admin (no balance restored).`,
-        {
-          refundId: entry.id,
-          chargedAmount: entry.chargedAmount,
-          reason: entry.reason,
-        },
-      );
-
-      res.json({ ok: true, entry });
     },
   );
 }

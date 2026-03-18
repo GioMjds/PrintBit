@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { Server } from 'socket.io';
 import { db } from './db';
 import { adminService } from './admin';
+import { upsertSpoolerFailureRefund } from './pending-refund';
+import { setPrinterFaultLock } from './printer-fault-lock';
 
 const POLL_INTERVAL_MS = 1_500;
 /** Total window to watch the spooler before giving up */
@@ -294,6 +295,17 @@ export async function monitorSpoolerJob(
         console.log(
           `[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`,
         );
+        io.emit('printerSpoolerConfirmed', {
+          jobStatus: job.status,
+          pagesPrinted: job.pagesPrinted,
+          totalPages: job.totalPages,
+          printerName,
+          transactionId:
+            typeof jobContext.transactionId === 'string'
+              ? jobContext.transactionId
+              : null,
+          spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+        });
         return {
           detected: true,
           jobStatus: job.status,
@@ -307,54 +319,73 @@ export async function monitorSpoolerJob(
           `[SPOOLER-MONITOR] ✗ Job #${job.id} FAILED — status="${job.status}"`,
         );
 
-        const refundEntry = {
-          id: randomUUID(),
-          timestamp: new Date().toISOString(),
-          chargedAmount,
+        setPrinterFaultLock({
+          source: 'print_spooler_failure',
           reason: `Print spooler reported failure: ${job.status}`,
-          status: 'open' as const,
-          closedAt: null as string | null,
+          status: job.status,
+          context: {
+            spoolerJobId: job.id,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+            chargedAmount,
+            printerName,
+          },
+        });
+
+        const reason = `Print spooler reported failure: ${job.status}`;
+        const autoRefund = job.pagesPrinted === 0;
+        const refundOutcome = await upsertSpoolerFailureRefund({
+          chargedAmount,
+          reason,
+          autoRefund,
           jobContext: {
-            ...Object.fromEntries(
-              Object.entries(jobContext).map(([k, v]) => [k, v ?? null]),
-            ),
+            ...jobContext,
             spoolerJobId: job.id,
             spoolerStatus: job.status,
             pagesPrinted: job.pagesPrinted,
             totalPages: job.totalPages,
             jobDispatchedAt,
             printerName,
-          } as Record<string, string | number | boolean | null>,
-        };
+            spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+          },
+        });
 
-        if (!db.data) {
-          console.error(
-            '[SPOOLER-MONITOR] DB not initialized, cannot create refund entry',
-          );
-          return {
-            detected: true,
-            jobStatus: job.status,
-            pagesPrinted: job.pagesPrinted,
-            failed: true,
-          };
+        const shouldEmitBalance =
+          refundOutcome.autoRefunded && refundOutcome.restoredBalanceAmount > 0;
+
+        if (shouldEmitBalance) {
+          io.emit('balance', db.data!.balance);
         }
 
-        db.data!.pendingRefunds.unshift(refundEntry);
-        await db.write();
+        const transactionId =
+          typeof jobContext.transactionId === 'string'
+            ? jobContext.transactionId
+            : null;
+        const correlationKey = spoolerCorrelationKey ?? null;
+        const refundDisposition = refundOutcome.autoRefunded
+          ? 'auto_refunded'
+          : 'pending_admin_review';
+        const logType = refundOutcome.autoRefunded
+          ? 'print_spooler_auto_refund'
+          : 'print_spooler_job_failed';
+        const logMessage = refundOutcome.autoRefunded
+          ? `Print spooler failure detected: ${job.status}. Auto-refunded ₱${chargedAmount}.`
+          : `Print spooler failure detected: ${job.status}. Pending refund ₱${chargedAmount} created.`;
 
         try {
-          await adminService.appendAdminLog(
-            'print_spooler_job_failed',
-            `Print spooler failure detected: ${job.status}. Pending refund ₱${chargedAmount} created.`,
-            {
-              spoolerJobId: job.id,
-              spoolerStatus: job.status,
-              chargedAmount,
-              refundId: refundEntry.id,
-              pagesPrinted: job.pagesPrinted,
-              printerName,
-            },
-          );
+          await adminService.appendAdminLog(logType, logMessage, {
+            spoolerJobId: job.id,
+            spoolerStatus: job.status,
+            chargedAmount,
+            refundId: refundOutcome.entry.id,
+            refundDisposition,
+            refundCreated: refundOutcome.created,
+            restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
+            pagesPrinted: job.pagesPrinted,
+            printerName,
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+          });
         } catch (error) {
           console.error('[SPOOLER-MONITOR] Failed to append admin log', error);
         }
@@ -362,9 +393,15 @@ export async function monitorSpoolerJob(
         io.emit('printerSpoolerFailure', {
           jobStatus: job.status,
           chargedAmount,
-          refundId: refundEntry.id,
+          refundId: refundOutcome.entry.id,
           pagesPrinted: job.pagesPrinted,
+          totalPages: job.totalPages,
           printerName,
+          reason,
+          refundDisposition,
+          restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
         });
 
         return {
@@ -372,7 +409,7 @@ export async function monitorSpoolerJob(
           jobStatus: job.status,
           pagesPrinted: job.pagesPrinted,
           failed: true,
-          refundId: refundEntry.id,
+          refundId: refundOutcome.entry.id,
         };
       }
 

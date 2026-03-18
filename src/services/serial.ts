@@ -4,15 +4,16 @@ import { db } from './db';
 import { Server } from 'socket.io';
 import { adminService } from './admin';
 import {
+  clearPrinterFaultLock,
+  getPrinterFaultLock,
+} from './printer-fault-lock';
+import {
   parseHopperResponse,
   parseLegacyHopperResponse,
   type HopperResponse,
   type HopperErrorCodeValue,
   HopperErrorCode,
 } from './hopper-protocol';
-
-// [PHASE 5 - PRINTER GATE] Import printer telemetry and blocked status set
-// so we can refuse coin credits when the printer is offline or faulted.
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
 
@@ -402,10 +403,29 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         const telemetryStale =
           !Number.isFinite(checkedAtMs) ||
           Date.now() - checkedAtMs > TELEMETRY_MAX_AGE_MS;
+        const printerStatusBlocked = BLOCKED_STATUSES.has(telemetry.status);
+        const faultLock = getPrinterFaultLock();
+
+        if (faultLock.active) {
+          const recovered =
+            !telemetryStale && telemetry.connected && !printerStatusBlocked;
+          if (recovered) {
+            clearPrinterFaultLock();
+          } else {
+            const reason = faultLock.status
+              ? `Printer fault lock active: ${faultLock.status}`
+              : `Printer fault lock active: ${faultLock.reason ?? 'Unknown fault'}`;
+            return {
+              telemetry,
+              printerBlocked: true,
+              reason,
+              faultLock,
+            };
+          }
+        }
+
         const printerBlocked =
-          telemetryStale ||
-          !telemetry.connected ||
-          BLOCKED_STATUSES.has(telemetry.status);
+          telemetryStale || !telemetry.connected || printerStatusBlocked;
 
         const reason = telemetryStale
           ? 'Printer telemetry is stale'
@@ -417,6 +437,7 @@ async function attemptSerialConnection(io: Server, attempt: number) {
           telemetry,
           printerBlocked,
           reason,
+          faultLock: null,
         };
       };
 
@@ -425,6 +446,7 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         value: number,
         reason: string,
         telemetry: ReturnType<typeof getPrinterTelemetry>,
+        faultLock: ReturnType<typeof getPrinterFaultLock> | null,
       ) => {
         console.warn(
           `[SERIAL] ⚠ Coin rejected — printer unavailable (${reason}). Token: "${token}"`,
@@ -435,6 +457,14 @@ async function attemptSerialConnection(io: Server, attempt: number) {
           reason,
           printerStatus: telemetry.status,
           telemetryLastCheckedAt: telemetry.lastCheckedAt,
+          faultLock: faultLock
+            ? {
+                source: faultLock.source,
+                reason: faultLock.reason,
+                status: faultLock.status,
+                lockedAt: faultLock.lockedAt,
+              }
+            : null,
         });
 
         void adminService.appendAdminLog(
@@ -446,6 +476,9 @@ async function attemptSerialConnection(io: Server, attempt: number) {
             printerStatus: telemetry.status,
             printerConnected: telemetry.connected,
             telemetryLastCheckedAt: telemetry.lastCheckedAt,
+            faultLockSource: faultLock?.source ?? null,
+            faultLockReason: faultLock?.reason ?? null,
+            faultLockStatus: faultLock?.status ?? null,
           },
         );
 
@@ -453,9 +486,10 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       };
 
       const creditResolvedCoin = async (coinValue: number, token: string) => {
-        const { telemetry, printerBlocked, reason } = getPrinterAvailability();
+        const { telemetry, printerBlocked, reason, faultLock } =
+          getPrinterAvailability();
         if (printerBlocked) {
-          rejectCoinCredit(token, coinValue, reason, telemetry);
+          rejectCoinCredit(token, coinValue, reason, telemetry, faultLock);
           return;
         }
 
@@ -607,6 +641,7 @@ async function attemptSerialConnection(io: Server, attempt: number) {
     );
   }
 }
+
 class SerialService {
   getStatus() {
     return getSerialStatus();

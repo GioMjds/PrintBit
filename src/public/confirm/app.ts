@@ -602,11 +602,74 @@ const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
 const thankYouOverlay = document.getElementById('thankYouOverlay');
+const jamRefundOverlay = document.getElementById('jamRefundOverlay');
+const jamRefundTitle = document.getElementById('jamRefundTitle');
+const jamRefundMessage = document.getElementById('jamRefundMessage');
+const jamRefundHint = document.getElementById('jamRefundHint');
+const jamRefundDoneBtn = document.getElementById(
+  'jamRefundDoneBtn',
+) as HTMLButtonElement | null;
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
+let lastSpoolerCorrelationKey: string | null = null;
+const SPOOLER_CLEANUP_WAIT_MS = 6_000;
+
+type PrintOutcome = 'confirmed' | 'failure' | 'timeout';
+type PendingPrintOutcomeWait = {
+  correlationKey: string;
+  settled: boolean;
+  timeoutId: number;
+  resolve: (outcome: PrintOutcome) => void;
+};
+let pendingPrintOutcomeWait: PendingPrintOutcomeWait | null = null;
+let pendingTerminalOutcome: {
+  outcome: Exclude<PrintOutcome, 'timeout'>;
+  correlationKey: string | null;
+} | null = null;
+let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
+
+type SpoolerFailureEvent = {
+  jobStatus: string;
+  chargedAmount: number;
+  refundId: string;
+  pagesPrinted: number;
+  totalPages: number;
+  printerName: string | null;
+  reason: string;
+  refundDisposition: 'auto_refunded' | 'pending_admin_review';
+  restoredBalanceAmount: number;
+  transactionId: string | null;
+  spoolerCorrelationKey: string | null;
+};
+
+type SpoolerConfirmedEvent = {
+  jobStatus: string;
+  pagesPrinted: number;
+  totalPages: number;
+  printerName: string | null;
+  transactionId: string | null;
+  spoolerCorrelationKey: string | null;
+};
+
+const CANONICAL_PRINTER_FAULT_STATUSES = new Set([
+  'offline',
+  'error',
+  'paper jam',
+  'paper out',
+  'door open',
+  'user intervention required',
+  'paused',
+  'not connected',
+  'no default printer',
+]);
+
+const CANONICAL_COIN_REJECTION_FAULT_REASONS = new Set([
+  'printer telemetry is stale',
+  'printer not connected',
+]);
 
 function createSpoolerCorrelationKey(): string {
   if (
@@ -679,13 +742,186 @@ function hideOverlay(el: HTMLElement | null): void {
   el.setAttribute('aria-hidden', 'true');
 }
 
-confirmBtn?.addEventListener('click', () => {
-  showModal();
-});
+function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
+  hideOverlay(printingOverlay);
+  hideOverlay(thankYouOverlay);
 
-modalCancelBtn?.addEventListener('click', () => {
-  hideModal();
-});
+  const refundReference = ev.refundId || 'unknown';
+  const pagesMessage =
+    ev.pagesPrinted > 0
+      ? `${ev.pagesPrinted} of ${Math.max(ev.totalPages, ev.pagesPrinted)} page(s) were printed.`
+      : 'No pages were printed.';
+
+  if (jamRefundTitle) {
+    jamRefundTitle.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? 'Print Failed — Refund Applied'
+        : 'Print Failed — Refund Pending Review';
+  }
+
+  if (jamRefundMessage) {
+    jamRefundMessage.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} ₱${ev.chargedAmount.toFixed(2)} was returned to your machine balance.`
+        : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${refundReference}).`;
+  }
+
+  if (jamRefundHint) {
+    jamRefundHint.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? 'You may retry once the printer recovers. If the issue persists, contact staff.'
+        : 'Please contact staff and provide the refund ID shown above for manual refund handling.';
+  }
+
+  if (statusMessage) {
+    statusMessage.textContent =
+      ev.refundDisposition === 'auto_refunded'
+        ? `Printer issue detected. ₱ ${ev.restoredBalanceAmount.toFixed(2)} returned to balance.`
+        : 'Printer issue detected. Staff review is required for refund processing.';
+  }
+
+  setCoinEventMessage(
+    ev.refundDisposition === 'auto_refunded'
+      ? `Auto-refund applied: ₱ ${ev.restoredBalanceAmount.toFixed(2)}`
+      : `Pending refund recorded (ID: ${refundReference}).`,
+  );
+
+  setPrintingPhase('failed');
+  printerReady = false;
+  applyConfirmGate();
+  if (jamRefundOverlay && jamRefundFocusTrapHandler) {
+    jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
+    jamRefundFocusTrapHandler = null;
+  }
+  showOverlay(jamRefundOverlay);
+  setupJamRefundFocusTrap();
+}
+
+function clearConfirmSessionStorage(): void {
+  sessionStorage.removeItem('printbit.config');
+  sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.uploadedFile');
+  sessionStorage.removeItem('printbit.uploadedDocumentId');
+  sessionStorage.removeItem('printbit.sessionId');
+  sessionStorage.removeItem('printbit.sessionToken');
+}
+
+function setupJamRefundFocusTrap(): void {
+  if (!jamRefundOverlay) return;
+  const getFocusableElements = (): HTMLElement[] => {
+    const selector =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    return Array.from(jamRefundOverlay.querySelectorAll<HTMLElement>(selector));
+  };
+
+  if (jamRefundFocusTrapHandler) {
+    jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
+  }
+
+  jamRefundFocusTrapHandler = (event: KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
+    const focusable = getFocusableElements();
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+
+    if (event.shiftKey) {
+      if (active === first || !jamRefundOverlay.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+
+    if (active === last || !jamRefundOverlay.contains(active)) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  jamRefundOverlay.addEventListener('keydown', jamRefundFocusTrapHandler);
+  if (jamRefundDoneBtn) {
+    window.requestAnimationFrame(() => {
+      jamRefundDoneBtn.focus();
+    });
+  }
+}
+
+function teardownJamRefundFocusTrap(): void {
+  if (!jamRefundOverlay || !jamRefundFocusTrapHandler) return;
+  jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
+  jamRefundFocusTrapHandler = null;
+}
+
+function settlePendingPrintOutcome(
+  outcome: PrintOutcome,
+  spoolerCorrelationKey: string | null,
+): void {
+  if (!spoolerCorrelationKey) return;
+  if (!pendingPrintOutcomeWait) {
+    if (outcome === 'confirmed' || outcome === 'failure') {
+      pendingTerminalOutcome = {
+        outcome,
+        correlationKey: spoolerCorrelationKey,
+      };
+    }
+    return;
+  }
+  if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey) return;
+  if (pendingPrintOutcomeWait.settled) return;
+
+  pendingPrintOutcomeWait.settled = true;
+  window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
+  const { resolve } = pendingPrintOutcomeWait;
+  pendingPrintOutcomeWait = null;
+  pendingTerminalOutcome = null;
+  resolve(outcome);
+}
+
+async function awaitPrintOutcomeOrTimeout(
+  spoolerCorrelationKey: string,
+): Promise<PrintOutcome> {
+  if (pendingPrintOutcomeWait && !pendingPrintOutcomeWait.settled) {
+    pendingPrintOutcomeWait.settled = true;
+    window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
+    pendingPrintOutcomeWait.resolve('timeout');
+    pendingPrintOutcomeWait = null;
+  }
+
+  return await new Promise<PrintOutcome>((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      if (!pendingPrintOutcomeWait) return;
+      if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey)
+        return;
+      if (pendingPrintOutcomeWait.settled) return;
+
+      pendingPrintOutcomeWait.settled = true;
+      pendingPrintOutcomeWait = null;
+      resolve('timeout');
+    }, SPOOLER_CLEANUP_WAIT_MS);
+
+    pendingPrintOutcomeWait = {
+      correlationKey: spoolerCorrelationKey,
+      settled: false,
+      timeoutId,
+      resolve,
+    };
+
+    if (
+      pendingTerminalOutcome &&
+      pendingTerminalOutcome.correlationKey === spoolerCorrelationKey
+    ) {
+      const bufferedOutcome = pendingTerminalOutcome.outcome;
+      pendingTerminalOutcome = null;
+      settlePendingPrintOutcome(bufferedOutcome, spoolerCorrelationKey);
+    }
+  });
+}
+
+confirmBtn?.addEventListener('click', () => showModal());
+modalCancelBtn?.addEventListener('click', () => hideModal());
 
 modalConfirmBtn?.addEventListener('click', async () => {
   modalConfirmBtn.disabled = true;
@@ -693,6 +929,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
   confirmBtn.disabled = true;
   isProcessingPayment = true;
   activeSpoolerCorrelationKey = null;
+  lastSpoolerCorrelationKey = null;
+  pendingTerminalOutcome = null;
 
   showOverlay(printingOverlay);
 
@@ -850,12 +1088,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (pollResult === 'succeeded') {
         showOverlay(thankYouOverlay);
         if (statusMessage) statusMessage.textContent = 'Your copies are ready!';
-        sessionStorage.removeItem('printbit.config');
-        sessionStorage.removeItem('printbit.copyPreviewPath');
-        sessionStorage.removeItem('printbit.uploadedFile');
-        sessionStorage.removeItem('printbit.uploadedDocumentId');
-        sessionStorage.removeItem('printbit.sessionId');
-        sessionStorage.removeItem('printbit.sessionToken');
+        clearConfirmSessionStorage();
       } else if (pollResult === 'failed') {
         if (statusMessage)
           statusMessage.textContent = 'Copy job failed. Please try again.';
@@ -878,6 +1111,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
     if (statusMessage) statusMessage.textContent = 'Sending to printer…';
     const spoolerCorrelationKey = createSpoolerCorrelationKey();
     activeSpoolerCorrelationKey = spoolerCorrelationKey;
+    lastSpoolerCorrelationKey = spoolerCorrelationKey;
 
     const response = await fetch('/api/confirm-payment', {
       method: 'POST',
@@ -899,6 +1133,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
     if (!response.ok) {
       activeSpoolerCorrelationKey = null;
+      lastSpoolerCorrelationKey = null;
       hideOverlay(printingOverlay);
       const payload = (await response.json()) as { error?: string };
       if (statusMessage)
@@ -947,12 +1182,12 @@ modalConfirmBtn?.addEventListener('click', async () => {
     if (statusMessage) {
       statusMessage.textContent = 'Your document has been sent to the printer!';
     }
-    sessionStorage.removeItem('printbit.config');
-    sessionStorage.removeItem('printbit.copyPreviewPath');
-    sessionStorage.removeItem('printbit.uploadedFile');
-    sessionStorage.removeItem('printbit.uploadedDocumentId');
-    sessionStorage.removeItem('printbit.sessionId');
-    sessionStorage.removeItem('printbit.sessionToken');
+    const printOutcome = await awaitPrintOutcomeOrTimeout(
+      spoolerCorrelationKey,
+    );
+    if (printOutcome !== 'failure') {
+      clearConfirmSessionStorage();
+    }
   }
   isProcessingPayment = false;
   applyConfirmGate();
@@ -1002,6 +1237,12 @@ async function pollCopyJob(jobId: string): Promise<string> {
 
 thankYouDoneBtn?.addEventListener('click', () => {
   hideOverlay(thankYouOverlay);
+  window.location.href = '/';
+});
+jamRefundDoneBtn?.addEventListener('click', () => {
+  teardownJamRefundFocusTrap();
+  hideOverlay(jamRefundOverlay);
+  clearConfirmSessionStorage();
   window.location.href = '/';
 });
 const scanQrDoneBtn = document.getElementById(
@@ -1067,6 +1308,69 @@ if (typeof ioFactory === 'function') {
     ) {
       const value = (payload as { value: number }).value;
       setCoinEventMessage(`Last accepted coin: ₱ ${value}`);
+    }
+  });
+
+  socket.on('coinRejected', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const reason =
+      'reason' in payload &&
+      typeof (payload as { reason: unknown }).reason === 'string'
+        ? (payload as { reason: string }).reason
+        : 'Coin rejected by machine safety checks.';
+    const printerStatus =
+      'printerStatus' in payload &&
+      typeof (payload as { printerStatus: unknown }).printerStatus === 'string'
+        ? (payload as { printerStatus: string }).printerStatus
+        : null;
+
+    setCoinEventMessage(`Coin rejected: ${reason}.`);
+    if (statusMessage) {
+      statusMessage.textContent = printerStatus
+        ? `Coin rejected. Printer status: ${printerStatus}.`
+        : `Coin rejected. ${reason}.`;
+    }
+
+    const reasonLower = reason.trim().toLowerCase();
+    const faultLock =
+      'faultLock' in payload &&
+      (payload as { faultLock: unknown }).faultLock &&
+      typeof (payload as { faultLock: unknown }).faultLock === 'object'
+        ? ((
+            payload as {
+              faultLock: {
+                source?: unknown;
+                reason?: unknown;
+                status?: unknown;
+                lockedAt?: unknown;
+              };
+            }
+          ).faultLock ?? null)
+        : null;
+    const fallbackStatusLower =
+      typeof printerStatus === 'string' && printerStatus.trim()
+        ? printerStatus.trim().toLowerCase()
+        : null;
+    const faultStatusLower =
+      faultLock &&
+      typeof faultLock.status === 'string' &&
+      faultLock.status.trim()
+        ? faultLock.status.trim().toLowerCase()
+        : fallbackStatusLower;
+
+    const hasCanonicalFaultStatus =
+      faultStatusLower !== null &&
+      CANONICAL_PRINTER_FAULT_STATUSES.has(faultStatusLower);
+    const hasCanonicalFaultReason =
+      CANONICAL_COIN_REJECTION_FAULT_REASONS.has(reasonLower) ||
+      /^printer fault lock active:\s.+$/.test(reasonLower) ||
+      (reasonLower.startsWith('printer status:') &&
+        faultStatusLower !== null &&
+        CANONICAL_PRINTER_FAULT_STATUSES.has(faultStatusLower));
+
+    if (hasCanonicalFaultStatus || hasCanonicalFaultReason) {
+      printerReady = false;
+      applyConfirmGate();
     }
   });
 
@@ -1193,6 +1497,128 @@ if (typeof ioFactory === 'function') {
     }
     activeSpoolerCorrelationKey = null;
     setPrintingPhase('printing');
+  });
+
+  socket.on('printerSpoolerConfirmed', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    const event: SpoolerConfirmedEvent = {
+      jobStatus:
+        'jobStatus' in payload &&
+        typeof (payload as { jobStatus: unknown }).jobStatus === 'string'
+          ? (payload as { jobStatus: string }).jobStatus
+          : 'Printed',
+      pagesPrinted:
+        'pagesPrinted' in payload &&
+        typeof (payload as { pagesPrinted: unknown }).pagesPrinted === 'number'
+          ? (payload as { pagesPrinted: number }).pagesPrinted
+          : 0,
+      totalPages:
+        'totalPages' in payload &&
+        typeof (payload as { totalPages: unknown }).totalPages === 'number'
+          ? (payload as { totalPages: number }).totalPages
+          : 0,
+      printerName:
+        'printerName' in payload &&
+        typeof (payload as { printerName: unknown }).printerName === 'string'
+          ? (payload as { printerName: string }).printerName
+          : null,
+      transactionId:
+        'transactionId' in payload &&
+        typeof (payload as { transactionId: unknown }).transactionId ===
+          'string'
+          ? (payload as { transactionId: string }).transactionId
+          : null,
+      spoolerCorrelationKey:
+        'spoolerCorrelationKey' in payload &&
+        typeof (payload as { spoolerCorrelationKey: unknown })
+          .spoolerCorrelationKey === 'string'
+          ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+          : null,
+    };
+
+    settlePendingPrintOutcome('confirmed', event.spoolerCorrelationKey);
+  });
+
+  socket.on('printerSpoolerFailure', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    const spoolerCorrelationKey =
+      'spoolerCorrelationKey' in payload &&
+      typeof (payload as { spoolerCorrelationKey: unknown })
+        .spoolerCorrelationKey === 'string'
+        ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+        : null;
+    const correlationMatches = Boolean(
+      spoolerCorrelationKey &&
+      (spoolerCorrelationKey === activeSpoolerCorrelationKey ||
+        spoolerCorrelationKey === lastSpoolerCorrelationKey),
+    );
+    if (!correlationMatches) {
+      return;
+    }
+
+    const event: SpoolerFailureEvent = {
+      jobStatus:
+        'jobStatus' in payload &&
+        typeof (payload as { jobStatus: unknown }).jobStatus === 'string'
+          ? (payload as { jobStatus: string }).jobStatus
+          : 'Unknown',
+      chargedAmount:
+        'chargedAmount' in payload &&
+        typeof (payload as { chargedAmount: unknown }).chargedAmount ===
+          'number'
+          ? (payload as { chargedAmount: number }).chargedAmount
+          : 0,
+      refundId:
+        'refundId' in payload &&
+        typeof (payload as { refundId: unknown }).refundId === 'string'
+          ? (payload as { refundId: string }).refundId
+          : '',
+      pagesPrinted:
+        'pagesPrinted' in payload &&
+        typeof (payload as { pagesPrinted: unknown }).pagesPrinted === 'number'
+          ? (payload as { pagesPrinted: number }).pagesPrinted
+          : 0,
+      totalPages:
+        'totalPages' in payload &&
+        typeof (payload as { totalPages: unknown }).totalPages === 'number'
+          ? (payload as { totalPages: number }).totalPages
+          : 0,
+      printerName:
+        'printerName' in payload &&
+        typeof (payload as { printerName: unknown }).printerName === 'string'
+          ? (payload as { printerName: string }).printerName
+          : null,
+      reason:
+        'reason' in payload &&
+        typeof (payload as { reason: unknown }).reason === 'string'
+          ? (payload as { reason: string }).reason
+          : 'Print spooler reported a failure.',
+      refundDisposition:
+        'refundDisposition' in payload &&
+        (payload as { refundDisposition: unknown }).refundDisposition ===
+          'pending_admin_review'
+          ? 'pending_admin_review'
+          : 'auto_refunded',
+      restoredBalanceAmount:
+        'restoredBalanceAmount' in payload &&
+        typeof (payload as { restoredBalanceAmount: unknown })
+          .restoredBalanceAmount === 'number'
+          ? (payload as { restoredBalanceAmount: number }).restoredBalanceAmount
+          : 0,
+      transactionId:
+        'transactionId' in payload &&
+        typeof (payload as { transactionId: unknown }).transactionId ===
+          'string'
+          ? (payload as { transactionId: string }).transactionId
+          : null,
+      spoolerCorrelationKey,
+    };
+
+    activeSpoolerCorrelationKey = null;
+    settlePendingPrintOutcome('failure', event.spoolerCorrelationKey);
+    showSpoolerFailureNotice(event);
   });
 }
 

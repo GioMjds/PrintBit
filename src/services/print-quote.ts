@@ -218,7 +218,10 @@ export function buildPrintQuote(input: {
       }
     }
   } else if (!parsedRange.normalized) {
-    selectedColorPages = Math.max(0, Math.floor(input.analysis.colorPages ?? 0));
+    selectedColorPages = Math.max(
+      0,
+      Math.floor(input.analysis.colorPages ?? 0),
+    );
     selectedBwPages = Math.max(0, Math.floor(input.analysis.bwPages ?? 0));
   } else {
     return {
