@@ -32,7 +32,7 @@ if ($Uninstall) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
         Write-Host "[PrintBit] Scheduled task '$TaskName' removed." -ForegroundColor Green
     } else {
-        Write-Host "[PrintBit] Task '$TaskName' not found — nothing to remove." -ForegroundColor Yellow
+        Write-Host "[PrintBit] Task '$TaskName' not found -- nothing to remove." -ForegroundColor Yellow
     }
     return
 }
@@ -50,7 +50,7 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 
 $Action = New-ScheduledTaskAction `
     -Execute "cmd.exe" `
-    -Argument "/c `"$BatPath`"" `
+    -Argument ("/c `"" + $BatPath + "`"") `
     -WorkingDirectory (Split-Path $BatPath)
 
 $Trigger = New-ScheduledTaskTrigger -AtLogOn
@@ -77,7 +77,7 @@ Register-ScheduledTask `
     -Description "Starts PrintBit server with MyPublicWiFi hotspot on login." | Out-Null
 
 Write-Host ""
-Write-Host "[PrintBit] ✓ Scheduled task '$TaskName' installed!" -ForegroundColor Green
+Write-Host "[PrintBit] Scheduled task '$TaskName' installed!" -ForegroundColor Green
 Write-Host "[PrintBit]   Runs at logon as $env:USERNAME with admin privileges." -ForegroundColor Cyan
 Write-Host "[PrintBit]   To remove: .\scripts\install-startup.ps1 -Uninstall" -ForegroundColor DarkGray
 Write-Host ""

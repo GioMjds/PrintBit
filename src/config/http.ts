@@ -19,6 +19,18 @@ export const HOTSPOT_PASSWORD =
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
 
+/** Kiosk lockdown controls */
+export const KIOSK_LOCKDOWN_ENABLED =
+  process.env.PRINTBIT_KIOSK_LOCKDOWN === 'true';
+const USB_EXPORT_DISABLED_TOKENS = new Set(['false', '0', 'no', '']);
+const usbExportEnv = process.env.PRINTBIT_USB_EXPORT_ENABLED
+  ?.trim()
+  .toLowerCase();
+export const USB_EXPORT_ENABLED =
+  usbExportEnv !== undefined
+    ? !USB_EXPORT_DISABLED_TOKENS.has(usbExportEnv)
+    : !KIOSK_LOCKDOWN_ENABLED;
+
 /** MyPublicWiFi installation path */
 export const MYPUBLICWIFI_PATH =
   process.env.PRINTBIT_MYPUBLICWIFI_PATH ??

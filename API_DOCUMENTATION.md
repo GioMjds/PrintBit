@@ -245,7 +245,6 @@ Runs an interactive scan for the `/scan` page and returns preview page URLs + fi
 
 **Body parameters:**
 
-- `source` — `"feeder"` (ADF document feeder) or `"glass"` (flatbed scanner glass). **Required.**
 - `color` — `"color"` or `"grayscale"`. **Required.**
 - `dpi` — `150`, `300`, or `600`. **Required.**
 
@@ -253,9 +252,22 @@ Runs an interactive scan for the `/scan` page and returns preview page URLs + fi
 
 Lists currently detected removable USB drives.
 
+When kiosk lockdown disables USB export (`PRINTBIT_USB_EXPORT_ENABLED=false`, or `PRINTBIT_KIOSK_LOCKDOWN=true` with no override), this endpoint returns:
+
+```json
+{
+  "code": "USB_EXPORT_DISABLED",
+  "error": "USB export is disabled in kiosk lockdown mode. Use wireless QR download instead."
+}
+```
+
+with HTTP `423`.
+
 ### `POST /api/scanner/wired/export`
 
 Exports a scanned file from `uploads/scans` to a selected removable USB drive.
+
+When USB export is disabled by lockdown config, this endpoint returns the same `423` blocked response described above.
 
 ### `POST /api/scanner/wireless-link`
 

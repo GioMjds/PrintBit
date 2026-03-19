@@ -1,7 +1,8 @@
-import type { Express, Request, Response } from 'express';
-import { Server } from 'socket.io';
 import path from 'node:path';
 import fs from 'node:fs';
+import type { Express, Request, Response } from 'express';
+import { Server } from 'socket.io';
+import { USB_EXPORT_ENABLED } from '@/config';
 import { settlementService } from '@/services';
 import { jobStore } from '@/services/job-store';
 import { db } from '@/services/db';
@@ -58,6 +59,14 @@ function toScanSource(source: ScannerPageSource): 'flatbed' | 'adf' {
 
 function toColorMode(color: ScannerPageColor): 'colored' | 'grayscale' {
   return color === 'grayscale' ? 'grayscale' : 'colored';
+}
+
+function sendUsbExportDisabled(res: Response): Response {
+  return res.status(423).json({
+    code: 'USB_EXPORT_DISABLED',
+    error:
+      'USB export is disabled in kiosk lockdown mode. Use wireless QR download instead.',
+  });
 }
 
 function markSoftCopyPaid(filename: string): void {
@@ -325,6 +334,10 @@ export function registerScanRoutes(
 
   // ── GET /api/scanner/wired/drives — Detect removable USB drives ─────
   app.get('/api/scanner/wired/drives', async (_req: Request, res: Response) => {
+    if (!USB_EXPORT_ENABLED) {
+      return sendUsbExportDisabled(res);
+    }
+
     try {
       const drives = await listRemovableDrives();
       res.json({ drives });
@@ -337,6 +350,10 @@ export function registerScanRoutes(
 
   // ── POST /api/scanner/wired/export — Copy scan to USB drive ─────────
   app.post('/api/scanner/wired/export', async (req: Request, res: Response) => {
+    if (!USB_EXPORT_ENABLED) {
+      return sendUsbExportDisabled(res);
+    }
+
     const safeFilename = toSafeScanFilename(req.body?.filename);
     const drive = typeof req.body?.drive === 'string' ? req.body.drive : '';
 

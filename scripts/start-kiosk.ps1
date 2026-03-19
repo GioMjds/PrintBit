@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     PrintBit Kiosk Startup Script
     Self-elevates to Administrator, starts the PrintBit server,
@@ -28,6 +28,8 @@ if (-not $isAdmin) {
 $ScriptsDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir  = Split-Path -Parent $ScriptsDir
 $Port        = "3000"
+$kioskLockdown = if ($env:PRINTBIT_KIOSK_LOCKDOWN) { $env:PRINTBIT_KIOSK_LOCKDOWN } else { 'true' }
+$usbExportEnabled = if ($env:PRINTBIT_USB_EXPORT_ENABLED) { $env:PRINTBIT_USB_EXPORT_ENABLED } else { 'false' }
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Cyan
@@ -36,6 +38,8 @@ Write-Host "╚═════════════════════�
 Write-Host ""
 Write-Host "[PrintBit] Project  : $ProjectDir"  -ForegroundColor Gray
 Write-Host "[PrintBit] Port     : $Port"         -ForegroundColor Gray
+Write-Host "[PrintBit] Lockdown : $kioskLockdown" -ForegroundColor Gray
+Write-Host "[PrintBit] USB Export Enabled : $usbExportEnabled" -ForegroundColor Gray
 Write-Host ""
 
 # ── 3. VERIFY DEPENDENCIES ───────────────────────────────────────────────────
@@ -60,7 +64,7 @@ if (-not (Test-Path $edgePath)) {
 Write-Host "[PrintBit] Starting server (pnpm run dev)..." -ForegroundColor Green
 
 $serverProc = Start-Process cmd.exe `
-    -ArgumentList "/c cd /d `"$ProjectDir`" && pnpm run dev" `
+    -ArgumentList "/c cd /d `"$ProjectDir`" && set PRINTBIT_KIOSK_LOCKDOWN=$kioskLockdown && set PRINTBIT_USB_EXPORT_ENABLED=$usbExportEnabled && pnpm run dev" `
     -WindowStyle Minimized `
     -PassThru
 
