@@ -26,6 +26,12 @@ const resetBalanceBtn = document.getElementById(
 const clearStorageBtn = document.getElementById(
   'clearStorageBtn',
 ) as HTMLButtonElement;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
+) as HTMLElement | null;
 
 let refreshTimer: number | null = null;
 
@@ -38,6 +44,12 @@ function applySummary(summary: SummaryResponse): void {
   jobsScan.textContent = String(summary.jobStats.scan);
   storageFiles.textContent = String(summary.storage.fileCount);
   storageBytes.textContent = formatBytes(summary.storage.bytes);
+  const openCount =
+    summary.anomalyStats.openCount > 0
+      ? String(summary.anomalyStats.openCount)
+      : '';
+  if (openAlertBadge) openAlertBadge.textContent = openCount;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
 
   const total = summary.jobStats.total || 1;
   if (barPrint)

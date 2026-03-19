@@ -4,6 +4,7 @@ import { db } from './db';
 import { adminService } from './admin';
 import { upsertSpoolerFailureRefund } from './pending-refund';
 import { setPrinterFaultLock } from './printer-fault-lock';
+import { anomalyService, buildAnomalyFingerprint } from './anomaly';
 
 const POLL_INTERVAL_MS = 1_500;
 /** Total window to watch the spooler before giving up */
@@ -402,6 +403,28 @@ export async function monitorSpoolerJob(
           restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
           transactionId,
           spoolerCorrelationKey: correlationKey,
+        });
+
+        await anomalyService.report({
+          type: 'print_spooler_failure',
+          source: 'print-spooler',
+          category: 'spooler',
+          severity: 'critical',
+          message: `Print spooler reported failure: ${job.status}`,
+          fingerprint: buildAnomalyFingerprint([
+            'spooler',
+            printerName,
+            job.status,
+          ]),
+          context: {
+            spoolerJobId: job.id,
+            spoolerStatus: job.status,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+            chargedAmount,
+            refundDisposition,
+            transactionId,
+          },
         });
 
         return {

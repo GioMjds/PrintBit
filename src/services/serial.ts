@@ -5,6 +5,11 @@ import { Server } from 'socket.io';
 import { adminService } from './admin';
 import { financialLedgerService } from './financial-ledger';
 import {
+  anomalyService,
+  buildAnomalyFingerprint,
+  mapHopperErrorSeverity,
+} from './anomaly';
+import {
   clearPrinterFaultLock,
   getPrinterFaultLock,
 } from './printer-fault-lock';
@@ -97,12 +102,28 @@ function completePendingHopperCommand(result: HopperCommandResult): boolean {
   if (pending.timer) clearTimeout(pending.timer);
   hopperCommandPending = false;
 
-  if (result.ok) {
-    hopperLastError = null;
-    hopperLastSuccessAt = new Date().toISOString();
-  } else {
-    hopperLastError = result.message;
-  }
+    if (result.ok) {
+      hopperLastError = null;
+      hopperLastSuccessAt = new Date().toISOString();
+    } else {
+      hopperLastError = result.message;
+      void anomalyService.report({
+        type: 'hopper_command_failed',
+        source: 'serial',
+        category: 'hopper',
+        severity: mapHopperErrorSeverity(result.errorCode),
+        message: `Hopper command failed: ${result.message}`,
+        fingerprint: buildAnomalyFingerprint([
+          'hopper-command-failed',
+          result.errorCode ?? 'unknown',
+          result.message,
+        ]),
+        context: {
+          errorCode: result.errorCode ?? null,
+          message: result.message,
+        },
+      });
+    }
 
   pending.resolve(result);
   return true;
@@ -312,6 +333,14 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       console.warn(
         '[SERIAL] ✗ No serial ports found. Continuing without serial connection.',
       );
+      await anomalyService.report({
+        type: 'serial_no_ports_found',
+        source: 'serial',
+        category: 'serial',
+        severity: 'critical',
+        message: 'No serial ports were found during initialization.',
+        fingerprint: buildAnomalyFingerprint(['serial', 'no-ports']),
+      });
       return;
     }
 
@@ -350,6 +379,21 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         serialConnected = false;
         activeSerialPort = null;
         io.emit('serialStatus', getSerialStatus());
+        void anomalyService.report({
+          type: 'serial_port_closed',
+          source: 'serial',
+          category: 'serial',
+          severity: 'critical',
+          message: 'Serial port closed unexpectedly.',
+          fingerprint: buildAnomalyFingerprint([
+            'serial',
+            'port-closed',
+            serialPortPath ?? 'unknown',
+          ]),
+          context: {
+            portPath: serialPortPath,
+          },
+        });
         completePendingHopperCommand({
           ok: false,
           message: 'Serial port closed during hopper command.',
@@ -362,6 +406,23 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         activeSerialPort = null;
         io.emit('serialStatus', getSerialStatus());
         console.error('[SERIAL] ✗ Port error:', error.message);
+        void anomalyService.report({
+          type: 'serial_port_error',
+          source: 'serial',
+          category: 'serial',
+          severity: 'critical',
+          message: `Serial port error: ${error.message}`,
+          fingerprint: buildAnomalyFingerprint([
+            'serial',
+            'port-error',
+            serialPortPath ?? 'unknown',
+            error.message,
+          ]),
+          context: {
+            portPath: serialPortPath,
+            error: error.message,
+          },
+        });
         completePendingHopperCommand({
           ok: false,
           message: `Serial error: ${error.message}`,
@@ -648,6 +709,21 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       'Error initializing serial port. Continuing without serial connection.',
       { message: serialLastError },
     );
+    await anomalyService.report({
+      type: 'serial_init_error',
+      source: 'serial',
+      category: 'serial',
+      severity: 'critical',
+      message: `Error initializing serial port: ${serialLastError}`,
+      fingerprint: buildAnomalyFingerprint([
+        'serial',
+        'init-error',
+        serialLastError,
+      ]),
+      context: {
+        message: serialLastError,
+      },
+    });
   }
 }
 

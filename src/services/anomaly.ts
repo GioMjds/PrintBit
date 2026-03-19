@@ -1,0 +1,446 @@
+import { randomUUID } from 'node:crypto';
+import type { Server } from 'socket.io';
+import { runPowerShell } from '@/utils';
+import { adminService } from './admin';
+import {
+  db,
+  type AlertChannel,
+  type AlertSettings,
+  type AnomalyCategory,
+  type AnomalyIncidentEntry,
+  type AnomalySeverity,
+  type AnomalyStatus,
+  type LogMeta,
+} from './db';
+import { HopperErrorCode } from './hopper-protocol';
+
+export interface ReportAnomalyInput {
+  type: string;
+  source: string;
+  category: AnomalyCategory;
+  severity: AnomalySeverity;
+  message: string;
+  fingerprint: string;
+  context?: LogMeta;
+}
+
+export interface ListAnomalyOptions {
+  status?: AnomalyStatus;
+  severity?: AnomalySeverity;
+  category?: AnomalyCategory;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListAnomalyResult {
+  total: number;
+  openCount: number;
+  acknowledgedCount: number;
+  resolvedCount: number;
+  items: AnomalyIncidentEntry[];
+}
+
+export interface ReportAnomalyResult {
+  created: boolean;
+  incident: AnomalyIncidentEntry;
+  notified: boolean;
+  channels: AlertChannel[];
+  dedupeSuppressed: boolean;
+}
+
+class AnomalyService {
+  private io: Server | null = null;
+
+  setSocketIo(io: Server): void {
+    this.io = io;
+  }
+
+  getAlertSettings(): AlertSettings {
+    return db.data!.settings.alerts;
+  }
+
+  async updateAlertSettings(next: AlertSettings): Promise<AlertSettings> {
+    db.data!.settings.alerts = next;
+    await db.write();
+    return db.data!.settings.alerts;
+  }
+
+  listIncidents(options: ListAnomalyOptions = {}): ListAnomalyResult {
+    const limit = this.clampLimit(options.limit);
+    const offset = Math.max(0, Math.floor(options.offset ?? 0));
+
+    const filtered = db.data!.anomalyIncidents.filter((entry) => {
+      if (options.status && entry.status !== options.status) return false;
+      if (options.severity && entry.severity !== options.severity) return false;
+      if (options.category && entry.category !== options.category) return false;
+      return true;
+    });
+
+    const all = db.data!.anomalyIncidents;
+    return {
+      total: filtered.length,
+      openCount: all.filter((entry) => entry.status === 'open').length,
+      acknowledgedCount: all.filter((entry) => entry.status === 'acknowledged')
+        .length,
+      resolvedCount: all.filter((entry) => entry.status === 'resolved').length,
+      items: filtered.slice(offset, offset + limit),
+    };
+  }
+
+  getIncidentById(id: string): AnomalyIncidentEntry | null {
+    return db.data!.anomalyIncidents.find((entry) => entry.id === id) ?? null;
+  }
+
+  async updateIncidentStatus(
+    id: string,
+    status: AnomalyStatus,
+  ): Promise<AnomalyIncidentEntry | null> {
+    const incident = this.getIncidentById(id);
+    if (!incident) return null;
+
+    const now = new Date().toISOString();
+    incident.status = status;
+    incident.updatedAt = now;
+
+    if (status === 'acknowledged') {
+      if (!incident.acknowledgedAt) incident.acknowledgedAt = now;
+      incident.resolvedAt = null;
+    } else if (status === 'resolved') {
+      if (!incident.acknowledgedAt) incident.acknowledgedAt = now;
+      incident.resolvedAt = now;
+    } else {
+      incident.acknowledgedAt = null;
+      incident.resolvedAt = null;
+    }
+
+    await db.write();
+    this.emitOpenCount();
+
+    await adminService.appendAdminLog(
+      'anomaly_incident_status_changed',
+      'Anomaly incident status updated.',
+      {
+        incidentId: incident.id,
+        anomalyType: incident.type,
+        status: incident.status,
+      },
+    );
+
+    return incident;
+  }
+
+  async report(input: ReportAnomalyInput): Promise<ReportAnomalyResult> {
+    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
+    const normalizedFingerprint = input.fingerprint.trim().toLowerCase();
+    const message = input.message.trim();
+
+    const openIncident =
+      db.data!.anomalyIncidents.find(
+        (entry) =>
+          entry.status === 'open' &&
+          entry.fingerprint === normalizedFingerprint,
+      ) ?? null;
+
+    let incident: AnomalyIncidentEntry;
+    let created = false;
+    if (openIncident) {
+      incident = openIncident;
+      incident.message = message || incident.message;
+      incident.context = input.context ?? incident.context;
+      incident.updatedAt = nowIso;
+      incident.lastDetectedAt = nowIso;
+      incident.occurrenceCount += 1;
+    } else {
+      created = true;
+      incident = {
+        id: randomUUID(),
+        type: input.type,
+        source: input.source,
+        category: input.category,
+        severity: input.severity,
+        status: 'open',
+        fingerprint: normalizedFingerprint,
+        message,
+        context: input.context,
+        occurrenceCount: 1,
+        firstDetectedAt: nowIso,
+        lastDetectedAt: nowIso,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        acknowledgedAt: null,
+        resolvedAt: null,
+        lastNotificationAt: null,
+        lastNotifiedChannels: [],
+      };
+      db.data!.anomalyIncidents.unshift(incident);
+    }
+
+    const dedupeSuppressed = this.isSuppressedByDedupe(incident, nowMs);
+    const canNotify =
+      this.isSeverityEligible(incident.severity) && !dedupeSuppressed;
+
+    let channels: AlertChannel[] = [];
+    if (canNotify) {
+      channels = await this.dispatchNotifications(incident, created);
+      if (channels.length > 0) {
+        incident.lastNotificationAt = nowIso;
+        incident.lastNotifiedChannels = channels;
+      }
+    }
+
+    await db.write();
+    this.emitOpenCount();
+
+    return {
+      created,
+      incident,
+      notified: channels.length > 0,
+      channels,
+      dedupeSuppressed,
+    };
+  }
+
+  async sendEmailTestAlert(): Promise<{ ok: boolean; error?: string }> {
+    const settings = this.getAlertSettings();
+    if (!settings.email.enabled) {
+      return { ok: false, error: 'Email alerts are disabled in settings.' };
+    }
+    const validationError = this.validateEmailConfig(settings.email);
+    if (validationError) return { ok: false, error: validationError };
+
+    const success = await this.sendEmail(
+      '[PrintBit] Test anomaly alert',
+      [
+        'This is a test alert from PrintBit.',
+        `Sent at: ${new Date().toISOString()}`,
+      ].join('\n'),
+      'anomaly_email_test',
+    );
+    if (success) return { ok: true };
+    return { ok: false, error: 'Failed to send test email alert.' };
+  }
+
+  private clampLimit(limit?: number): number {
+    const n = Math.floor(limit ?? 100);
+    return Math.max(1, Math.min(n, 1000));
+  }
+
+  private isSeverityEligible(severity: AnomalySeverity): boolean {
+    const threshold = this.getAlertSettings().severityThreshold;
+    if (threshold === 'critical') return severity === 'critical';
+    return true;
+  }
+
+  private getDedupeWindowMs(category: AnomalyCategory): number {
+    const dedupe = this.getAlertSettings().dedupe;
+    switch (category) {
+      case 'printer':
+        return dedupe.printerMs;
+      case 'spooler':
+        return dedupe.spoolerMs;
+      case 'serial':
+        return dedupe.serialMs;
+      case 'hopper':
+        return dedupe.hopperMs;
+      case 'network':
+        return dedupe.networkMs;
+    }
+  }
+
+  private isSuppressedByDedupe(
+    incident: AnomalyIncidentEntry,
+    nowMs: number,
+  ): boolean {
+    if (!incident.lastNotificationAt) return false;
+    const lastNotificationMs = Date.parse(incident.lastNotificationAt);
+    if (!Number.isFinite(lastNotificationMs)) return false;
+    const dedupeWindowMs = this.getDedupeWindowMs(incident.category);
+    return nowMs - lastNotificationMs < dedupeWindowMs;
+  }
+
+  private emitIncidentEvent(
+    incident: AnomalyIncidentEntry,
+    created: boolean,
+  ): void {
+    this.io?.emit('adminAnomalyIncident', {
+      id: incident.id,
+      type: incident.type,
+      source: incident.source,
+      category: incident.category,
+      severity: incident.severity,
+      status: incident.status,
+      message: incident.message,
+      occurrenceCount: incident.occurrenceCount,
+      firstDetectedAt: incident.firstDetectedAt,
+      lastDetectedAt: incident.lastDetectedAt,
+      created,
+    });
+  }
+
+  private emitOpenCount(): void {
+    const openCount = db.data!.anomalyIncidents.filter(
+      (entry) => entry.status === 'open',
+    ).length;
+    this.io?.emit('adminAnomalyCount', { openCount });
+  }
+
+  private async dispatchNotifications(
+    incident: AnomalyIncidentEntry,
+    created: boolean,
+  ): Promise<AlertChannel[]> {
+    const settings = this.getAlertSettings();
+    const channels: AlertChannel[] = [];
+
+    if (settings.dashboard.enabled && this.io) {
+      this.emitIncidentEvent(incident, created);
+      channels.push('dashboard');
+    }
+
+    if (settings.email.enabled) {
+      const subject = `[PrintBit] ${incident.severity.toUpperCase()} anomaly: ${incident.type}`;
+      const body = [
+        `Message: ${incident.message}`,
+        `Type: ${incident.type}`,
+        `Severity: ${incident.severity}`,
+        `Category: ${incident.category}`,
+        `Source: ${incident.source}`,
+        `Detected: ${incident.lastDetectedAt}`,
+        `Occurrences: ${incident.occurrenceCount}`,
+      ].join('\n');
+
+      const emailSent = await this.sendEmail(
+        subject,
+        body,
+        'anomaly_email_dispatch',
+      );
+      if (emailSent) channels.push('email');
+    }
+
+    return channels;
+  }
+
+  private validateEmailConfig(settings: AlertEmailSettingsLike): string | null {
+    if (!settings.smtpHost.trim()) return 'SMTP host is required.';
+    if (!settings.from.trim()) return 'From email is required.';
+    if (!settings.to.trim()) return 'To email is required.';
+    if (!Number.isFinite(settings.smtpPort) || settings.smtpPort <= 0) {
+      return 'SMTP port must be a positive number.';
+    }
+    return null;
+  }
+
+  private async sendEmail(
+    subject: string,
+    body: string,
+    logType: 'anomaly_email_dispatch' | 'anomaly_email_test',
+  ): Promise<boolean> {
+    const settings = this.getAlertSettings().email;
+    const validationError = this.validateEmailConfig(settings);
+    if (validationError) {
+      await adminService.appendAdminLog(
+        'anomaly_email_dispatch_failed',
+        'Email alert dispatch skipped due to invalid configuration.',
+        { error: validationError },
+      );
+      return false;
+    }
+
+    const recipients = settings.to
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    if (recipients.length === 0) {
+      await adminService.appendAdminLog(
+        'anomaly_email_dispatch_failed',
+        'Email alert dispatch skipped because no recipients were configured.',
+      );
+      return false;
+    }
+
+    const toArrayLiteral = recipients
+      .map((value) => `'${this.escapePs(value)}'`)
+      .join(', ');
+    const smtpHost = this.escapePs(settings.smtpHost);
+    const from = this.escapePs(settings.from);
+    const safeSubject = this.escapePs(subject);
+    const safeBody = this.escapePs(body);
+    const username = this.escapePs(settings.username);
+    const password = this.escapePs(settings.password);
+
+    const script = `
+$ErrorActionPreference = 'Stop'
+$smtpHost = '${smtpHost}'
+$smtpPort = ${Math.floor(settings.smtpPort)}
+$from = '${from}'
+$to = @(${toArrayLiteral})
+$subject = '${safeSubject}'
+$body = '${safeBody}'
+$useSsl = ${settings.secure ? '$true' : '$false'}
+
+if ('${username}' -and '${password}') {
+  $securePass = ConvertTo-SecureString '${password}' -AsPlainText -Force
+  $cred = New-Object System.Management.Automation.PSCredential('${username}', $securePass)
+  Send-MailMessage -SmtpServer $smtpHost -Port $smtpPort -UseSsl:$useSsl -Credential $cred -From $from -To $to -Subject $subject -Body $body
+} else {
+  Send-MailMessage -SmtpServer $smtpHost -Port $smtpPort -UseSsl:$useSsl -From $from -To $to -Subject $subject -Body $body
+}
+`.trim();
+
+    try {
+      await runPowerShell(script, 20_000);
+      await adminService.appendAdminLog(logType, 'Anomaly email alert sent.', {
+        to: settings.to,
+        smtpHost: settings.smtpHost,
+      });
+      return true;
+    } catch (error) {
+      await adminService.appendAdminLog(
+        'anomaly_email_dispatch_failed',
+        'Failed to send anomaly email alert.',
+        {
+          error: error instanceof Error ? error.message : String(error),
+          to: settings.to,
+          smtpHost: settings.smtpHost,
+        },
+      );
+      return false;
+    }
+  }
+
+  private escapePs(value: string): string {
+    return value.replace(/'/g, "''");
+  }
+}
+
+export function buildAnomalyFingerprint(parts: Array<string | null>): string {
+  return parts
+    .map((part) => (part ?? '').trim().toLowerCase())
+    .filter((part) => part.length > 0)
+    .join('|');
+}
+
+export function mapHopperErrorSeverity(
+  errorCode?: string | null,
+): AnomalySeverity {
+  if (!errorCode) return 'warning';
+  if (
+    errorCode === HopperErrorCode.EMPTY ||
+    errorCode === HopperErrorCode.SENSOR
+  ) {
+    return 'critical';
+  }
+  return 'warning';
+}
+
+type AlertEmailSettingsLike = {
+  smtpHost: string;
+  smtpPort: number;
+  secure: boolean;
+  username: string;
+  password: string;
+  from: string;
+  to: string;
+};
+
+export const anomalyService = new AnomalyService();

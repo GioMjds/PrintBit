@@ -9,6 +9,7 @@ import {
   setPrinterFaultLock,
 } from './printer-fault-lock';
 import { adminService } from './admin';
+import { anomalyService, buildAnomalyFingerprint } from './anomaly';
 import { BLOCKED_STATUSES } from '@/utils';
 
 // ── Blocked printer statuses ─────────────────────────────────────────────────
@@ -132,6 +133,7 @@ class PrinterMonitorService {
 
     // ── Status transitions (only while connected) ──────────────────────────
     if (wasConnected && currentConnected) {
+      void this.maybeReportInkAnomaly(telemetry);
       if (!wasBlocked && isNowBlocked) {
         void this.onMalfunctionDetected(telemetry, now);
       } else if (wasBlocked && !isNowBlocked) {
@@ -145,6 +147,40 @@ class PrinterMonitorService {
 
     this.previousStatus = currentStatus;
     this.previousConnected = currentConnected;
+  }
+
+  private async maybeReportInkAnomaly(
+    telemetry: PrinterTelemetry,
+  ): Promise<void> {
+    const lowOrEmpty = telemetry.ink.filter(
+      (entry) => entry.status === 'low' || entry.status === 'empty',
+    );
+    if (lowOrEmpty.length === 0) return;
+
+    const names = lowOrEmpty
+      .map((entry) => `${entry.name}:${entry.status}`)
+      .sort()
+      .join(',');
+    const hasEmpty = lowOrEmpty.some((entry) => entry.status === 'empty');
+
+    await anomalyService.report({
+      type: hasEmpty ? 'printer_ink_empty' : 'printer_ink_low',
+      source: 'printer-status',
+      category: 'printer',
+      severity: hasEmpty ? 'critical' : 'warning',
+      message: hasEmpty
+        ? `Printer supplies empty: ${names}.`
+        : `Printer supplies low: ${names}.`,
+      fingerprint: buildAnomalyFingerprint([
+        'printer-ink',
+        telemetry.name ?? 'unknown',
+        names,
+      ]),
+      context: {
+        printerName: telemetry.name ?? null,
+        lowOrEmptySupplies: names,
+      },
+    });
   }
 
   // ── Scenario handlers ──────────────────────────────────────────────────────
@@ -177,6 +213,26 @@ class PrinterMonitorService {
       },
     );
 
+    await anomalyService.report({
+      type: 'printer_malfunction_startup',
+      source: 'printer-monitor',
+      category: 'printer',
+      severity: 'critical',
+      message: `Printer faulted on startup: ${telemetry.status}.`,
+      fingerprint: buildAnomalyFingerprint([
+        'printer',
+        telemetry.name ?? 'unknown',
+        telemetry.status,
+        'startup',
+      ]),
+      context: {
+        printerName: telemetry.name ?? null,
+        status: telemetry.status,
+        driverName: telemetry.driverName ?? null,
+        portName: telemetry.portName ?? null,
+      },
+    });
+
     this.emitMalfunction(telemetry, timestamp);
     this.emitStatusChanged(telemetry, timestamp);
   }
@@ -195,6 +251,22 @@ class PrinterMonitorService {
       'No default printer was detected when the server started.',
       {},
     );
+
+    await anomalyService.report({
+      type: 'printer_not_detected_startup',
+      source: 'printer-monitor',
+      category: 'printer',
+      severity: 'critical',
+      message: 'No default printer detected at startup.',
+      fingerprint: buildAnomalyFingerprint([
+        'printer',
+        'not-connected',
+        'startup',
+      ]),
+      context: {
+        status: 'Not Connected',
+      },
+    });
 
     this.emitStatusChanged(
       {
@@ -244,6 +316,24 @@ class PrinterMonitorService {
       },
     );
 
+    await anomalyService.report({
+      type: 'printer_malfunction_detected',
+      source: 'printer-monitor',
+      category: 'printer',
+      severity: telemetry.status === 'Offline' ? 'critical' : 'warning',
+      message: `Printer transitioned into a faulted state: ${telemetry.status}.`,
+      fingerprint: buildAnomalyFingerprint([
+        'printer',
+        telemetry.name ?? 'unknown',
+        telemetry.status,
+      ]),
+      context: {
+        printerName: telemetry.name ?? null,
+        previousStatus: this.previousStatus ?? null,
+        currentStatus: telemetry.status,
+      },
+    });
+
     this.emitMalfunction(telemetry, timestamp);
     this.emitStatusChanged(telemetry, timestamp);
   }
@@ -290,6 +380,18 @@ class PrinterMonitorService {
       'Printer connection was lost.',
       { lastStatus },
     );
+
+    await anomalyService.report({
+      type: 'printer_disconnected',
+      source: 'printer-monitor',
+      category: 'printer',
+      severity: 'critical',
+      message: 'Printer connection was lost.',
+      fingerprint: buildAnomalyFingerprint(['printer', 'offline', lastStatus]),
+      context: {
+        lastStatus,
+      },
+    });
 
     const offlineTelemetry: PrinterTelemetry = {
       connected: false,
@@ -458,6 +560,25 @@ export async function watchJobForMalfunction(
         `Printer fault detected during active job: ${status}.`,
         { status, statusFlags: statusFlags.join(', '), connected },
       );
+
+      await anomalyService.report({
+        type: 'printer_midjob_malfunction',
+        source: 'printer-watchdog',
+        category: 'printer',
+        severity: connected ? 'warning' : 'critical',
+        message: `Printer fault detected during active job: ${status}.`,
+        fingerprint: buildAnomalyFingerprint([
+          'printer-midjob',
+          status,
+          connected ? 'connected' : 'disconnected',
+        ]),
+        context: {
+          status,
+          connected,
+          jobId: opts.jobId,
+          sessionId: opts.sessionId ?? null,
+        },
+      });
 
       // Emit malfunction so kiosk UI can surface an error immediately.
       // printerName is omitted here — the fast status query skips it to stay

@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Coin Stats · Admin · PrintBit</title>
+    <title>Anomaly Alerts · Admin · PrintBit</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
-    <link rel="stylesheet" href="/admin/coin-stats/styles.css" />
+    <link rel="stylesheet" href="/admin/alerts/styles.css" />
   </head>
   <body>
     <div id="adminAuthView" class="auth-gate">
@@ -83,22 +83,15 @@
             <input
               id="adminPinInput"
               type="password"
-              class="pin-field__input"
-              placeholder="••••"
+              inputmode="numeric"
+              minlength="4"
+              placeholder="••••••"
               required
-              autocomplete="off"
+              class="pin-field__input"
+              aria-describedby="adminMessage"
             />
           </div>
-          <button type="submit" class="auth-btn">
-            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            Unlock Panel
-          </button>
+          <button type="submit" class="auth-btn">Unlock Panel</button>
         </form>
         <p
           id="adminMessage"
@@ -159,24 +152,26 @@
           </div>
         </div>
         <nav class="sidebar__nav">
-          <a href="/admin/dashboard" class="nav-btn"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <a href="/admin/dashboard" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"
-              /></svg
-            ><span>Overview</span></a
-          >
-          <a href="/admin/earnings" class="nav-btn"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              />
+            </svg>
+            <span>Overview</span>
+          </a>
+          <a href="/admin/earnings" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 6a1 1 0 000 2h1v1H7a1 1 0 100 2h1v3a1 1 0 102 0v-3h.5a2.5 2.5 0 000-5H10V6a1 1 0 00-1-1H7z"
                 clip-rule="evenodd"
-              /></svg
-            ><span>Earnings</span></a
-          >
-          <a href="/admin/coins" class="nav-btn nav-btn--active"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              />
+            </svg>
+            <span>Earnings</span>
+          </a>
+          <a href="/admin/coins" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zm1.567.267v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582s-.07.34-.433.582a2.305 2.305 0 01-.567.267z"
               />
@@ -184,36 +179,40 @@
                 fill-rule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
                 clip-rule="evenodd"
-              /></svg
-            ><span>Coin Stats</span></a
-          >
-          <a href="/admin/system" class="nav-btn"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              />
+            </svg>
+            <span>Coin Stats</span>
+          </a>
+          <a href="/admin/system" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
                 d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 1a1 1 0 11-2 0 1 1 0 012 0zM2 13a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zm14 1a1 1 0 11-2 0 1 1 0 012 0z"
                 clip-rule="evenodd"
-              /></svg
-            ><span>System</span></a
-          >
-          <a href="/admin/settings" class="nav-btn"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              />
+            </svg>
+            <span>System</span>
+          </a>
+          <a href="/admin/settings" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
                 d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
                 clip-rule="evenodd"
-              /></svg
-            ><span>Settings</span></a
-          >
-          <a href="/admin/logs" class="nav-btn"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              />
+            </svg>
+            <span>Settings</span>
+          </a>
+          <a href="/admin/logs" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
                 d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h6a1 1 0 010 2H4a1 1 0 01-1-1z"
                 clip-rule="evenodd"
-              /></svg
-            ><span>Logs</span></a
-          >
+              />
+            </svg>
+            <span>Logs</span>
+          </a>
           <a href="/admin/feedback/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
@@ -239,7 +238,7 @@
             </svg>
             <span>Reports</span>
           </a>
-          <a href="/admin/alerts" class="nav-btn">
+          <a href="/admin/alerts" class="nav-btn nav-btn--active">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"
@@ -255,13 +254,7 @@
         </nav>
         <div class="sidebar__foot">
           <button id="logoutBtn" class="lock-btn">
-            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                clip-rule="evenodd"
-              /></svg
-            ><span>Lock Panel</span>
+            <span>Lock Panel</span>
           </button>
         </div>
       </aside>
@@ -269,7 +262,7 @@
       <div class="main">
         <header class="topbar">
           <div class="topbar__left">
-            <h2 class="topbar__title">Coin Stats</h2>
+            <h2 class="topbar__title">Anomaly Alerts</h2>
           </div>
           <div class="topbar__right">
             <p
@@ -278,55 +271,97 @@
               role="alert"
               aria-live="polite"
             ></p>
-            <button id="refreshBtn" class="topbar-btn">
-              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <span>Refresh</span>
-            </button>
+            <button id="refreshBtn" class="topbar-btn">Refresh</button>
           </div>
         </header>
 
         <div class="content">
           <section class="page">
-            <div class="coin-grid">
-              <div class="coin-card">
-                <div class="coin-coin coin-coin--1" aria-hidden="true">
-                  <span>₱1</span>
-                </div>
-                <div class="coin-card__label">₱1 Coins</div>
-                <div class="coin-card__count" id="coins1">0</div>
+            <div class="ri-stats-row">
+              <div class="ri-stat">
+                <div class="ri-stat__value" id="statTotal">0</div>
+                <div class="ri-stat__label">Total</div>
               </div>
-              <div class="coin-card">
-                <div class="coin-coin coin-coin--5" aria-hidden="true">
-                  <span>₱5</span>
-                </div>
-                <div class="coin-card__label">₱5 Coins</div>
-                <div class="coin-card__count" id="coins5">0</div>
+              <div class="ri-stat ri-stat--open">
+                <div class="ri-stat__value" id="statOpen">0</div>
+                <div class="ri-stat__label">Open</div>
               </div>
-              <div class="coin-card">
-                <div class="coin-coin coin-coin--10" aria-hidden="true">
-                  <span>₱10</span>
-                </div>
-                <div class="coin-card__label">₱10 Coins</div>
-                <div class="coin-card__count" id="coins10">0</div>
+              <div class="ri-stat ri-stat--ack">
+                <div class="ri-stat__value" id="statAck">0</div>
+                <div class="ri-stat__label">Acknowledged</div>
               </div>
-              <div class="coin-card">
-                <div class="coin-coin coin-coin--20" aria-hidden="true">
-                  <span>₱20</span>
-                </div>
-                <div class="coin-card__label">₱20 Coins</div>
-                <div class="coin-card__count" id="coins20">0</div>
+              <div class="ri-stat ri-stat--resolved">
+                <div class="ri-stat__value" id="statResolved">0</div>
+                <div class="ri-stat__label">Resolved</div>
               </div>
             </div>
+
+            <div class="ri-toolbar">
+              <div id="filterBar" class="ri-filters" role="group">
+                <button class="filter-btn filter-btn--active" data-filter="all">
+                  All
+                </button>
+                <button class="filter-btn" data-filter="open">Open</button>
+                <button class="filter-btn" data-filter="acknowledged">
+                  Acknowledged
+                </button>
+                <button class="filter-btn" data-filter="resolved">
+                  Resolved
+                </button>
+              </div>
+              <div class="ri-pagination">
+                <button id="prevPageBtn" class="page-btn" disabled>
+                  ‹ Prev
+                </button>
+                <span id="pageInfo" class="page-info">Page 1 of 1</span>
+                <button id="nextPageBtn" class="page-btn" disabled>
+                  Next ›
+                </button>
+              </div>
+            </div>
+
+            <div id="incidentList" class="ri-list"></div>
           </section>
         </div>
       </div>
     </div>
-    <script src="/admin/coin-stats/app.js"></script>
+
+    <div
+      id="detailOverlay"
+      class="ri-overlay hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="detailTitle"
+    >
+      <div class="ri-modal">
+        <div class="ri-modal__header">
+          <h3 id="detailTitle" class="ri-modal__title">Incident Details</h3>
+          <button id="closeDetail" class="ri-modal__close" aria-label="Close">
+            &times;
+          </button>
+        </div>
+        <div id="detailBody" class="ri-modal__body"></div>
+        <div class="ri-modal__actions">
+          <button id="detailAckBtn" class="ri-action-btn ri-action-btn--ack">
+            Acknowledge
+          </button>
+          <button
+            id="detailResolveBtn"
+            class="ri-action-btn ri-action-btn--resolve"
+          >
+            Resolve
+          </button>
+          <button
+            id="detailReopenBtn"
+            class="ri-action-btn ri-action-btn--view"
+          >
+            Reopen
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/admin/alerts/app.js"></script>
   </body>
 </html>

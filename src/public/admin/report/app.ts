@@ -1,4 +1,4 @@
-import { apiFetch, setMessage, initAuth } from '../shared';
+import { SummaryResponse, apiFetch, setMessage, initAuth } from '../shared';
 
 function escHtml(s: string): string {
   return s
@@ -55,6 +55,12 @@ const openBadge = document.getElementById('openReportBadge') as HTMLElement;
 const openBadgeMob = document.getElementById(
   'openReportBadgeMob',
 ) as HTMLElement | null;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
+) as HTMLElement | null;
 
 const detailOverlay = document.getElementById('detailOverlay') as HTMLElement;
 const detailTitle = document.getElementById('detailTitle') as HTMLElement;
@@ -103,6 +109,12 @@ function updateStats(): void {
   openBadge.textContent = openCount > 0 ? String(openCount) : '';
   if (openBadgeMob)
     openBadgeMob.textContent = openCount > 0 ? String(openCount) : '';
+}
+
+function setOpenAlertBadge(openCount: number): void {
+  const text = openCount > 0 ? String(openCount) : '';
+  if (openAlertBadge) openAlertBadge.textContent = text;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = text;
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
@@ -175,6 +187,7 @@ async function loadReports(): Promise<void> {
     totalItems = data.total;
     renderPage();
     await loadAllForStats();
+    await loadSummary();
   } catch {
     setMessage('Network error loading reports.');
   }
@@ -187,6 +200,15 @@ async function loadAllForStats(): Promise<void> {
     const data = (await res.json()) as ListResponse;
     allItems = data.items;
     updateStats();
+  } catch {}
+}
+
+async function loadSummary(): Promise<void> {
+  try {
+    const res = await apiFetch('/api/admin/summary');
+    if (!res.ok) return;
+    const summary = (await res.json()) as SummaryResponse;
+    setOpenAlertBadge(summary.anomalyStats.openCount);
   } catch {}
 }
 

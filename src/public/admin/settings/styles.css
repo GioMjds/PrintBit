@@ -214,3 +214,13 @@
 .save-btn:active {
   transform: scale(0.98);
 }
+
+.save-btn--secondary {
+  background: rgba(105, 111, 199, 0.18);
+  border: 1px solid var(--border-2);
+  box-shadow: none;
+}
+
+.save-btn--secondary:hover {
+  background: rgba(105, 111, 199, 0.28);
+}

@@ -23,9 +23,8 @@ export const CAPTIVE_PORTAL_ENABLED =
 export const KIOSK_LOCKDOWN_ENABLED =
   process.env.PRINTBIT_KIOSK_LOCKDOWN === 'true';
 const USB_EXPORT_DISABLED_TOKENS = new Set(['false', '0', 'no', '']);
-const usbExportEnv = process.env.PRINTBIT_USB_EXPORT_ENABLED
-  ?.trim()
-  .toLowerCase();
+const usbExportEnv =
+  process.env.PRINTBIT_USB_EXPORT_ENABLED?.trim().toLowerCase();
 export const USB_EXPORT_ENABLED =
   usbExportEnv !== undefined
     ? !USB_EXPORT_DISABLED_TOKENS.has(usbExportEnv)
@@ -86,7 +85,7 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
     filePath: path.join(PUBLIC_DIR, 'admin', 'report', 'index.html'),
   },
   {
-    route: '/admin/reconciliation',
-    filePath: path.join(PUBLIC_DIR, 'admin', 'reconciliation', 'index.html'),
+    route: '/admin/alerts',
+    filePath: path.join(PUBLIC_DIR, 'admin', 'alerts', 'index.html'),
   },
 ];

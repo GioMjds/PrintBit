@@ -49,7 +49,7 @@ import {
   runHopperSelfTest,
   startPrinterMonitor,
   startClamd,
-  startReconciliationScheduler,
+  anomalyService,
 } from '@/services';
 
 const app = express();
@@ -193,9 +193,9 @@ async function start() {
   await runHopperSelfTest();
 
   startPrinterMonitor(io);
+  anomalyService.setSocketIo(io);
 
   await startClamd();
-  startReconciliationScheduler();
   await startHotspot();
 
   server.listen(PORT, '0.0.0.0', () => {

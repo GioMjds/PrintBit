@@ -1,24 +1,3 @@
-/* ── Nav count badge ────────────────────────────────────────── */
-.nav-count-badge {
-  margin-left: auto;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--amber);
-  color: #1a1100;
-  font-size: 10px;
-  font-weight: 800;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  line-height: 1;
-}
-
-.nav-count-badge:not(:empty) {
-  display: inline-flex;
-}
-
 /* ── Stats row ──────────────────────────────────────────────── */
 .fb-stats-row {
   display: grid;

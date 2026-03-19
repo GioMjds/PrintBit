@@ -1,4 +1,5 @@
 export { adminService } from './admin';
+export { anomalyService } from './anomaly';
 export * from './db';
 export * from './clamd';
 export * from './clamd-process';
@@ -18,7 +19,6 @@ export type { Orientation, PaperSize, PrintJobOptions } from './printer';
 export { detectDefaultPrinter, printFile } from './printer';
 export * from './printer-status';
 export * from './report-issue';
-export * from './reconciliation';
 export * from './scan-delivery';
 export * from './scan-storage';
 export * from './scanner';
