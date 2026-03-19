@@ -77,7 +77,8 @@ Set-DwordValue -Path $legacySystem   -Name 'DisableTaskMgr' -Value 1
 # USB mass-storage hardening
 Ensure-RegistryKey -Path $printBitState
 $existingUsbStorStart = Get-DwordValueOrNull -Path $usbStor -Name 'Start'
-if ($null -ne $existingUsbStorStart) {
+$savedUsbStorStart = Get-DwordValueOrNull -Path $printBitState -Name 'UsbStorStartOriginal'
+if ($null -eq $savedUsbStorStart -and $null -ne $existingUsbStorStart) {
   Set-DwordValue -Path $printBitState -Name 'UsbStorStartOriginal' -Value $existingUsbStorStart
 }
 Set-DwordValue -Path $usbStor          -Name 'Start'    -Value 4

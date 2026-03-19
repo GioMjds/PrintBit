@@ -27,13 +27,14 @@ echo [PrintBit] USB Export Enabled: %PRINTBIT_USB_EXPORT_ENABLED%
 
 setlocal EnableDelayedExpansion
 set "PROJECT_DIR_SANITIZED=%PROJECT_DIR%"
-set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:^!=!"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:^^=!"
 set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:&=!"
 set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:|=!"
 set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:<=!"
 set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:>=!"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:%%=!"
 if not "%PROJECT_DIR%"=="!PROJECT_DIR_SANITIZED!" (
-    echo [PrintBit] ERROR: Project path contains unsupported shell metacharacters (^& ^| ^< ^> ^!).
+    echo [PrintBit] ERROR: Project path contains unsupported shell metacharacters (^& ^| ^< ^> ^! %%).
     echo [PrintBit]        Use a controlled deployment path without these characters.
     pause
     exit /b 1
