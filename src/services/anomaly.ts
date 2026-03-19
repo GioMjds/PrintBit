@@ -514,7 +514,10 @@ if ('${username}' -and '${password}') {
   }
 
   private escapePs(value: string): string {
-    return value.replace(/'/g, "''");
+    return value
+    .replace(/'/g, "''")
+    .replace(/[\r\n]/g, ' ')
+    .replace(/[\x00-\x1f]/g, '');
   }
 
   private sanitizeEmailError(error: unknown, recipients: string[]): string {

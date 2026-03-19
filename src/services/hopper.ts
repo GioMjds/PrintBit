@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { adminService } from './admin';
 import { db, type LogMeta, type OwedChangeEntry } from './db';
-import { anomalyService, buildAnomalyFingerprint } from './anomaly';
+import {
+  anomalyService,
+  buildAnomalyFingerprint,
+  mapHopperErrorSeverity,
+} from './anomaly';
 import {
   getHopperStatus,
   sendHopperCommand,
@@ -62,7 +66,11 @@ class HopperService {
         category: 'hopper',
         severity: 'warning',
         message: 'Hopper self-test failed because hopper is disabled.',
-        fingerprint: buildAnomalyFingerprint(['hopper', 'self-test', 'disabled']),
+        fingerprint: buildAnomalyFingerprint([
+          'hopper',
+          'self-test',
+          'disabled',
+        ]),
       });
       return {
         ok: false,
@@ -181,7 +189,8 @@ class HopperService {
         source: 'hopper',
         category: 'hopper',
         severity: 'warning',
-        message: 'Hopper dispense failed because hopper is disabled in settings.',
+        message:
+          'Hopper dispense failed because hopper is disabled in settings.',
         fingerprint: buildAnomalyFingerprint([
           'hopper',
           'dispense',
@@ -304,7 +313,7 @@ class HopperService {
       type: 'hopper_dispense_failed',
       source: 'hopper',
       category: 'hopper',
-      severity: lastResult?.errorCode === 'EMPTY' ? 'critical' : 'warning',
+      severity: mapHopperErrorSeverity(lastResult?.errorCode),
       message: `Hopper dispense failed: ${lastMessage}`,
       fingerprint: buildAnomalyFingerprint([
         'hopper',
