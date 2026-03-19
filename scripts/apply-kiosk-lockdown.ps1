@@ -21,6 +21,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$helpersModule = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'kiosk-helpers.psm1'
+Import-Module $helpersModule -Force
 
 function Ensure-RegistryKey {
   param([Parameter(Mandatory = $true)][string]$Path)
@@ -47,20 +49,6 @@ function Set-BinaryValue {
   )
   Ensure-RegistryKey -Path $Path
   New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType Binary -Force | Out-Null
-}
-
-function Get-DwordValueOrNull {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  if (-not (Test-Path $Path)) { return $null }
-  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
-  if ($null -eq $item) { return $null }
-  if ($item.PSObject.Properties.Name -contains $Name) {
-    return [int]$item.$Name
-  }
-  return $null
 }
 
 $policyExplorer    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'

@@ -13,6 +13,8 @@ param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$helpersModule = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'kiosk-helpers.psm1'
+Import-Module $helpersModule -Force
 
 function Remove-RegistryValueIfExists {
   param(
@@ -24,20 +26,6 @@ function Remove-RegistryValueIfExists {
   if ($null -ne $value) {
     Remove-ItemProperty -Path $Path -Name $Name -Force -ErrorAction SilentlyContinue
   }
-}
-
-function Get-DwordValueOrNull {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  if (-not (Test-Path $Path)) { return $null }
-  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
-  if ($null -eq $item) { return $null }
-  if ($item.PSObject.Properties.Name -contains $Name) {
-    return [int]$item.$Name
-  }
-  return $null
 }
 
 $policyExplorer   = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
@@ -64,6 +52,7 @@ Remove-RegistryValueIfExists -Path $removablePolicy -Name 'Deny_All'
 if (Test-Path $usbStor) {
   $restoredStart = Get-DwordValueOrNull -Path $printBitState -Name 'UsbStorStartOriginal'
   if ($null -eq $restoredStart) {
+    Write-Warning "[PrintBit] Missing persisted UsbStorStartOriginal in '$printBitState'. Applying fallback Start=3 to '$usbStor'."
     $restoredStart = 3
   }
   New-ItemProperty -Path $usbStor -Name 'Start' -Value ([int]$restoredStart) -PropertyType DWord -Force | Out-Null

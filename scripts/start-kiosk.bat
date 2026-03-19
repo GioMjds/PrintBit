@@ -25,6 +25,21 @@ if "%PRINTBIT_USB_EXPORT_ENABLED%"=="" set "PRINTBIT_USB_EXPORT_ENABLED=false"
 echo [PrintBit] Kiosk Lockdown: %PRINTBIT_KIOSK_LOCKDOWN%
 echo [PrintBit] USB Export Enabled: %PRINTBIT_USB_EXPORT_ENABLED%
 
+setlocal EnableDelayedExpansion
+set "PROJECT_DIR_SANITIZED=%PROJECT_DIR%"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:^!=!"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:&=!"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:|=!"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:<=!"
+set "PROJECT_DIR_SANITIZED=!PROJECT_DIR_SANITIZED:>=!"
+if not "%PROJECT_DIR%"=="!PROJECT_DIR_SANITIZED!" (
+    echo [PrintBit] ERROR: Project path contains unsupported shell metacharacters (^& ^| ^< ^> ^!).
+    echo [PrintBit]        Use a controlled deployment path without these characters.
+    pause
+    exit /b 1
+)
+endlocal & set "PROJECT_DIR=%PROJECT_DIR_SANITIZED%"
+
 :: Ensure pnpm is available
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
