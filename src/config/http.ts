@@ -22,9 +22,13 @@ export const CAPTIVE_PORTAL_ENABLED =
 /** Kiosk lockdown controls */
 export const KIOSK_LOCKDOWN_ENABLED =
   process.env.PRINTBIT_KIOSK_LOCKDOWN === 'true';
+const USB_EXPORT_DISABLED_TOKENS = new Set(['false', '0', 'no', '']);
+const usbExportEnv = process.env.PRINTBIT_USB_EXPORT_ENABLED
+  ?.trim()
+  .toLowerCase();
 export const USB_EXPORT_ENABLED =
-  process.env.PRINTBIT_USB_EXPORT_ENABLED !== undefined
-    ? process.env.PRINTBIT_USB_EXPORT_ENABLED !== 'false'
+  usbExportEnv !== undefined
+    ? !USB_EXPORT_DISABLED_TOKENS.has(usbExportEnv)
     : !KIOSK_LOCKDOWN_ENABLED;
 
 /** MyPublicWiFi installation path */

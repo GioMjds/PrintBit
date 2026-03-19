@@ -26,6 +26,20 @@ function Remove-RegistryValueIfExists {
   }
 }
 
+function Get-DwordValueOrNull {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Name
+  )
+  if (-not (Test-Path $Path)) { return $null }
+  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+  if ($null -eq $item) { return $null }
+  if ($item.PSObject.Properties.Name -contains $Name) {
+    return [int]$item.$Name
+  }
+  return $null
+}
+
 $policyExplorer   = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
 $policySystem     = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
 $legacyExplorer   = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
@@ -48,12 +62,17 @@ Remove-RegistryValueIfExists -Path $legacySystem   -Name 'DisableTaskMgr'
 Remove-RegistryValueIfExists -Path $removablePolicy -Name 'Deny_All'
 
 if (Test-Path $usbStor) {
-  New-ItemProperty -Path $usbStor -Name 'Start' -Value 3 -PropertyType DWord -Force | Out-Null
+  $restoredStart = Get-DwordValueOrNull -Path $printBitState -Name 'UsbStorStartOriginal'
+  if ($null -eq $restoredStart) {
+    $restoredStart = 3
+  }
+  New-ItemProperty -Path $usbStor -Name 'Start' -Value ([int]$restoredStart) -PropertyType DWord -Force | Out-Null
 }
 
 Remove-RegistryValueIfExists -Path $keyboardLayout -Name 'Scancode Map'
 
 if (Test-Path $printBitState) {
+  Remove-RegistryValueIfExists -Path $printBitState -Name 'UsbStorStartOriginal'
   New-ItemProperty -Path $printBitState -Name 'Applied'       -Value 0 -PropertyType DWord -Force | Out-Null
   New-ItemProperty -Path $printBitState -Name 'RevertedAtUtc' -Value ([DateTime]::UtcNow.ToString('o')) -PropertyType String -Force | Out-Null
 }

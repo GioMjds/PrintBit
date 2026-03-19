@@ -57,7 +57,7 @@ echo [PrintBit] Kiosk URL: %KIOSK_URL%
 
 :: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
 echo [PrintBit] Starting server...
-start "PrintBit Server" /min cmd /c "cd /d ""%PROJECT_DIR%"" && set ""PRINTBIT_KIOSK_LOCKDOWN=%PRINTBIT_KIOSK_LOCKDOWN%"" && set ""PRINTBIT_USB_EXPORT_ENABLED=%PRINTBIT_USB_EXPORT_ENABLED%"" && pnpm run dev"
+start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && set PRINTBIT_KIOSK_LOCKDOWN=%PRINTBIT_KIOSK_LOCKDOWN% && set PRINTBIT_USB_EXPORT_ENABLED=%PRINTBIT_USB_EXPORT_ENABLED% && pnpm run dev"
 
 :: Wait for server to come up
 echo [PrintBit] Waiting for server to start...

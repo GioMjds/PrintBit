@@ -49,6 +49,20 @@ function Set-BinaryValue {
   New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType Binary -Force | Out-Null
 }
 
+function Get-DwordValueOrNull {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Name
+  )
+  if (-not (Test-Path $Path)) { return $null }
+  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+  if ($null -eq $item) { return $null }
+  if ($item.PSObject.Properties.Name -contains $Name) {
+    return [int]$item.$Name
+  }
+  return $null
+}
+
 $policyExplorer    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
 $policySystem      = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
 $legacyExplorer    = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
@@ -73,6 +87,11 @@ Set-DwordValue -Path $policySystem   -Name 'DisableCMD'     -Value 1
 Set-DwordValue -Path $legacySystem   -Name 'DisableTaskMgr' -Value 1
 
 # USB mass-storage hardening
+Ensure-RegistryKey -Path $printBitState
+$existingUsbStorStart = Get-DwordValueOrNull -Path $usbStor -Name 'Start'
+if ($null -ne $existingUsbStorStart) {
+  Set-DwordValue -Path $printBitState -Name 'UsbStorStartOriginal' -Value $existingUsbStorStart
+}
 Set-DwordValue -Path $usbStor          -Name 'Start'    -Value 4
 Set-DwordValue -Path $removablePolicy  -Name 'Deny_All' -Value 1
 
