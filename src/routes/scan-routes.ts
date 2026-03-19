@@ -21,6 +21,7 @@ import {
   listRemovableDrives,
 } from '@/services/usb-drives';
 import { detectPdfColorContent } from '@/services/config';
+import { financialLedgerService } from '@/services/financial-ledger';
 
 const VALID_SOURCES = new Set(['adf', 'flatbed']);
 const VALID_DPI = new Set([150, 300, 600]);
@@ -260,6 +261,16 @@ export function registerScanRoutes(
 
       // Route through settlementService so change is dispensed on overpayment,
       // the balance lock is held atomically, and earnings are recorded correctly.
+      await financialLedgerService.append({
+        eventType: 'job_started',
+        amount: requiredAmount,
+        referenceId: safeFilename,
+        meta: {
+          mode: 'scan',
+          filename: safeFilename,
+        },
+      });
+
       const settlement = await settlementService.settle({
         requiredAmount,
         io: deps.io,
@@ -290,6 +301,18 @@ export function registerScanRoutes(
       }
 
       markSoftCopyPaid(safeFilename);
+      await financialLedgerService.append({
+        eventType: 'job_completed',
+        amount: settlement.chargedAmount,
+        referenceId: safeFilename,
+        meta: {
+          mode: 'scan',
+          filename: safeFilename,
+          changeState: settlement.change.state,
+          changeRequested: settlement.change.requested,
+          changeDispensed: settlement.change.dispensed,
+        },
+      });
 
       void adminService
         .appendAdminLog('scan_soft_copy_charged', 'Soft copy access charged.', {

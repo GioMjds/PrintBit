@@ -13,12 +13,13 @@ import {
   dismissPendingRefund,
   processPendingRefund,
 } from '@/services/pending-refund';
+import { reconciliationService } from '@/services/reconciliation';
+import { generateTestPagePdf } from '@/services/test-page';
 import {
   getPrinterTelemetry,
   refreshPrinterTelemetry,
 } from '@/services/printer-status';
 import { detectDefaultPrinter, printFile } from '@/services/printer';
-import { generateTestPagePdf } from '@/services/test-page';
 import { getScannerStatus } from '@/services/scanner';
 import {
   checkLockout,
@@ -800,6 +801,154 @@ export function registerAdminRoutes(
         console.error('[ADMIN] Failed to dismiss pending refund', error);
         return res.status(500).json({ error: 'Failed to dismiss refund.' });
       }
+    },
+  );
+
+  // ── Reconciliation reporting ────────────────────────────────────────────────
+  app.get(
+    '/api/admin/reconciliation/reports',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const from =
+        typeof req.query.from === 'string' ? req.query.from.trim() : undefined;
+      const to =
+        typeof req.query.to === 'string' ? req.query.to.trim() : undefined;
+      const reports = reconciliationService.listReports({ from, to });
+      res.json({
+        total: reports.length,
+        items: reports,
+      });
+    },
+  );
+
+  app.get(
+    '/api/admin/reconciliation/reports/latest',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (_req: Request, res: Response) => {
+      const report = reconciliationService.getLatestReport();
+      if (!report) {
+        return res.status(404).json({ error: 'No reconciliation reports found.' });
+      }
+      res.json({ report });
+    },
+  );
+
+  app.get(
+    '/api/admin/reconciliation/settings',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (_req: Request, res: Response) => {
+      res.json(db.data!.reconciliationSettings);
+    },
+  );
+
+  app.get(
+    '/api/admin/reconciliation/reports/:id',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const report = reconciliationService.getReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: 'Reconciliation report not found.' });
+      }
+      res.json({ report });
+    },
+  );
+
+  app.post(
+    '/api/admin/reconciliation/reports/run',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (req: Request, res: Response) => {
+      const dateKey =
+        typeof req.body?.dateKey === 'string' && req.body.dateKey.trim()
+          ? req.body.dateKey.trim()
+          : undefined;
+      try {
+        const report = await reconciliationService.runDailyReport({
+          dateKey,
+          generatedBy: 'manual',
+        });
+        res.status(201).json({ ok: true, report });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to run reconciliation.';
+        if (message.includes('already running')) {
+          return res.status(409).json({ error: message });
+        }
+        return res.status(500).json({ error: message });
+      }
+    },
+  );
+
+  app.post(
+    '/api/admin/reconciliation/reports/:id/physical-count',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (req: Request, res: Response) => {
+      const countedAmount = Number(req.body?.countedAmount);
+      if (!Number.isFinite(countedAmount) || countedAmount < 0) {
+        return res
+          .status(400)
+          .json({ error: 'countedAmount must be a non-negative number.' });
+      }
+
+      const countedBy =
+        typeof req.body?.countedBy === 'string' ? req.body.countedBy : null;
+      const notes = typeof req.body?.notes === 'string' ? req.body.notes : null;
+
+      const report = await reconciliationService.submitPhysicalCount({
+        reportId: req.params.id as string,
+        countedAmount,
+        countedBy,
+        notes,
+      });
+      if (!report) {
+        return res.status(404).json({ error: 'Reconciliation report not found.' });
+      }
+      res.json({ ok: true, report });
+    },
+  );
+
+  app.get(
+    '/api/admin/reconciliation/reports/:id/export.csv',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const report = reconciliationService.getReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: 'Reconciliation report not found.' });
+      }
+      const csv = reconciliationService.exportReportCsv(report);
+      res
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header(
+          'Content-Disposition',
+          `attachment; filename="printbit-reconciliation-${report.dateKey}-r${report.revision}.csv"`,
+        )
+        .send(csv);
+    },
+  );
+
+  app.get(
+    '/api/admin/reconciliation/reports/:id/export.pdf',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const report = reconciliationService.getReportById(req.params.id as string);
+      if (!report) {
+        return res.status(404).json({ error: 'Reconciliation report not found.' });
+      }
+      const pdf = reconciliationService.exportReportPdf(report);
+      res
+        .header('Content-Type', 'application/pdf')
+        .header(
+          'Content-Disposition',
+          `attachment; filename="printbit-reconciliation-${report.dateKey}-r${report.revision}.pdf"`,
+        )
+        .send(pdf);
     },
   );
 }

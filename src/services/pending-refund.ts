@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db, type PendingRefundEntry, withBalanceLock } from './db';
+import { financialLedgerService } from './financial-ledger';
+import { getTrustedTimestamp } from './time-source';
 
 export class PendingRefundServiceError extends Error {
   constructor(
@@ -89,9 +91,10 @@ export async function createPendingRefund(input: {
   closedAt?: string | null;
 }): Promise<PendingRefundEntry> {
   ensureDb();
+  const trusted = getTrustedTimestamp();
   const entry: PendingRefundEntry = {
     id: randomUUID(),
-    timestamp: new Date().toISOString(),
+    timestamp: trusted.timestamp,
     chargedAmount: input.chargedAmount,
     reason: input.reason,
     status: input.status ?? 'open',
@@ -115,6 +118,7 @@ export async function upsertSpoolerFailureRefund(input: {
   restoredBalanceAmount: number;
 }> {
   ensureDb();
+  const createdTs = getTrustedTimestamp().timestamp;
 
   const normalizedContext = normalizeJobContext(input.jobContext);
   const duplicate = findDuplicateByCorrelation(normalizedContext);
@@ -146,11 +150,11 @@ export async function upsertSpoolerFailureRefund(input: {
   };
   const entry: PendingRefundEntry = {
     id: randomUUID(),
-    timestamp: new Date().toISOString(),
+    timestamp: createdTs,
     chargedAmount: input.chargedAmount,
     reason: input.reason,
     status: autoRefunded ? 'refunded' : 'open',
-    closedAt: autoRefunded ? new Date().toISOString() : null,
+    closedAt: autoRefunded ? createdTs : null,
     jobContext: normalizeJobContext(contextWithDisposition),
   };
 
@@ -160,6 +164,15 @@ export async function upsertSpoolerFailureRefund(input: {
       db.data!.balance += input.chargedAmount;
       db.data!.earnings = Math.max(0, db.data!.earnings - input.chargedAmount);
       restoredBalanceAmount = input.chargedAmount;
+    });
+    await financialLedgerService.append({
+      eventType: 'refund_issued',
+      amount: input.chargedAmount,
+      referenceId: entry.id,
+      meta: {
+        source: 'auto_spooler_refund',
+        reason: input.reason,
+      },
     });
   }
 
@@ -201,12 +214,21 @@ export async function processPendingRefund(input: {
   }
 
   entry.status = 'refunded';
-  entry.closedAt = new Date().toISOString();
+  entry.closedAt = getTrustedTimestamp().timestamp;
 
   if (input.restoreBalance) {
     await withBalanceLock(async () => {
       db.data!.balance += entry.chargedAmount;
       db.data!.earnings = Math.max(0, db.data!.earnings - entry.chargedAmount);
+    });
+    await financialLedgerService.append({
+      eventType: 'refund_issued',
+      amount: entry.chargedAmount,
+      referenceId: entry.id,
+      meta: {
+        source: 'admin_pending_refund',
+        reason: entry.reason,
+      },
     });
   }
 
@@ -231,7 +253,7 @@ export async function dismissPendingRefund(
   }
 
   entry.status = 'dismissed';
-  entry.closedAt = new Date().toISOString();
+  entry.closedAt = getTrustedTimestamp().timestamp;
   await db.write();
   return entry;
 }

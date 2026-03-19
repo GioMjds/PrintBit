@@ -49,6 +49,7 @@ import {
   runHopperSelfTest,
   startPrinterMonitor,
   startClamd,
+  startReconciliationScheduler,
 } from '@/services';
 
 const app = express();
@@ -194,7 +195,7 @@ async function start() {
   startPrinterMonitor(io);
 
   await startClamd();
-  // Launch MyPublicWiFi hotspot on startup (idempotent — Print page can re-call safely)
+  startReconciliationScheduler();
   await startHotspot();
 
   server.listen(PORT, '0.0.0.0', () => {

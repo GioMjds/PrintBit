@@ -67,6 +67,98 @@ export interface OwedChangeEntry {
 
 export type LogMeta = Record<string, string | number | boolean | null>;
 
+export type TrustedTimestampSource = 'ntp' | 'system';
+
+export interface TrustedTimestampMeta {
+  source: TrustedTimestampSource;
+  synced: boolean;
+  offsetMs: number | null;
+  detail: string | null;
+}
+
+export type FinancialEventType =
+  | 'coin_inserted'
+  | 'job_started'
+  | 'job_completed'
+  | 'refund_issued'
+  | 'variance_alert';
+
+export interface FinancialLedgerEntry {
+  id: string;
+  timestamp: string;
+  timestampMeta: TrustedTimestampMeta;
+  eventType: FinancialEventType;
+  amount: number;
+  referenceId: string | null;
+  meta: LogMeta;
+  previousHash: string | null;
+  hash: string;
+}
+
+export interface ReconciliationTotals {
+  coinIntake: number;
+  settledAmount: number;
+  refundIssued: number;
+  netSettled: number;
+  jobStartedCount: number;
+  jobCompletedCount: number;
+  refundCount: number;
+  ledgerEntryCount: number;
+}
+
+export interface ReconciliationLiabilities {
+  openPendingRefundAmount: number;
+  openOwedChangeAmount: number;
+}
+
+export interface ReconciliationPhysicalCount {
+  countedAmount: number;
+  countedAt: string;
+  countedBy: string | null;
+  notes: string | null;
+}
+
+export interface ReconciliationVariance {
+  threshold: number;
+  amount: number;
+  hasVariance: boolean;
+  status: 'pending' | 'matched' | 'mismatch';
+  alertLogId: string | null;
+}
+
+export interface ReconciliationLedgerDigest {
+  entryCount: number;
+  firstHash: string | null;
+  lastHash: string | null;
+}
+
+export interface ReconciliationReport {
+  id: string;
+  dateKey: string;
+  revision: number;
+  generatedAt: string;
+  generatedBy: 'auto' | 'manual';
+  timestampMeta: TrustedTimestampMeta;
+  periodStart: string;
+  periodEnd: string;
+  totals: ReconciliationTotals;
+  liabilities: ReconciliationLiabilities;
+  expectedCash: number;
+  expectedCashAfterLiabilities: number;
+  physicalCount: ReconciliationPhysicalCount | null;
+  variance: ReconciliationVariance;
+  ledgerDigest: ReconciliationLedgerDigest;
+  archivedAt: string;
+}
+
+export interface ReconciliationSettings {
+  autoGenerateEnabled: boolean;
+  cutoffHourLocal: number;
+  cutoffMinuteLocal: number;
+  varianceThreshold: number;
+  lastAutoRunDateKey: string | null;
+}
+
 export interface AdminLogEntry {
   id: string;
   timestamp: string;
@@ -182,6 +274,9 @@ export type Schema = {
   reportIssueSessions: ReportIssueSessionEntry[];
   reportIssueAttachments: ReportIssueAttachmentEntry[];
   pendingRefunds: PendingRefundEntry[];
+  financialLedger: FinancialLedgerEntry[];
+  reconciliationReports: ReconciliationReport[];
+  reconciliationSettings: ReconciliationSettings;
 };
 
 const DEFAULT_DATA: Schema = {
@@ -240,6 +335,15 @@ const DEFAULT_DATA: Schema = {
   reportIssueSessions: [],
   reportIssueAttachments: [],
   pendingRefunds: [],
+  financialLedger: [],
+  reconciliationReports: [],
+  reconciliationSettings: {
+    autoGenerateEnabled: true,
+    cutoffHourLocal: 23,
+    cutoffMinuteLocal: 59,
+    varianceThreshold: 0,
+    lastAutoRunDateKey: null,
+  },
 };
 
 /**
@@ -406,6 +510,34 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
     pendingRefunds: Array.isArray(data?.pendingRefunds)
       ? data.pendingRefunds
       : DEFAULT_DATA.pendingRefunds,
+    financialLedger: Array.isArray(data?.financialLedger)
+      ? data.financialLedger
+      : DEFAULT_DATA.financialLedger,
+    reconciliationReports: Array.isArray(data?.reconciliationReports)
+      ? data.reconciliationReports
+      : DEFAULT_DATA.reconciliationReports,
+    reconciliationSettings: {
+      autoGenerateEnabled:
+        typeof data?.reconciliationSettings?.autoGenerateEnabled === 'boolean'
+          ? data.reconciliationSettings.autoGenerateEnabled
+          : DEFAULT_DATA.reconciliationSettings.autoGenerateEnabled,
+      cutoffHourLocal: finiteOr(
+        data?.reconciliationSettings?.cutoffHourLocal,
+        DEFAULT_DATA.reconciliationSettings.cutoffHourLocal,
+      ),
+      cutoffMinuteLocal: finiteOr(
+        data?.reconciliationSettings?.cutoffMinuteLocal,
+        DEFAULT_DATA.reconciliationSettings.cutoffMinuteLocal,
+      ),
+      varianceThreshold: finiteOr(
+        data?.reconciliationSettings?.varianceThreshold,
+        DEFAULT_DATA.reconciliationSettings.varianceThreshold,
+      ),
+      lastAutoRunDateKey:
+        typeof data?.reconciliationSettings?.lastAutoRunDateKey === 'string'
+          ? data.reconciliationSettings.lastAutoRunDateKey
+          : DEFAULT_DATA.reconciliationSettings.lastAutoRunDateKey,
+    },
   };
 }
 

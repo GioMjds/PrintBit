@@ -16,6 +16,8 @@ import type { SessionStore, UploadedDocument } from '@/services/session';
 import { buildPrintQuote } from '@/services/print-quote';
 import { randomUUID } from 'node:crypto';
 import { BLOCKED_STATUSES } from '@/utils';
+import { financialLedgerService } from '@/services/financial-ledger';
+import { getTrustedTimestamp } from '@/services/time-source';
 
 interface RegisterFinancialRoutesDeps {
   io: Server;
@@ -193,6 +195,14 @@ export function registerFinancialRoutes(
           source: 'test-ui',
         },
       );
+      await financialLedgerService.append({
+        eventType: 'coin_inserted',
+        amount: coinValue,
+        meta: {
+          source: 'test-ui',
+          balance: db.data!.balance,
+        },
+      });
 
       deps.io.emit('balance', db.data!.balance);
       deps.io.emit('coinAccepted', {
@@ -275,10 +285,31 @@ export function registerFinancialRoutes(
       return res.status(500).json({ error: 'Print failed' });
     }
 
+    await financialLedgerService.append({
+      eventType: 'job_started',
+      amount: minimumAmount,
+      referenceId: filename,
+      meta: {
+        mode: 'print',
+        source: 'legacy',
+        filename,
+      },
+    });
+
     const chargedAmount = db.data!.balance;
     db.data!.earnings += chargedAmount;
     db.data!.balance = 0;
     await db.write();
+    await financialLedgerService.append({
+      eventType: 'job_completed',
+      amount: chargedAmount,
+      referenceId: filename,
+      meta: {
+        mode: 'print',
+        source: 'legacy',
+        filename,
+      },
+    });
     await adminService.appendAdminLog(
       'print_completed',
       'Legacy print completed and charged.',
@@ -586,7 +617,7 @@ export function registerFinancialRoutes(
       }
 
       try {
-        jobDispatchedAt = new Date().toISOString();
+        jobDispatchedAt = getTrustedTimestamp().timestamp;
         await printFile(serverFilename, printOptions);
       } catch (err) {
         void adminService.appendAdminLog(
@@ -604,6 +635,29 @@ export function registerFinancialRoutes(
     }
 
     // ── Settlement ───────────────────────────────────────────────────────────
+    try {
+      await financialLedgerService.append({
+        eventType: 'job_started',
+        amount: requiredAmount,
+        referenceId: transactionId,
+        meta: {
+          mode,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          filename: serverFilename ?? null,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown ledger error.';
+      void adminService.appendAdminLog(
+        'financial_ledger_write_failed',
+        'Failed to record immutable job_started event.',
+        { transactionId, mode, error: message },
+      );
+      return sendResponse(500, { error: 'Failed to record financial event.' });
+    }
+
     const settlement = await settlementService.settle({
       requiredAmount,
       io: deps.io,
@@ -625,6 +679,30 @@ export function registerFinancialRoutes(
         requiredAmount,
       });
       return;
+    }
+
+    try {
+      await financialLedgerService.append({
+        eventType: 'job_completed',
+        amount: settlement.chargedAmount,
+        referenceId: transactionId,
+        meta: {
+          mode,
+          changeState: settlement.change.state,
+          changeRequested: settlement.change.requested,
+          changeDispensed: settlement.change.dispensed,
+          remainingBalance: settlement.remainingBalance,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown ledger error.';
+      void adminService.appendAdminLog(
+        'financial_ledger_write_failed',
+        'Failed to record immutable job_completed event.',
+        { transactionId, mode, error: message },
+      );
+      return sendResponse(500, { error: 'Failed to record financial event.' });
     }
 
     sendResponse(200, {

@@ -3,6 +3,7 @@ import { ReadlineParser } from '@serialport/parser-readline';
 import { db } from './db';
 import { Server } from 'socket.io';
 import { adminService } from './admin';
+import { financialLedgerService } from './financial-ledger';
 import {
   clearPrinterFaultLock,
   getPrinterFaultLock,
@@ -387,6 +388,14 @@ async function attemptSerialConnection(io: Server, attempt: number) {
             balance: db.data!.balance,
           },
         );
+        await financialLedgerService.append({
+          eventType: 'coin_inserted',
+          amount: coinValue,
+          meta: {
+            source: 'serial',
+            balance: db.data!.balance,
+          },
+        });
         console.log(
           `[SERIAL] ✓ Coin accepted: ₱${coinValue} → new balance: ₱${db.data!.balance}`,
         );

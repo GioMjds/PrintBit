@@ -85,4 +85,8 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
     route: '/admin/report',
     filePath: path.join(PUBLIC_DIR, 'admin', 'report', 'index.html'),
   },
+  {
+    route: '/admin/reconciliation',
+    filePath: path.join(PUBLIC_DIR, 'admin', 'reconciliation', 'index.html'),
+  },
 ];

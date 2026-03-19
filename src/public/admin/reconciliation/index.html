@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Overview — PrintBit Admin</title>
+    <title>Reconciliation · Admin · PrintBit</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
-    <link rel="stylesheet" href="/admin/dashboard/styles.css" />
+    <link rel="stylesheet" href="/admin/reconciliation/styles.css" />
   </head>
   <body>
     <div id="adminAuthView" class="auth-gate">
@@ -61,14 +61,9 @@
         </div>
         <h1 class="auth-card__heading">Secure Access</h1>
         <p class="auth-card__desc">
-          Enter your administrator PIN to unlock machine controls and analytics.
+          Enter your administrator PIN to unlock reconciliation controls and reports.
         </p>
-        <form
-          id="adminAuthForm"
-          class="auth-form"
-          autocomplete="off"
-          novalidate
-        >
+        <form id="adminAuthForm" class="auth-form" autocomplete="off" novalidate>
           <div class="pin-field">
             <label for="adminPinInput" class="pin-field__label">
               <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -83,10 +78,12 @@
             <input
               id="adminPinInput"
               type="password"
-              class="pin-field__input"
-              placeholder="••••"
+              inputmode="numeric"
+              minlength="4"
+              placeholder="••••••"
               required
-              autocomplete="off"
+              class="pin-field__input"
+              aria-describedby="adminMessage"
             />
           </div>
           <button type="submit" class="auth-btn">
@@ -159,7 +156,7 @@
           </div>
         </div>
         <nav class="sidebar__nav">
-          <a href="/admin/dashboard" class="nav-btn nav-btn--active">
+          <a href="/admin/dashboard" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"
@@ -179,9 +176,6 @@
           </a>
           <a href="/admin/coins" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zm1.567.267v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582s-.07.34-.433.582a2.305 2.305 0 01-.567.267z"
-              />
               <path
                 fill-rule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
@@ -229,11 +223,6 @@
               />
             </svg>
             <span>Feedback</span>
-            <span
-              class="nav-count-badge"
-              id="openBadge"
-              aria-label="open feedback count"
-            ></span>
           </a>
           <a href="/admin/report" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -245,9 +234,16 @@
             </svg>
             <span>Reports</span>
           </a>
-          <a href="/admin/reconciliation" class="nav-btn"
-            ><span>Reconciliation</span></a
-          >
+          <a href="/admin/reconciliation" class="nav-btn nav-btn--active">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M4 3a1 1 0 00-1 1v12a1 1 0 001 1h7a1 1 0 000-2H5V5h10v1a1 1 0 102 0V4a1 1 0 00-1-1H4zm8.293 6.293a1 1 0 011.414 0L15 10.586l2.293-2.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-2-2a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span>Reconciliation</span>
+          </a>
         </nav>
         <div class="sidebar__foot">
           <button id="logoutBtn" class="lock-btn">
@@ -266,7 +262,10 @@
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
-            <h2 class="topbar__title">Overview</h2>
+            <h2 class="topbar__title">Reconciliation</h2>
+            <span class="live-pill"
+              ><span class="live-pill__dot" aria-hidden="true"></span>Daily close</span
+            >
           </div>
           <div class="topbar__right">
             <p
@@ -275,216 +274,145 @@
               role="alert"
               aria-live="polite"
             ></p>
-            <button id="refreshBtn" class="topbar-btn">
-              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <span>Refresh</span>
-            </button>
           </div>
         </header>
 
         <div class="content">
-          <section class="page" id="section-overview">
-            <div class="kpi-row">
-              <div class="kpi kpi--balance">
-                <div class="kpi__glow" aria-hidden="true"></div>
-                <div class="kpi__icon-wrap" aria-hidden="true">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <path
-                      stroke-linecap="round"
-                      d="M12 6v1.5m0 9V18m-3-9a3 3 0 116 0c0 1.657-1.343 3-3 3s-3 1.343-3 3a3 3 0 106 0"
-                    />
-                  </svg>
-                </div>
-                <div class="kpi__body">
-                  <span class="kpi__label">Coin Balance</span>
-                  <span class="kpi__value" id="metricBalance">₱ 0.00</span>
-                </div>
+          <section class="page">
+            <div class="recon-action-card">
+              <div class="recon-action-card__head">
+                <h3 class="recon-action-card__title">Reconciliation Controls</h3>
+                <p class="recon-action-card__desc">
+                  Run and export the latest daily reconciliation from one panel.
+                </p>
               </div>
-              <div class="kpi kpi--today">
-                <div class="kpi__glow" aria-hidden="true"></div>
-                <div class="kpi__icon-wrap" aria-hidden="true">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                  >
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18" />
-                  </svg>
-                </div>
-                <div class="kpi__body">
-                  <span class="kpi__label">Today's Earnings</span>
-                  <span class="kpi__value" id="earningsToday">₱ 0.00</span>
-                </div>
-              </div>
-              <div class="kpi kpi--jobs">
-                <div class="kpi__glow" aria-hidden="true"></div>
-                <div class="kpi__icon-wrap" aria-hidden="true">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                </div>
-                <div class="kpi__body">
-                  <span class="kpi__label">Total Jobs</span>
-                  <span class="kpi__value" id="jobsTotal">0</span>
-                </div>
-              </div>
-              <div class="kpi kpi--storage">
-                <div class="kpi__glow" aria-hidden="true"></div>
-                <div class="kpi__icon-wrap" aria-hidden="true">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.7"
-                  >
-                    <ellipse cx="12" cy="5" rx="9" ry="3" />
-                    <path
-                      stroke-linecap="round"
-                      d="M21 12c0 1.657-4.03 3-9 3s-9-1.343-9-3M3 5v14c0 1.657 4.03 3 9 3s9-1.343 9-3V5"
-                    />
-                  </svg>
-                </div>
-                <div class="kpi__body">
-                  <span class="kpi__label">Storage Used</span>
-                  <span class="kpi__value" id="storageBytes">0 B</span>
-                  <span class="kpi__sub"
-                    ><span id="storageFiles">0</span> files</span
-                  >
-                </div>
+              <div class="recon-actions">
+                <button id="runNowBtn" class="recon-btn recon-btn--primary" type="button">
+                  Run now
+                </button>
+                <button id="refreshBtn" class="recon-btn" type="button">Refresh</button>
+                <button id="exportCsvBtn" class="recon-btn" type="button">Export CSV</button>
+                <button id="exportPdfBtn" class="recon-btn" type="button">Export PDF</button>
               </div>
             </div>
-            <div class="panel-row">
-              <div class="panel">
-                <div class="panel__head">
-                  <h3 class="panel__title">Job Breakdown</h3>
+
+            <div class="recon-kpi-grid">
+              <article class="recon-kpi recon-kpi--indigo">
+                <div class="recon-kpi__label">Expected Cash</div>
+                <div id="expectedCash" class="recon-kpi__value">₱ 0.00</div>
+                <div class="recon-kpi__sub">Before liabilities</div>
+              </article>
+              <article class="recon-kpi recon-kpi--violet">
+                <div class="recon-kpi__label">After Liabilities</div>
+                <div id="expectedCashAfterLiabilities" class="recon-kpi__value">₱ 0.00</div>
+                <div class="recon-kpi__sub">Net expected cash</div>
+              </article>
+              <article class="recon-kpi recon-kpi--green">
+                <div class="recon-kpi__label">Net Settled</div>
+                <div id="netSettled" class="recon-kpi__value">₱ 0.00</div>
+                <div class="recon-kpi__sub">Settled minus refunds</div>
+              </article>
+              <article class="recon-kpi recon-kpi--amber">
+                <div class="recon-kpi__label">Variance</div>
+                <div id="varianceAmount" class="recon-kpi__value">₱ 0.00</div>
+                <div class="recon-kpi__sub">
+                  <span id="varianceBadge" class="recon-badge recon-badge--pending"
+                    >PENDING</span
+                  >
                 </div>
-                <div class="panel__body">
-                  <div class="breakdown">
-                    <!-- Print -->
-                    <div class="breakdown__row">
-                      <div class="breakdown__meta">
-                        <span
-                          class="breakdown__dot breakdown__dot--print"
-                          aria-hidden="true"
-                        ></span>
-                        <span class="breakdown__name">Print</span>
-                        <span class="breakdown__count" id="jobsPrint">0</span>
-                      </div>
-                      <div class="breakdown__track">
-                        <div
-                          class="breakdown__fill breakdown__fill--print"
-                          id="barPrint"
-                          style="width: 0%"
-                        ></div>
-                      </div>
-                    </div>
-                    <!-- Copy -->
-                    <div class="breakdown__row">
-                      <div class="breakdown__meta">
-                        <span
-                          class="breakdown__dot breakdown__dot--copy"
-                          aria-hidden="true"
-                        ></span>
-                        <span class="breakdown__name">Copy</span>
-                        <span class="breakdown__count" id="jobsCopy">0</span>
-                      </div>
-                      <div class="breakdown__track">
-                        <div
-                          class="breakdown__fill breakdown__fill--copy"
-                          id="barCopy"
-                          style="width: 0%"
-                        ></div>
-                      </div>
-                    </div>
-                    <!-- Scan -->
-                    <div class="breakdown__row">
-                      <div class="breakdown__meta">
-                        <span
-                          class="breakdown__dot breakdown__dot--scan"
-                          aria-hidden="true"
-                        ></span>
-                        <span class="breakdown__name">Scan</span>
-                        <span class="breakdown__count" id="jobsScan">0</span>
-                      </div>
-                      <div class="breakdown__track">
-                        <div
-                          class="breakdown__fill breakdown__fill--scan"
-                          id="barScan"
-                          style="width: 0%"
-                        ></div>
-                      </div>
-                    </div>
+              </article>
+            </div>
+
+            <div class="recon-grid">
+              <section class="recon-card">
+                <div class="recon-card__head">
+                  <h3 class="recon-card__title">Report Snapshot</h3>
+                </div>
+                <div class="recon-card__body recon-list">
+                  <div class="recon-row"><span>Date</span><strong id="reportDate">-</strong></div>
+                  <div class="recon-row">
+                    <span>Revision</span>
+                    <strong id="reportRevision">-</strong>
+                  </div>
+                  <div class="recon-row">
+                    <span>Generated At</span>
+                    <strong id="reportGeneratedAt">-</strong>
                   </div>
                 </div>
-              </div>
-              <div class="panel">
-                <div class="panel__head">
-                  <h3 class="panel__title">Machine Controls</h3>
+              </section>
+
+              <section class="recon-card">
+                <div class="recon-card__head">
+                  <h3 class="recon-card__title">Financial Totals</h3>
                 </div>
-                <div class="panel__body panel__body--actions">
-                  <button id="resetBalanceBtn" class="ctrl-btn ctrl-btn--amber">
-                    <svg
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
-                    Reset Balance
-                    <span class="ctrl-btn__sub">Zeroes coin counter</span>
-                  </button>
-                  <button id="clearStorageBtn" class="ctrl-btn ctrl-btn--red">
-                    <svg
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
-                    Clear Upload Storage
-                    <span class="ctrl-btn__sub"
-                      >Deletes all uploaded files</span
-                    >
-                  </button>
+                <div class="recon-card__body recon-list">
+                  <div class="recon-row">
+                    <span>Total Coin Intake</span>
+                    <strong id="totalCoinIntake">₱ 0.00</strong>
+                  </div>
+                  <div class="recon-row">
+                    <span>Total Settled</span>
+                    <strong id="totalSettled">₱ 0.00</strong>
+                  </div>
+                  <div class="recon-row">
+                    <span>Total Refunded</span>
+                    <strong id="totalRefunded">₱ 0.00</strong>
+                  </div>
                 </div>
-              </div>
+              </section>
             </div>
+
+            <section class="recon-card recon-card--count">
+              <div class="recon-card__head">
+                <h3 class="recon-card__title">Physical Cash Count</h3>
+                <p class="recon-card__hint">
+                  Record counted cash and optional audit details for this report.
+                </p>
+              </div>
+              <div class="recon-card__body">
+                <div class="recon-form-grid">
+                  <label class="recon-field" for="physicalCountInput">
+                    <span class="recon-field__label">Counted Amount</span>
+                    <input
+                      id="physicalCountInput"
+                      class="recon-input"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Enter counted cash amount"
+                    />
+                  </label>
+                  <label class="recon-field" for="countedByInput">
+                    <span class="recon-field__label">Counted By</span>
+                    <input
+                      id="countedByInput"
+                      class="recon-input"
+                      type="text"
+                      placeholder="Counted by (optional)"
+                    />
+                  </label>
+                  <label class="recon-field recon-field--wide" for="countNotesInput">
+                    <span class="recon-field__label">Count Notes</span>
+                    <textarea
+                      id="countNotesInput"
+                      class="recon-textarea"
+                      placeholder="Notes (optional)"
+                    ></textarea>
+                  </label>
+                </div>
+                <div class="recon-save-wrap">
+                  <button id="saveCountBtn" class="recon-btn recon-btn--primary" type="button">
+                    Save count
+                  </button>
+                </div>
+              </div>
+            </section>
           </section>
         </div>
       </main>
 
       <nav class="mob-nav" aria-label="Mobile navigation">
-        <a href="/admin/dashboard" class="mob-nav__btn mob-nav__btn--active">
+        <a href="/admin/dashboard" class="mob-nav__btn">
           <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path
               d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"
@@ -551,11 +479,6 @@
             />
           </svg>
           <span>Feedback</span>
-          <span
-            class="nav-count-badge"
-            id="openBadgeMob"
-            aria-label="open feedback count"
-          ></span>
         </a>
         <a href="/admin/report" class="mob-nav__btn">
           <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -567,12 +490,19 @@
           </svg>
           <span>Reports</span>
         </a>
-      <a href="/admin/reconciliation" class="mob-nav__btn"
-        ><span>Reconciliation</span></a
-      >
+        <a href="/admin/reconciliation" class="mob-nav__btn mob-nav__btn--active">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path
+              fill-rule="evenodd"
+              d="M4 3a1 1 0 00-1 1v12a1 1 0 001 1h7a1 1 0 000-2H5V5h10v1a1 1 0 102 0V4a1 1 0 00-1-1H4zm8.293 6.293a1 1 0 011.414 0L15 10.586l2.293-2.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-2-2a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
+          </svg>
+          <span>Reconciliation</span>
+        </a>
       </nav>
     </div>
 
-    <script src="/admin/dashboard/app.js"></script>
+    <script src="/admin/reconciliation/app.js"></script>
   </body>
 </html>
