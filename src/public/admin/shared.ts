@@ -79,6 +79,41 @@ export type SummaryResponse = {
   };
 };
 
+export type ReconciliationVarianceStatus = 'pending' | 'matched' | 'mismatch';
+
+export type ReconciliationReport = {
+  id: string;
+  dateKey: string;
+  revision: number;
+  generatedAt: string;
+  generatedBy: 'auto' | 'manual';
+  expectedCash: number;
+  expectedCashAfterLiabilities: number;
+  physicalCount: {
+    countedAmount: number;
+    countedAt: string;
+    countedBy: string | null;
+    notes: string | null;
+  } | null;
+  variance: {
+    threshold: number;
+    amount: number;
+    hasVariance: boolean;
+    status: ReconciliationVarianceStatus;
+    alertLogId: string | null;
+  };
+  totals: {
+    coinIntake: number;
+    settledAmount: number;
+    refundIssued: number;
+    netSettled: number;
+    jobStartedCount: number;
+    jobCompletedCount: number;
+    refundCount: number;
+    ledgerEntryCount: number;
+  };
+};
+
 export type SettingsResponse = {
   pricing: {
     printPerPage: number;
@@ -172,8 +207,19 @@ export async function ensureAuth(): Promise<boolean> {
 
 let messageEl: HTMLElement | null = null;
 
+function resolveVisibleMessageEl(): HTMLElement | null {
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>('#adminMessage'),
+  );
+  if (candidates.length === 0) return null;
+  const visible = candidates.find(
+    (el) => el.offsetParent !== null && !el.classList.contains('hidden'),
+  );
+  return visible ?? candidates[0];
+}
+
 export function setMessage(text: string): void {
-  if (!messageEl) messageEl = document.getElementById('adminMessage');
+  messageEl = resolveVisibleMessageEl();
   if (messageEl) messageEl.textContent = text;
 }
 

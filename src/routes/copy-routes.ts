@@ -17,6 +17,7 @@ import {
   watchJobForMalfunction,
 } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
+import { financialLedgerService } from '@/services/financial-ledger';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -220,6 +221,17 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
           paperSize: safePaperSize,
         };
         const relPath = path.join('scans', previewFilename);
+        await financialLedgerService.append({
+          eventType: 'job_started',
+          amount: requiredAmount,
+          referenceId: job.id,
+          meta: {
+            mode: 'copy',
+            copies: safeCopies,
+            colorMode: safeColorMode,
+            previewFilename,
+          },
+        });
         await printFile(relPath, printOptions);
 
         // Start mid-job watchdog. Polls printer status every 3 s for 30 s
@@ -272,6 +284,17 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
             remainingBalance: settlement.remainingBalance,
           };
           jobStore.updateJobState(job.id, 'succeeded');
+          await financialLedgerService.append({
+            eventType: 'job_completed',
+            amount: settlement.chargedAmount,
+            referenceId: job.id,
+            meta: {
+              mode: 'copy',
+              changeState: settlement.change.state,
+              changeRequested: settlement.change.requested,
+              changeDispensed: settlement.change.dispensed,
+            },
+          });
           await adminService.incrementJobStats('copy');
           void adminService.appendAdminLog(
             'copy_job_completed',
