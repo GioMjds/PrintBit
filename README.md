@@ -54,13 +54,12 @@ Troubleshooting:
 5. Tap **Get Soft Copy**.
 6. Choose delivery:
    - **Wireless (QR):** scan the generated QR code to download.
-   - **USB Flash Drive:** insert a USB drive, refresh, then export.
 
 Troubleshooting:
 
 - If scanner is unavailable, check scanner connection/power and retry.
 - If the QR link expires, refresh the wireless link.
-- If no USB is detected, insert/reinsert the drive and refresh.
+- USB mass storage is disabled in kiosk lockdown mode by design.
 
 ## Tech stack
 

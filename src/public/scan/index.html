@@ -489,7 +489,7 @@
               <p class="delivery-pre__title">Soft copy ready after scan</p>
               <p class="delivery-pre__sub">
                 Scan your document, then tap <em>Get Soft Copy</em> to unlock
-                wireless QR or USB export
+                wireless QR download
               </p>
               <p class="delivery-pre__sub">
                 <strong>Soft copy fee: loading...</strong>
@@ -563,102 +563,6 @@
                   Refresh Link
                 </button>
                 <p id="wirelessStatusText" class="delivery-status"></p>
-              </div>
-
-              <!-- Wired USB card -->
-              <div
-                id="wiredDeliveryCard"
-                class="delivery-card"
-                style="display: none"
-              >
-                <div class="delivery-card__header">
-                  <div class="delivery-card__icon-wrap" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                      <rect
-                        x="7"
-                        y="2"
-                        width="10"
-                        height="16"
-                        rx="2.5"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        opacity=".85"
-                      />
-                      <path
-                        d="M9.5 6h5M9.5 10h5M9.5 14h3"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                      />
-                      <path
-                        d="M12 18v4"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                        opacity=".5"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p class="delivery-card__title">USB Export</p>
-                    <p class="delivery-card__sub">Save to a flash drive</p>
-                  </div>
-                </div>
-
-                <div class="drive-row">
-                  <select
-                    id="driveSelect"
-                    class="drive-select"
-                    aria-label="USB drive"
-                  >
-                    <option value="">No USB drive detected</option>
-                  </select>
-                  <button
-                    type="button"
-                    id="refreshDrivesBtn"
-                    class="delivery-btn delivery-btn--icon"
-                  >
-                    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path
-                        d="M2.5 8A5.5 5.5 0 0113 5M13.5 8A5.5 5.5 0 013 11"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                      />
-                      <path
-                        d="M11.5 5V2.5M4.5 11v2.5"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        stroke-linecap="round"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  id="exportUsbBtn"
-                  class="delivery-btn delivery-btn--primary"
-                  disabled
-                >
-                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M8 2v8M5 7l3 3 3-3"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                    <path
-                      d="M2 12h12"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      stroke-linecap="round"
-                    />
-                  </svg>
-                  Export to USB
-                </button>
-                <p id="wiredStatusText" class="delivery-status"></p>
               </div>
             </section>
             <!-- /deliveryPanel -->

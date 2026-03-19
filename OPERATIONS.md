@@ -59,7 +59,7 @@
 
 - Check scanner readiness from `GET /api/scanner/status`.
 - For wireless delivery, regenerate the link from `POST /api/scanner/wireless-link` and retry `/scan/download/:token`.
-- For USB delivery, verify removable drive detection via `GET /api/scanner/wired/drives` before calling `POST /api/scanner/wired/export`.
+- In kiosk lockdown mode, USB export routes are disabled and return `423` with `code: "USB_EXPORT_DISABLED"`.
 
 ## Storage and state safety
 

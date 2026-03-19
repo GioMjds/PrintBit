@@ -20,6 +20,11 @@ cd /d "%~dp0.."
 set "PROJECT_DIR=%cd%"
 echo [PrintBit] Project: %PROJECT_DIR%
 
+if "%PRINTBIT_KIOSK_LOCKDOWN%"=="" set "PRINTBIT_KIOSK_LOCKDOWN=true"
+if "%PRINTBIT_USB_EXPORT_ENABLED%"=="" set "PRINTBIT_USB_EXPORT_ENABLED=false"
+echo [PrintBit] Kiosk Lockdown: %PRINTBIT_KIOSK_LOCKDOWN%
+echo [PrintBit] USB Export Enabled: %PRINTBIT_USB_EXPORT_ENABLED%
+
 :: Ensure pnpm is available
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
@@ -52,7 +57,7 @@ echo [PrintBit] Kiosk URL: %KIOSK_URL%
 
 :: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
 echo [PrintBit] Starting server...
-start "PrintBit Server" /min cmd /c "cd /d "%PROJECT_DIR%" && pnpm run dev"
+start "PrintBit Server" /min cmd /c "cd /d ""%PROJECT_DIR%"" && set ""PRINTBIT_KIOSK_LOCKDOWN=%PRINTBIT_KIOSK_LOCKDOWN%"" && set ""PRINTBIT_USB_EXPORT_ENABLED=%PRINTBIT_USB_EXPORT_ENABLED%"" && pnpm run dev"
 
 :: Wait for server to come up
 echo [PrintBit] Waiting for server to start...
