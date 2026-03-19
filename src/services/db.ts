@@ -378,6 +378,89 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const alertSettings = data?.settings?.alerts;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
+  const normalizeAnomalyIncidents = (
+    raw: unknown,
+  ): AnomalyIncidentEntry[] => {
+    if (!Array.isArray(raw)) return DEFAULT_DATA.anomalyIncidents;
+    const incidents: AnomalyIncidentEntry[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'object' || entry === null) {
+        console.warn(
+          '[DB] Skipping malformed anomaly incident row (not an object).',
+        );
+        continue;
+      }
+      const candidate = entry as Partial<AnomalyIncidentEntry>;
+      if (
+        typeof candidate.id !== 'string' ||
+        typeof candidate.type !== 'string' ||
+        typeof candidate.source !== 'string' ||
+        typeof candidate.fingerprint !== 'string'
+      ) {
+        console.warn(
+          '[DB] Skipping malformed anomaly incident row (missing required keys).',
+        );
+        continue;
+      }
+      incidents.push({
+        id: candidate.id,
+        type: candidate.type,
+        source: candidate.source,
+        category:
+          candidate.category === 'printer' ||
+          candidate.category === 'spooler' ||
+          candidate.category === 'serial' ||
+          candidate.category === 'hopper' ||
+          candidate.category === 'network'
+            ? candidate.category
+            : 'printer',
+        severity: candidate.severity === 'critical' ? 'critical' : 'warning',
+        status:
+          candidate.status === 'acknowledged' || candidate.status === 'resolved'
+            ? candidate.status
+            : 'open',
+        fingerprint: candidate.fingerprint,
+        message: typeof candidate.message === 'string' ? candidate.message : '',
+        context:
+          typeof candidate.context === 'object' && candidate.context !== null
+            ? candidate.context
+            : undefined,
+        occurrenceCount: finiteOr(candidate.occurrenceCount, 1),
+        firstDetectedAt:
+          typeof candidate.firstDetectedAt === 'string'
+            ? candidate.firstDetectedAt
+            : new Date(0).toISOString(),
+        lastDetectedAt:
+          typeof candidate.lastDetectedAt === 'string'
+            ? candidate.lastDetectedAt
+            : new Date(0).toISOString(),
+        createdAt:
+          typeof candidate.createdAt === 'string'
+            ? candidate.createdAt
+            : new Date(0).toISOString(),
+        updatedAt:
+          typeof candidate.updatedAt === 'string'
+            ? candidate.updatedAt
+            : new Date(0).toISOString(),
+        acknowledgedAt:
+          typeof candidate.acknowledgedAt === 'string'
+            ? candidate.acknowledgedAt
+            : null,
+        resolvedAt: typeof candidate.resolvedAt === 'string' ? candidate.resolvedAt : null,
+        lastNotificationAt:
+          typeof candidate.lastNotificationAt === 'string'
+            ? candidate.lastNotificationAt
+            : null,
+        lastNotifiedChannels: Array.isArray(candidate.lastNotifiedChannels)
+          ? candidate.lastNotifiedChannels.filter(
+              (channel): channel is AlertChannel =>
+                channel === 'dashboard' || channel === 'email',
+            )
+          : [],
+      });
+    }
+    return incidents;
+  };
 
   return {
     adminLockout: {
@@ -586,40 +669,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
     pendingRefunds: Array.isArray(data?.pendingRefunds)
       ? data.pendingRefunds
       : DEFAULT_DATA.pendingRefunds,
-    anomalyIncidents: Array.isArray(data?.anomalyIncidents)
-      ? data.anomalyIncidents.map((entry) => ({
-          id: entry.id,
-          type: entry.type,
-          source: entry.source,
-          category: entry.category,
-          severity: entry.severity === 'critical' ? 'critical' : 'warning',
-          status:
-            entry.status === 'acknowledged' || entry.status === 'resolved'
-              ? entry.status
-              : 'open',
-          fingerprint: entry.fingerprint,
-          message: entry.message,
-          context: entry.context,
-          occurrenceCount: finiteOr(entry.occurrenceCount, 1),
-          firstDetectedAt: entry.firstDetectedAt,
-          lastDetectedAt: entry.lastDetectedAt,
-          createdAt: entry.createdAt,
-          updatedAt: entry.updatedAt,
-          acknowledgedAt:
-            typeof entry.acknowledgedAt === 'string' ? entry.acknowledgedAt : null,
-          resolvedAt: typeof entry.resolvedAt === 'string' ? entry.resolvedAt : null,
-          lastNotificationAt:
-            typeof entry.lastNotificationAt === 'string'
-              ? entry.lastNotificationAt
-              : null,
-          lastNotifiedChannels: Array.isArray(entry.lastNotifiedChannels)
-            ? entry.lastNotifiedChannels.filter(
-                (channel): channel is AlertChannel =>
-                  channel === 'dashboard' || channel === 'email',
-              )
-            : [],
-        }))
-      : DEFAULT_DATA.anomalyIncidents,
+    anomalyIncidents: normalizeAnomalyIncidents(data?.anomalyIncidents),
     financialLedger: Array.isArray(data?.financialLedger)
       ? data.financialLedger
       : DEFAULT_DATA.financialLedger,
@@ -639,7 +689,14 @@ export async function initDB() {
     return;
   }
 
-  db.data = normalizeSchema(db.data);
+  try {
+    db.data = normalizeSchema(db.data);
+  } catch (error) {
+    console.error('[DB] Failed to normalize database after db.read().', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    db.data = { ...DEFAULT_DATA };
+  }
   await db.write();
 }
 

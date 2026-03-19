@@ -15,6 +15,7 @@ import {
 import { HopperErrorCode } from './hopper-protocol';
 
 const SMTP_PASSWORD_ENV_VAR = 'PRINTBIT_ALERT_SMTP_PASSWORD';
+const SMTP_PASSWORD_TEST_ENV_VAR = 'PRINTBIT_ALERT_SMTP_PASSWORD_TEST';
 
 export interface ReportAnomalyInput {
   type: string;
@@ -71,12 +72,20 @@ class AnomalyService {
     const limit = this.clampLimit(options.limit);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
 
-    const filtered = db.data!.anomalyIncidents.filter((entry) => {
-      if (options.status && entry.status !== options.status) return false;
-      if (options.severity && entry.severity !== options.severity) return false;
-      if (options.category && entry.category !== options.category) return false;
-      return true;
-    });
+    const filtered = db.data!.anomalyIncidents
+      .filter((entry) => {
+        if (options.status && entry.status !== options.status) return false;
+        if (options.severity && entry.severity !== options.severity)
+          return false;
+        if (options.category && entry.category !== options.category)
+          return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const aTs = this.toIncidentTimestamp(a.lastDetectedAt);
+        const bTs = this.toIncidentTimestamp(b.lastDetectedAt);
+        return bTs - aTs;
+      });
 
     const all = db.data!.anomalyIncidents;
     return {
@@ -218,14 +227,15 @@ class AnomalyService {
     };
   }
 
-  async sendEmailTestAlert(): Promise<{ ok: boolean; error?: string }> {
-    const settings = this.getAlertSettings();
+  async sendEmailTestAlert(
+    settings: AlertSettings = this.getAlertSettings(),
+  ): Promise<{ ok: boolean; error?: string }> {
     if (!settings.email.enabled) {
       return { ok: false, error: 'Email alerts are disabled in settings.' };
     }
     const validationError = this.validateEmailConfig(
       settings.email,
-      this.getRuntimeSmtpPassword(),
+      this.getRuntimeSmtpPassword(settings.email.username),
     );
     if (validationError) return { ok: false, error: validationError };
 
@@ -236,6 +246,7 @@ class AnomalyService {
         `Sent at: ${new Date().toISOString()}`,
       ].join('\n'),
       'anomaly_email_test',
+      settings,
     );
     if (success) return { ok: true };
     return { ok: false, error: 'Failed to send test email alert.' };
@@ -244,6 +255,14 @@ class AnomalyService {
   private clampLimit(limit?: number): number {
     const n = Math.floor(limit ?? 100);
     return Math.max(1, Math.min(n, 1000));
+  }
+
+  private toIncidentTimestamp(value: string | null | undefined): number {
+    if (typeof value !== 'string' || value.length === 0) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
   }
 
   private isSeverityEligible(severity: AnomalySeverity): boolean {
@@ -335,6 +354,7 @@ class AnomalyService {
           subject,
           body,
           'anomaly_email_dispatch',
+          settings,
         );
       } catch (error) {
         this.logError('Failed to dispatch anomaly email notification.', error, {
@@ -364,8 +384,10 @@ class AnomalyService {
     return null;
   }
 
-  private getRuntimeSmtpPassword(): string | null {
-    const password = process.env[SMTP_PASSWORD_ENV_VAR];
+  private getRuntimeSmtpPassword(username: string): string | null {
+    if (!username.trim()) return null;
+    const password =
+      process.env[SMTP_PASSWORD_ENV_VAR] ?? process.env[SMTP_PASSWORD_TEST_ENV_VAR];
     if (typeof password !== 'string' || password.length === 0) return null;
     return password;
   }
@@ -374,9 +396,10 @@ class AnomalyService {
     subject: string,
     body: string,
     logType: 'anomaly_email_dispatch' | 'anomaly_email_test',
+    alertSettings: AlertSettings = this.getAlertSettings(),
   ): Promise<boolean> {
-    const settings = this.getAlertSettings().email;
-    const smtpPassword = this.getRuntimeSmtpPassword();
+    const settings = alertSettings.email;
+    const smtpPassword = this.getRuntimeSmtpPassword(settings.username);
     const validationError = this.validateEmailConfig(settings, smtpPassword);
     if (validationError) {
       try {
@@ -444,9 +467,11 @@ if ('${username}' -and '${password}') {
 
     try {
       await runPowerShell(script, 20_000);
+      const recipientSummary = this.summarizeRecipients(recipients);
       try {
         await adminService.appendAdminLog(logType, 'Anomaly email alert sent.', {
-          to: settings.to,
+          recipientCount: recipients.length,
+          recipientSummary,
           smtpHost: settings.smtpHost,
         });
       } catch (error) {
@@ -456,20 +481,24 @@ if ('${username}' -and '${password}') {
       }
       return true;
     } catch (error) {
+      const recipientSummary = this.summarizeRecipients(recipients);
+      const sanitizedError = this.sanitizeEmailError(error, recipients);
       try {
         await adminService.appendAdminLog(
           'anomaly_email_dispatch_failed',
           'Failed to send anomaly email alert.',
           {
-            error: error instanceof Error ? error.message : String(error),
-            to: settings.to,
+            error: sanitizedError,
+            recipientCount: recipients.length,
+            recipientSummary,
             smtpHost: settings.smtpHost,
           },
         );
       } catch (logError) {
         this.logError('Failed to record anomaly email failure log.', logError, {
-          error: error instanceof Error ? error.message : String(error),
-          to: settings.to,
+          dispatchError: sanitizedError,
+          recipientCount: recipients.length,
+          recipientSummary,
           smtpHost: settings.smtpHost,
         });
       }
@@ -486,6 +515,33 @@ if ('${username}' -and '${password}') {
 
   private escapePs(value: string): string {
     return value.replace(/'/g, "''");
+  }
+
+  private sanitizeEmailError(error: unknown, recipients: string[]): string {
+    let text = error instanceof Error ? error.message : String(error);
+    for (const recipient of recipients) {
+      const trimmed = recipient.trim();
+      if (!trimmed) continue;
+      text = text.split(trimmed).join(this.maskEmail(trimmed));
+    }
+    return text;
+  }
+
+  private summarizeRecipients(recipients: string[]): string {
+    const masked = recipients.map((recipient) => this.maskEmail(recipient));
+    if (masked.length <= 3) return masked.join(', ');
+    return `${masked.slice(0, 3).join(', ')}, +${masked.length - 3} more`;
+  }
+
+  private maskEmail(email: string): string {
+    const [localPartRaw, domainRaw] = email.trim().split('@');
+    const localPart = localPartRaw ?? '';
+    if (!domainRaw) {
+      return localPart.length > 0 ? `${localPart.charAt(0)}***` : '***';
+    }
+    const safeLocal =
+      localPart.length > 0 ? `${localPart.charAt(0)}***` : '***';
+    return `${safeLocal}@${domainRaw.toLowerCase()}`;
   }
 }
 

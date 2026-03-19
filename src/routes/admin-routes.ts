@@ -85,6 +85,132 @@ function isAnomalyCategory(
   );
 }
 
+function parseAlertSettingsPayload(
+  body: unknown,
+  current: typeof db.data.settings.alerts,
+): { next?: typeof db.data.settings.alerts; error?: string } {
+  const payload = body as {
+    severityThreshold?: unknown;
+    dashboard?: { enabled?: unknown };
+    email?: {
+      enabled?: unknown;
+      smtpHost?: unknown;
+      smtpPort?: unknown;
+      secure?: unknown;
+      username?: unknown;
+      from?: unknown;
+      to?: unknown;
+    };
+    dedupe?: {
+      printerMs?: unknown;
+      spoolerMs?: unknown;
+      serialMs?: unknown;
+      hopperMs?: unknown;
+      networkMs?: unknown;
+    };
+  };
+
+  const next = {
+    severityThreshold: current.severityThreshold,
+    dashboard: { ...current.dashboard },
+    email: { ...current.email },
+    dedupe: { ...current.dedupe },
+  };
+
+  if (payload.severityThreshold !== undefined) {
+    if (!isAnomalySeverity(payload.severityThreshold)) {
+      return { error: 'severityThreshold must be "warning" or "critical".' };
+    }
+    next.severityThreshold = payload.severityThreshold;
+  }
+
+  if (payload.dashboard?.enabled !== undefined) {
+    if (typeof payload.dashboard.enabled !== 'boolean') {
+      return { error: 'dashboard.enabled must be boolean.' };
+    }
+    next.dashboard.enabled = payload.dashboard.enabled;
+  }
+
+  if (payload.email) {
+    if (payload.email.enabled !== undefined) {
+      if (typeof payload.email.enabled !== 'boolean') {
+        return { error: 'email.enabled must be boolean.' };
+      }
+      next.email.enabled = payload.email.enabled;
+    }
+    if (payload.email.smtpHost !== undefined) {
+      if (typeof payload.email.smtpHost !== 'string') {
+        return { error: 'Invalid smtpHost.' };
+      }
+      next.email.smtpHost = payload.email.smtpHost.trim();
+    }
+    if (payload.email.smtpPort !== undefined) {
+      const smtpPort = Number(payload.email.smtpPort);
+      if (!Number.isFinite(smtpPort) || smtpPort <= 0) {
+        return { error: 'Invalid smtpPort.' };
+      }
+      next.email.smtpPort = Math.floor(smtpPort);
+    }
+    if (payload.email.secure !== undefined) {
+      if (typeof payload.email.secure !== 'boolean') {
+        return { error: 'email.secure must be boolean.' };
+      }
+      next.email.secure = payload.email.secure;
+    }
+    if (payload.email.username !== undefined) {
+      if (typeof payload.email.username !== 'string') {
+        return { error: 'Invalid email username.' };
+      }
+      next.email.username = payload.email.username.trim();
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        payload.email as Record<string, unknown>,
+        'password',
+      )
+    ) {
+      return {
+        error:
+          'SMTP password is not accepted in settings payload. Set PRINTBIT_ALERT_SMTP_PASSWORD in the environment.',
+      };
+    }
+    if (payload.email.from !== undefined) {
+      if (typeof payload.email.from !== 'string') {
+        return { error: 'Invalid email from.' };
+      }
+      next.email.from = payload.email.from.trim();
+    }
+    if (payload.email.to !== undefined) {
+      if (typeof payload.email.to !== 'string') {
+        return { error: 'Invalid email to.' };
+      }
+      next.email.to = payload.email.to.trim();
+    }
+  }
+
+  if (payload.dedupe) {
+    const dedupeEntries: Array<
+      ['printerMs' | 'spoolerMs' | 'serialMs' | 'hopperMs' | 'networkMs', unknown]
+    > = [
+      ['printerMs', payload.dedupe.printerMs],
+      ['spoolerMs', payload.dedupe.spoolerMs],
+      ['serialMs', payload.dedupe.serialMs],
+      ['hopperMs', payload.dedupe.hopperMs],
+      ['networkMs', payload.dedupe.networkMs],
+    ];
+    for (const [key, raw] of dedupeEntries) {
+      if (raw === undefined) continue;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return { error: `Invalid ${key} value.` };
+      }
+      next.dedupe[key] = Math.floor(parsed);
+    }
+  }
+
+  return { next };
+}
+
 function toSafeAlertSettings(alerts: typeof db.data.settings.alerts): {
   severityThreshold: 'warning' | 'critical';
   dashboard: { enabled: boolean };
@@ -450,137 +576,13 @@ export function registerAdminRoutes(
     requireAdminLocalAccess,
     requireAdminPin,
     async (req: Request, res: Response) => {
-      const body = req.body as {
-        severityThreshold?: unknown;
-        dashboard?: { enabled?: unknown };
-        email?: {
-          enabled?: unknown;
-          smtpHost?: unknown;
-          smtpPort?: unknown;
-          secure?: unknown;
-          username?: unknown;
-          from?: unknown;
-          to?: unknown;
-        };
-        dedupe?: {
-          printerMs?: unknown;
-          spoolerMs?: unknown;
-          serialMs?: unknown;
-          hopperMs?: unknown;
-          networkMs?: unknown;
-        };
-      };
-
       const current = db.data!.settings.alerts;
-      const next = {
-        severityThreshold: current.severityThreshold,
-        dashboard: { ...current.dashboard },
-        email: { ...current.email },
-        dedupe: { ...current.dedupe },
-      };
-
-      if (body.severityThreshold !== undefined) {
-        if (!isAnomalySeverity(body.severityThreshold)) {
-          return res.status(400).json({
-            error: 'severityThreshold must be "warning" or "critical".',
-          });
-        }
-        next.severityThreshold = body.severityThreshold;
+      const parsed = parseAlertSettingsPayload(req.body, current);
+      if (parsed.error) {
+        return res.status(400).json({ error: parsed.error });
       }
 
-      if (body.dashboard?.enabled !== undefined) {
-        if (typeof body.dashboard.enabled !== 'boolean') {
-          return res
-            .status(400)
-            .json({ error: 'dashboard.enabled must be boolean.' });
-        }
-        next.dashboard.enabled = body.dashboard.enabled;
-      }
-      if (body.email) {
-        if (body.email.enabled !== undefined) {
-          if (typeof body.email.enabled !== 'boolean') {
-            return res
-              .status(400)
-              .json({ error: 'email.enabled must be boolean.' });
-          }
-          next.email.enabled = body.email.enabled;
-        }
-        if (body.email.smtpHost !== undefined) {
-          if (typeof body.email.smtpHost !== 'string') {
-            return res.status(400).json({ error: 'Invalid smtpHost.' });
-          }
-          next.email.smtpHost = body.email.smtpHost.trim();
-        }
-        if (body.email.smtpPort !== undefined) {
-          const smtpPort = Number(body.email.smtpPort);
-          if (!Number.isFinite(smtpPort) || smtpPort <= 0) {
-            return res.status(400).json({ error: 'Invalid smtpPort.' });
-          }
-          next.email.smtpPort = Math.floor(smtpPort);
-        }
-        if (body.email.secure !== undefined) {
-          if (typeof body.email.secure !== 'boolean') {
-            return res
-              .status(400)
-              .json({ error: 'email.secure must be boolean.' });
-          }
-          next.email.secure = body.email.secure;
-        }
-        if (body.email.username !== undefined) {
-          if (typeof body.email.username !== 'string') {
-            return res.status(400).json({ error: 'Invalid email username.' });
-          }
-          next.email.username = body.email.username.trim();
-        }
-        if (
-          Object.prototype.hasOwnProperty.call(
-            body.email as Record<string, unknown>,
-            'password',
-          )
-        ) {
-          return res.status(400).json({
-            error:
-              'SMTP password is not accepted in settings payload. Set PRINTBIT_ALERT_SMTP_PASSWORD in the environment.',
-          });
-        }
-        if (body.email.from !== undefined) {
-          if (typeof body.email.from !== 'string') {
-            return res.status(400).json({ error: 'Invalid email from.' });
-          }
-          next.email.from = body.email.from.trim();
-        }
-        if (body.email.to !== undefined) {
-          if (typeof body.email.to !== 'string') {
-            return res.status(400).json({ error: 'Invalid email to.' });
-          }
-          next.email.to = body.email.to.trim();
-        }
-      }
-
-      if (body.dedupe) {
-        const dedupeEntries: Array<
-          [
-            'printerMs' | 'spoolerMs' | 'serialMs' | 'hopperMs' | 'networkMs',
-            unknown,
-          ]
-        > = [
-          ['printerMs', body.dedupe.printerMs],
-          ['spoolerMs', body.dedupe.spoolerMs],
-          ['serialMs', body.dedupe.serialMs],
-          ['hopperMs', body.dedupe.hopperMs],
-          ['networkMs', body.dedupe.networkMs],
-        ];
-        for (const [key, raw] of dedupeEntries) {
-          if (raw === undefined) continue;
-          const parsed = Number(raw);
-          if (!Number.isFinite(parsed) || parsed < 0) {
-            return res.status(400).json({ error: `Invalid ${key} value.` });
-          }
-          next.dedupe[key] = Math.floor(parsed);
-        }
-      }
-
-      await anomalyService.updateAlertSettings(next);
+      await anomalyService.updateAlertSettings(parsed.next!);
       await adminService.appendAdminLog(
         'admin_alert_settings_updated',
         'Admin alert settings updated.',
@@ -593,8 +595,13 @@ export function registerAdminRoutes(
     '/api/admin/alert-settings/test',
     requireAdminLocalAccess,
     requireAdminPin,
-    async (_req: Request, res: Response) => {
-      const result = await anomalyService.sendEmailTestAlert();
+    async (req: Request, res: Response) => {
+      const parsed = parseAlertSettingsPayload(req.body, db.data!.settings.alerts);
+      if (parsed.error) {
+        return res.status(400).json({ ok: false, error: parsed.error });
+      }
+
+      const result = await anomalyService.sendEmailTestAlert(parsed.next!);
       if (!result.ok) {
         return res.status(400).json({ ok: false, error: result.error });
       }

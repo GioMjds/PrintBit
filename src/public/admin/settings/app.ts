@@ -77,6 +77,36 @@ function applySettings(settings: SettingsResponse): void {
   alertEmailTo.value = settings.alerts.email.to;
 }
 
+function buildAlertPayload(): {
+  severityThreshold: string;
+  dashboard: { enabled: boolean };
+  email: {
+    enabled: boolean;
+    smtpHost: string;
+    smtpPort: number;
+    secure: boolean;
+    username: string;
+    from: string;
+    to: string;
+  };
+} {
+  return {
+    severityThreshold: alertSeverityThreshold.value,
+    dashboard: {
+      enabled: alertDashboardEnabled.checked,
+    },
+    email: {
+      enabled: alertEmailEnabled.checked,
+      smtpHost: alertSmtpHost.value.trim(),
+      smtpPort: Number(alertSmtpPort.value),
+      secure: alertSmtpSecure.checked,
+      username: alertEmailUsername.value.trim(),
+      from: alertEmailFrom.value.trim(),
+      to: alertEmailTo.value.trim(),
+    },
+  };
+}
+
 async function loadAlertStats(): Promise<void> {
   const res = await apiFetch('/api/admin/anomaly-incidents?limit=1');
   if (!res.ok) return;
@@ -113,21 +143,7 @@ settingsForm.addEventListener('submit', (e) => {
     ...(newPin ? { adminPin: newPin } : {}),
     adminLocalOnly: settingAdminLocalOnly.checked,
   };
-  const alertPayload = {
-    severityThreshold: alertSeverityThreshold.value,
-    dashboard: {
-      enabled: alertDashboardEnabled.checked,
-    },
-    email: {
-      enabled: alertEmailEnabled.checked,
-      smtpHost: alertSmtpHost.value.trim(),
-      smtpPort: Number(alertSmtpPort.value),
-      secure: alertSmtpSecure.checked,
-      username: alertEmailUsername.value.trim(),
-      from: alertEmailFrom.value.trim(),
-      to: alertEmailTo.value.trim(),
-    },
-  };
+  const alertPayload = buildAlertPayload();
 
   setMessage('Saving settings...');
   void Promise.all([
@@ -141,14 +157,35 @@ settingsForm.addEventListener('submit', (e) => {
     }),
   ])
     .then(async ([settingsResponse, alertsResponse]) => {
+      let settingsError: string | null = null;
+      let alertsError: string | null = null;
+
       if (!settingsResponse.ok) {
         const body = (await settingsResponse.json()) as { error?: string };
-        throw new Error(body.error ?? 'Failed to save settings.');
+        settingsError = body.error ?? 'Failed to save settings.';
       }
       if (!alertsResponse.ok) {
         const body = (await alertsResponse.json()) as { error?: string };
-        throw new Error(body.error ?? 'Failed to save alert settings.');
+        alertsError = body.error ?? 'Failed to save alert settings.';
       }
+
+      if (settingsError || alertsError) {
+        if (settingsResponse.ok || alertsResponse.ok) {
+          try {
+            await loadData();
+            await loadAlertStats();
+          } catch (reloadError) {
+            console.error('[ADMIN_SETTINGS] Failed to resync after save error.', {
+              error:
+                reloadError instanceof Error
+                  ? reloadError.message
+                  : String(reloadError),
+            });
+          }
+        }
+        throw new Error(alertsError ?? settingsError ?? 'Failed to save settings.');
+      }
+
       if (newPin) setAdminPin(newPin);
       await loadData();
       await loadAlertStats();
@@ -172,7 +209,10 @@ refreshBtn.addEventListener('click', () => {
 
 testEmailAlertBtn.addEventListener('click', () => {
   setMessage('Sending test email alert...');
-  void apiFetch('/api/admin/alert-settings/test', { method: 'POST' })
+  void apiFetch('/api/admin/alert-settings/test', {
+    method: 'POST',
+    body: JSON.stringify(buildAlertPayload()),
+  })
     .then(async (response) => {
       if (!response.ok) {
         const body = (await response.json()) as { error?: string };
