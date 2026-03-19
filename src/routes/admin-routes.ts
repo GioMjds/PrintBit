@@ -85,6 +85,36 @@ function isAnomalyCategory(
   );
 }
 
+function toSafeAlertSettings(alerts: typeof db.data.settings.alerts): {
+  severityThreshold: 'warning' | 'critical';
+  dashboard: { enabled: boolean };
+  email: {
+    enabled: boolean;
+    smtpHost: string;
+    smtpPort: number;
+    secure: boolean;
+    username: string;
+    from: string;
+    to: string;
+  };
+  dedupe: {
+    printerMs: number;
+    spoolerMs: number;
+    serialMs: number;
+    hopperMs: number;
+    networkMs: number;
+  };
+} {
+  return {
+    severityThreshold: alerts.severityThreshold,
+    dashboard: { ...alerts.dashboard },
+    email: {
+      ...alerts.email,
+    },
+    dedupe: { ...alerts.dedupe },
+  };
+}
+
 export function registerAdminRoutes(
   app: Express,
   deps: RegisterAdminRoutesDeps,
@@ -411,7 +441,7 @@ export function registerAdminRoutes(
     requireAdminLocalAccess,
     requireAdminPin,
     (_req: Request, res: Response) => {
-      res.json(db.data!.settings.alerts);
+      res.json(toSafeAlertSettings(db.data!.settings.alerts));
     },
   );
 
@@ -429,7 +459,6 @@ export function registerAdminRoutes(
           smtpPort?: unknown;
           secure?: unknown;
           username?: unknown;
-          password?: unknown;
           from?: unknown;
           to?: unknown;
         };
@@ -460,12 +489,21 @@ export function registerAdminRoutes(
       }
 
       if (body.dashboard?.enabled !== undefined) {
-        next.dashboard.enabled = Boolean(body.dashboard.enabled);
+        if (typeof body.dashboard.enabled !== 'boolean') {
+          return res
+            .status(400)
+            .json({ error: 'dashboard.enabled must be boolean.' });
+        }
+        next.dashboard.enabled = body.dashboard.enabled;
       }
-
       if (body.email) {
         if (body.email.enabled !== undefined) {
-          next.email.enabled = Boolean(body.email.enabled);
+          if (typeof body.email.enabled !== 'boolean') {
+            return res
+              .status(400)
+              .json({ error: 'email.enabled must be boolean.' });
+          }
+          next.email.enabled = body.email.enabled;
         }
         if (body.email.smtpHost !== undefined) {
           if (typeof body.email.smtpHost !== 'string') {
@@ -481,7 +519,12 @@ export function registerAdminRoutes(
           next.email.smtpPort = Math.floor(smtpPort);
         }
         if (body.email.secure !== undefined) {
-          next.email.secure = Boolean(body.email.secure);
+          if (typeof body.email.secure !== 'boolean') {
+            return res
+              .status(400)
+              .json({ error: 'email.secure must be boolean.' });
+          }
+          next.email.secure = body.email.secure;
         }
         if (body.email.username !== undefined) {
           if (typeof body.email.username !== 'string') {
@@ -489,11 +532,16 @@ export function registerAdminRoutes(
           }
           next.email.username = body.email.username.trim();
         }
-        if (body.email.password !== undefined) {
-          if (typeof body.email.password !== 'string') {
-            return res.status(400).json({ error: 'Invalid email password.' });
-          }
-          next.email.password = body.email.password;
+        if (
+          Object.prototype.hasOwnProperty.call(
+            body.email as Record<string, unknown>,
+            'password',
+          )
+        ) {
+          return res.status(400).json({
+            error:
+              'SMTP password is not accepted in settings payload. Set PRINTBIT_ALERT_SMTP_PASSWORD in the environment.',
+          });
         }
         if (body.email.from !== undefined) {
           if (typeof body.email.from !== 'string') {
@@ -537,7 +585,7 @@ export function registerAdminRoutes(
         'admin_alert_settings_updated',
         'Admin alert settings updated.',
       );
-      res.json(db.data!.settings.alerts);
+      res.json(toSafeAlertSettings(db.data!.settings.alerts));
     },
   );
 
@@ -1050,5 +1098,4 @@ export function registerAdminRoutes(
       }
     },
   );
-
 }

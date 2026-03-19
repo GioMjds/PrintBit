@@ -104,7 +104,6 @@ export type SettingsResponse = {
       smtpPort: number;
       secure: boolean;
       username: string;
-      password: string;
       from: string;
       to: string;
     };

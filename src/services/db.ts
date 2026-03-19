@@ -44,7 +44,6 @@ export interface AlertEmailSettings {
   smtpPort: number;
   secure: boolean;
   username: string;
-  password: string;
   from: string;
   to: string;
 }
@@ -305,7 +304,6 @@ const DEFAULT_DATA: Schema = {
         smtpPort: 587,
         secure: false,
         username: '',
-        password: '',
         from: '',
         to: '',
       },
@@ -463,10 +461,6 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             typeof alertSettings?.email?.username === 'string'
               ? alertSettings.email.username
               : DEFAULT_DATA.settings.alerts.email.username,
-          password:
-            typeof alertSettings?.email?.password === 'string'
-              ? alertSettings.email.password
-              : DEFAULT_DATA.settings.alerts.email.password,
           from:
             typeof alertSettings?.email?.from === 'string'
               ? alertSettings.email.from

@@ -45,6 +45,17 @@
   grid-column: 1/-1;
 }
 
+.field__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.field__hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--white);
+}
+
 .field__lbl {
   font-size: 12px;
   font-weight: 700;
@@ -223,4 +234,5 @@
 
 .save-btn--secondary:hover {
   background: rgba(105, 111, 199, 0.28);
+  box-shadow: none;
 }

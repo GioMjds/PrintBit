@@ -545,16 +545,12 @@
                       autocomplete="username"
                     />
                   </div>
-                  <div class="field">
-                    <label class="field__lbl" for="alertEmailPassword"
-                      >SMTP password</label
-                    >
-                    <input
-                      id="alertEmailPassword"
-                      type="password"
-                      class="field__input"
-                      autocomplete="new-password"
-                    />
+                  <div class="field field--stretch">
+                    <p class="field__hint">
+                      SMTP password is loaded from the runtime environment via
+                      <code>PRINTBIT_ALERT_SMTP_PASSWORD</code> and is never stored
+                      in kiosk settings.
+                    </p>
                   </div>
                   <div class="field">
                     <label class="field__lbl" for="alertEmailFrom">From email</label>

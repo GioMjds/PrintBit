@@ -14,6 +14,8 @@ import {
 } from './db';
 import { HopperErrorCode } from './hopper-protocol';
 
+const SMTP_PASSWORD_ENV_VAR = 'PRINTBIT_ALERT_SMTP_PASSWORD';
+
 export interface ReportAnomalyInput {
   type: string;
   source: string;
@@ -135,17 +137,17 @@ class AnomalyService {
     const normalizedFingerprint = input.fingerprint.trim().toLowerCase();
     const message = input.message.trim();
 
-    const openIncident =
+    const activeIncident =
       db.data!.anomalyIncidents.find(
         (entry) =>
-          entry.status === 'open' &&
+          entry.status !== 'resolved' &&
           entry.fingerprint === normalizedFingerprint,
       ) ?? null;
 
     let incident: AnomalyIncidentEntry;
     let created = false;
-    if (openIncident) {
-      incident = openIncident;
+    if (activeIncident) {
+      incident = activeIncident;
       incident.message = message || incident.message;
       incident.context = input.context ?? incident.context;
       incident.updatedAt = nowIso;
@@ -182,14 +184,29 @@ class AnomalyService {
 
     let channels: AlertChannel[] = [];
     if (canNotify) {
-      channels = await this.dispatchNotifications(incident, created);
+      try {
+        channels = await this.dispatchNotifications(incident, created);
+      } catch (error) {
+        this.logError('Failed to dispatch anomaly notifications.', error, {
+          incidentId: incident.id,
+          anomalyType: incident.type,
+        });
+        channels = [];
+      }
       if (channels.length > 0) {
         incident.lastNotificationAt = nowIso;
         incident.lastNotifiedChannels = channels;
       }
     }
 
-    await db.write();
+    try {
+      await db.write();
+    } catch (error) {
+      this.logError('Failed to persist anomaly incident update.', error, {
+        incidentId: incident.id,
+        anomalyType: incident.type,
+      });
+    }
     this.emitOpenCount();
 
     return {
@@ -206,7 +223,10 @@ class AnomalyService {
     if (!settings.email.enabled) {
       return { ok: false, error: 'Email alerts are disabled in settings.' };
     }
-    const validationError = this.validateEmailConfig(settings.email);
+    const validationError = this.validateEmailConfig(
+      settings.email,
+      this.getRuntimeSmtpPassword(),
+    );
     if (validationError) return { ok: false, error: validationError };
 
     const success = await this.sendEmail(
@@ -309,25 +329,45 @@ class AnomalyService {
         `Occurrences: ${incident.occurrenceCount}`,
       ].join('\n');
 
-      const emailSent = await this.sendEmail(
-        subject,
-        body,
-        'anomaly_email_dispatch',
-      );
+      let emailSent = false;
+      try {
+        emailSent = await this.sendEmail(
+          subject,
+          body,
+          'anomaly_email_dispatch',
+        );
+      } catch (error) {
+        this.logError('Failed to dispatch anomaly email notification.', error, {
+          incidentId: incident.id,
+          anomalyType: incident.type,
+        });
+      }
       if (emailSent) channels.push('email');
     }
 
     return channels;
   }
 
-  private validateEmailConfig(settings: AlertEmailSettingsLike): string | null {
+  private validateEmailConfig(
+    settings: AlertEmailSettingsLike,
+    smtpPassword: string | null,
+  ): string | null {
     if (!settings.smtpHost.trim()) return 'SMTP host is required.';
     if (!settings.from.trim()) return 'From email is required.';
     if (!settings.to.trim()) return 'To email is required.';
     if (!Number.isFinite(settings.smtpPort) || settings.smtpPort <= 0) {
       return 'SMTP port must be a positive number.';
     }
+    if (settings.username.trim() && !smtpPassword) {
+      return `Missing SMTP password. Set ${SMTP_PASSWORD_ENV_VAR} in the environment.`;
+    }
     return null;
+  }
+
+  private getRuntimeSmtpPassword(): string | null {
+    const password = process.env[SMTP_PASSWORD_ENV_VAR];
+    if (typeof password !== 'string' || password.length === 0) return null;
+    return password;
   }
 
   private async sendEmail(
@@ -336,13 +376,21 @@ class AnomalyService {
     logType: 'anomaly_email_dispatch' | 'anomaly_email_test',
   ): Promise<boolean> {
     const settings = this.getAlertSettings().email;
-    const validationError = this.validateEmailConfig(settings);
+    const smtpPassword = this.getRuntimeSmtpPassword();
+    const validationError = this.validateEmailConfig(settings, smtpPassword);
     if (validationError) {
-      await adminService.appendAdminLog(
-        'anomaly_email_dispatch_failed',
-        'Email alert dispatch skipped due to invalid configuration.',
-        { error: validationError },
-      );
+      try {
+        await adminService.appendAdminLog(
+          'anomaly_email_dispatch_failed',
+          'Email alert dispatch skipped due to invalid configuration.',
+          { error: validationError },
+        );
+      } catch (error) {
+        this.logError(
+          'Failed to record anomaly email configuration validation failure.',
+          error,
+        );
+      }
       return false;
     }
 
@@ -351,10 +399,17 @@ class AnomalyService {
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     if (recipients.length === 0) {
-      await adminService.appendAdminLog(
-        'anomaly_email_dispatch_failed',
-        'Email alert dispatch skipped because no recipients were configured.',
-      );
+      try {
+        await adminService.appendAdminLog(
+          'anomaly_email_dispatch_failed',
+          'Email alert dispatch skipped because no recipients were configured.',
+        );
+      } catch (error) {
+        this.logError(
+          'Failed to record anomaly email recipient configuration failure.',
+          error,
+        );
+      }
       return false;
     }
 
@@ -366,7 +421,7 @@ class AnomalyService {
     const safeSubject = this.escapePs(subject);
     const safeBody = this.escapePs(body);
     const username = this.escapePs(settings.username);
-    const password = this.escapePs(settings.password);
+    const password = this.escapePs(smtpPassword ?? '');
 
     const script = `
 $ErrorActionPreference = 'Stop'
@@ -389,23 +444,44 @@ if ('${username}' -and '${password}') {
 
     try {
       await runPowerShell(script, 20_000);
-      await adminService.appendAdminLog(logType, 'Anomaly email alert sent.', {
-        to: settings.to,
-        smtpHost: settings.smtpHost,
-      });
+      try {
+        await adminService.appendAdminLog(logType, 'Anomaly email alert sent.', {
+          to: settings.to,
+          smtpHost: settings.smtpHost,
+        });
+      } catch (error) {
+        this.logError('Failed to record anomaly email success log.', error, {
+          logType,
+        });
+      }
       return true;
     } catch (error) {
-      await adminService.appendAdminLog(
-        'anomaly_email_dispatch_failed',
-        'Failed to send anomaly email alert.',
-        {
+      try {
+        await adminService.appendAdminLog(
+          'anomaly_email_dispatch_failed',
+          'Failed to send anomaly email alert.',
+          {
+            error: error instanceof Error ? error.message : String(error),
+            to: settings.to,
+            smtpHost: settings.smtpHost,
+          },
+        );
+      } catch (logError) {
+        this.logError('Failed to record anomaly email failure log.', logError, {
           error: error instanceof Error ? error.message : String(error),
           to: settings.to,
           smtpHost: settings.smtpHost,
-        },
-      );
+        });
+      }
       return false;
     }
+  }
+
+  private logError(message: string, error: unknown, context?: LogMeta): void {
+    console.error('[ANOMALY]', message, {
+      error: error instanceof Error ? error.message : String(error),
+      ...(context ?? {}),
+    });
   }
 
   private escapePs(value: string): string {
@@ -438,7 +514,6 @@ type AlertEmailSettingsLike = {
   smtpPort: number;
   secure: boolean;
   username: string;
-  password: string;
   from: string;
   to: string;
 };

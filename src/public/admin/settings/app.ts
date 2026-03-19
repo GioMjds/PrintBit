@@ -45,9 +45,6 @@ const alertSmtpSecure = document.getElementById(
 const alertEmailUsername = document.getElementById(
   'alertEmailUsername',
 ) as HTMLInputElement;
-const alertEmailPassword = document.getElementById(
-  'alertEmailPassword',
-) as HTMLInputElement;
 const alertEmailFrom = document.getElementById('alertEmailFrom') as HTMLInputElement;
 const alertEmailTo = document.getElementById('alertEmailTo') as HTMLInputElement;
 const testEmailAlertBtn = document.getElementById(
@@ -76,7 +73,6 @@ function applySettings(settings: SettingsResponse): void {
   alertSmtpPort.value = String(settings.alerts.email.smtpPort);
   alertSmtpSecure.checked = settings.alerts.email.secure;
   alertEmailUsername.value = settings.alerts.email.username;
-  alertEmailPassword.value = settings.alerts.email.password;
   alertEmailFrom.value = settings.alerts.email.from;
   alertEmailTo.value = settings.alerts.email.to;
 }
@@ -128,7 +124,6 @@ settingsForm.addEventListener('submit', (e) => {
       smtpPort: Number(alertSmtpPort.value),
       secure: alertSmtpSecure.checked,
       username: alertEmailUsername.value.trim(),
-      password: alertEmailPassword.value,
       from: alertEmailFrom.value.trim(),
       to: alertEmailTo.value.trim(),
     },

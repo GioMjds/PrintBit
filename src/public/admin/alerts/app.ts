@@ -59,7 +59,7 @@ let totalItems = 0;
 let activeFilter: 'all' | 'open' | 'acknowledged' | 'resolved' = 'all';
 let currentPageItems: AnomalyIncident[] = [];
 let activeDetailId: string | null = null;
-let refreshTimer: number | null = null;
+let poller: number | null = null;
 
 function escHtml(value: string): string {
   return value
@@ -140,6 +140,11 @@ async function loadData(): Promise<void> {
 
   const data = (await response.json()) as AnomalyListResponse;
   totalItems = data.total;
+  const lastPage = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  if (currentPage > lastPage) {
+    currentPage = lastPage;
+    return loadData();
+  }
   currentPageItems = data.items;
   renderIncidents(data.items);
   updateStats(data);
@@ -255,43 +260,74 @@ detailAckBtn.addEventListener('click', () => void updateStatus('acknowledged'));
 detailResolveBtn.addEventListener('click', () => void updateStatus('resolved'));
 detailReopenBtn.addEventListener('click', () => void updateStatus('open'));
 
+interface AdminAlertsSocket {
+  on(event: string, cb: (...args: unknown[]) => void): void;
+  off?(event: string, cb: (...args: unknown[]) => void): void;
+  disconnect(): void;
+}
+
 declare const io: (opts?: {
   auth?: Record<string, string>;
   reconnectionDelay?: number;
-}) => {
-  on(event: string, cb: (...args: unknown[]) => void): void;
-  disconnect(): void;
+}) => AdminAlertsSocket;
+
+let socket: AdminAlertsSocket | null = null;
+
+const handleSocketIncident = (): void => {
+  void loadData();
 };
 
-let socket: ReturnType<typeof io> | null = null;
+const handleSocketCount = (payload: unknown): void => {
+  const openCount =
+    payload &&
+    typeof payload === 'object' &&
+    'openCount' in payload &&
+    typeof (payload as { openCount: unknown }).openCount === 'number'
+      ? (payload as { openCount: number }).openCount
+      : 0;
+  const openText = openCount > 0 ? String(openCount) : '';
+  openAlertBadge.textContent = openText;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openText;
+};
+
+function disconnectSocket(target: AdminAlertsSocket | null): void {
+  if (!target) return;
+  target.off?.('adminAnomalyIncident', handleSocketIncident);
+  target.off?.('adminAnomalyCount', handleSocketCount);
+  target.disconnect();
+}
+
+function cleanupLiveUpdates(): void {
+  if (poller !== null) {
+    window.clearInterval(poller);
+    poller = null;
+  }
+  disconnectSocket(socket);
+  socket = null;
+}
 
 function connectSocket(): void {
+  if (socket) return;
+
+  // Defensive: if a stale socket slipped through, tear it down before recreating.
+  cleanupLiveUpdates();
+  if (socket) return;
+
   const pin = sessionStorage.getItem('adminPin') ?? '';
-  socket = io({ auth: { pin }, reconnectionDelay: 2000 });
-  socket.on('adminAnomalyIncident', () => {
-    void loadData();
-  });
-  socket.on('adminAnomalyCount', (payload: unknown) => {
-    const openCount =
-      payload &&
-      typeof payload === 'object' &&
-      'openCount' in payload &&
-      typeof (payload as { openCount: unknown }).openCount === 'number'
-        ? (payload as { openCount: number }).openCount
-        : 0;
-    const openText = openCount > 0 ? String(openCount) : '';
-    openAlertBadge.textContent = openText;
-    if (openAlertBadgeMob) openAlertBadgeMob.textContent = openText;
-  });
+  const nextSocket = io({ auth: { pin }, reconnectionDelay: 2000 });
+  nextSocket.on('adminAnomalyIncident', handleSocketIncident);
+  nextSocket.on('adminAnomalyCount', handleSocketCount);
+  socket = nextSocket;
 }
 
 initAuth(async () => {
+  cleanupLiveUpdates();
   await loadData();
   connectSocket();
-  if (refreshTimer !== null) window.clearInterval(refreshTimer);
-  refreshTimer = window.setInterval(() => void loadData(), 10_000);
+  poller = window.setInterval(() => void loadData(), 10_000);
 });
 
-window.addEventListener('pagehide', () => {
-  socket?.disconnect();
-});
+document
+  .getElementById('logoutBtn')
+  ?.addEventListener('click', cleanupLiveUpdates);
+window.addEventListener('pagehide', cleanupLiveUpdates);
