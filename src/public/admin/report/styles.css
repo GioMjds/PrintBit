@@ -641,25 +641,3 @@
   display: none !important;
 }
 
-/* Nav count badge (sidebar / mob-nav) */
-.nav-count-badge {
-  display: inline-block;
-  font-size: 0.65rem;
-  font-weight: 800;
-  min-width: 16px;
-  padding: 0 4px;
-  height: 16px;
-  line-height: 16px;
-  text-align: center;
-  border-radius: 99px;
-  background: var(--ri-red);
-  color: #fff;
-  margin-left: 2px;
-  letter-spacing: 0;
-  box-shadow: 0 0 8px var(--ri-red-glow);
-  transition: opacity 0.2s;
-}
-
-.nav-count-badge:empty {
-  display: none;
-}

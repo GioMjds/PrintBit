@@ -13,7 +13,7 @@ import {
   dismissPendingRefund,
   processPendingRefund,
 } from '@/services/pending-refund';
-import { reconciliationService } from '@/services/reconciliation';
+import { anomalyService } from '@/services/anomaly';
 import { generateTestPagePdf } from '@/services/test-page';
 import {
   getPrinterTelemetry,
@@ -61,6 +61,184 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isWholePeso(value: number): boolean {
   return Number.isInteger(value) && value >= 0;
+}
+
+function isAnomalySeverity(value: unknown): value is 'warning' | 'critical' {
+  return value === 'warning' || value === 'critical';
+}
+
+function isAnomalyStatus(
+  value: unknown,
+): value is 'open' | 'acknowledged' | 'resolved' {
+  return value === 'open' || value === 'acknowledged' || value === 'resolved';
+}
+
+function isAnomalyCategory(
+  value: unknown,
+): value is 'printer' | 'spooler' | 'serial' | 'hopper' | 'network' {
+  return (
+    value === 'printer' ||
+    value === 'spooler' ||
+    value === 'serial' ||
+    value === 'hopper' ||
+    value === 'network'
+  );
+}
+
+function parseAlertSettingsPayload(
+  body: unknown,
+  current: typeof db.data.settings.alerts,
+): { next?: typeof db.data.settings.alerts; error?: string } {
+  const payload = body as {
+    severityThreshold?: unknown;
+    dashboard?: { enabled?: unknown };
+    email?: {
+      enabled?: unknown;
+      smtpHost?: unknown;
+      smtpPort?: unknown;
+      secure?: unknown;
+      username?: unknown;
+      from?: unknown;
+      to?: unknown;
+    };
+    dedupe?: {
+      printerMs?: unknown;
+      spoolerMs?: unknown;
+      serialMs?: unknown;
+      hopperMs?: unknown;
+      networkMs?: unknown;
+    };
+  };
+
+  const next = {
+    severityThreshold: current.severityThreshold,
+    dashboard: { ...current.dashboard },
+    email: { ...current.email },
+    dedupe: { ...current.dedupe },
+  };
+
+  if (payload.severityThreshold !== undefined) {
+    if (!isAnomalySeverity(payload.severityThreshold)) {
+      return { error: 'severityThreshold must be "warning" or "critical".' };
+    }
+    next.severityThreshold = payload.severityThreshold;
+  }
+
+  if (payload.dashboard?.enabled !== undefined) {
+    if (typeof payload.dashboard.enabled !== 'boolean') {
+      return { error: 'dashboard.enabled must be boolean.' };
+    }
+    next.dashboard.enabled = payload.dashboard.enabled;
+  }
+
+  if (payload.email) {
+    if (payload.email.enabled !== undefined) {
+      if (typeof payload.email.enabled !== 'boolean') {
+        return { error: 'email.enabled must be boolean.' };
+      }
+      next.email.enabled = payload.email.enabled;
+    }
+    if (payload.email.smtpHost !== undefined) {
+      if (typeof payload.email.smtpHost !== 'string') {
+        return { error: 'Invalid smtpHost.' };
+      }
+      next.email.smtpHost = payload.email.smtpHost.trim();
+    }
+    if (payload.email.smtpPort !== undefined) {
+      const smtpPort = Number(payload.email.smtpPort);
+      if (!Number.isFinite(smtpPort) || smtpPort <= 0) {
+        return { error: 'Invalid smtpPort.' };
+      }
+      next.email.smtpPort = Math.floor(smtpPort);
+    }
+    if (payload.email.secure !== undefined) {
+      if (typeof payload.email.secure !== 'boolean') {
+        return { error: 'email.secure must be boolean.' };
+      }
+      next.email.secure = payload.email.secure;
+    }
+    if (payload.email.username !== undefined) {
+      if (typeof payload.email.username !== 'string') {
+        return { error: 'Invalid email username.' };
+      }
+      next.email.username = payload.email.username.trim();
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        payload.email as Record<string, unknown>,
+        'password',
+      )
+    ) {
+      return {
+        error:
+          'SMTP password is not accepted in settings payload. Set PRINTBIT_ALERT_SMTP_PASSWORD in the environment.',
+      };
+    }
+    if (payload.email.from !== undefined) {
+      if (typeof payload.email.from !== 'string') {
+        return { error: 'Invalid email from.' };
+      }
+      next.email.from = payload.email.from.trim();
+    }
+    if (payload.email.to !== undefined) {
+      if (typeof payload.email.to !== 'string') {
+        return { error: 'Invalid email to.' };
+      }
+      next.email.to = payload.email.to.trim();
+    }
+  }
+
+  if (payload.dedupe) {
+    const dedupeEntries: Array<
+      ['printerMs' | 'spoolerMs' | 'serialMs' | 'hopperMs' | 'networkMs', unknown]
+    > = [
+      ['printerMs', payload.dedupe.printerMs],
+      ['spoolerMs', payload.dedupe.spoolerMs],
+      ['serialMs', payload.dedupe.serialMs],
+      ['hopperMs', payload.dedupe.hopperMs],
+      ['networkMs', payload.dedupe.networkMs],
+    ];
+    for (const [key, raw] of dedupeEntries) {
+      if (raw === undefined) continue;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return { error: `Invalid ${key} value.` };
+      }
+      next.dedupe[key] = Math.floor(parsed);
+    }
+  }
+
+  return { next };
+}
+
+function toSafeAlertSettings(alerts: typeof db.data.settings.alerts): {
+  severityThreshold: 'warning' | 'critical';
+  dashboard: { enabled: boolean };
+  email: {
+    enabled: boolean;
+    smtpHost: string;
+    smtpPort: number;
+    secure: boolean;
+    username: string;
+    from: string;
+    to: string;
+  };
+  dedupe: {
+    printerMs: number;
+    spoolerMs: number;
+    serialMs: number;
+    hopperMs: number;
+    networkMs: number;
+  };
+} {
+  return {
+    severityThreshold: alerts.severityThreshold,
+    dashboard: { ...alerts.dashboard },
+    email: {
+      ...alerts.email,
+    },
+    dedupe: { ...alerts.dedupe },
+  };
 }
 
 export function registerAdminRoutes(
@@ -160,6 +338,9 @@ export function registerAdminRoutes(
         !host.startsWith('localhost') && !host.startsWith('127.0.0.1');
       const printer = getPrinterTelemetry();
       const scanner = getScannerStatus();
+      const anomalyOpenCount = db.data!.anomalyIncidents.filter(
+        (entry) => entry.status === 'open',
+      ).length;
       const pendingRefunds = db.data!.pendingRefunds ?? [];
       const openRefunds = pendingRefunds.filter(
         (entry) => entry.status === 'open',
@@ -203,6 +384,10 @@ export function registerAdminRoutes(
           refundedCount: refundedEntries.length,
           dismissedCount: dismissedEntries.length,
           autoRefundedCount: autoRefundedEntries.length,
+        },
+        anomalyStats: {
+          totalCount: db.data!.anomalyIncidents.length,
+          openCount: anomalyOpenCount,
         },
         jamStats: {
           totalEvents: jamEvents.length,
@@ -374,6 +559,123 @@ export function registerAdminRoutes(
       );
 
       res.json(db.data!.settings);
+    },
+  );
+
+  app.get(
+    '/api/admin/alert-settings',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (_req: Request, res: Response) => {
+      res.json(toSafeAlertSettings(db.data!.settings.alerts));
+    },
+  );
+
+  app.put(
+    '/api/admin/alert-settings',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (req: Request, res: Response) => {
+      const current = db.data!.settings.alerts;
+      const parsed = parseAlertSettingsPayload(req.body, current);
+      if (parsed.error) {
+        return res.status(400).json({ error: parsed.error });
+      }
+
+      await anomalyService.updateAlertSettings(parsed.next!);
+      await adminService.appendAdminLog(
+        'admin_alert_settings_updated',
+        'Admin alert settings updated.',
+      );
+      res.json(toSafeAlertSettings(db.data!.settings.alerts));
+    },
+  );
+
+  app.post(
+    '/api/admin/alert-settings/test',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (req: Request, res: Response) => {
+      const parsed = parseAlertSettingsPayload(req.body, db.data!.settings.alerts);
+      if (parsed.error) {
+        return res.status(400).json({ ok: false, error: parsed.error });
+      }
+
+      const result = await anomalyService.sendEmailTestAlert(parsed.next!);
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, error: result.error });
+      }
+      res.json({ ok: true });
+    },
+  );
+
+  app.get(
+    '/api/admin/anomaly-incidents',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const statusRaw = req.query.status;
+      const severityRaw = req.query.severity;
+      const categoryRaw = req.query.category;
+      const limitRaw = req.query.limit;
+      const offsetRaw = req.query.offset;
+
+      const status = isAnomalyStatus(statusRaw) ? statusRaw : undefined;
+      const severity = isAnomalySeverity(severityRaw) ? severityRaw : undefined;
+      const category = isAnomalyCategory(categoryRaw) ? categoryRaw : undefined;
+      const limit = Number.isFinite(Number(limitRaw))
+        ? Number(limitRaw)
+        : undefined;
+      const offset = Number.isFinite(Number(offsetRaw))
+        ? Number(offsetRaw)
+        : undefined;
+
+      res.json(
+        anomalyService.listIncidents({
+          status,
+          severity,
+          category,
+          limit,
+          offset,
+        }),
+      );
+    },
+  );
+
+  app.get(
+    '/api/admin/anomaly-incidents/:id',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const incident = anomalyService.getIncidentById(req.params.id as string);
+      if (!incident) {
+        return res.status(404).json({ error: 'Anomaly incident not found.' });
+      }
+      res.json({ incident });
+    },
+  );
+
+  app.patch(
+    '/api/admin/anomaly-incidents/:id/status',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (req: Request, res: Response) => {
+      const status = req.body?.status;
+      if (!isAnomalyStatus(status)) {
+        return res.status(400).json({
+          error: 'Valid status required: open | acknowledged | resolved',
+        });
+      }
+
+      const incident = await anomalyService.updateIncidentStatus(
+        req.params.id as string,
+        status,
+      );
+      if (!incident) {
+        return res.status(404).json({ error: 'Anomaly incident not found.' });
+      }
+
+      res.json({ ok: true, incident });
     },
   );
 
@@ -801,154 +1103,6 @@ export function registerAdminRoutes(
         console.error('[ADMIN] Failed to dismiss pending refund', error);
         return res.status(500).json({ error: 'Failed to dismiss refund.' });
       }
-    },
-  );
-
-  // ── Reconciliation reporting ────────────────────────────────────────────────
-  app.get(
-    '/api/admin/reconciliation/reports',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    (req: Request, res: Response) => {
-      const from =
-        typeof req.query.from === 'string' ? req.query.from.trim() : undefined;
-      const to =
-        typeof req.query.to === 'string' ? req.query.to.trim() : undefined;
-      const reports = reconciliationService.listReports({ from, to });
-      res.json({
-        total: reports.length,
-        items: reports,
-      });
-    },
-  );
-
-  app.get(
-    '/api/admin/reconciliation/reports/latest',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    (_req: Request, res: Response) => {
-      const report = reconciliationService.getLatestReport();
-      if (!report) {
-        return res.status(404).json({ error: 'No reconciliation reports found.' });
-      }
-      res.json({ report });
-    },
-  );
-
-  app.get(
-    '/api/admin/reconciliation/settings',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    (_req: Request, res: Response) => {
-      res.json(db.data!.reconciliationSettings);
-    },
-  );
-
-  app.get(
-    '/api/admin/reconciliation/reports/:id',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    (req: Request, res: Response) => {
-      const report = reconciliationService.getReportById(req.params.id as string);
-      if (!report) {
-        return res.status(404).json({ error: 'Reconciliation report not found.' });
-      }
-      res.json({ report });
-    },
-  );
-
-  app.post(
-    '/api/admin/reconciliation/reports/run',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    async (req: Request, res: Response) => {
-      const dateKey =
-        typeof req.body?.dateKey === 'string' && req.body.dateKey.trim()
-          ? req.body.dateKey.trim()
-          : undefined;
-      try {
-        const report = await reconciliationService.runDailyReport({
-          dateKey,
-          generatedBy: 'manual',
-        });
-        res.status(201).json({ ok: true, report });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Failed to run reconciliation.';
-        if (message.includes('already running')) {
-          return res.status(409).json({ error: message });
-        }
-        return res.status(500).json({ error: message });
-      }
-    },
-  );
-
-  app.post(
-    '/api/admin/reconciliation/reports/:id/physical-count',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    async (req: Request, res: Response) => {
-      const countedAmount = Number(req.body?.countedAmount);
-      if (!Number.isFinite(countedAmount) || countedAmount < 0) {
-        return res
-          .status(400)
-          .json({ error: 'countedAmount must be a non-negative number.' });
-      }
-
-      const countedBy =
-        typeof req.body?.countedBy === 'string' ? req.body.countedBy : null;
-      const notes = typeof req.body?.notes === 'string' ? req.body.notes : null;
-
-      const report = await reconciliationService.submitPhysicalCount({
-        reportId: req.params.id as string,
-        countedAmount,
-        countedBy,
-        notes,
-      });
-      if (!report) {
-        return res.status(404).json({ error: 'Reconciliation report not found.' });
-      }
-      res.json({ ok: true, report });
-    },
-  );
-
-  app.get(
-    '/api/admin/reconciliation/reports/:id/export.csv',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    (req: Request, res: Response) => {
-      const report = reconciliationService.getReportById(req.params.id as string);
-      if (!report) {
-        return res.status(404).json({ error: 'Reconciliation report not found.' });
-      }
-      const csv = reconciliationService.exportReportCsv(report);
-      res
-        .header('Content-Type', 'text/csv; charset=utf-8')
-        .header(
-          'Content-Disposition',
-          `attachment; filename="printbit-reconciliation-${report.dateKey}-r${report.revision}.csv"`,
-        )
-        .send(csv);
-    },
-  );
-
-  app.get(
-    '/api/admin/reconciliation/reports/:id/export.pdf',
-    requireAdminLocalAccess,
-    requireAdminPin,
-    (req: Request, res: Response) => {
-      const report = reconciliationService.getReportById(req.params.id as string);
-      if (!report) {
-        return res.status(404).json({ error: 'Reconciliation report not found.' });
-      }
-      const pdf = reconciliationService.exportReportPdf(report);
-      res
-        .header('Content-Type', 'application/pdf')
-        .header(
-          'Content-Disposition',
-          `attachment; filename="printbit-reconciliation-${report.dateKey}-r${report.revision}.pdf"`,
-        )
-        .send(pdf);
     },
   );
 }

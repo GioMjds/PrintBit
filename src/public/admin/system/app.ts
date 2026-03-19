@@ -75,6 +75,12 @@ const spoolerAlertMsg = document.getElementById(
 const spoolerAlertDismiss = document.getElementById(
   'spoolerAlertDismiss',
 ) as HTMLButtonElement | null;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
+) as HTMLElement | null;
 
 let refreshTimer: number | null = null;
 
@@ -188,6 +194,12 @@ function applySystem(summary: SummaryResponse): void {
 
   // Printer — extended fields (opt-in; no error if fields absent)
   applyPrinterExt(p as PrinterTelemetryExt);
+  const openCount =
+    summary.anomalyStats.openCount > 0
+      ? String(summary.anomalyStats.openCount)
+      : '';
+  if (openAlertBadge) openAlertBadge.textContent = openCount;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
 
   // Ink / toner levels (unchanged)
   inkGrid.innerHTML = '';

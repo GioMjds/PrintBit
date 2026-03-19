@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { adminService } from './admin';
 import { db, type LogMeta, type OwedChangeEntry } from './db';
 import {
+  anomalyService,
+  buildAnomalyFingerprint,
+  mapHopperErrorSeverity,
+} from './anomaly';
+import {
   getHopperStatus,
   sendHopperCommand,
   type HopperCommandResult,
@@ -55,6 +60,18 @@ class HopperService {
       db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
       db.data!.hopperStats.lastError = 'Hopper is disabled in settings.';
       await db.write();
+      await anomalyService.report({
+        type: 'hopper_self_test_disabled',
+        source: 'hopper',
+        category: 'hopper',
+        severity: 'warning',
+        message: 'Hopper self-test failed because hopper is disabled.',
+        fingerprint: buildAnomalyFingerprint([
+          'hopper',
+          'self-test',
+          'disabled',
+        ]),
+      });
       return {
         ok: false,
         amount: 0,
@@ -71,6 +88,18 @@ class HopperService {
       db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
       db.data!.hopperStats.lastError = 'Serial port not connected.';
       await db.write();
+      await anomalyService.report({
+        type: 'hopper_self_test_serial_disconnected',
+        source: 'hopper',
+        category: 'hopper',
+        severity: 'critical',
+        message: 'Hopper self-test failed because serial is disconnected.',
+        fingerprint: buildAnomalyFingerprint([
+          'hopper',
+          'self-test',
+          'serial-disconnected',
+        ]),
+      });
       return {
         ok: false,
         amount: 0,
@@ -155,6 +184,23 @@ class HopperService {
       stats.dispenseFailures += 1;
       stats.lastError = 'Hopper is disabled in settings.';
       await db.write();
+      await anomalyService.report({
+        type: 'hopper_dispense_disabled',
+        source: 'hopper',
+        category: 'hopper',
+        severity: 'warning',
+        message:
+          'Hopper dispense failed because hopper is disabled in settings.',
+        fingerprint: buildAnomalyFingerprint([
+          'hopper',
+          'dispense',
+          'disabled',
+        ]),
+        context: {
+          amount: requestedAmount,
+          requestedCoins: coins,
+        },
+      });
 
       return {
         ok: false,
@@ -179,6 +225,22 @@ class HopperService {
       stats.dispenseFailures += 1;
       stats.lastError = 'Serial port not connected.';
       await db.write();
+      await anomalyService.report({
+        type: 'hopper_dispense_serial_disconnected',
+        source: 'hopper',
+        category: 'hopper',
+        severity: 'critical',
+        message: 'Hopper dispense failed because serial is disconnected.',
+        fingerprint: buildAnomalyFingerprint([
+          'hopper',
+          'dispense',
+          'serial-disconnected',
+        ]),
+        context: {
+          amount: requestedAmount,
+          requestedCoins: coins,
+        },
+      });
 
       return {
         ok: false,
@@ -247,6 +309,25 @@ class HopperService {
     stats.dispenseFailures += 1;
     stats.lastError = lastMessage;
     await db.write();
+    await anomalyService.report({
+      type: 'hopper_dispense_failed',
+      source: 'hopper',
+      category: 'hopper',
+      severity: mapHopperErrorSeverity(lastResult?.errorCode),
+      message: `Hopper dispense failed: ${lastMessage}`,
+      fingerprint: buildAnomalyFingerprint([
+        'hopper',
+        'dispense-failed',
+        lastResult?.errorCode ?? 'unknown',
+        lastMessage,
+      ]),
+      context: {
+        amount: requestedAmount,
+        requestedCoins: coins,
+        errorCode: lastResult?.errorCode ?? null,
+        attempts: performedAttempts,
+      },
+    });
 
     return {
       ok: false,

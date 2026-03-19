@@ -247,8 +247,9 @@ body {
 .sidebar__brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 20px 16px 16px;
+  height: var(--topbar-h);
+  gap: 16px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -329,6 +330,26 @@ body {
 }
 .nav-btn--active svg {
   color: var(--lavender);
+}
+
+.nav-count-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: #1a1100;
+  font-size: 10px;
+  font-weight: 800;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  line-height: 1;
+}
+
+.nav-count-badge:not(:empty) {
+  display: inline-flex;
 }
 
 .sidebar__foot {
@@ -530,7 +551,7 @@ body {
   }
   .sidebar__names,
   .sidebar__env,
-  .nav-btn span {
+  .nav-btn > span:not(.nav-count-badge) {
     display: none;
   }
   .sidebar__logomark {
@@ -575,14 +596,24 @@ body {
 }
 
 @media (max-width: 480px) {
-  .sidebar {
-    display: none !important;
-  }
   .shell {
-    height: calc(100dvh - 60px);
+    height: 100dvh;
+  }
+  .sidebar {
+    display: flex !important;
+    width: 68px;
+  }
+  .sidebar__brand {
+    padding: 10px 8px;
+  }
+  .sidebar__nav {
+    padding: 8px;
+  }
+  .sidebar__foot {
+    padding: 8px;
   }
   .content {
-    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    padding: 14px;
   }
   .auth-card {
     padding: 28px 20px;
@@ -595,54 +626,6 @@ body {
     display: none;
   }
   .mob-nav {
-    display: flex;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 200;
-    background: #0e0d20;
-    border-top: 1px solid var(--border);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .mob-nav__btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    padding: 8px 2px;
-    border: none;
-    background: transparent;
-    color: rgba(167, 170, 225, 0.5);
-    font-family: "Plus Jakarta Sans", sans-serif;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    cursor: pointer;
-    transition: color 130ms;
-    min-width: 0;
-    text-decoration: none;
-  }
-  .mob-nav__btn svg {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-  }
-  .mob-nav__btn span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100%;
-  }
-  .mob-nav__btn:active {
-    opacity: 0.7;
-  }
-  .mob-nav__btn--active {
-    color: var(--lavender);
-  }
-  .mob-nav__btn--active svg {
-    filter: drop-shadow(0 0 4px rgba(167, 170, 225, 0.5));
+    display: none !important;
   }
 }

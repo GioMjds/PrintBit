@@ -21,6 +21,67 @@ export interface AdminSettings {
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
+  alerts: AlertSettings;
+}
+
+export type AlertChannel = 'dashboard' | 'email';
+export type AnomalySeverity = 'warning' | 'critical';
+export type AnomalyStatus = 'open' | 'acknowledged' | 'resolved';
+export type AnomalyCategory =
+  | 'printer'
+  | 'spooler'
+  | 'serial'
+  | 'hopper'
+  | 'network';
+
+export interface AlertDashboardSettings {
+  enabled: boolean;
+}
+
+export interface AlertEmailSettings {
+  enabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  secure: boolean;
+  username: string;
+  from: string;
+  to: string;
+}
+
+export interface AlertDedupeSettings {
+  printerMs: number;
+  spoolerMs: number;
+  serialMs: number;
+  hopperMs: number;
+  networkMs: number;
+}
+
+export interface AlertSettings {
+  severityThreshold: AnomalySeverity;
+  dashboard: AlertDashboardSettings;
+  email: AlertEmailSettings;
+  dedupe: AlertDedupeSettings;
+}
+
+export interface AnomalyIncidentEntry {
+  id: string;
+  type: string;
+  source: string;
+  category: AnomalyCategory;
+  severity: AnomalySeverity;
+  status: AnomalyStatus;
+  fingerprint: string;
+  message: string;
+  context?: LogMeta;
+  occurrenceCount: number;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  lastNotificationAt: string | null;
+  lastNotifiedChannels: AlertChannel[];
 }
 
 export interface CoinStats {
@@ -93,70 +154,6 @@ export interface FinancialLedgerEntry {
   meta: LogMeta;
   previousHash: string | null;
   hash: string;
-}
-
-export interface ReconciliationTotals {
-  coinIntake: number;
-  settledAmount: number;
-  refundIssued: number;
-  netSettled: number;
-  jobStartedCount: number;
-  jobCompletedCount: number;
-  refundCount: number;
-  ledgerEntryCount: number;
-}
-
-export interface ReconciliationLiabilities {
-  openPendingRefundAmount: number;
-  openOwedChangeAmount: number;
-}
-
-export interface ReconciliationPhysicalCount {
-  countedAmount: number;
-  countedAt: string;
-  countedBy: string | null;
-  notes: string | null;
-}
-
-export interface ReconciliationVariance {
-  threshold: number;
-  amount: number;
-  hasVariance: boolean;
-  status: 'pending' | 'matched' | 'mismatch';
-  alertLogId: string | null;
-}
-
-export interface ReconciliationLedgerDigest {
-  entryCount: number;
-  firstHash: string | null;
-  lastHash: string | null;
-}
-
-export interface ReconciliationReport {
-  id: string;
-  dateKey: string;
-  revision: number;
-  generatedAt: string;
-  generatedBy: 'auto' | 'manual';
-  timestampMeta: TrustedTimestampMeta;
-  periodStart: string;
-  periodEnd: string;
-  totals: ReconciliationTotals;
-  liabilities: ReconciliationLiabilities;
-  expectedCash: number;
-  expectedCashAfterLiabilities: number;
-  physicalCount: ReconciliationPhysicalCount | null;
-  variance: ReconciliationVariance;
-  ledgerDigest: ReconciliationLedgerDigest;
-  archivedAt: string;
-}
-
-export interface ReconciliationSettings {
-  autoGenerateEnabled: boolean;
-  cutoffHourLocal: number;
-  cutoffMinuteLocal: number;
-  varianceThreshold: number;
-  lastAutoRunDateKey: string | null;
 }
 
 export interface AdminLogEntry {
@@ -274,9 +271,8 @@ export type Schema = {
   reportIssueSessions: ReportIssueSessionEntry[];
   reportIssueAttachments: ReportIssueAttachmentEntry[];
   pendingRefunds: PendingRefundEntry[];
+  anomalyIncidents: AnomalyIncidentEntry[];
   financialLedger: FinancialLedgerEntry[];
-  reconciliationReports: ReconciliationReport[];
-  reconciliationSettings: ReconciliationSettings;
 };
 
 const DEFAULT_DATA: Schema = {
@@ -297,6 +293,28 @@ const DEFAULT_DATA: Schema = {
     adminPin:
       '$argon2id$v=19$m=65536,t=3,p=4$gqSpsbLttLcalBC6SYKG0A$T34vxa4BxPcJ++fLZ+19qp9FGaQufJCCCqWu1fb35TQ',
     adminLocalOnly: true,
+    alerts: {
+      severityThreshold: 'warning',
+      dashboard: {
+        enabled: true,
+      },
+      email: {
+        enabled: false,
+        smtpHost: '',
+        smtpPort: 587,
+        secure: false,
+        username: '',
+        from: '',
+        to: '',
+      },
+      dedupe: {
+        printerMs: 5 * 60 * 1_000,
+        spoolerMs: 5 * 60 * 1_000,
+        serialMs: 2 * 60 * 1_000,
+        hopperMs: 2 * 60 * 1_000,
+        networkMs: 5 * 60 * 1_000,
+      },
+    },
   },
   coinStats: {
     one: 0,
@@ -335,15 +353,8 @@ const DEFAULT_DATA: Schema = {
   reportIssueSessions: [],
   reportIssueAttachments: [],
   pendingRefunds: [],
+  anomalyIncidents: [],
   financialLedger: [],
-  reconciliationReports: [],
-  reconciliationSettings: {
-    autoGenerateEnabled: true,
-    cutoffHourLocal: 23,
-    cutoffMinuteLocal: 59,
-    varianceThreshold: 0,
-    lastAutoRunDateKey: null,
-  },
 };
 
 /**
@@ -364,8 +375,92 @@ function wholePeso(value: number): number {
 
 function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const pricing = data?.settings?.pricing;
+  const alertSettings = data?.settings?.alerts;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
+  const normalizeAnomalyIncidents = (
+    raw: unknown,
+  ): AnomalyIncidentEntry[] => {
+    if (!Array.isArray(raw)) return DEFAULT_DATA.anomalyIncidents;
+    const incidents: AnomalyIncidentEntry[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'object' || entry === null) {
+        console.warn(
+          '[DB] Skipping malformed anomaly incident row (not an object).',
+        );
+        continue;
+      }
+      const candidate = entry as Partial<AnomalyIncidentEntry>;
+      if (
+        typeof candidate.id !== 'string' ||
+        typeof candidate.type !== 'string' ||
+        typeof candidate.source !== 'string' ||
+        typeof candidate.fingerprint !== 'string'
+      ) {
+        console.warn(
+          '[DB] Skipping malformed anomaly incident row (missing required keys).',
+        );
+        continue;
+      }
+      incidents.push({
+        id: candidate.id,
+        type: candidate.type,
+        source: candidate.source,
+        category:
+          candidate.category === 'printer' ||
+          candidate.category === 'spooler' ||
+          candidate.category === 'serial' ||
+          candidate.category === 'hopper' ||
+          candidate.category === 'network'
+            ? candidate.category
+            : 'printer',
+        severity: candidate.severity === 'critical' ? 'critical' : 'warning',
+        status:
+          candidate.status === 'acknowledged' || candidate.status === 'resolved'
+            ? candidate.status
+            : 'open',
+        fingerprint: candidate.fingerprint,
+        message: typeof candidate.message === 'string' ? candidate.message : '',
+        context:
+          typeof candidate.context === 'object' && candidate.context !== null
+            ? candidate.context
+            : undefined,
+        occurrenceCount: finiteOr(candidate.occurrenceCount, 1),
+        firstDetectedAt:
+          typeof candidate.firstDetectedAt === 'string'
+            ? candidate.firstDetectedAt
+            : new Date(0).toISOString(),
+        lastDetectedAt:
+          typeof candidate.lastDetectedAt === 'string'
+            ? candidate.lastDetectedAt
+            : new Date(0).toISOString(),
+        createdAt:
+          typeof candidate.createdAt === 'string'
+            ? candidate.createdAt
+            : new Date(0).toISOString(),
+        updatedAt:
+          typeof candidate.updatedAt === 'string'
+            ? candidate.updatedAt
+            : new Date(0).toISOString(),
+        acknowledgedAt:
+          typeof candidate.acknowledgedAt === 'string'
+            ? candidate.acknowledgedAt
+            : null,
+        resolvedAt: typeof candidate.resolvedAt === 'string' ? candidate.resolvedAt : null,
+        lastNotificationAt:
+          typeof candidate.lastNotificationAt === 'string'
+            ? candidate.lastNotificationAt
+            : null,
+        lastNotifiedChannels: Array.isArray(candidate.lastNotifiedChannels)
+          ? candidate.lastNotifiedChannels.filter(
+              (channel): channel is AlertChannel =>
+                channel === 'dashboard' || channel === 'email',
+            )
+          : [],
+      });
+    }
+    return incidents;
+  };
 
   return {
     adminLockout: {
@@ -417,6 +512,70 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         typeof data?.settings?.adminLocalOnly === 'boolean'
           ? data.settings.adminLocalOnly
           : DEFAULT_DATA.settings.adminLocalOnly,
+      alerts: {
+        severityThreshold:
+          alertSettings?.severityThreshold === 'critical'
+            ? 'critical'
+            : DEFAULT_DATA.settings.alerts.severityThreshold,
+        dashboard: {
+          enabled:
+            typeof alertSettings?.dashboard?.enabled === 'boolean'
+              ? alertSettings.dashboard.enabled
+              : DEFAULT_DATA.settings.alerts.dashboard.enabled,
+        },
+        email: {
+          enabled:
+            typeof alertSettings?.email?.enabled === 'boolean'
+              ? alertSettings.email.enabled
+              : DEFAULT_DATA.settings.alerts.email.enabled,
+          smtpHost:
+            typeof alertSettings?.email?.smtpHost === 'string'
+              ? alertSettings.email.smtpHost
+              : DEFAULT_DATA.settings.alerts.email.smtpHost,
+          smtpPort: finiteOr(
+            alertSettings?.email?.smtpPort,
+            DEFAULT_DATA.settings.alerts.email.smtpPort,
+          ),
+          secure:
+            typeof alertSettings?.email?.secure === 'boolean'
+              ? alertSettings.email.secure
+              : DEFAULT_DATA.settings.alerts.email.secure,
+          username:
+            typeof alertSettings?.email?.username === 'string'
+              ? alertSettings.email.username
+              : DEFAULT_DATA.settings.alerts.email.username,
+          from:
+            typeof alertSettings?.email?.from === 'string'
+              ? alertSettings.email.from
+              : DEFAULT_DATA.settings.alerts.email.from,
+          to:
+            typeof alertSettings?.email?.to === 'string'
+              ? alertSettings.email.to
+              : DEFAULT_DATA.settings.alerts.email.to,
+        },
+        dedupe: {
+          printerMs: finiteOr(
+            alertSettings?.dedupe?.printerMs,
+            DEFAULT_DATA.settings.alerts.dedupe.printerMs,
+          ),
+          spoolerMs: finiteOr(
+            alertSettings?.dedupe?.spoolerMs,
+            DEFAULT_DATA.settings.alerts.dedupe.spoolerMs,
+          ),
+          serialMs: finiteOr(
+            alertSettings?.dedupe?.serialMs,
+            DEFAULT_DATA.settings.alerts.dedupe.serialMs,
+          ),
+          hopperMs: finiteOr(
+            alertSettings?.dedupe?.hopperMs,
+            DEFAULT_DATA.settings.alerts.dedupe.hopperMs,
+          ),
+          networkMs: finiteOr(
+            alertSettings?.dedupe?.networkMs,
+            DEFAULT_DATA.settings.alerts.dedupe.networkMs,
+          ),
+        },
+      },
     },
     coinStats: {
       one: finiteOr(data?.coinStats?.one, DEFAULT_DATA.coinStats.one),
@@ -510,34 +669,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
     pendingRefunds: Array.isArray(data?.pendingRefunds)
       ? data.pendingRefunds
       : DEFAULT_DATA.pendingRefunds,
+    anomalyIncidents: normalizeAnomalyIncidents(data?.anomalyIncidents),
     financialLedger: Array.isArray(data?.financialLedger)
       ? data.financialLedger
       : DEFAULT_DATA.financialLedger,
-    reconciliationReports: Array.isArray(data?.reconciliationReports)
-      ? data.reconciliationReports
-      : DEFAULT_DATA.reconciliationReports,
-    reconciliationSettings: {
-      autoGenerateEnabled:
-        typeof data?.reconciliationSettings?.autoGenerateEnabled === 'boolean'
-          ? data.reconciliationSettings.autoGenerateEnabled
-          : DEFAULT_DATA.reconciliationSettings.autoGenerateEnabled,
-      cutoffHourLocal: finiteOr(
-        data?.reconciliationSettings?.cutoffHourLocal,
-        DEFAULT_DATA.reconciliationSettings.cutoffHourLocal,
-      ),
-      cutoffMinuteLocal: finiteOr(
-        data?.reconciliationSettings?.cutoffMinuteLocal,
-        DEFAULT_DATA.reconciliationSettings.cutoffMinuteLocal,
-      ),
-      varianceThreshold: finiteOr(
-        data?.reconciliationSettings?.varianceThreshold,
-        DEFAULT_DATA.reconciliationSettings.varianceThreshold,
-      ),
-      lastAutoRunDateKey:
-        typeof data?.reconciliationSettings?.lastAutoRunDateKey === 'string'
-          ? data.reconciliationSettings.lastAutoRunDateKey
-          : DEFAULT_DATA.reconciliationSettings.lastAutoRunDateKey,
-    },
   };
 }
 
@@ -554,7 +689,14 @@ export async function initDB() {
     return;
   }
 
-  db.data = normalizeSchema(db.data);
+  try {
+    db.data = normalizeSchema(db.data);
+  } catch (error) {
+    console.error('[DB] Failed to normalize database after db.read().', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    db.data = { ...DEFAULT_DATA };
+  }
   await db.write();
 }
 

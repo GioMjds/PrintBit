@@ -36,6 +36,10 @@ export type SummaryResponse = {
     dismissedCount: number;
     autoRefundedCount: number;
   };
+  anomalyStats: {
+    totalCount: number;
+    openCount: number;
+  };
   jamStats: {
     totalEvents: number;
     recent24h: number;
@@ -79,41 +83,6 @@ export type SummaryResponse = {
   };
 };
 
-export type ReconciliationVarianceStatus = 'pending' | 'matched' | 'mismatch';
-
-export type ReconciliationReport = {
-  id: string;
-  dateKey: string;
-  revision: number;
-  generatedAt: string;
-  generatedBy: 'auto' | 'manual';
-  expectedCash: number;
-  expectedCashAfterLiabilities: number;
-  physicalCount: {
-    countedAmount: number;
-    countedAt: string;
-    countedBy: string | null;
-    notes: string | null;
-  } | null;
-  variance: {
-    threshold: number;
-    amount: number;
-    hasVariance: boolean;
-    status: ReconciliationVarianceStatus;
-    alertLogId: string | null;
-  };
-  totals: {
-    coinIntake: number;
-    settledAmount: number;
-    refundIssued: number;
-    netSettled: number;
-    jobStartedCount: number;
-    jobCompletedCount: number;
-    refundCount: number;
-    ledgerEntryCount: number;
-  };
-};
-
 export type SettingsResponse = {
   pricing: {
     printPerPage: number;
@@ -124,6 +93,28 @@ export type SettingsResponse = {
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
+  alerts: {
+    severityThreshold: 'warning' | 'critical';
+    dashboard: {
+      enabled: boolean;
+    };
+    email: {
+      enabled: boolean;
+      smtpHost: string;
+      smtpPort: number;
+      secure: boolean;
+      username: string;
+      from: string;
+      to: string;
+    };
+    dedupe: {
+      printerMs: number;
+      spoolerMs: number;
+      serialMs: number;
+      hopperMs: number;
+      networkMs: number;
+    };
+  };
 };
 
 export type LogsResponse = {

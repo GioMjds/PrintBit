@@ -1,4 +1,4 @@
-import { apiFetch, setMessage, initAuth } from '../shared';
+import { SummaryResponse, apiFetch, setMessage, initAuth } from '../shared';
 
 interface FeedbackEntry {
   id: string;
@@ -33,6 +33,12 @@ const statResolved = document.getElementById('statResolved') as HTMLElement;
 const openBadge = document.getElementById('openBadge') as HTMLElement;
 const openBadgeMob = document.getElementById(
   'openBadgeMob',
+) as HTMLElement | null;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
 ) as HTMLElement | null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -79,6 +85,12 @@ function updateStats(): void {
   const badgeText = openCount > 0 ? String(openCount) : '';
   openBadge.textContent = badgeText;
   if (openBadgeMob) openBadgeMob.textContent = badgeText;
+}
+
+function setOpenAlertBadge(openCount: number): void {
+  const text = openCount > 0 ? String(openCount) : '';
+  if (openAlertBadge) openAlertBadge.textContent = text;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = text;
 }
 
 // ── Rendering ───────────────────────────────────────────────────────────────
@@ -170,9 +182,19 @@ async function loadFeedback(): Promise<void> {
     currentPage = 1;
     updateStats();
     renderPage();
+    await loadSummary();
   } catch {
     setMessage('Network error loading feedback.');
   }
+}
+
+async function loadSummary(): Promise<void> {
+  try {
+    const res = await apiFetch('/api/admin/summary');
+    if (!res.ok) return;
+    const summary = (await res.json()) as SummaryResponse;
+    setOpenAlertBadge(summary.anomalyStats.openCount);
+  } catch {}
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────

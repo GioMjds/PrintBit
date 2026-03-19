@@ -6,6 +6,12 @@ const coins10 = document.getElementById("coins10") as HTMLElement;
 const coins20 = document.getElementById("coins20") as HTMLElement;
 
 const refreshBtn = document.getElementById("refreshBtn") as HTMLButtonElement;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
+) as HTMLElement | null;
 let refreshTimer: number | null = null;
 
 function applyCoins(summary: SummaryResponse): void {
@@ -13,6 +19,12 @@ function applyCoins(summary: SummaryResponse): void {
   coins5.textContent = String(summary.coinStats.five);
   coins10.textContent = String(summary.coinStats.ten);
   coins20.textContent = String(summary.coinStats.twenty);
+  const openCount =
+    summary.anomalyStats.openCount > 0
+      ? String(summary.anomalyStats.openCount)
+      : '';
+  if (openAlertBadge) openAlertBadge.textContent = openCount;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
 }
 
 async function loadData(): Promise<void> {

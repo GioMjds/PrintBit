@@ -375,57 +375,6 @@ Marks a single owed change entry as resolved. Returns `{ ok, entry }`. Returns `
 
 ### `POST /api/admin/owed-changes/resolve-all`
 
-### `GET /api/admin/reconciliation/reports`
-
-Lists archived reconciliation reports. Optional query:
-
-- `from=YYYY-MM-DD`
-- `to=YYYY-MM-DD`
-
-### `GET /api/admin/reconciliation/reports/latest`
-
-Returns the latest generated reconciliation report.
-
-### `GET /api/admin/reconciliation/settings`
-
-Returns reconciliation scheduler settings (`autoGenerateEnabled`, cutoff, variance threshold).
-
-### `GET /api/admin/reconciliation/reports/:id`
-
-Returns a specific reconciliation report by ID.
-
-### `POST /api/admin/reconciliation/reports/run`
-
-Runs reconciliation manually and archives a new report revision.
-
-Request:
-
-```json
-{ "dateKey": "2026-03-19" }
-```
-
-### `POST /api/admin/reconciliation/reports/:id/physical-count`
-
-Submits physical cash count and computes variance.
-
-Request:
-
-```json
-{
-  "countedAmount": 1250,
-  "countedBy": "operator-name",
-  "notes": "optional notes"
-}
-```
-
-### `GET /api/admin/reconciliation/reports/:id/export.csv`
-
-Downloads reconciliation report as CSV.
-
-### `GET /api/admin/reconciliation/reports/:id/export.pdf`
-
-Downloads reconciliation report as PDF.
-
 Bulk-resolves all open owed change entries. Returns `{ ok, resolvedCount }`.
 
 ## Installation notes

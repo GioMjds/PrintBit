@@ -1,4 +1,10 @@
-import { LogsResponse, apiFetch, setMessage, initAuth } from '../shared';
+import {
+  LogsResponse,
+  SummaryResponse,
+  apiFetch,
+  setMessage,
+  initAuth,
+} from '../shared';
 
 const logsBody = document.getElementById('logsBody') as HTMLElement;
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
@@ -11,12 +17,24 @@ const clearLogsBtn = document.getElementById(
 const prevPageBtn = document.getElementById('prevPageBtn') as HTMLButtonElement;
 const nextPageBtn = document.getElementById('nextPageBtn') as HTMLButtonElement;
 const pageInfo = document.getElementById('pageInfo') as HTMLElement;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
+) as HTMLElement | null;
 
 const PAGE_SIZE = 20;
 let refreshTimer: number | null = null;
 let currentPage = 1;
 let totalLogs = 0;
 let allLogs: LogsResponse['logs'] = [];
+
+function setOpenAlertBadge(openCount: number): void {
+  const value = openCount > 0 ? String(openCount) : '';
+  if (openAlertBadge) openAlertBadge.textContent = value;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = value;
+}
 
 function totalPages(): number {
   return Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
@@ -92,6 +110,14 @@ async function loadData(): Promise<void> {
   totalLogs = allLogs.length;
   if (currentPage > totalPages()) currentPage = totalPages();
   renderPage();
+  await loadSummary();
+}
+
+async function loadSummary(): Promise<void> {
+  const res = await apiFetch('/api/admin/summary');
+  if (!res.ok) return;
+  const summary = (await res.json()) as SummaryResponse;
+  setOpenAlertBadge(summary.anomalyStats.openCount);
 }
 
 async function deleteSingleLog(id: string): Promise<void> {

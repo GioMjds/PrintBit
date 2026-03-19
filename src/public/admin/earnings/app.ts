@@ -11,6 +11,12 @@ const earningsWeek = document.getElementById('earningsWeek') as HTMLElement;
 const earningsAll = document.getElementById('earningsAll') as HTMLElement;
 const eBarToday = document.getElementById('eBarToday') as HTMLElement | null;
 const eBarWeek = document.getElementById('eBarWeek') as HTMLElement | null;
+const openAlertBadge = document.getElementById(
+  'openAlertBadge',
+) as HTMLElement | null;
+const openAlertBadgeMob = document.getElementById(
+  'openAlertBadgeMob',
+) as HTMLElement | null;
 
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 let refreshTimer: number | null = null;
@@ -19,6 +25,12 @@ function applyEarnings(summary: SummaryResponse): void {
   earningsToday.textContent = peso(summary.earnings.today);
   earningsWeek.textContent = peso(summary.earnings.week);
   earningsAll.textContent = peso(summary.earnings.allTime);
+  const openCount =
+    summary.anomalyStats.openCount > 0
+      ? String(summary.anomalyStats.openCount)
+      : '';
+  if (openAlertBadge) openAlertBadge.textContent = openCount;
+  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
 
   const maxE = summary.earnings.allTime || 1;
   if (eBarToday)
