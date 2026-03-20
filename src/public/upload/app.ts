@@ -143,6 +143,53 @@ function extOf(name: string): string {
   return name.split('.').pop()?.toLowerCase() ?? 'file';
 }
 
+function normalizeMimeByExtension(
+  fileName: string,
+  mimeType: string,
+): string | null {
+  const normalizedMime = mimeType.trim().toLowerCase();
+  const ext = extOf(fileName);
+  const extensionMimeMap: Record<string, string> = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+  };
+
+  if (normalizedMime !== '' && normalizedMime !== 'application/octet-stream') {
+    return normalizedMime;
+  }
+
+  return extensionMimeMap[ext] ?? null;
+}
+
+function collectUnsupportedFiles(files: File[]): string[] {
+  const allowedMimeTypes = new Set<string>([
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'image/jpeg',
+    'image/png',
+  ]);
+
+  return files
+    .filter((file) => {
+      const normalized = normalizeMimeByExtension(file.name, file.type);
+      return !normalized || !allowedMimeTypes.has(normalized);
+    })
+    .map((file) => file.name);
+}
+
 function mapError(r: UploadErrorResponse): string {
   switch (r.code) {
     case 'DUPLICATE_FILE':
@@ -150,6 +197,8 @@ function mapError(r: UploadErrorResponse): string {
     case 'INVALID_TOKEN':
       return 'Invalid token. Scan a fresh kiosk QR.';
     case 'UNSUPPORTED_TYPE':
+      return 'Unsupported file type.';
+    case 'UNSUPPORTED_FILE_TYPE':
       return 'Unsupported file type.';
     case 'FILE_TOO_LARGE':
       return r.error ?? 'File exceeds the 25 MB limit.';
@@ -311,6 +360,12 @@ function startSessionMonitor(): void {
   );
 }
 
+function handleVisibilityResume(): void {
+  if (document.visibilityState === 'visible') {
+    void refreshSessionLease();
+  }
+}
+
 // ── Queue item UI ─────────────────────────────────────────────────────────────
 
 function createQueueItem(qf: QueuedFile): HTMLElement {
@@ -390,7 +445,19 @@ function escHtml(s: string): string {
 
 function addFilesToQueue(files: FileList | File[]): void {
   const arr = Array.from(files);
+  const unsupportedFiles = collectUnsupportedFiles(arr);
+  if (unsupportedFiles.length > 0) {
+    setStatus(
+      `Unsupported file type: ${unsupportedFiles[0]}${unsupportedFiles.length > 1 ? ` (+${unsupportedFiles.length - 1} more)` : ''}.`,
+      'error',
+    );
+  }
+
+  let addedCount = 0;
   for (const file of arr) {
+    const normalizedMime = normalizeMimeByExtension(file.name, file.type);
+    if (!normalizedMime) continue;
+
     // Skip duplicates by name+size
     const isDupe = queue.some(
       (q) => q.file.name === file.name && q.file.size === file.size,
@@ -407,9 +474,12 @@ function addFilesToQueue(files: FileList | File[]): void {
     qf.el = el;
     queue.push(qf);
     fileQueue.appendChild(el);
+    addedCount++;
   }
   refreshUploadBtn();
-  clearStatus();
+  if (unsupportedFiles.length === 0 || addedCount > 0) {
+    clearStatus();
+  }
 }
 
 function refreshUploadBtn(): void {
@@ -693,6 +763,14 @@ uploadForm.addEventListener('submit', (e) => {
   e.preventDefault();
   if (appState !== 'session-ready') return;
   void uploadPendingFiles();
+});
+
+document.addEventListener('visibilitychange', handleVisibilityResume);
+window.addEventListener('focus', () => {
+  void refreshSessionLease();
+});
+window.addEventListener('pageshow', () => {
+  void refreshSessionLease();
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

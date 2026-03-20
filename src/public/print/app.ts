@@ -32,8 +32,12 @@ type DeleteDocumentResponse = {
 };
 
 type HotspotConfig = {
+  provider: 'mypublicwifi' | 'esp32';
   ssid: string;
   password: string;
+  authType?: string;
+  captivePortalPath?: string;
+  startsManagedHotspot?: boolean;
 };
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -66,6 +70,15 @@ const wifiPasswordEl = document.getElementById(
   'wifiPassword',
 ) as HTMLElement | null;
 const wifiStepEl = document.getElementById('wifiStep') as HTMLElement | null;
+const qrStepLabelEl = document.getElementById(
+  'qrStepLabel',
+) as HTMLElement | null;
+const wifiStepLabelEl = document.getElementById(
+  'wifiStepLabel',
+) as HTMLElement | null;
+const mobileGuideTextEl = document.getElementById(
+  'mobileGuideText',
+) as HTMLElement | null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -84,6 +97,16 @@ const SESSION_COUNTDOWN_TICK_MS = 1000;
 let sessionCountdownBaselineSeconds: number | null = null;
 let sessionCountdownSyncedAtMs: number | null = null;
 let sessionCountdownHandle: number | null = null;
+
+function buildWifiQrPayload(config: HotspotConfig): string {
+  const rawAuth = config.authType?.trim().toUpperCase() ?? '';
+  const auth = rawAuth === 'NOPASS' ? 'nopass' : rawAuth || 'WPA';
+  const escapeField = (value: string): string =>
+    value.replace(/([\\;,:"])/g, '\\$1');
+  const ssid = escapeField(config.ssid);
+  const password = escapeField(config.password);
+  return `WIFI:T:${auth};S:${ssid};P:${password};;`;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -438,14 +461,46 @@ function updateUploadLink(uploadUrl: string): void {
 
   if (hotspotConfig) {
     if (wifiSsidEl) wifiSsidEl.textContent = hotspotConfig.ssid;
-    if (wifiPasswordEl) wifiPasswordEl.textContent = hotspotConfig.password;
+    if (wifiPasswordEl)
+      wifiPasswordEl.textContent =
+        hotspotConfig.password.trim().length > 0
+          ? hotspotConfig.password
+          : '(open network)';
     if (wifiStepEl) wifiStepEl.style.display = '';
+
+    if (hotspotConfig.provider === 'esp32') {
+      if (qrStepLabelEl)
+        qrStepLabelEl.textContent = 'Scan to connect to kiosk Wi-Fi';
+      if (wifiStepLabelEl)
+        wifiStepLabelEl.textContent =
+          'Connect your phone to this kiosk network';
+      if (mobileGuideTextEl) {
+        mobileGuideTextEl.innerHTML =
+          'Scan the QR code to join the kiosk Wi-Fi.<br />Your phone should open the upload page automatically. If not, use the button below.';
+      }
+    } else {
+      if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
+      if (wifiStepLabelEl) wifiStepLabelEl.textContent = 'Wi-Fi credentials';
+      if (mobileGuideTextEl) {
+        mobileGuideTextEl.innerHTML =
+          "Scan the QR code with your phone's camera to upload.<br />";
+      }
+    }
   } else {
     if (wifiStepEl) wifiStepEl.style.display = 'none';
+    if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
+    if (mobileGuideTextEl) {
+      mobileGuideTextEl.innerHTML =
+        "Scan the QR code with your phone's camera to upload.<br />";
+    }
   }
 
   if (uploadQrCanvas) {
-    void QRCode.toCanvas(uploadQrCanvas, uploadUrl, {
+    const qrPayload =
+      hotspotConfig?.provider === 'esp32'
+        ? buildWifiQrPayload(hotspotConfig)
+        : uploadUrl;
+    void QRCode.toCanvas(uploadQrCanvas, qrPayload, {
       width: 220,
       margin: 1,
       color: { dark: '#1a1a2e', light: '#ffffff' },
@@ -474,7 +529,7 @@ async function createSession(): Promise<void> {
   }
 
   // Start the hotspot on-demand so the Wi-Fi network is ready for scanning
-  if (hotspotConfig) {
+  if (hotspotConfig?.startsManagedHotspot) {
     try {
       await fetch('/api/hotspot/start', { method: 'POST' });
     } catch {

@@ -20,10 +20,10 @@ function fileFilter(
   cb: multer.FileFilterCallback,
 ): void {
   const ext = path.extname(file.originalname).toLowerCase();
-  const mime = file.mimetype.toLowerCase();
+  const incomingMime = file.mimetype.toLowerCase();
 
   // Check extension and MIME are both allowed
-  if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME_TYPES.has(mime)) {
+  if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME_TYPES.has(incomingMime)) {
     cb(
       Object.assign(new Error('Invalid file type'), {
         code: 'UNSUPPORTED_TYPE',
@@ -34,7 +34,11 @@ function fileFilter(
 
   // Validate extension-to-MIME consistency
   const expectedMime = EXTENSION_MIME_MAP[ext];
-  if (expectedMime && expectedMime !== mime) {
+  const normalizedMime =
+    incomingMime === 'application/octet-stream'
+      ? expectedMime
+      : incomingMime;
+  if (!normalizedMime || (expectedMime && expectedMime !== normalizedMime)) {
     cb(
       Object.assign(new Error('File extension does not match content type'), {
         code: 'UNSUPPORTED_TYPE',
@@ -43,6 +47,7 @@ function fileFilter(
     return;
   }
 
+  file.mimetype = normalizedMime;
   cb(null, true);
 }
 

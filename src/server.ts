@@ -11,8 +11,6 @@ import {
   PORTAL_DIR,
   PUBLIC_PAGE_ROUTES,
   UPLOAD_DIR,
-  HOTSPOT_SSID,
-  HOTSPOT_PASSWORD,
   CAPTIVE_PORTAL_ENABLED,
 } from '@/config';
 import {
@@ -40,6 +38,7 @@ import {
   getHopperStatus,
   getSerialStatus,
   initSerial,
+  getHotspotConfig,
   startHotspot,
   stopHotspot,
   isHotspotRunning,
@@ -107,7 +106,7 @@ if (CAPTIVE_PORTAL_ENABLED) {
 
 // Hotspot config API (used by print page to generate Wi-Fi QR)
 app.get('/api/config/hotspot', (_req, res) => {
-  res.json({ ssid: HOTSPOT_SSID, password: HOTSPOT_PASSWORD });
+  res.json(getHotspotConfig());
 });
 
 // On-demand hotspot control (called by print page when session starts)
@@ -127,11 +126,13 @@ app.post('/api/hotspot/stop', (_req, res) => {
 });
 
 // Active session API
-app.get('/api/session/active', (_req, res) => {
+app.get('/api/session/active', (req, res) => {
   const token = sessionStore.getActiveSessionToken();
   if (token) {
-    const localIP = getLocalIPv4() ?? '192.168.5.1';
-    const uploadUrl = `http://${localIP}:${PORT}/upload/${encodeURIComponent(token)}`;
+    const uploadUrl = new URL(
+      `/upload/${encodeURIComponent(token)}`,
+      resolvePublicBaseUrl(req),
+    ).toString();
     res.json({ token, uploadUrl });
   } else {
     res.status(404).json({ error: 'No active session' });
