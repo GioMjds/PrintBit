@@ -13,6 +13,7 @@ export const ALLOWED_MIME_TYPES = new Set([
   // Images
   'image/jpeg',
   'image/png',
+  'application/octet-stream',
 ]);
 
 export const ALLOWED_EXTENSIONS = new Set([

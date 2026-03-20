@@ -122,6 +122,34 @@ bin/                        # External executables (ex: SumatraPDF.exe)
   - Scanner device
   - MyPublicWiFi installation
 
+## Mobile and network matrix
+
+- Android: Chrome (latest stable + prior major) for `/upload/:token`
+- iOS: Safari (latest stable + prior major) for `/upload/:token`
+- Supported upload formats: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, JPG, PNG
+- Session continuity: upload page refreshes lease periodically and also on app resume (visibility/focus events)
+
+### Network provider modes (migration to ESP32)
+
+- `PRINTBIT_NETWORK_PROVIDER=mypublicwifi` (default)
+  - Existing behavior using MyPublicWiFi process management on kiosk Windows host.
+- `PRINTBIT_NETWORK_PROVIDER=esp32`
+  - ESP32 provides AP + captive portal onboarding.
+  - PrintBit still serves session/upload endpoints and `/portal` bridge.
+  - `POST /api/hotspot/start` becomes no-op orchestration (no MyPublicWiFi launch).
+
+Related env knobs:
+
+- `PRINTBIT_HOTSPOT_SSID` (default `PrintBit-Kiosk`)
+- `PRINTBIT_HOTSPOT_PASSWORD` (default `printbit123`)
+- `PRINTBIT_HOTSPOT_AUTH_TYPE` (default `WPA`, use `nopass` for open AP)
+- `PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH` (default `/portal`)
+
+Troubleshooting mobile captive onboarding:
+
+- If captive page does not auto-open after joining kiosk Wi-Fi, open the fallback upload link shown on Print screen.
+- If session is expired/owned by another device, generate a new kiosk print session and scan again.
+
 ## Important notes
 
 - Upload and machine state are persisted in `uploads/` and `db.json`; do not delete these unintentionally during operation.

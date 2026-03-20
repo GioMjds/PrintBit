@@ -16,6 +16,15 @@ export const HOTSPOT_SSID =
   process.env.PRINTBIT_HOTSPOT_SSID ?? 'PrintBit-Kiosk';
 export const HOTSPOT_PASSWORD =
   process.env.PRINTBIT_HOTSPOT_PASSWORD ?? 'printbit123';
+export const NETWORK_PROVIDER =
+  process.env.PRINTBIT_NETWORK_PROVIDER?.trim().toLowerCase() === 'esp32'
+    ? 'esp32'
+    : 'mypublicwifi';
+export const HOTSPOT_AUTH_TYPE =
+  process.env.PRINTBIT_HOTSPOT_AUTH_TYPE ??
+  (HOTSPOT_PASSWORD.trim().length > 0 ? 'WPA' : 'nopass');
+export const ESP32_CAPTIVE_PORTAL_PATH =
+  process.env.PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH ?? '/portal';
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
 
