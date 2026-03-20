@@ -1,0 +1,11 @@
+{
+  "printers": [
+    {
+      "name": "REPLACE_WITH_DEFAULT_PRINTER_NAME",
+      "driverNameFromPrinter": "REPLACE_WITH_WIN32_PRINTER_DRIVER_NAME",
+      "provider": "REPLACE_WITH_DRIVER_PROVIDER",
+      "driverName": "REPLACE_WITH_DRIVER_NAME",
+      "driverVersion": "REPLACE_WITH_DRIVER_VERSION"
+    }
+  ]
+}

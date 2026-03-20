@@ -84,6 +84,53 @@ pnpm run lockdown:revert
 
 Then re-apply and verify before returning the device to public use.
 
+## 5.3) Controlled Windows update policy (Issue #39)
+
+Run as Administrator from project root:
+
+```powershell
+pnpm run updates:apply
+pnpm run updates:verify
+```
+
+Defaults applied by `updates:apply`:
+
+- Feature update defer: 30 days
+- Quality update defer: 7 days
+- Driver updates excluded from Windows Update quality updates
+- Scheduled install: Sunday at 03:00
+- No automatic reboot while users are logged on
+
+To tune maintenance window values when needed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\apply-controlled-updates.ps1 -FeatureDeferDays 30 -QualityDeferDays 7 -MaintenanceInstallDay 0 -MaintenanceInstallHour 3
+```
+
+For rollback during troubleshooting:
+
+```powershell
+pnpm run updates:revert
+```
+
+## 5.4) Printer driver version pinning
+
+1. Update `scripts\printer-driver-baseline.json` with production values (exact match policy).
+2. Verify driver pin:
+
+```powershell
+pnpm run driver:verify
+```
+
+Helpful command to collect current default-printer details before editing baseline:
+
+```powershell
+$p = Get-CimInstance Win32_Printer | ? Default
+$d = Get-CimInstance Win32_PrinterDriver -Filter ("Name='" + $p.DriverName.Replace("'","''") + "'")
+$p | Select-Object Name,DriverName
+$d | Select-Object Name,DriverProviderName,DriverVersion
+```
+
 ## 6) Assigned Access setup checklist (tablet)
 
 1. Create/sign in dedicated kiosk user.
@@ -117,6 +164,8 @@ Run a rehearsal on a Windows dev machine:
 - Use admin/service account only for updates and troubleshooting.
 - Keep a documented rollback path to temporarily relax lockdown for servicing.
 - Re-apply lockdown after maintenance and re-run validation checklist.
+- Re-apply controlled update policy (`pnpm run updates:apply`) and verify (`pnpm run updates:verify`) after servicing.
+- Re-run driver pin verification (`pnpm run driver:verify`) before returning to public operation.
 
 ## 10) Notes
 

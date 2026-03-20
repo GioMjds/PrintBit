@@ -11,7 +11,11 @@
     "install-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1",
     "lockdown:apply": "powershell -ExecutionPolicy Bypass -File .\\scripts\\apply-kiosk-lockdown.ps1",
     "lockdown:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-kiosk-lockdown.ps1",
-    "lockdown:revert": "powershell -ExecutionPolicy Bypass -File .\\scripts\\revert-kiosk-lockdown.ps1"
+    "lockdown:revert": "powershell -ExecutionPolicy Bypass -File .\\scripts\\revert-kiosk-lockdown.ps1",
+    "updates:apply": "powershell -ExecutionPolicy Bypass -File .\\scripts\\apply-controlled-updates.ps1",
+    "updates:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-controlled-updates.ps1",
+    "updates:revert": "powershell -ExecutionPolicy Bypass -File .\\scripts\\revert-controlled-updates.ps1",
+    "driver:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-printer-driver-version.ps1"
   },
   "keywords": [],
   "author": "GioMjds",
