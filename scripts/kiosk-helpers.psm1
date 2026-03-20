@@ -32,7 +32,7 @@ function Remove-RegistryValueIfExists {
   $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
   if ($null -eq $item) { return }
   if ($item.PSObject.Properties.Name -contains $Name) {
-    Remove-ItemProperty -Path $Path -Name $Name -Force -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $Path -Name $Name -Force -ErrorAction Stop
   }
 }
 

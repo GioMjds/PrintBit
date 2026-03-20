@@ -29,8 +29,7 @@ function Restore-DwordValue {
 
   $originalExists = Get-DwordOrNull -Path $printBitState -Name $existsStateName
   if ($null -eq $originalExists) {
-    Write-Warning "[PrintBit] Missing original-state metadata for $Path::$Name. Leaving current value unchanged."
-    return
+    throw "[PrintBit] Missing original-state metadata for $Path::$Name. Aborting revert to avoid partial rollback."
   }
 
   if ($originalExists -eq 1) {

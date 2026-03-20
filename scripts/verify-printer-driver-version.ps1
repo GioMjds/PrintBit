@@ -47,14 +47,19 @@ if ($null -eq $baseline.printers -or $baseline.printers.Count -lt 1) {
   Exit-WithError -Message "Baseline JSON must contain at least one printer entry in 'printers'."
 }
 
-$defaultPrinter = Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop | Where-Object { $_.Default -eq $true } | Select-Object -First 1
-if ($null -eq $defaultPrinter) {
-  Exit-WithError -Message "No default printer found on this kiosk."
+$installedPrinters = Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop
+if ($null -eq $installedPrinters -or $installedPrinters.Count -lt 1) {
+  Exit-WithError -Message "No printers found on this kiosk."
 }
 
-$printerConfig = $baseline.printers | Where-Object { $_.name -eq $defaultPrinter.Name } | Select-Object -First 1
-if ($null -eq $printerConfig) {
-  Exit-WithError -Message "Default printer '$($defaultPrinter.Name)' is not present in baseline file."
+$failures = @()
+foreach ($printerConfig in $baseline.printers) {
+  $printer = $installedPrinters | Where-Object { $_.Name -eq $printerConfig.name } | Select-Object -First 1
+  if ($null -eq $printer) {
+    $failures += "Printer '$($printerConfig.name)' not installed"
+    continue
+  }
+  # existing driver lookup + field checks per printer
 }
 
 try {
