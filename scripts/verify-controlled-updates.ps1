@@ -13,20 +13,8 @@ param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-function Get-DwordOrNull {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  if (-not (Test-Path $Path)) { return $null }
-  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
-  if ($null -eq $item) { return $null }
-  if ($item.PSObject.Properties.Name -contains $Name) {
-    return [int]$item.$Name
-  }
-  return $null
-}
+$helpersModule = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'kiosk-helpers.psm1'
+Import-Module $helpersModule -Force
 
 function Write-Check {
   param(
@@ -43,25 +31,25 @@ $windowsUpdatePolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
 $autoUpdatePolicy    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
 $printBitState       = 'HKLM:\SOFTWARE\PrintBit\ControlledUpdates'
 
-$applied = Get-DwordOrNull -Path $printBitState -Name 'Applied'
-$featureDefer = Get-DwordOrNull -Path $windowsUpdatePolicy -Name 'DeferFeatureUpdates'
-$featureDays = Get-DwordOrNull -Path $windowsUpdatePolicy -Name 'DeferFeatureUpdatesPeriodInDays'
-$qualityDefer = Get-DwordOrNull -Path $windowsUpdatePolicy -Name 'DeferQualityUpdates'
-$qualityDays = Get-DwordOrNull -Path $windowsUpdatePolicy -Name 'DeferQualityUpdatesPeriodInDays'
-$excludeDrivers = Get-DwordOrNull -Path $windowsUpdatePolicy -Name 'ExcludeWUDriversInQualityUpdate'
-$noAutoUpdate = Get-DwordOrNull -Path $autoUpdatePolicy -Name 'NoAutoUpdate'
-$auOptions = Get-DwordOrNull -Path $autoUpdatePolicy -Name 'AUOptions'
-$scheduledDay = Get-DwordOrNull -Path $autoUpdatePolicy -Name 'ScheduledInstallDay'
-$scheduledTime = Get-DwordOrNull -Path $autoUpdatePolicy -Name 'ScheduledInstallTime'
-$noAutoRebootLoggedOn = Get-DwordOrNull -Path $autoUpdatePolicy -Name 'NoAutoRebootWithLoggedOnUsers'
+$applied = Get-DwordValueOrNull -Path $printBitState -Name 'Applied'
+$featureDefer = Get-DwordValueOrNull -Path $windowsUpdatePolicy -Name 'DeferFeatureUpdates'
+$featureDays = Get-DwordValueOrNull -Path $windowsUpdatePolicy -Name 'DeferFeatureUpdatesPeriodInDays'
+$qualityDefer = Get-DwordValueOrNull -Path $windowsUpdatePolicy -Name 'DeferQualityUpdates'
+$qualityDays = Get-DwordValueOrNull -Path $windowsUpdatePolicy -Name 'DeferQualityUpdatesPeriodInDays'
+$excludeDrivers = Get-DwordValueOrNull -Path $windowsUpdatePolicy -Name 'ExcludeWUDriversInQualityUpdate'
+$noAutoUpdate = Get-DwordValueOrNull -Path $autoUpdatePolicy -Name 'NoAutoUpdate'
+$auOptions = Get-DwordValueOrNull -Path $autoUpdatePolicy -Name 'AUOptions'
+$scheduledDay = Get-DwordValueOrNull -Path $autoUpdatePolicy -Name 'ScheduledInstallDay'
+$scheduledTime = Get-DwordValueOrNull -Path $autoUpdatePolicy -Name 'ScheduledInstallTime'
+$noAutoRebootLoggedOn = Get-DwordValueOrNull -Path $autoUpdatePolicy -Name 'NoAutoRebootWithLoggedOnUsers'
 
-$expectedFeatureDays = Get-DwordOrNull -Path $printBitState -Name 'ConfigFeatureDeferDays'
+$expectedFeatureDays = Get-DwordValueOrNull -Path $printBitState -Name 'ConfigFeatureDeferDays'
 if ($null -eq $expectedFeatureDays) { $expectedFeatureDays = 30 }
-$expectedQualityDays = Get-DwordOrNull -Path $printBitState -Name 'ConfigQualityDeferDays'
+$expectedQualityDays = Get-DwordValueOrNull -Path $printBitState -Name 'ConfigQualityDeferDays'
 if ($null -eq $expectedQualityDays) { $expectedQualityDays = 7 }
-$expectedScheduleDay = Get-DwordOrNull -Path $printBitState -Name 'ConfigMaintenanceInstallDay'
+$expectedScheduleDay = Get-DwordValueOrNull -Path $printBitState -Name 'ConfigMaintenanceInstallDay'
 if ($null -eq $expectedScheduleDay) { $expectedScheduleDay = 0 }
-$expectedScheduleHour = Get-DwordOrNull -Path $printBitState -Name 'ConfigMaintenanceInstallHour'
+$expectedScheduleHour = Get-DwordValueOrNull -Path $printBitState -Name 'ConfigMaintenanceInstallHour'
 if ($null -eq $expectedScheduleHour) { $expectedScheduleHour = 3 }
 
 $checks = @()

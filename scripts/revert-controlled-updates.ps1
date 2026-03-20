@@ -14,58 +14,8 @@ param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-function Ensure-RegistryKey {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  if (-not (Test-Path $Path)) {
-    New-Item -Path $Path -Force | Out-Null
-  }
-}
-
-function Set-DwordValue {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name,
-    [Parameter(Mandatory = $true)][int]$Value
-  )
-  Ensure-RegistryKey -Path $Path
-  New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType DWord -Force | Out-Null
-}
-
-function Remove-RegistryValueIfExists {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  if (-not (Test-Path $Path)) { return }
-  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
-  if ($null -eq $item) { return }
-  if ($item.PSObject.Properties.Name -contains $Name) {
-    Remove-ItemProperty -Path $Path -Name $Name -Force -ErrorAction SilentlyContinue
-  }
-}
-
-function Get-DwordOrNull {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  if (-not (Test-Path $Path)) { return $null }
-  $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
-  if ($null -eq $item) { return $null }
-  if ($item.PSObject.Properties.Name -contains $Name) {
-    return [int]$item.$Name
-  }
-  return $null
-}
-
-function Get-StateKeySuffix {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  return (($Path + '__' + $Name) -replace '[^A-Za-z0-9_]', '_')
-}
+$helpersModule = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'kiosk-helpers.psm1'
+Import-Module $helpersModule -Force
 
 function Restore-DwordValue {
   param(

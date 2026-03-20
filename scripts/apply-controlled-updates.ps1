@@ -28,23 +28,6 @@ $ErrorActionPreference = 'Stop'
 $helpersModule = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'kiosk-helpers.psm1'
 Import-Module $helpersModule -Force
 
-function Ensure-RegistryKey {
-  param([Parameter(Mandatory = $true)][string]$Path)
-  if (-not (Test-Path $Path)) {
-    New-Item -Path $Path -Force | Out-Null
-  }
-}
-
-function Set-DwordValue {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name,
-    [Parameter(Mandatory = $true)][int]$Value
-  )
-  Ensure-RegistryKey -Path $Path
-  New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType DWord -Force | Out-Null
-}
-
 function Test-RegistryValueExists {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
@@ -54,14 +37,6 @@ function Test-RegistryValueExists {
   $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
   if ($null -eq $item) { return $false }
   return ($item.PSObject.Properties.Name -contains $Name)
-}
-
-function Get-StateKeySuffix {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-  return (($Path + '__' + $Name) -replace '[^A-Za-z0-9_]', '_')
 }
 
 function Save-OriginalDwordValue {

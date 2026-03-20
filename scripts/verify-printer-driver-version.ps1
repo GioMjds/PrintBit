@@ -8,7 +8,7 @@
   - Driver version
   - Driver provider
   - Driver name
-  - Printer model
+  - Win32_Printer.DriverName (driverNameFromPrinter)
 
   Exit code:
   - 0 when matched
@@ -69,7 +69,7 @@ if ($null -eq $driver) {
 
 $actual = [pscustomobject]@{
   name          = [string]$defaultPrinter.Name
-  model         = [string]$defaultPrinter.DriverName
+  driverNameFromPrinter = [string]$defaultPrinter.DriverName
   provider      = [string]$driver.DriverProviderName
   driverName    = [string]$driver.Name
   driverVersion = [string]$driver.DriverVersion
@@ -77,18 +77,18 @@ $actual = [pscustomobject]@{
 
 $expected = [pscustomobject]@{
   name          = [string]$printerConfig.name
-  model         = [string]$printerConfig.model
+  driverNameFromPrinter = [string]$printerConfig.driverNameFromPrinter
   provider      = [string]$printerConfig.provider
   driverName    = [string]$printerConfig.driverName
   driverVersion = [string]$printerConfig.driverVersion
 }
 
 $checks = @(
-  @{ Label = 'Printer name';   Actual = $actual.name;          Expected = $expected.name },
-  @{ Label = 'Printer model';  Actual = $actual.model;         Expected = $expected.model },
-  @{ Label = 'Driver provider';Actual = $actual.provider;      Expected = $expected.provider },
-  @{ Label = 'Driver name';    Actual = $actual.driverName;    Expected = $expected.driverName },
-  @{ Label = 'Driver version'; Actual = $actual.driverVersion; Expected = $expected.driverVersion }
+  @{ Label = 'Printer name';                  Actual = $actual.name;                  Expected = $expected.name },
+  @{ Label = 'Win32_Printer.DriverName';      Actual = $actual.driverNameFromPrinter; Expected = $expected.driverNameFromPrinter },
+  @{ Label = 'Driver provider';               Actual = $actual.provider;              Expected = $expected.provider },
+  @{ Label = 'Driver name';                   Actual = $actual.driverName;            Expected = $expected.driverName },
+  @{ Label = 'Driver version';                Actual = $actual.driverVersion;         Expected = $expected.driverVersion }
 )
 
 $failures = @()
