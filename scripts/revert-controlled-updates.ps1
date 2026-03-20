@@ -20,20 +20,21 @@ Import-Module $helpersModule -Force
 function Restore-DwordValue {
   param(
     [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
+    [Parameter(Mandatory = $true)][string]$Name,
+    [Parameter(Mandatory = $true)][string]$StateKeyPath
   )
 
   $suffix = Get-StateKeySuffix -Path $Path -Name $Name
   $existsStateName = "OriginalExists_$suffix"
   $valueStateName = "OriginalValue_$suffix"
 
-  $originalExists = Get-DwordOrNull -Path $printBitState -Name $existsStateName
+  $originalExists = Get-DwordValueOrNull -Path $StateKeyPath -Name $existsStateName
   if ($null -eq $originalExists) {
     throw "[PrintBit] Missing original-state metadata for $Path::$Name. Aborting revert to avoid partial rollback."
   }
 
   if ($originalExists -eq 1) {
-    $originalValue = Get-DwordOrNull -Path $printBitState -Name $valueStateName
+    $originalValue = Get-DwordValueOrNull -Path $StateKeyPath -Name $valueStateName
     if ($null -eq $originalValue) {
       throw "[PrintBit] Original value metadata missing for $Path::$Name while exists flag indicates present."
     }
@@ -42,8 +43,8 @@ function Restore-DwordValue {
     Remove-RegistryValueIfExists -Path $Path -Name $Name
   }
 
-  Remove-RegistryValueIfExists -Path $printBitState -Name $existsStateName
-  Remove-RegistryValueIfExists -Path $printBitState -Name $valueStateName
+  Remove-RegistryValueIfExists -Path $StateKeyPath -Name $existsStateName
+  Remove-RegistryValueIfExists -Path $StateKeyPath -Name $valueStateName
 }
 
 $windowsUpdatePolicy = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
@@ -70,7 +71,7 @@ $policyTargets = @(
 )
 
 foreach ($target in $policyTargets) {
-  Restore-DwordValue -Path $target.Path -Name $target.Name
+  Restore-DwordValue -Path $target.Path -Name $target.Name -StateKeyPath $printBitState
 }
 
 Set-DwordValue -Path $printBitState -Name 'Applied' -Value 0

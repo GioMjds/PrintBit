@@ -52,16 +52,6 @@ function Get-DwordValueOrNull {
   return $null
 }
 
-function Get-DwordOrNull {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Name
-  )
-
-  return Get-DwordValueOrNull -Path $Path -Name $Name
-}
-
 function Get-StateKeySuffix {
   [CmdletBinding()]
   param(
@@ -72,4 +62,4 @@ function Get-StateKeySuffix {
   return (($Path + '__' + $Name) -replace '[^A-Za-z0-9_]', '_')
 }
 
-Export-ModuleMember -Function Ensure-RegistryKey, Set-DwordValue, Remove-RegistryValueIfExists, Get-DwordValueOrNull, Get-DwordOrNull, Get-StateKeySuffix
+Export-ModuleMember -Function Ensure-RegistryKey, Set-DwordValue, Remove-RegistryValueIfExists, Get-DwordValueOrNull, Get-StateKeySuffix
