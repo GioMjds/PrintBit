@@ -507,6 +507,40 @@ function attachSocket(sid: string): void {
   socket.on('UploadFailed', () => {
     setStatus('Kiosk reported an upload error. Please retry.', 'error');
   });
+
+  socket.on('AnalysisStarted', (info: unknown) => {
+    const name =
+      typeof info === 'object' &&
+      info !== null &&
+      'filename' in info &&
+      typeof (info as { filename: unknown }).filename === 'string'
+        ? (info as { filename: string }).filename
+        : 'file';
+    setStatus(`Analyzing ${name}…`, 'info');
+  });
+
+  socket.on('AnalysisCompleted', (info: unknown) => {
+    const name =
+      typeof info === 'object' &&
+      info !== null &&
+      'filename' in info &&
+      typeof (info as { filename: unknown }).filename === 'string'
+        ? (info as { filename: string }).filename
+        : 'file';
+    setStatus(`✓ ${name} ready for printing at kiosk.`, 'ok');
+  });
+
+  socket.on('AnalysisFailed', (info: unknown) => {
+    const name =
+      typeof info === 'object' &&
+      info !== null &&
+      'filename' in info &&
+      typeof (info as { filename: unknown }).filename === 'string'
+        ? (info as { filename: string }).filename
+        : 'file';
+    // Analysis failure is non-fatal — file can still be printed, just without page count info
+    setStatus(`⚠ ${name} analysis unavailable. Proceed at kiosk.`, 'info');
+  });
 }
 
 // ── Upload all pending files sequentially ─────────────────────────────────────

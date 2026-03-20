@@ -125,10 +125,32 @@ function paperPx(size: PaperSize, orientation: Orientation): [number, number] {
   return [Math.round(wMM * MM_TO_PX), Math.round(hMM * MM_TO_PX)];
 }
 
+function previewLog(message: string, meta?: unknown): void {
+  if (meta !== undefined) {
+    console.log(`[CONFIG PREVIEW] ${message}`, meta);
+    return;
+  }
+  console.log(`[CONFIG PREVIEW] ${message}`);
+}
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 class PrintPreview {
   private viewport: HTMLElement;
   private sheet: HTMLElement;
   private canvas: HTMLCanvasElement;
+  private imgStage: HTMLElement;
   private img: HTMLImageElement;
   private iframe: HTMLIFrameElement;
   private placeholder: HTMLElement;
@@ -164,6 +186,7 @@ class PrintPreview {
     this.canvas = document.getElementById(
       'previewCanvas',
     )! as HTMLCanvasElement;
+    this.imgStage = document.getElementById('previewImgStage')! as HTMLElement;
     this.img = document.getElementById('previewImg')! as HTMLImageElement;
     this.iframe = document.getElementById('previewFrame')! as HTMLIFrameElement;
     this.placeholder = document.getElementById(
@@ -239,16 +262,30 @@ class PrintPreview {
     this.showLoading(true);
     this.showCanvas(false);
     this.showImg(false);
+    this.showFrame(false);
     this.setHint('Loading preview…');
 
     let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/preview`;
     if (filename) url += `?filename=${encodeURIComponent(filename)}`;
+    previewLog('load() start', { sessionId, filename: filename ?? null, url });
 
     let response: Response;
     try {
-      response = await fetch(url);
-    } catch {
-      this.showError('Network error — could not reach the server.');
+      response = await fetchWithTimeout(url, 20_000);
+      previewLog('preview response received', {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get('Content-Type') ?? '',
+      });
+    } catch (error) {
+      previewLog('preview fetch failed', error);
+      const isAbortError =
+        error instanceof DOMException && error.name === 'AbortError';
+      this.showError(
+        isAbortError
+          ? 'Preview request timed out. Please retry.'
+          : 'Network error — could not reach the server.',
+      );
       return;
     }
 
@@ -273,21 +310,33 @@ class PrintPreview {
     }
 
     const contentType = response.headers.get('Content-Type') ?? '';
+    previewLog('routing by content type', { contentType });
 
     if (contentType.startsWith('image/')) {
-      await this.loadImage(url);
+      // Convert response to blob URL to avoid double-fetch
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      previewLog('image blob created', {
+        size: blob.size,
+        type: blob.type,
+      });
+      await this.loadImage(blobUrl, true);
     } else if (contentType.includes('application/pdf')) {
       const buf = await response.arrayBuffer();
+      previewLog('pdf buffer loaded', { bytes: buf.byteLength });
       await this.loadPdf(buf);
     } else if (contentType.includes('text/html')) {
       const html = await response.text();
+      previewLog('html preview loaded', { chars: html.length });
       this.loadHtml(html);
     } else {
+      previewLog('unsupported preview content type', { contentType });
       this.showError('Unsupported preview format.');
     }
   }
 
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
+    previewLog('loadPdf() start', { bytes: buf.byteLength });
     if (this.pdfDoc) {
       this.pdfDoc.destroy();
       this.pdfDoc = null;
@@ -315,6 +364,7 @@ class PrintPreview {
       await this.renderPage(1);
     } catch (e) {
       console.error('PDF load error:', e);
+      previewLog('loadPdf() failed', e);
       this.showError('Could not parse PDF.');
     }
   }
@@ -356,6 +406,7 @@ class PrintPreview {
         this.setHint(`Page ${pageNum} of ${this.totalPages}`);
       } catch (e) {
         console.error('Render error:', e);
+        previewLog('renderPage() failed', e);
         this.showError('Render failed.');
       } finally {
         this.renderTask = null;
@@ -366,20 +417,39 @@ class PrintPreview {
     await this.renderTask;
   }
 
-  private async loadImage(url: string): Promise<void> {
+  private async loadImage(url: string, isBlobUrl = false): Promise<void> {
+    previewLog('loadImage() start', { isBlobUrl });
     return new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        previewLog('loadImage() timeout');
+        this.showError('Image preview timed out. Please retry.');
+        if (isBlobUrl) URL.revokeObjectURL(url);
+        resolve();
+      }, 15_000);
+
       this.img.onload = () => {
+        window.clearTimeout(timeoutId);
+        previewLog('loadImage() onload', {
+          naturalWidth: this.img.naturalWidth,
+          naturalHeight: this.img.naturalHeight,
+        });
         this.totalPages = 1;
         this.currentPage = 1;
         this.updatePager();
         this.showImg(true);
         this.showCanvas(false);
+        this.showFrame(false);
         this.showLoading(false);
         this.setHint('Image preview');
+        // Revoke blob URL after image loads to free memory
+        if (isBlobUrl) URL.revokeObjectURL(url);
         resolve();
       };
       this.img.onerror = () => {
+        window.clearTimeout(timeoutId);
+        previewLog('loadImage() onerror');
         this.showError('Could not load image.');
+        if (isBlobUrl) URL.revokeObjectURL(url);
         resolve();
       };
       this.img.src = url;
@@ -412,12 +482,14 @@ class PrintPreview {
   }
 
   private loadHtml(html: string): void {
+    previewLog('loadHtml() start');
     // Show frame first so its dimensions are available when onload fires
     this.showCanvas(false);
     this.showImg(false);
     this.showFrame(true);
     this.showLoading(true);
     this.iframe.onload = () => {
+      previewLog('loadHtml() onload');
       this.recalcHtmlPages();
       this.showLoading(false);
       this.setHint('Document preview');
@@ -451,19 +523,23 @@ class PrintPreview {
   }
 
   private showImg(on: boolean): void {
+    this.imgStage.style.display = on ? 'grid' : 'none';
     this.img.style.display = on ? 'block' : 'none';
     if (on) {
       this.iframe.style.display = 'none';
+      this.canvas.style.display = 'none';
       this.placeholder.classList.add('hidden');
     }
   }
 
   private showError(msg: string): void {
+    previewLog('showError()', { message: msg });
     this.showLoading(false);
     this.showCanvas(false);
     this.showImg(false);
     this.controls.style.display = 'none';
     this.iframe.style.display = 'none';
+    this.imgStage.style.display = 'none';
     const text = document.getElementById('placeholderText');
     if (text) text.textContent = msg;
     this.placeholder.classList.remove('hidden');
@@ -518,7 +594,7 @@ class PrintPreview {
     } else if (mime.startsWith('image/')) {
       const blob = new Blob([buf], { type: mime });
       const url = URL.createObjectURL(blob);
-      await this.loadImage(url);
+      await this.loadImage(url, true);
     } else {
       this.showError('Unsupported preview format.');
     }
@@ -1084,6 +1160,12 @@ syncCustomRangeValidity();
 setPrintContinueState();
 
 async function loadPreview(): Promise<void> {
+  previewLog('loadPreview() start', {
+    mode,
+    sessionId: sessionId ?? null,
+    selectedFile: selectedFile ?? null,
+    selectedDocumentId: selectedDocumentId ?? null,
+  });
   if (mode === 'copy') {
     const copyPreview = copyPreviewPath;
     if (!copyPreview) return;
@@ -1133,11 +1215,14 @@ async function loadPreview(): Promise<void> {
   }
 
   await preview.load(sessionId, selectedFile ?? undefined);
+  previewLog('preview.load() complete');
   if (sessionId) await applyColorAnalysis(sessionId, selectedFile);
+  previewLog('applyColorAnalysis() complete');
   syncPageRangeAvailability();
   clampSinglePage();
   updateSummary();
   await refreshPrintQuote();
+  previewLog('refreshPrintQuote() complete');
 }
 
 function lockColorMode(): void {
@@ -1191,9 +1276,14 @@ async function applyColorAnalysis(
 
   let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/color-analysis`;
   if (filename) url += `?filename=${encodeURIComponent(filename)}`;
+  previewLog('applyColorAnalysis() start', { sessionId, filename: filename ?? null });
 
   try {
-    const resp = await fetch(url);
+    const resp = await fetchWithTimeout(url, 10_000);
+    previewLog('applyColorAnalysis() response', {
+      status: resp.status,
+      ok: resp.ok,
+    });
     if (!resp.ok) return;
 
     const { isGrayscale } = (await resp.json()) as { isGrayscale: boolean };
@@ -1229,7 +1319,8 @@ async function applyColorAnalysis(
       colorGroup.appendChild(notice);
     }
   } catch (error) {
-    // Detection failed silently - leave UI unlocked
+    previewLog('applyColorAnalysis() failed', error);
+    // Detection failed - leave UI unlocked
   }
 }
 

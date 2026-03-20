@@ -1,13 +1,28 @@
 export const ALLOWED_MIME_TYPES = new Set([
+  // PDF
   'application/pdf',
+  // Word
+  'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  // Excel
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  // PowerPoint
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Images
   'image/jpeg',
   'image/png',
 ]);
 
 export const ALLOWED_EXTENSIONS = new Set([
   '.pdf',
+  '.doc',
   '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
   '.jpg',
   '.jpeg',
   '.png',
@@ -21,13 +36,58 @@ export interface MagicSignature {
   offset?: number;
 }
 
+// OLE Compound File header (used by legacy Office formats: DOC, XLS, PPT)
+const OLE_MAGIC: MagicSignature = {
+  bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1],
+};
+
+// OOXML (ZIP-based) header (used by DOCX, XLSX, PPTX)
+const OOXML_MAGIC: MagicSignature = { bytes: [0x50, 0x4b, 0x03, 0x04] };
+
 export const MAGIC_SIGNATURES: Record<string, MagicSignature[]> = {
-  'application/pdf': [
-    { bytes: [0x25, 0x50, 0x44, 0x46] },
-  ],
+  // PDF
+  'application/pdf': [{ bytes: [0x25, 0x50, 0x44, 0x46] }],
+  // Word
+  'application/msword': [OLE_MAGIC],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
-    { bytes: [0x50, 0x4b, 0x03, 0x04] },
+    OOXML_MAGIC,
   ],
+  // Excel
+  'application/vnd.ms-excel': [OLE_MAGIC],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+    OOXML_MAGIC,
+  ],
+  // PowerPoint
+  'application/vnd.ms-powerpoint': [OLE_MAGIC],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': [
+    OOXML_MAGIC,
+  ],
+  // Images
   'image/jpeg': [{ bytes: [0xff, 0xd8, 0xff] }],
   'image/png': [{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] }],
+};
+
+// Extension-to-MIME mapping for consistent lookups
+export const EXTENSION_MIME_MAP: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx':
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx':
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+};
+
+// OOXML internal directory markers for structural validation
+export const OOXML_DIRECTORY_MARKERS: Record<string, string> = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    'word/',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xl/',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+    'ppt/',
 };

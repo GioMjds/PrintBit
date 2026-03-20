@@ -6,7 +6,16 @@ import {
   MAX_PIXELS_TO_SAMPLE,
 } from '@/config/document-analysis.config';
 
-export type AnalyzedFileType = 'pdf' | 'docx' | 'doc' | 'image' | 'unknown';
+export type AnalyzedFileType =
+  | 'pdf'
+  | 'docx'
+  | 'doc'
+  | 'xlsx'
+  | 'xls'
+  | 'pptx'
+  | 'ppt'
+  | 'image'
+  | 'unknown';
 
 export interface PageAnalysis {
   index: number;
@@ -66,6 +75,23 @@ function resolveFileType(
     return 'docx';
   }
   if (contentType === 'application/msword' || ext === '.doc') return 'doc';
+  if (
+    contentType ===
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    ext === '.xlsx'
+  ) {
+    return 'xlsx';
+  }
+  if (contentType === 'application/vnd.ms-excel' || ext === '.xls') return 'xls';
+  if (
+    contentType ===
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+    ext === '.pptx'
+  ) {
+    return 'pptx';
+  }
+  if (contentType === 'application/vnd.ms-powerpoint' || ext === '.ppt')
+    return 'ppt';
 
   if (
     contentType.startsWith('image/') ||
@@ -269,10 +295,17 @@ export async function analyzeDocument(
     return analyzePdfFile(input.filePath, fileType);
   }
 
-  if (fileType === 'docx' || fileType === 'doc') {
+  if (
+    fileType === 'docx' ||
+    fileType === 'doc' ||
+    fileType === 'xlsx' ||
+    fileType === 'xls' ||
+    fileType === 'pptx' ||
+    fileType === 'ppt'
+  ) {
     if (!input.convertToPdfPreview) {
       throw new Error(
-        'Document conversion function is required for DOC/DOCX analysis.',
+        'Document conversion function is required for Office document analysis.',
       );
     }
 

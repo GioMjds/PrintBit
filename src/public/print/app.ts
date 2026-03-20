@@ -345,6 +345,7 @@ function addFileToList(file: UploadedFile): void {
       <div class="file-item__meta">
         <span class="file-item__ext">${escapeHtml(ext)}</span>
         ${file.size !== undefined ? `<span>${formatBytes(file.size)}</span>` : ''}
+        <span class="file-analysis-status" style="display:none"></span>
       </div>
     </div>
     <div class="file-item__actions">
@@ -593,6 +594,80 @@ function attachSocket(sid: string): void {
   socket.emit('joinSession', sid);
   socket.on('UploadCompleted', () => void checkUploadStatus());
   socket.on('UploadRemoved', () => void checkUploadStatus());
+
+  // Analysis progress events
+  socket.on('AnalysisStarted', (info: unknown) => {
+    const docId =
+      typeof info === 'object' &&
+      info !== null &&
+      'documentId' in info &&
+      typeof (info as { documentId: unknown }).documentId === 'string'
+        ? (info as { documentId: string }).documentId
+        : null;
+    if (docId) {
+      updateFileAnalysisState(docId, 'analyzing');
+    }
+  });
+
+  socket.on('AnalysisCompleted', (info: unknown) => {
+    const docId =
+      typeof info === 'object' &&
+      info !== null &&
+      'documentId' in info &&
+      typeof (info as { documentId: unknown }).documentId === 'string'
+        ? (info as { documentId: string }).documentId
+        : null;
+    if (docId) {
+      updateFileAnalysisState(docId, 'ready');
+    }
+    // Refresh session data to get updated analysis
+    void checkUploadStatus();
+  });
+
+  socket.on('AnalysisFailed', (info: unknown) => {
+    const docId =
+      typeof info === 'object' &&
+      info !== null &&
+      'documentId' in info &&
+      typeof (info as { documentId: unknown }).documentId === 'string'
+        ? (info as { documentId: string }).documentId
+        : null;
+    if (docId) {
+      updateFileAnalysisState(docId, 'failed');
+    }
+    void checkUploadStatus();
+  });
+}
+
+function updateFileAnalysisState(
+  documentId: string,
+  state: 'analyzing' | 'ready' | 'failed',
+): void {
+  const fileItem = document.querySelector(`[data-document-id="${documentId}"]`);
+  if (!fileItem) return;
+
+  const statusEl = fileItem.querySelector(
+    '.file-analysis-status',
+  ) as HTMLElement | null;
+  if (!statusEl) return;
+
+  statusEl.classList.remove('analyzing', 'ready', 'failed');
+  statusEl.classList.add(state);
+
+  switch (state) {
+    case 'analyzing':
+      statusEl.textContent = 'Analyzing…';
+      statusEl.style.display = '';
+      break;
+    case 'ready':
+      statusEl.textContent = '';
+      statusEl.style.display = 'none';
+      break;
+    case 'failed':
+      statusEl.textContent = '⚠ Analysis unavailable';
+      statusEl.style.display = '';
+      break;
+  }
 }
 
 // ── Idle Timeout Detection (uses shared module) ──────────────────────────────

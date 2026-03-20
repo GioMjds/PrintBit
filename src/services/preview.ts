@@ -186,11 +186,21 @@ export class PreviewService {
 
     if (ext === ".xlsx" || ext === ".xls") {
       const workbook = XLSX.readFile(sourcePath);
+      if (workbook.SheetNames.length === 0) {
+        return this.wrapPreviewHtml(
+          '<div style="padding:20px;color:#555">Spreadsheet has no visible sheets.</div>',
+        );
+      }
+
       const sections = workbook.SheetNames.map((name) => {
         const sheet = workbook.Sheets[name];
-        const tableHtml = XLSX.utils.sheet_to_html(sheet, {
-          id: `sheet-${name}`,
-        });
+        const ref = sheet?.["!ref"];
+        const tableHtml =
+          sheet && typeof ref === "string"
+            ? XLSX.utils.sheet_to_html(sheet, {
+                id: `sheet-${name}`,
+              })
+            : '<div style="font-size:12px;color:#666;border:1px dashed #ccc;padding:10px">This sheet is empty.</div>';
         const label =
           workbook.SheetNames.length > 1
             ? `<div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#555;margin-bottom:8px">${name}</div>`

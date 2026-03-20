@@ -7,6 +7,8 @@ import {
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_SIZE_LABEL,
   MAGIC_SIGNATURES,
+  EXTENSION_MIME_MAP,
+  OOXML_DIRECTORY_MARKERS,
 } from '@/utils/file-types';
 import { adminService } from '@/services';
 import { scanBuffer, isClamdReachable } from '@/services/clamd';
@@ -19,20 +21,22 @@ function fileFilter(
 ): void {
   const ext = path.extname(file.originalname).toLowerCase();
   const mime = file.mimetype.toLowerCase();
-  const pairAllowed =
-    (ext === '.pdf' && mime === 'application/pdf') ||
-    (ext === '.docx' &&
-      mime ===
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
-    ((ext === '.jpg' || ext === '.jpeg') && mime === 'image/jpeg') ||
-    (ext === '.png' && mime === 'image/png');
-  if (
-    !ALLOWED_EXTENSIONS.has(ext) ||
-    !ALLOWED_MIME_TYPES.has(mime) ||
-    !pairAllowed
-  ) {
+
+  // Check extension and MIME are both allowed
+  if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIME_TYPES.has(mime)) {
     cb(
       Object.assign(new Error('Invalid file type'), {
+        code: 'UNSUPPORTED_TYPE',
+      }),
+    );
+    return;
+  }
+
+  // Validate extension-to-MIME consistency
+  const expectedMime = EXTENSION_MIME_MAP[ext];
+  if (expectedMime && expectedMime !== mime) {
+    cb(
+      Object.assign(new Error('File extension does not match content type'), {
         code: 'UNSUPPORTED_TYPE',
       }),
     );
@@ -116,7 +120,7 @@ function findEndOfCentralDirectoryOffset(buffer: Buffer): number {
   return -1;
 }
 
-function validateDocxMagic(buffer: Buffer): boolean {
+function validateOoxmlStructure(buffer: Buffer, directoryMarker: string): boolean {
   const centralDirectoryHeaderSignature = 0x02014b50;
   const eocdOffset = findEndOfCentralDirectoryOffset(buffer);
 
@@ -136,7 +140,7 @@ function validateDocxMagic(buffer: Buffer): boolean {
 
   let cursor = centralDirectoryOffset;
   let hasContentTypes = false;
-  let hasWordEntry = false;
+  let hasDirectoryEntry = false;
 
   while (cursor + 46 <= centralDirectoryEnd) {
     if (buffer.readUInt32LE(cursor) !== centralDirectoryHeaderSignature) {
@@ -157,11 +161,11 @@ function validateDocxMagic(buffer: Buffer): boolean {
       hasContentTypes = true;
     }
 
-    if (entryName.startsWith('word/') && entryName.length > 'word/'.length) {
-      hasWordEntry = true;
+    if (entryName.startsWith(directoryMarker) && entryName.length > directoryMarker.length) {
+      hasDirectoryEntry = true;
     }
 
-    if (hasContentTypes && hasWordEntry) {
+    if (hasContentTypes && hasDirectoryEntry) {
       return true;
     }
 
@@ -186,13 +190,13 @@ export async function validateMagicBytes(
   const mime = file.mimetype.toLowerCase();
 
   const hasValidMagicBytes = matchesMagicBytes(file.buffer, mime);
-  const isDocxMime =
-    mime ===
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  const isValidDocx =
-    !isDocxMime || (hasValidMagicBytes && validateDocxMagic(file.buffer));
+  
+  // For OOXML formats, also validate internal ZIP structure
+  const ooxmlMarker = OOXML_DIRECTORY_MARKERS[mime];
+  const isOoxmlFormat = !!ooxmlMarker;
+  const isValidOoxml = !isOoxmlFormat || (hasValidMagicBytes && validateOoxmlStructure(file.buffer, ooxmlMarker));
 
-  if (!hasValidMagicBytes || !isValidDocx) {
+  if (!hasValidMagicBytes || !isValidOoxml) {
     void quarantineBuffer(
       file.buffer,
       file.originalname,

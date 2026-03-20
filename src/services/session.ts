@@ -10,7 +10,16 @@ export interface DocumentPageAnalysis {
 }
 
 export interface DocumentAnalysis {
-  fileType: 'pdf' | 'docx' | 'doc' | 'image' | 'unknown';
+  fileType:
+    | 'pdf'
+    | 'docx'
+    | 'doc'
+    | 'xlsx'
+    | 'xls'
+    | 'pptx'
+    | 'ppt'
+    | 'image'
+    | 'unknown';
   pageCount: number;
   pages: DocumentPageAnalysis[];
   colorPages: number;
@@ -94,6 +103,8 @@ const ALLOWED_TYPES = new Map<string, string>([
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.pptx',
   ],
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
 ]);
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB

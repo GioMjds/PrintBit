@@ -334,36 +334,66 @@ export function registerWirelessSessionRoutes(
 
       const absolutePath = path.resolve(target.filePath);
       const extension = path.extname(absolutePath).toLowerCase();
+      const startedAt = Date.now();
+      console.log('[preview] request', {
+        sessionId: req.params.sessionId,
+        filename: target.filename,
+        extension,
+      });
 
       try {
         if (extension === '.pdf') {
           res.setHeader('Content-Type', 'application/pdf');
+          console.log('[preview] serving pdf file', {
+            path: absolutePath,
+            tookMs: Date.now() - startedAt,
+          });
           return res.sendFile(absolutePath);
         }
 
         if (IMAGE_TYPES[extension]) {
           res.setHeader('Content-Type', IMAGE_TYPES[extension]);
+          console.log('[preview] serving image file', {
+            path: absolutePath,
+            contentType: IMAGE_TYPES[extension],
+            tookMs: Date.now() - startedAt,
+          });
           return res.sendFile(absolutePath);
         }
 
         if (supportsHtmlPreview(extension)) {
           const html = await generateHtmlPreview(absolutePath);
           res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          console.log('[preview] serving html preview', {
+            extension,
+            htmlChars: html.length,
+            tookMs: Date.now() - startedAt,
+          });
           return res.send(html);
         }
 
         if (PDF_CONVERT_EXTENSIONS.has(extension)) {
           const pdfPreviewPath = await deps.convertToPdfPreview(absolutePath);
           res.setHeader('Content-Type', 'application/pdf');
+          console.log('[preview] serving converted pdf', {
+            sourcePath: absolutePath,
+            convertedPath: pdfPreviewPath,
+            tookMs: Date.now() - startedAt,
+          });
           return res.sendFile(pdfPreviewPath);
         }
 
+        console.warn('[preview] unsupported extension', {
+          extension,
+          filename: target.filename,
+          tookMs: Date.now() - startedAt,
+        });
         return res.status(400).json({
           error: `Preview not supported for ${extension}.`,
           code: 'UNSUPPORTED_PREVIEW',
         });
       } catch (error) {
-        console.error('Preview error:', error);
+        console.error('[preview] route error:', error);
         const reason =
           error instanceof Error ? error.message : 'Unknown preview error';
         return res.status(500).json({
@@ -554,41 +584,7 @@ export function registerWirelessSessionRoutes(
 
       const doc = result.document;
 
-      const docExtension = path.extname(doc.filename).toLowerCase();
-      if (POWERPOINT_EXTENSIONS.has(docExtension)) {
-        const analyzed = await analyzeAndStoreDocument(
-          req,
-          sessionId,
-          doc.documentId,
-        );
-        if (!('analysis' in analyzed)) {
-          deps.io.to(`session:${sessionId}`).emit('UploadFailed');
-          await adminService.appendAdminLog(
-            'upload_failed',
-            'Wireless upload failed during required PowerPoint analysis.',
-            {
-              sessionId,
-              filename: doc.filename,
-              documentId: doc.documentId,
-              reason: analyzed.error,
-            },
-          );
-          return res.status(analyzed.status).json({
-            code: 'ANALYSIS_FAILED',
-            error: analyzed.error,
-          });
-        }
-      } else {
-        void analyzeAndStoreDocument(req, sessionId, doc.documentId).catch(
-          (error) => {
-            console.warn(
-              '[analyze-document] Failed to analyze uploaded file:',
-              error,
-            );
-          },
-        );
-      }
-
+      // Emit upload success immediately — analysis runs in background
       deps.io.to(`session:${sessionId}`).emit('UploadCompleted', doc);
       await adminService.appendAdminLog(
         'upload_completed',
@@ -601,6 +597,7 @@ export function registerWirelessSessionRoutes(
         },
       );
 
+      // Return success response immediately
       res.status(200).json({
         documentId: doc.documentId,
         sessionId: doc.sessionId,
@@ -609,6 +606,50 @@ export function registerWirelessSessionRoutes(
         sizeBytes: doc.sizeBytes,
         uploadedAt: doc.uploadedAt,
       });
+
+      // Run analysis in background with progress events
+      const docExtension = path.extname(doc.filename).toLowerCase();
+      deps.io.to(`session:${sessionId}`).emit('AnalysisStarted', {
+        documentId: doc.documentId,
+        filename: doc.filename,
+      });
+
+      try {
+        const analyzed = await analyzeAndStoreDocument(
+          req,
+          sessionId,
+          doc.documentId,
+        );
+
+        if ('analysis' in analyzed) {
+          deps.io.to(`session:${sessionId}`).emit('AnalysisCompleted', {
+            documentId: doc.documentId,
+            filename: doc.filename,
+            analysis: analyzed.analysis,
+          });
+        } else {
+          deps.io.to(`session:${sessionId}`).emit('AnalysisFailed', {
+            documentId: doc.documentId,
+            filename: doc.filename,
+            error: analyzed.error,
+          });
+          console.warn(
+            `[analyze-document] Analysis failed for ${doc.filename}:`,
+            analyzed.error,
+          );
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'Unknown error';
+        deps.io.to(`session:${sessionId}`).emit('AnalysisFailed', {
+          documentId: doc.documentId,
+          filename: doc.filename,
+          error: reason,
+        });
+        console.warn(
+          `[analyze-document] Failed to analyze uploaded file:`,
+          error,
+        );
+      }
     },
   );
 

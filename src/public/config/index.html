@@ -47,12 +47,14 @@
               <!-- PDF.js canvas -->
               <canvas id="previewCanvas" class="paper-canvas"></canvas>
               <!-- Image (JPG/PNG) -->
-              <img
-                id="previewImg"
-                class="paper-img"
-                alt="Document preview"
-                style="display: none"
-              />
+              <div id="previewImgStage" class="paper-img-stage" style="display: none">
+                <img
+                  id="previewImg"
+                  class="paper-img"
+                  alt="Document preview"
+                  style="display: none"
+                />
+              </div>
               <!-- Placeholder / error -->
               <div class="paper-placeholder" id="paperPlaceholder">
                 <div class="paper-placeholder__icon" aria-hidden="true">
@@ -643,7 +645,7 @@
                   id="pageRangeInput"
                   type="text"
                   class="page-range-hidden-input"
-                  pattern="\\d+(\\s*-\\s*\\d+)?(\\s*,\\s*\\d+(\\s*-\\s*\\d+)?)*"
+                  pattern="\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*"
                   aria-hidden="true"
                   tabindex="-1"
                 />

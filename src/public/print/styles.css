@@ -632,6 +632,29 @@ body {
   align-items: center;
 }
 
+.file-analysis-status {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.file-analysis-status.analyzing {
+  color: #f0c674;
+  animation: pulse-analysis 1.5s ease-in-out infinite;
+}
+
+.file-analysis-status.ready {
+  color: var(--green);
+}
+
+.file-analysis-status.failed {
+  color: var(--pink);
+}
+
+@keyframes pulse-analysis {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .file-item__ext {
   background: rgba(167, 170, 225, 0.1);
   color: var(--lavender);

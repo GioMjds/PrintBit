@@ -147,7 +147,7 @@
               id="fileInput"
               name="file"
               type="file"
-              accept=".pdf,.docx,.jpg,.jpeg,.png"
+              accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,"
               multiple
               class="drop-zone__input"
               aria-hidden="true"
@@ -192,7 +192,7 @@
     </main>
 
     <script>
-      window.uploadToken = "{{token}}";
+      window.uploadToken = '{{token}}';
     </script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
