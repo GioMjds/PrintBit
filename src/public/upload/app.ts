@@ -477,7 +477,7 @@ function addFilesToQueue(files: FileList | File[]): void {
     addedCount++;
   }
   refreshUploadBtn();
-  if (unsupportedFiles.length === 0 || addedCount > 0) {
+  if (unsupportedFiles.length === 0) {
     clearStatus();
   }
 }

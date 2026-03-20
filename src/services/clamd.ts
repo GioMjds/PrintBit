@@ -1,7 +1,7 @@
 import net from 'node:net';
 
-const CLAMD_HOST = '127.0.0.1';
-const CLAMD_PORT = parseInt('3310', 10);
+const CLAMD_HOST = process.env.CLAMD_HOST ?? '127.0.0.1';
+const CLAMD_PORT = parseInt(process.env.CLAMD_PORT ?? '3310', 10);
 const SCAN_TIMEOUT_MS = 15_000;
 
 export interface MalwareScanResult {
