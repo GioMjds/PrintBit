@@ -595,8 +595,9 @@ export function registerAdminRoutes(
       let refreshInkTelemetry = false;
       if (body.inkMonitoring) {
         const incoming = body.inkMonitoring;
-        const next = db.data!.settings.inkMonitoring;
-        const previousTargetPrinterName = next.targetPrinterName;
+        const current = db.data!.settings.inkMonitoring;
+        const next = { ...current };
+        const previousTargetPrinterName = current.targetPrinterName;
         if (incoming.enabled !== undefined) {
           if (typeof incoming.enabled !== 'boolean') {
             return res.status(400).json({ error: 'inkMonitoring.enabled must be boolean.' });
@@ -675,6 +676,8 @@ export function registerAdminRoutes(
           }
           next.telemetryUnknownPolicy = incoming.telemetryUnknownPolicy;
         }
+
+        db.data!.settings.inkMonitoring = next;
       }
 
       await db.write();
@@ -1138,7 +1141,7 @@ export function registerAdminRoutes(
           entry.status = 'resolved';
           count += 1;
         }
-      }
+        }
       await db.write();
 
       if (count > 0) {

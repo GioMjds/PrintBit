@@ -121,6 +121,7 @@ const BLOCKED_PRINTER_STATUSES = new Set([
   'no default printer',
   'not connected',
   'unavailable',
+  'not available',
 ]);
 
 function isPrinterReadyForJobs(p: PrinterTelemetryExt): boolean {

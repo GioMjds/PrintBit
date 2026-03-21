@@ -160,6 +160,19 @@ async function loadData(): Promise<void> {
 settingsForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const newPin = settingAdminPin.value.trim();
+  const lowThreshold = Number(inkLowThresholdPercent.value);
+  const criticalThreshold = Number(inkCriticalThresholdPercent.value);
+  const isValidPercent = (n: number): boolean =>
+    Number.isInteger(n) && n >= 0 && n <= 100;
+
+  if (!isValidPercent(lowThreshold) || !isValidPercent(criticalThreshold)) {
+    setMessage('Ink thresholds must be whole numbers from 0 to 100.');
+    return;
+  }
+  if (criticalThreshold > lowThreshold) {
+    setMessage('Critical threshold must be less than or equal to low threshold.');
+    return;
+  }
   const payload = {
     pricing: {
       printPerPage: Number(settingPrintPerPage.value),
@@ -173,8 +186,8 @@ settingsForm.addEventListener('submit', (e) => {
     inkMonitoring: {
       enabled: inkMonitoringEnabled.checked,
       targetPrinterName: inkTargetPrinterName.value.trim() || null,
-      lowThresholdPercent: Number(inkLowThresholdPercent.value),
-      criticalThresholdPercent: Number(inkCriticalThresholdPercent.value),
+      lowThresholdPercent: lowThreshold,
+      criticalThresholdPercent: criticalThreshold,
       blockOnLow: inkBlockOnLow.checked,
       blockOnEmpty: inkBlockOnEmpty.checked,
       telemetryUnknownPolicy:

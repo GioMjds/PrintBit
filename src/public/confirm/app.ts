@@ -1152,14 +1152,20 @@ modalConfirmBtn?.addEventListener('click', async () => {
         inkStatus?: string;
         inkReason?: string;
       };
+      const blockingStatus = 
+        payload.printerStatus ??
+        payload.inkStatus ??
+        (payload.inkReason ? 'Ink preflight blocked' : undefined);
       if (statusMessage)
         statusMessage.textContent = payload.inkReason
           ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
           : payload.error ?? 'Payment confirmation failed.';
-      if (payload.printerStatus) {
-        setPrinterReadyState(false, payload.printerStatus);
-      }
+      
       isProcessingPayment = false;
+      if (blockingStatus) {
+        setPrinterReadyState(false, blockingStatus);
+        return;
+      }
       applyConfirmGate();
       return;
     }

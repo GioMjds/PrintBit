@@ -263,20 +263,23 @@ function normalizeTelemetryAvailability(
   telemetry: PrinterTelemetry,
 ): PrinterTelemetry {
   const meaningfulSupply = telemetry.ink.some(
-    (entry) => entry.level !== null || entry.status === 'low' || entry.status === 'empty',
+    (entry) =>
+      entry.level !== null ||
+      entry.status === 'low' ||
+      entry.status === 'empty',
   );
   const available =
     telemetry.inkDetectionMethod !== 'none' &&
     telemetry.inkDetectionMethod !== 'error-state' &&
     meaningfulSupply;
-  const reason =
-    available || !telemetry.connected
-      ? null
-      : telemetry.inkDetectionMethod === 'none'
+  const reason = available
+    ? null
+    : (telemetry.inkTelemetryReason ??
+      (telemetry.inkDetectionMethod === 'none'
         ? 'Driver did not expose ink telemetry fields'
         : telemetry.inkDetectionMethod === 'error-state'
           ? 'Only error-state inference available (no direct ink levels)'
-          : 'Ink telemetry unavailable';
+          : 'Ink telemetry unavailable'));
   return {
     ...telemetry,
     inkTelemetryAvailable: available,
@@ -404,7 +407,9 @@ export async function queryLivePrinterStatus(): Promise<{
     if (!json) {
       return {
         connected: false,
-        status: targetName ? 'Configured printer not found' : 'No default printer',
+        status: targetName
+          ? 'Configured printer not found'
+          : 'No default printer',
         statusFlags: [],
       };
     }
@@ -1068,7 +1073,9 @@ export async function listInstalledPrinters(): Promise<InstalledPrinterInfo[]> {
       10_000,
     );
     if (!json || json === 'null') return [];
-    const parsed = JSON.parse(json) as InstalledPrinterInfo | InstalledPrinterInfo[];
+    const parsed = JSON.parse(json) as
+      | InstalledPrinterInfo
+      | InstalledPrinterInfo[];
     const rows = Array.isArray(parsed) ? parsed : [parsed];
     return rows.filter((row) => row && typeof row.Name === 'string');
   } catch {
@@ -1121,11 +1128,11 @@ export async function runInkTelemetryDiagnostics(): Promise<{
     targetPrinterName: targetPrinterName ?? null,
     targetResolved: Boolean(
       targetPrinterName &&
-        installedPrinters.some(
-          (entry) =>
-            entry.Name.trim().toLowerCase() ===
-            targetPrinterName.trim().toLowerCase(),
-        ),
+      installedPrinters.some(
+        (entry) =>
+          entry.Name.trim().toLowerCase() ===
+          targetPrinterName.trim().toLowerCase(),
+      ),
     ),
     telemetry,
     installedPrinters,
@@ -1133,7 +1140,9 @@ export async function runInkTelemetryDiagnostics(): Promise<{
   };
 }
 
-export function evaluateInkPreflight(telemetry: PrinterTelemetry): InkPreflightEvaluation {
+export function evaluateInkPreflight(
+  telemetry: PrinterTelemetry,
+): InkPreflightEvaluation {
   const settings = getInkMonitoringSettings();
   if (!settings.enabled) {
     return {
@@ -1148,7 +1157,9 @@ export function evaluateInkPreflight(telemetry: PrinterTelemetry): InkPreflightE
 
   const meaningfulSupplies = telemetry.ink.filter(
     (entry) =>
-      entry.level !== null || entry.status === 'low' || entry.status === 'empty',
+      entry.level !== null ||
+      entry.status === 'low' ||
+      entry.status === 'empty',
   );
   const telemetryAvailable = Boolean(
     telemetry.inkTelemetryAvailable || meaningfulSupplies.length > 0,
@@ -1156,13 +1167,15 @@ export function evaluateInkPreflight(telemetry: PrinterTelemetry): InkPreflightE
 
   const emptySupplies = meaningfulSupplies.filter(
     (entry) =>
-      entry.status === 'empty' || (typeof entry.level === 'number' && entry.level <= 0),
+      entry.status === 'empty' ||
+      (typeof entry.level === 'number' && entry.level <= 0),
   );
   const lowSupplies = meaningfulSupplies.filter((entry) => {
     if (emptySupplies.includes(entry)) return false;
     if (entry.status === 'low') return true;
     return (
-      typeof entry.level === 'number' && entry.level <= settings.lowThresholdPercent
+      typeof entry.level === 'number' &&
+      entry.level <= settings.lowThresholdPercent
     );
   });
 
