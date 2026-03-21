@@ -316,9 +316,7 @@ The `status.printer` object contains:
   "driverName": "HP Universal Printing PCL 6",
   "portName": "USB001",
   "status": "Idle",
-  "ink": [
-    { "name": "Ink / Toner", "level": null, "status": "unknown" }
-  ],
+  "ink": [{ "name": "Ink / Toner", "level": null, "status": "unknown" }],
   "lastCheckedAt": "2026-03-06T12:00:00.000Z",
   "lastError": null
 }
@@ -408,6 +406,72 @@ Resets balance to `0`.
 
 Clears top-level files under upload directory.
 
+### `GET /api/watchdog/health`
+
+Returns watchdog-oriented machine health for local self-healing.
+
+- `200` when overall watchdog status is `healthy` or `degraded`
+- `503` when overall watchdog status is `unhealthy`
+
+Response shape:
+
+```json
+{
+  "status": "healthy",
+  "checkedAt": "2026-03-21T12:00:00.000Z",
+  "process": {
+    "pid": 12345,
+    "uptimeSeconds": 421,
+    "startedAt": "2026-03-21T11:53:00.000Z"
+  },
+  "monitor": {
+    "appHeartbeatIntervalMs": 1000,
+    "componentPollIntervalMs": 5000
+  },
+  "externalWatchdog": {
+    "running": true,
+    "watchdogPid": 22048,
+    "consecutiveFailures": 0,
+    "recoveryAttempts": 2,
+    "backoffDelayMs": 0,
+    "nextRecoveryAt": null,
+    "lastAction": "health_ok",
+    "lastError": null,
+    "lastUpdatedAt": "2026-03-21T12:00:00.000Z"
+  },
+  "components": {
+    "app": {
+      "status": "healthy",
+      "detail": "App heartbeat monitor started.",
+      "lastHeartbeatAt": "2026-03-21T12:00:00.000Z",
+      "staleAfterMs": 20000,
+      "stale": false,
+      "staleForMs": 532,
+      "context": {}
+    }
+  }
+}
+```
+
+### `POST /api/watchdog/report`
+
+Loopback-only endpoint (`127.0.0.1`/`::1`) for external watchdog runtime state reporting.
+
+Request body fields:
+
+- `running` (boolean)
+- `watchdogPid` (number|null)
+- `consecutiveFailures` (number)
+- `recoveryAttempts` (number)
+- `backoffDelayMs` (number)
+- `nextRecoveryAt` (string|null)
+- `lastAction` (string)
+- `lastError` (string|null)
+
+Response:
+
+- Latest normalized watchdog state persisted in memory and surfaced in admin status payloads.
+
 ### `GET /api/admin/owed-changes`
 
 Returns all owed change entries with counts: `{ total, openCount, resolvedCount, entries[] }`. Each entry has `id`, `timestamp`, `amount`, `reason`, `status` ("open"|"resolved"), and optional `meta`.
@@ -422,4 +486,4 @@ Bulk-resolves all open owed change entries. Returns `{ ok, resolvedCount }`.
 
 ## Installation notes
 
-Before testing API routes that interact with hardware, complete the setup checklist in [INSTALLATION_AND_DEPENDENCIES.md](./INSTALLATION_AND_DEPENDENCIES.md).
+Before testing API routes that interact with hardware, complete the setup checklist in [INSTALLATIONS.md](./INSTALLATIONS.md).

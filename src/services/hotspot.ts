@@ -10,6 +10,10 @@ import {
   HOTSPOT_AUTH_TYPE,
   ESP32_CAPTIVE_PORTAL_PATH,
 } from '@/config/http.config';
+import {
+  markWatchdogHeartbeat,
+  setWatchdogComponentState,
+} from './watchdog-health';
 
 const MPWF_EXE = path.join(MYPUBLICWIFI_PATH, 'MyPublicWiFi.exe');
 const MPWF_DB = path.join(MYPUBLICWIFI_PATH, 'Data.db');
@@ -110,6 +114,15 @@ class HotspotService {
   async start(): Promise<void> {
     if (this.running) {
       console.log('[HOTSPOT] Already running — skipping');
+      markWatchdogHeartbeat('hotspot', { running: true });
+      setWatchdogComponentState(
+        'hotspot',
+        'healthy',
+        'Hotspot already running.',
+        {
+          running: true,
+        },
+      );
       return;
     }
 
@@ -117,6 +130,16 @@ class HotspotService {
       this.running = true;
       console.log(
         '[HOTSPOT] ESP32 provider enabled — skipping MyPublicWiFi launch',
+      );
+      markWatchdogHeartbeat('hotspot', { running: true, provider: 'esp32' });
+      setWatchdogComponentState(
+        'hotspot',
+        'healthy',
+        'ESP32 provider mode active.',
+        {
+          running: true,
+          provider: 'esp32',
+        },
       );
       return;
     }
@@ -126,6 +149,15 @@ class HotspotService {
         '[HOTSPOT] ⚠ MyPublicWiFi not found at:',
         MYPUBLICWIFI_PATH,
         '\n[HOTSPOT]   Install from https://mypublicwifi.com or set PRINTBIT_MYPUBLICWIFI_PATH',
+      );
+      setWatchdogComponentState(
+        'hotspot',
+        'degraded',
+        `MyPublicWiFi executable not found at ${MPWF_EXE}.`,
+        {
+          running: false,
+          provider: 'mypublicwifi',
+        },
       );
       return;
     }
@@ -158,11 +190,33 @@ class HotspotService {
     this.process.on('error', (err) => {
       console.warn('[HOTSPOT] ⚠ Failed to launch MyPublicWiFi:', err.message);
       this.running = false;
+      setWatchdogComponentState(
+        'hotspot',
+        'degraded',
+        `Failed to launch MyPublicWiFi: ${err.message}`,
+        {
+          running: false,
+          provider: 'mypublicwifi',
+        },
+      );
     });
 
     await new Promise<void>((resolve) => setTimeout(resolve, 3_000));
     this.running = true;
     console.log('[HOTSPOT] ✓ MyPublicWiFi launched — hotspot starting');
+    markWatchdogHeartbeat('hotspot', {
+      running: true,
+      provider: 'mypublicwifi',
+    });
+    setWatchdogComponentState(
+      'hotspot',
+      'healthy',
+      'MyPublicWiFi launched successfully.',
+      {
+        running: true,
+        provider: 'mypublicwifi',
+      },
+    );
   }
 
   stop(): void {
@@ -170,6 +224,16 @@ class HotspotService {
     if (NETWORK_PROVIDER === 'esp32') {
       this.running = false;
       console.log('[HOTSPOT] ESP32 provider stop requested (no-op)');
+      markWatchdogHeartbeat('hotspot', { running: false, provider: 'esp32' });
+      setWatchdogComponentState(
+        'hotspot',
+        'degraded',
+        'ESP32 provider stop requested.',
+        {
+          running: false,
+          provider: 'esp32',
+        },
+      );
       return;
     }
     try {
@@ -183,6 +247,14 @@ class HotspotService {
     this.process = null;
     this.running = false;
     console.log('[HOTSPOT] ✗ MyPublicWiFi stopped');
+    markWatchdogHeartbeat('hotspot', {
+      running: false,
+      provider: 'mypublicwifi',
+    });
+    setWatchdogComponentState('hotspot', 'degraded', 'MyPublicWiFi stopped.', {
+      running: false,
+      provider: 'mypublicwifi',
+    });
   }
 }
 

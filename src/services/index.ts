@@ -1,8 +1,9 @@
 export { adminService } from './admin';
 export { anomalyService } from './anomaly';
 export * from './db';
-export * from './clamd';
 export * from './clamd-process';
+export * from './clamd';
+export * from './color-detection';
 export * from './document-analysis';
 export * from './feedback';
 export * from './hopper';
@@ -28,3 +29,4 @@ export * from './settlement';
 export * from './financial-ledger';
 export * from './time-source';
 export * from './usb-drives';
+export * from './watchdog-health';

@@ -26,6 +26,10 @@ import {
   assertTrustedTimeForFinancialOperation,
   isTrustedTimeError,
 } from './time-source';
+import {
+  markWatchdogHeartbeat,
+  setWatchdogComponentState,
+} from './watchdog-health';
 
 const ACCEPTED_COINS = new Set([1, 5, 10, 20]);
 const FRAGMENT_WINDOW_MS = 140;
@@ -33,6 +37,18 @@ const TELEMETRY_MAX_AGE_MS = 45_000;
 const RETRY_INTERVAL_MS = 5_000;
 const MAX_RETRIES = 12; // 60 seconds of retrying
 const LEGACY_START_TIMEOUT_EXTENSION_MS = 20_000;
+const SERIAL_RECONNECT_BASE_MS = readPositiveIntEnv(
+  'PRINTBIT_SERIAL_RECONNECT_BASE_MS',
+  2_000,
+);
+const SERIAL_RECONNECT_MAX_MS = readPositiveIntEnv(
+  'PRINTBIT_SERIAL_RECONNECT_MAX_MS',
+  30_000,
+);
+const SERIAL_RECONNECT_MAX_ATTEMPTS = readNonNegativeIntEnv(
+  'PRINTBIT_SERIAL_RECONNECT_MAX_ATTEMPTS',
+  0,
+);
 
 let serialConnected = false;
 let serialPortPath: string | null = null;
@@ -43,6 +59,9 @@ let socketIo: Server | null = null;
 let hopperCommandPending = false;
 let hopperLastError: string | null = null;
 let hopperLastSuccessAt: string | null = null;
+let reconnectTimer: NodeJS.Timeout | null = null;
+let reconnectAttemptCount = 0;
+let reconnectReason: string | null = null;
 
 export interface HopperCommandResult {
   ok: boolean;
@@ -59,6 +78,91 @@ interface PendingHopperCommand {
 }
 
 let pendingHopperCommand: PendingHopperCommand | null = null;
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (typeof raw !== 'string' || raw.trim().length === 0) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function readNonNegativeIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (typeof raw !== 'string' || raw.trim().length === 0) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function clearSerialReconnectTimer(): void {
+  if (!reconnectTimer) return;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function computeSerialReconnectDelayMs(attempt: number): number {
+  const exponential = SERIAL_RECONNECT_BASE_MS * Math.pow(2, attempt - 1);
+  return Math.min(SERIAL_RECONNECT_MAX_MS, Math.max(1_000, exponential));
+}
+
+function scheduleSerialReconnect(io: Server, reason: string): void {
+  if (reconnectTimer) return;
+
+  if (
+    SERIAL_RECONNECT_MAX_ATTEMPTS > 0 &&
+    reconnectAttemptCount >= SERIAL_RECONNECT_MAX_ATTEMPTS
+  ) {
+    const detail = `Serial reconnect limit reached (${SERIAL_RECONNECT_MAX_ATTEMPTS} attempts).`;
+    setWatchdogComponentState('serial', 'unhealthy', detail, {
+      connected: false,
+      reason,
+      attempts: reconnectAttemptCount,
+    });
+    console.error(`[SERIAL] ✗ ${detail}`);
+    void anomalyService.report({
+      type: 'serial_reconnect_exhausted',
+      source: 'serial',
+      category: 'serial',
+      severity: 'critical',
+      message: detail,
+      fingerprint: buildAnomalyFingerprint([
+        'serial',
+        'reconnect-exhausted',
+        String(SERIAL_RECONNECT_MAX_ATTEMPTS),
+      ]),
+      context: {
+        attempts: reconnectAttemptCount,
+        reason,
+      },
+    });
+    return;
+  }
+
+  reconnectAttemptCount += 1;
+  reconnectReason = reason;
+  const delayMs = computeSerialReconnectDelayMs(reconnectAttemptCount);
+
+  setWatchdogComponentState(
+    'serial',
+    'degraded',
+    `Serial reconnect scheduled in ${delayMs}ms (attempt ${reconnectAttemptCount}).`,
+    {
+      connected: false,
+      reason,
+      attempts: reconnectAttemptCount,
+      delayMs,
+    },
+  );
+  console.warn(
+    `[SERIAL] ⚠ Scheduling reconnect in ${delayMs}ms (attempt ${reconnectAttemptCount}, reason: ${reason})`,
+  );
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    void attemptSerialConnection(io, 0, 'reconnect');
+  }, delayMs);
+}
 
 function armPendingHopperTimeout(
   pending: PendingHopperCommand,
@@ -314,10 +418,22 @@ export async function sendHopperCommand(
 export async function initSerial(io: Server) {
   socketIo = io;
   console.log('[SERIAL] ── Initializing serial connection ──────────────');
-  await attemptSerialConnection(io, 0);
+  setWatchdogComponentState(
+    'serial',
+    'degraded',
+    'Initializing serial connection.',
+    {
+      connected: false,
+    },
+  );
+  await attemptSerialConnection(io, 0, 'startup');
 }
 
-async function attemptSerialConnection(io: Server, attempt: number) {
+async function attemptSerialConnection(
+  io: Server,
+  attempt: number,
+  connectionPhase: 'startup' | 'reconnect',
+) {
   try {
     const ports = await SerialPort.list();
 
@@ -345,6 +461,11 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         message: 'No serial ports were found during initialization.',
         fingerprint: buildAnomalyFingerprint(['serial', 'no-ports']),
       });
+      setWatchdogComponentState('serial', 'unhealthy', 'No serial ports found.', {
+        connected: false,
+        reason: 'no_ports_found',
+      });
+      scheduleSerialReconnect(io, 'no_ports_found');
       return;
     }
 
@@ -374,6 +495,22 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         );
         serialConnected = true;
         serialLastError = null;
+        clearSerialReconnectTimer();
+        reconnectAttemptCount = 0;
+        reconnectReason = null;
+        markWatchdogHeartbeat('serial', {
+          connected: true,
+          portPath,
+        });
+        setWatchdogComponentState(
+          'serial',
+          'healthy',
+          `Serial connected on ${portPath}.`,
+          {
+            connected: true,
+            portPath,
+          },
+        );
         io.emit('serialStatus', getSerialStatus());
         resolve();
       });
@@ -382,6 +519,19 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         console.log('[SERIAL] ✗ Port closed — Arduino disconnected');
         serialConnected = false;
         activeSerialPort = null;
+        markWatchdogHeartbeat('serial', {
+          connected: false,
+          portPath: serialPortPath,
+        });
+        setWatchdogComponentState(
+          'serial',
+          'unhealthy',
+          'Serial port closed unexpectedly.',
+          {
+            connected: false,
+            portPath: serialPortPath,
+          },
+        );
         io.emit('serialStatus', getSerialStatus());
         void anomalyService.report({
           type: 'serial_port_closed',
@@ -402,12 +552,27 @@ async function attemptSerialConnection(io: Server, attempt: number) {
           ok: false,
           message: 'Serial port closed during hopper command.',
         });
+        scheduleSerialReconnect(io, 'port_closed');
       });
 
       port.on('error', (error) => {
         serialConnected = false;
         serialLastError = error.message;
         activeSerialPort = null;
+        markWatchdogHeartbeat('serial', {
+          connected: false,
+          portPath: serialPortPath,
+        });
+        setWatchdogComponentState(
+          'serial',
+          'unhealthy',
+          `Serial error: ${error.message}`,
+          {
+            connected: false,
+            portPath: serialPortPath,
+            error: error.message,
+          },
+        );
         io.emit('serialStatus', getSerialStatus());
         console.error('[SERIAL] ✗ Port error:', error.message);
         void anomalyService.report({
@@ -431,6 +596,7 @@ async function attemptSerialConnection(io: Server, attempt: number) {
           ok: false,
           message: `Serial error: ${error.message}`,
         });
+        scheduleSerialReconnect(io, 'port_error');
       });
 
       let pendingPrefix: '1' | '2' | null = null;
@@ -710,6 +876,10 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       };
 
       parser.on('data', (rawLine: string) => {
+        markWatchdogHeartbeat('serial', {
+          connected: serialConnected,
+          portPath: serialPortPath,
+        });
         console.log(`[SERIAL] Raw data: "${rawLine}"`);
         if (tryHandleHopperResponse(rawLine)) return;
         const token = rawLine.trim();
@@ -740,7 +910,7 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         `[SERIAL] ⚠ Port access denied — retrying in ${RETRY_INTERVAL_MS / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES}). Close Arduino IDE Serial Monitor if open.`,
       );
       setTimeout(
-        () => void attemptSerialConnection(io, attempt + 1),
+        () => void attemptSerialConnection(io, attempt + 1, connectionPhase),
         RETRY_INTERVAL_MS,
       );
       return;
@@ -772,6 +942,19 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         message: serialLastError,
       },
     });
+    setWatchdogComponentState(
+      'serial',
+      'unhealthy',
+      `Serial init error: ${serialLastError}`,
+      {
+        connected: false,
+        error: serialLastError,
+        phase: connectionPhase,
+        accessDenied: isAccessDenied,
+      },
+    );
+    const reason = isAccessDenied ? 'access_denied' : 'init_error';
+    scheduleSerialReconnect(io, reason);
   }
 }
 

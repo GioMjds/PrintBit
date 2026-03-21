@@ -9,6 +9,9 @@
 - Verify controlled updates policy: `pnpm run updates:verify`
 - Revert controlled updates policy: `pnpm run updates:revert`
 - Verify printer driver pin: `pnpm run driver:verify`
+- Install watchdog scheduled tasks: `pnpm run watchdog:install`
+- Verify watchdog secondary monitor: `pnpm run watchdog:verify`
+- Uninstall watchdog scheduled tasks: `pnpm run watchdog:uninstall`
 
 ## Pre-flight checklist (kiosk)
 
@@ -60,6 +63,40 @@
 4. Validate full transaction flow before returning kiosk to production.
 
 ## Frequent issues
+
+## Watchdog & self-healing (Issue #40)
+
+- Health endpoint: `GET /api/watchdog/health` (loopback polling target for local watchdog).
+- Watchdog loop script: `scripts/watchdog.ps1`
+- Secondary watchdog verifier: `scripts/verify-watchdog.ps1`
+- Task installer: `scripts/install-watchdog.ps1`
+
+### Install on kiosk
+
+1. Run `pnpm run watchdog:install` from elevated PowerShell.
+2. Confirm Scheduled Tasks exist:
+   - `PrintBit Watchdog`
+   - `PrintBit Watchdog Verifier`
+3. Optional one-shot smoke run: `pnpm run watchdog:run-once`
+4. Verify heartbeat file is updating:
+   - `uploads/watchdog/watchdog-heartbeat.json`
+
+### Runtime behavior
+
+- Watchdog polls `/api/watchdog/health` every `PRINTBIT_WATCHDOG_POLL_INTERVAL_MS` (default 5000ms).
+- If health is unreachable or returns `unhealthy`, watchdog restarts the server and ensures Edge kiosk relaunch.
+- Repeated failures use exponential backoff:
+  - `PRINTBIT_WATCHDOG_RESTART_BASE_DELAY_MS` (default 2000)
+  - `PRINTBIT_WATCHDOG_RESTART_MAX_DELAY_MS` (default 60000)
+- Escalation threshold:
+  - `PRINTBIT_WATCHDOG_FAILURE_ALERT_THRESHOLD` (default 5)
+  - Escalation/restore events are reported through anomaly/admin logs.
+
+### Secondary monitor
+
+- `PrintBit Watchdog Verifier` checks watchdog heartbeat freshness.
+- If stale, it restarts the watchdog task automatically.
+- Default stale threshold is 180000ms inside `verify-watchdog.ps1`.
 
 ## Print fails
 

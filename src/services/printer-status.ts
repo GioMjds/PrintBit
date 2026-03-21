@@ -1,6 +1,11 @@
 import { runPowerShell } from '@/utils';
 import { randomUUID } from 'node:crypto';
 import { db, type InkMonitoringSettings } from './db';
+import { BLOCKED_STATUSES } from '@/utils';
+import {
+  markWatchdogHeartbeat,
+  setWatchdogComponentState,
+} from './watchdog-health';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -328,6 +333,40 @@ async function refresh(): Promise<void> {
     cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
     persistInkHistoryEntry(cached);
     await db.write();
+    markWatchdogHeartbeat('printer', {
+      connected: cached.connected,
+      status: cached.status,
+      telemetryLastCheckedAt: cached.lastCheckedAt,
+    });
+    if (!cached.connected) {
+      setWatchdogComponentState('printer', 'unhealthy', 'Printer disconnected.', {
+        connected: false,
+        status: cached.status,
+        telemetryLastCheckedAt: cached.lastCheckedAt,
+      });
+    } else if (BLOCKED_STATUSES.has(cached.status)) {
+      setWatchdogComponentState(
+        'printer',
+        'unhealthy',
+        `Printer blocked: ${cached.status}.`,
+        {
+          connected: true,
+          status: cached.status,
+          telemetryLastCheckedAt: cached.lastCheckedAt,
+        },
+      );
+    } else {
+      setWatchdogComponentState(
+        'printer',
+        'healthy',
+        `Printer healthy (${cached.status}).`,
+        {
+          connected: true,
+          status: cached.status,
+          telemetryLastCheckedAt: cached.lastCheckedAt,
+        },
+      );
+    }
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -346,6 +385,22 @@ async function refresh(): Promise<void> {
       lastCheckedAt: new Date().toISOString(),
       lastError: err instanceof Error ? err.message : String(err),
     };
+    markWatchdogHeartbeat('printer', {
+      connected: false,
+      status: 'Error',
+      telemetryLastCheckedAt: cached.lastCheckedAt,
+    });
+    setWatchdogComponentState(
+      'printer',
+      'degraded',
+      `Printer telemetry refresh failed: ${cached.lastError}`,
+      {
+        connected: false,
+        status: 'Error',
+        telemetryLastCheckedAt: cached.lastCheckedAt,
+        lastError: cached.lastError,
+      },
+    );
   } finally {
     refreshing = false;
   }

@@ -4,7 +4,7 @@ import type { Server } from 'socket.io';
 import { adminService } from '@/services/admin';
 import type { SessionStore } from '@/services/session';
 import { generateHtmlPreview, supportsHtmlPreview } from '@/services/preview';
-import { detectPdfColorContent } from '@/services/config';
+import { detectPdfColorContent } from '@/services/color-detection';
 import { analyzeDocument } from '@/services/document-analysis';
 import {
   uploadMiddleware,
