@@ -634,63 +634,79 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       };
 
       const processToken = async (token: string) => {
-        console.log(`[SERIAL] Token: "${token}"`);
-        if (pendingPrefix) {
-          if (token === '0') {
-            const combined = Number(`${pendingPrefix}${token}`);
-            clearPending();
-            if (ACCEPTED_COINS.has(combined)) {
-              await creditResolvedCoin(combined, `${pendingPrefix}${token}`);
-            } else {
-              io.emit('coinParserWarning', {
-                code: 'INVALID_COMBINATION',
-                message: `Ignored invalid coin '${combined}'.`,
-              });
-              void adminService.appendAdminLog(
-                'coin_parser_warning',
-                `Ignored invalid coin '${combined}'.`,
-                { combined },
-              );
+        try {
+          console.log(`[SERIAL] Token: "${token}"`);
+          if (pendingPrefix) {
+            if (token === '0') {
+              const combined = Number(`${pendingPrefix}${token}`);
+              clearPending();
+              if (ACCEPTED_COINS.has(combined)) {
+                await creditResolvedCoin(combined, `${pendingPrefix}${token}`);
+              } else {
+                io.emit('coinParserWarning', {
+                  code: 'INVALID_COMBINATION',
+                  message: `Ignored invalid coin '${combined}'.`,
+                });
+                void adminService.appendAdminLog(
+                  'coin_parser_warning',
+                  `Ignored invalid coin '${combined}'.`,
+                  { combined },
+                );
+              }
+              return;
             }
+
+            await flushPending('interrupted');
+          }
+
+          if (token === '1' || token === '2') {
+            armPending(token);
             return;
           }
 
-          await flushPending('interrupted');
-        }
+          const value = Number(token);
+          if (!Number.isInteger(value)) {
+            io.emit('coinParserWarning', {
+              code: 'NON_NUMERIC',
+              message: `Ignored serial token '${token}'.`,
+            });
+            void adminService.appendAdminLog(
+              'coin_parser_warning',
+              `Ignored non-numeric serial token '${token}'.`,
+              { token },
+            );
+            return;
+          }
 
-        if (token === '1' || token === '2') {
-          armPending(token);
-          return;
-        }
+          if (!ACCEPTED_COINS.has(value)) {
+            io.emit('coinParserWarning', {
+              code: 'UNSUPPORTED_COIN',
+              message: `Ignored unsupported coin '${value}'.`,
+            });
+            void adminService.appendAdminLog(
+              'coin_parser_warning',
+              `Ignored unsupported coin '${value}'.`,
+              { value },
+            );
+            return;
+          }
 
-        const value = Number(token);
-        if (!Number.isInteger(value)) {
-          io.emit('coinParserWarning', {
-            code: 'NON_NUMERIC',
-            message: `Ignored serial token '${token}'.`,
+          await creditResolvedCoin(value, token);
+        } catch (error) {
+          clearPending();
+          console.error('[SERIAL] Failed to process coin token.', {
+            token,
+            error: error instanceof Error ? error.message : String(error),
           });
           void adminService.appendAdminLog(
             'coin_parser_warning',
-            `Ignored non-numeric serial token '${token}'.`,
-            { token },
+            'Coin token processing failed due to an unexpected error.',
+            {
+              token,
+              error: error instanceof Error ? error.message : String(error),
+            },
           );
-          return;
         }
-
-        if (!ACCEPTED_COINS.has(value)) {
-          io.emit('coinParserWarning', {
-            code: 'UNSUPPORTED_COIN',
-            message: `Ignored unsupported coin '${value}'.`,
-          });
-          void adminService.appendAdminLog(
-            'coin_parser_warning',
-            `Ignored unsupported coin '${value}'.`,
-            { value },
-          );
-          return;
-        }
-
-        await creditResolvedCoin(value, token);
       };
 
       parser.on('data', (rawLine: string) => {

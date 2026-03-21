@@ -240,6 +240,29 @@ export function registerScanRoutes(
   app.post(
     '/api/scanner/soft-copy/charge',
     async (req: Request, res: Response) => {
+      const safeFilename = toSafeScanFilename(req.body?.filename);
+      if (!safeFilename) {
+        return res.status(400).json({ error: 'Invalid filename.' });
+      }
+
+      const sourcePath = path.resolve('uploads', 'scans', safeFilename);
+      if (!fs.existsSync(sourcePath)) {
+        return res.status(404).json({ error: 'Scanned file not found.' });
+      }
+
+      const requiredAmount = adminService.getPricingSettings().scanDocument;
+
+      if (requiredAmount <= 0 || isSoftCopyPaid(safeFilename)) {
+        return res.json({
+          ok: true,
+          charged: false,
+          alreadyPaid: true,
+          requiredAmount,
+          amount: 0,
+          balance: db.data!.balance,
+        });
+      }
+
       try {
         assertTrustedTimeForFinancialOperation('scan_soft_copy_charge');
       } catch (error) {
@@ -273,29 +296,6 @@ export function registerScanRoutes(
           },
         );
         return res.status(503).json(payload);
-      }
-
-      const safeFilename = toSafeScanFilename(req.body?.filename);
-      if (!safeFilename) {
-        return res.status(400).json({ error: 'Invalid filename.' });
-      }
-
-      const sourcePath = path.resolve('uploads', 'scans', safeFilename);
-      if (!fs.existsSync(sourcePath)) {
-        return res.status(404).json({ error: 'Scanned file not found.' });
-      }
-
-      const requiredAmount = adminService.getPricingSettings().scanDocument;
-
-      if (requiredAmount <= 0 || isSoftCopyPaid(safeFilename)) {
-        return res.json({
-          ok: true,
-          charged: false,
-          alreadyPaid: true,
-          requiredAmount,
-          amount: 0,
-          balance: db.data!.balance,
-        });
       }
 
       // Route through settlementService so change is dispensed on overpayment,

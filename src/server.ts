@@ -200,41 +200,53 @@ async function start() {
     (!startupTrustedTime.synced ||
       startupTrustedTime.offsetMs === null ||
       startupTrustedTime.driftExceeded);
-  await adminService.appendAdminLog(
-    startupBlocked ? 'trusted_time_unsynced' : 'trusted_time_synced',
-    startupBlocked
-      ? 'Trusted time unavailable at startup. Financial operations are blocked until synchronization recovers.'
-      : 'Trusted time verified at startup.',
-    {
-      synced: startupTrustedTime.synced,
-      offsetMs: startupTrustedTime.offsetMs,
-      driftExceeded: startupTrustedTime.driftExceeded,
-      maxDriftMs: startupTrustedTime.maxDriftMs,
-      source: startupTrustedTime.source,
-      enforceForFinancial: startupTrustedTime.enforceForFinancial,
-      detail: startupTrustedTime.detail,
-      ntpSource: startupTrustedTime.ntpSource,
-    },
-  );
-  if (startupBlocked) {
-    await anomalyService.report({
-      type: 'trusted_time_unsynced',
-      source: 'time-sync',
-      category: 'network',
-      severity: 'critical',
-      message:
-        'Trusted time verification failed. Financial operations are blocked until synchronization recovers.',
-      fingerprint: buildAnomalyFingerprint([
-        'time-sync',
-        'trusted-time-unsynced',
-      ]),
-      context: {
+  void adminService
+    .appendAdminLog(
+      startupBlocked ? 'trusted_time_unsynced' : 'trusted_time_synced',
+      startupBlocked
+        ? 'Trusted time unavailable at startup. Financial operations are blocked until synchronization recovers.'
+        : 'Trusted time verified at startup.',
+      {
+        synced: startupTrustedTime.synced,
         offsetMs: startupTrustedTime.offsetMs,
         driftExceeded: startupTrustedTime.driftExceeded,
         maxDriftMs: startupTrustedTime.maxDriftMs,
+        source: startupTrustedTime.source,
+        enforceForFinancial: startupTrustedTime.enforceForFinancial,
         detail: startupTrustedTime.detail,
+        ntpSource: startupTrustedTime.ntpSource,
       },
+    )
+    .catch((error) => {
+      console.error('[TIME] Failed to append startup trusted-time admin log.', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
+  if (startupBlocked) {
+    void anomalyService
+      .report({
+        type: 'trusted_time_unsynced',
+        source: 'time-sync',
+        category: 'network',
+        severity: 'critical',
+        message:
+          'Trusted time verification failed. Financial operations are blocked until synchronization recovers.',
+        fingerprint: buildAnomalyFingerprint([
+          'time-sync',
+          'trusted-time-unsynced',
+        ]),
+        context: {
+          offsetMs: startupTrustedTime.offsetMs,
+          driftExceeded: startupTrustedTime.driftExceeded,
+          maxDriftMs: startupTrustedTime.maxDriftMs,
+          detail: startupTrustedTime.detail,
+        },
+      })
+      .catch((error) => {
+        console.error('[TIME] Failed to report startup trusted-time anomaly.', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
   await detectDefaultPrinter();
   await detectScanner();
@@ -250,12 +262,46 @@ async function start() {
       status.enforceForFinancial &&
       (!status.synced || status.offsetMs === null || status.driftExceeded);
     if (blocked === trustedTimeBlocked) return;
-    trustedTimeBlocked = blocked;
+    try {
+      if (blocked) {
+        await adminService.appendAdminLog(
+          'trusted_time_unsynced',
+          'Trusted time lost during runtime. Financial operations are now blocked.',
+          {
+            synced: status.synced,
+            offsetMs: status.offsetMs,
+            driftExceeded: status.driftExceeded,
+            maxDriftMs: status.maxDriftMs,
+            source: status.source,
+            detail: status.detail,
+            ntpSource: status.ntpSource,
+          },
+        );
+        await anomalyService.report({
+          type: 'trusted_time_unsynced',
+          source: 'time-sync',
+          category: 'network',
+          severity: 'critical',
+          message:
+            'Trusted time synchronization is unavailable. Financial operations are blocked.',
+          fingerprint: buildAnomalyFingerprint([
+            'time-sync',
+            'trusted-time-unsynced',
+          ]),
+          context: {
+            offsetMs: status.offsetMs,
+            driftExceeded: status.driftExceeded,
+            maxDriftMs: status.maxDriftMs,
+            detail: status.detail,
+          },
+        });
+        trustedTimeBlocked = blocked;
+        return;
+      }
 
-    if (blocked) {
       await adminService.appendAdminLog(
-        'trusted_time_unsynced',
-        'Trusted time lost during runtime. Financial operations are now blocked.',
+        'trusted_time_restored',
+        'Trusted time synchronization restored. Financial operations are unblocked.',
         {
           synced: status.synced,
           offsetMs: status.offsetMs,
@@ -267,15 +313,15 @@ async function start() {
         },
       );
       await anomalyService.report({
-        type: 'trusted_time_unsynced',
+        type: 'trusted_time_restored',
         source: 'time-sync',
         category: 'network',
-        severity: 'critical',
+        severity: 'warning',
         message:
-          'Trusted time synchronization is unavailable. Financial operations are blocked.',
+          'Trusted time synchronization has been restored. Financial operations are available again.',
         fingerprint: buildAnomalyFingerprint([
           'time-sync',
-          'trusted-time-unsynced',
+          'trusted-time-restored',
         ]),
         context: {
           offsetMs: status.offsetMs,
@@ -284,37 +330,13 @@ async function start() {
           detail: status.detail,
         },
       });
-      return;
+      trustedTimeBlocked = blocked;
+    } catch (error) {
+      console.error('[TIME] Failed to publish trusted-time transition.', {
+        targetState: blocked ? 'blocked' : 'restored',
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-
-    await adminService.appendAdminLog(
-      'trusted_time_restored',
-      'Trusted time synchronization restored. Financial operations are unblocked.',
-      {
-        synced: status.synced,
-        offsetMs: status.offsetMs,
-        driftExceeded: status.driftExceeded,
-        maxDriftMs: status.maxDriftMs,
-        source: status.source,
-        detail: status.detail,
-        ntpSource: status.ntpSource,
-      },
-    );
-    await anomalyService.report({
-      type: 'trusted_time_restored',
-      source: 'time-sync',
-      category: 'network',
-      severity: 'warning',
-      message:
-        'Trusted time synchronization has been restored. Financial operations are available again.',
-      fingerprint: buildAnomalyFingerprint(['time-sync', 'trusted-time-restored']),
-      context: {
-        offsetMs: status.offsetMs,
-        driftExceeded: status.driftExceeded,
-        maxDriftMs: status.maxDriftMs,
-        detail: status.detail,
-      },
-    });
   });
 
   await startClamd();

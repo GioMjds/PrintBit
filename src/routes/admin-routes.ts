@@ -21,7 +21,7 @@ import {
 } from '@/services/printer-status';
 import { detectDefaultPrinter, printFile } from '@/services/printer';
 import { getScannerStatus } from '@/services/scanner';
-import { getTrustedTimeStatus } from '@/services/time-source';
+import { getTrustedTimeStatus, verifyTrustedClockSync } from '@/services/time-source';
 import {
   checkLockout,
   clearLockout,
@@ -444,8 +444,8 @@ export function registerAdminRoutes(
     '/api/admin/system/time-sync',
     requireAdminLocalAccess,
     requireAdminPin,
-    (_req: Request, res: Response) => {
-      const trustedTime = getTrustedTimeStatus();
+    async (_req: Request, res: Response) => {
+      const trustedTime = await verifyTrustedClockSync();
       const ok =
         trustedTime.synced &&
         !trustedTime.driftExceeded &&

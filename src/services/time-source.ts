@@ -270,6 +270,19 @@ export function assertTrustedTimeForFinancialOperation(
   operation: string,
 ): void {
   const status = getTrustedTimeStatus();
+  const ageMs = Date.now() - Date.parse(status.checkedAt);
+  const staleThresholdMs = readRevalidationIntervalMs();
+  if (!Number.isFinite(ageMs) || ageMs > staleThresholdMs) {
+    throw new TrustedTimeError(operation, {
+      ...status,
+      synced: false,
+      source: 'system',
+      offsetMs: null,
+      driftExceeded: false,
+      detail:
+        'Trusted time status is stale. Wait for the next verification cycle or run a manual time-sync check.',
+    });
+  }
   if (!status.enforceForFinancial) return;
   if (!status.synced || status.offsetMs === null || status.driftExceeded) {
     throw new TrustedTimeError(operation, status);

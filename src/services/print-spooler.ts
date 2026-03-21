@@ -367,21 +367,28 @@ export async function monitorSpoolerJob(
               error.context.trustedTime !== null
                 ? error.context.trustedTime
                 : null;
-            await adminService.appendAdminLog(
-              'trusted_time_unsynced',
-              'Spooler refund creation blocked because trusted time is unavailable.',
-              {
-                chargedAmount,
-                spoolerJobId: job.id,
-                spoolerStatus: job.status,
-                transactionId:
-                  typeof jobContext.transactionId === 'string'
-                    ? jobContext.transactionId
-                    : null,
-                trustedTime:
-                  trustedDetail != null ? JSON.stringify(trustedDetail) : null,
-              },
-            );
+            try {
+              await adminService.appendAdminLog(
+                'trusted_time_unsynced',
+                'Spooler refund creation blocked because trusted time is unavailable.',
+                {
+                  chargedAmount,
+                  spoolerJobId: job.id,
+                  spoolerStatus: job.status,
+                  transactionId:
+                    typeof jobContext.transactionId === 'string'
+                      ? jobContext.transactionId
+                      : null,
+                  trustedTime:
+                    trustedDetail != null ? JSON.stringify(trustedDetail) : null,
+                },
+              );
+            } catch (logError) {
+              console.error(
+                '[SPOOLER-MONITOR] Failed to append trusted-time unsynced log',
+                logError,
+              );
+            }
             io.emit('printerSpoolerFailure', {
               jobStatus: job.status,
               chargedAmount,

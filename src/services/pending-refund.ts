@@ -137,23 +137,6 @@ export async function upsertSpoolerFailureRefund(input: {
   restoredBalanceAmount: number;
 }> {
   ensureDb();
-  try {
-    assertTrustedTimeForFinancialOperation(
-      'pending_refund:upsert_spooler_failure',
-    );
-  } catch (error) {
-    if (isTrustedTimeError(error)) {
-      throw new PendingRefundServiceError(
-        error.statusCode,
-        error.message,
-        error.code,
-        { trustedTime: error.trustedTime },
-      );
-    }
-    throw error;
-  }
-  const createdTs = getTrustedTimestamp().timestamp;
-
   const normalizedContext = normalizeJobContext(input.jobContext);
   const duplicate = findDuplicateByCorrelation(normalizedContext);
   if (duplicate) {
@@ -172,6 +155,23 @@ export async function upsertSpoolerFailureRefund(input: {
       restoredBalanceAmount,
     };
   }
+
+  try {
+    assertTrustedTimeForFinancialOperation(
+      'pending_refund:upsert_spooler_failure',
+    );
+  } catch (error) {
+    if (isTrustedTimeError(error)) {
+      throw new PendingRefundServiceError(
+        error.statusCode,
+        error.message,
+        error.code,
+        { trustedTime: error.trustedTime },
+      );
+    }
+    throw error;
+  }
+  const createdTs = getTrustedTimestamp().timestamp;
 
   const autoRefunded = input.autoRefund;
   const contextWithDisposition: Record<
