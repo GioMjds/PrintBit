@@ -59,12 +59,16 @@ export class PrinterService {
         PrinterStatus: number;
       };
 
-      console.log('[PRINTER] ✓ Default printer found:');
+      console.log('[PRINTER] ✓ Default printer queue found in Windows:');
       console.log(`[PRINTER]   Name: ${printer.Name}`);
       console.log(`[PRINTER]   Driver: ${printer.DriverName}`);
       console.log(`[PRINTER]   Port: ${printer.PortName}`);
+      console.log(`[PRINTER]   Status code: ${printer.PrinterStatus}`);
       console.log(
-        `[PRINTER]   Status: ${printer.PrinterStatus} (0=idle/ready)`,
+        '[PRINTER]   Note: This confirms Windows default printer/driver registration.',
+      );
+      console.log(
+        '[PRINTER]   Note: Physical readiness (online/paper/ink) is evaluated by printer telemetry.',
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

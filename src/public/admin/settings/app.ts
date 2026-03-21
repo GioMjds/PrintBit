@@ -28,6 +28,25 @@ const settingAdminPin = document.getElementById(
 const settingAdminLocalOnly = document.getElementById(
   'settingAdminLocalOnly',
 ) as HTMLInputElement;
+const inkMonitoringEnabled = document.getElementById(
+  'inkMonitoringEnabled',
+) as HTMLInputElement;
+const inkTargetPrinterName = document.getElementById(
+  'inkTargetPrinterName',
+) as HTMLInputElement;
+const inkLowThresholdPercent = document.getElementById(
+  'inkLowThresholdPercent',
+) as HTMLInputElement;
+const inkCriticalThresholdPercent = document.getElementById(
+  'inkCriticalThresholdPercent',
+) as HTMLInputElement;
+const inkBlockOnLow = document.getElementById('inkBlockOnLow') as HTMLInputElement;
+const inkBlockOnEmpty = document.getElementById(
+  'inkBlockOnEmpty',
+) as HTMLInputElement;
+const inkTelemetryUnknownPolicy = document.getElementById(
+  'inkTelemetryUnknownPolicy',
+) as HTMLSelectElement;
 const alertSeverityThreshold = document.getElementById(
   'alertSeverityThreshold',
 ) as HTMLSelectElement;
@@ -66,6 +85,15 @@ function applySettings(settings: SettingsResponse): void {
   settingIdleTimeout.value = String(settings.idleTimeoutSeconds);
   settingAdminPin.value = '';
   settingAdminLocalOnly.checked = settings.adminLocalOnly;
+  inkMonitoringEnabled.checked = settings.inkMonitoring.enabled;
+  inkTargetPrinterName.value = settings.inkMonitoring.targetPrinterName ?? '';
+  inkLowThresholdPercent.value = String(settings.inkMonitoring.lowThresholdPercent);
+  inkCriticalThresholdPercent.value = String(
+    settings.inkMonitoring.criticalThresholdPercent,
+  );
+  inkBlockOnLow.checked = settings.inkMonitoring.blockOnLow;
+  inkBlockOnEmpty.checked = settings.inkMonitoring.blockOnEmpty;
+  inkTelemetryUnknownPolicy.value = settings.inkMonitoring.telemetryUnknownPolicy;
   alertSeverityThreshold.value = settings.alerts.severityThreshold;
   alertDashboardEnabled.checked = settings.alerts.dashboard.enabled;
   alertEmailEnabled.checked = settings.alerts.email.enabled;
@@ -142,6 +170,16 @@ settingsForm.addEventListener('submit', (e) => {
     idleTimeoutSeconds: Number(settingIdleTimeout.value),
     ...(newPin ? { adminPin: newPin } : {}),
     adminLocalOnly: settingAdminLocalOnly.checked,
+    inkMonitoring: {
+      enabled: inkMonitoringEnabled.checked,
+      targetPrinterName: inkTargetPrinterName.value.trim() || null,
+      lowThresholdPercent: Number(inkLowThresholdPercent.value),
+      criticalThresholdPercent: Number(inkCriticalThresholdPercent.value),
+      blockOnLow: inkBlockOnLow.checked,
+      blockOnEmpty: inkBlockOnEmpty.checked,
+      telemetryUnknownPolicy:
+        inkTelemetryUnknownPolicy.value === 'block' ? 'block' : 'warn_allow',
+    },
   };
   const alertPayload = buildAlertPayload();
 

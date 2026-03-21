@@ -71,12 +71,19 @@ export type SummaryResponse = {
       name: string | null;
       driverName: string | null;
       portName: string | null;
+      connectionType?: 'usb' | 'network' | 'wsd' | 'virtual' | 'unknown';
       status: string;
+      statusFlags?: string[];
       ink: Array<{
         name: string;
         level: number | null;
         status: 'ok' | 'low' | 'empty' | 'unknown';
       }>;
+      inkDetectionMethod?: 'snmp' | 'vendor-wmi' | 'printer-property' | 'error-state' | 'none';
+      targetPrinterName?: string | null;
+      targetIsDefault?: boolean;
+      inkTelemetryAvailable?: boolean;
+      inkTelemetryReason?: string | null;
       lastCheckedAt: string;
       lastError: string | null;
     };
@@ -93,6 +100,15 @@ export type SettingsResponse = {
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
+  inkMonitoring: {
+    enabled: boolean;
+    targetPrinterName: string | null;
+    lowThresholdPercent: number;
+    criticalThresholdPercent: number;
+    blockOnLow: boolean;
+    blockOnEmpty: boolean;
+    telemetryUnknownPolicy: 'warn_allow' | 'block';
+  };
   alerts: {
     severityThreshold: 'warning' | 'critical';
     dashboard: {

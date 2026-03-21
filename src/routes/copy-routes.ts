@@ -12,6 +12,7 @@ import {
 } from '@/services/db';
 import { adminService } from '@/services/admin';
 import {
+  evaluateInkPreflight,
   getPrinterTelemetry,
   settlementService,
   watchJobForMalfunction,
@@ -248,6 +249,32 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
             failure: {
               code: 'PRINTER_NOT_READY',
               message: `Printer is not ready: ${telemetry.status}. Please notify the operator.`,
+              retryable: true,
+              stage: 'precheck',
+            },
+          });
+          return;
+        }
+        const inkPreflight = evaluateInkPreflight(telemetry);
+        if (inkPreflight.blocked) {
+          void adminService.appendAdminLog(
+            'copy_preflight_failed_ink',
+            'Copy job rejected: ink preflight policy blocked the job.',
+            {
+              jobId: job.id,
+              printerStatus: telemetry.status,
+              inkCode: inkPreflight.code,
+              inkReason: inkPreflight.reason ?? 'Unknown ink policy reason',
+              telemetryAvailable: inkPreflight.telemetryAvailable,
+              inkDetectionMethod: telemetry.inkDetectionMethod,
+            },
+          );
+          jobStore.updateJobState(job.id, 'failed', {
+            failure: {
+              code: 'INK_NOT_READY',
+              message:
+                inkPreflight.reason ??
+                'Ink telemetry indicates printing should be blocked.',
               retryable: true,
               stage: 'precheck',
             },

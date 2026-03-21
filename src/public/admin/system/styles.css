@@ -259,7 +259,7 @@
 
 .printer-detail-row {
   display: grid;
-  grid-template-columns: 80px 1fr;
+  grid-template-columns: 94px 1fr;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);

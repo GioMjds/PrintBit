@@ -1,4 +1,6 @@
 import { runPowerShell } from '@/utils';
+import { randomUUID } from 'node:crypto';
+import { db, type InkMonitoringSettings } from './db';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -31,8 +33,36 @@ export interface PrinterTelemetry {
     | 'printer-property'
     | 'error-state'
     | 'none';
+  targetPrinterName?: string | null;
+  targetIsDefault?: boolean;
+  inkTelemetryAvailable?: boolean;
+  inkTelemetryReason?: string | null;
   lastCheckedAt: string;
   lastError: string | null;
+}
+
+export interface InstalledPrinterInfo {
+  Name: string;
+  DriverName: string;
+  PortName: string;
+  Default?: boolean;
+  PrinterStatus: number;
+  PrinterState: number;
+}
+
+export interface InkPreflightEvaluation {
+  blocked: boolean;
+  code:
+    | 'ink_monitoring_disabled'
+    | 'telemetry_unknown_allowed'
+    | 'telemetry_unknown_blocked'
+    | 'ink_low_blocked'
+    | 'ink_empty_blocked'
+    | 'ok';
+  reason: string | null;
+  telemetryAvailable: boolean;
+  lowSupplies: InkLevel[];
+  emptySupplies: InkLevel[];
 }
 
 // ── PrinterState bitmask (Win32_Printer) ─────────────────────────
@@ -177,6 +207,8 @@ export function onPrinterRefresh(cb: RefreshCallback): void {
 }
 
 const REFRESH_INTERVAL_MS = 30_000;
+
+const INK_HISTORY_RETENTION = 2000;
 let cached: PrinterTelemetry = {
   connected: false,
   name: null,
@@ -187,16 +219,112 @@ let cached: PrinterTelemetry = {
   statusFlags: [],
   ink: [],
   inkDetectionMethod: 'none',
+  targetPrinterName: null,
+  targetIsDefault: false,
+  inkTelemetryAvailable: false,
+  inkTelemetryReason: 'No telemetry yet',
   lastCheckedAt: new Date().toISOString(),
   lastError: null,
 };
 let refreshing = false;
 
+function normalizeTargetPrinterName(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== 'string') return null;
+  const sanitized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  return sanitized ? sanitized : null;
+}
+
+function getInkMonitoringSettings(): InkMonitoringSettings {
+  const defaults: InkMonitoringSettings = {
+    enabled: true,
+    targetPrinterName: null,
+    lowThresholdPercent: 20,
+    criticalThresholdPercent: 5,
+    blockOnLow: false,
+    blockOnEmpty: true,
+    telemetryUnknownPolicy: 'warn_allow',
+  };
+  const loaded = db.data?.settings?.inkMonitoring ?? defaults;
+  return ensureCriticalNotAboveLow({
+    enabled: loaded.enabled,
+    targetPrinterName: normalizeTargetPrinterName(loaded.targetPrinterName),
+    lowThresholdPercent: loaded.lowThresholdPercent,
+    criticalThresholdPercent: loaded.criticalThresholdPercent,
+    blockOnLow: loaded.blockOnLow,
+    blockOnEmpty: loaded.blockOnEmpty,
+    telemetryUnknownPolicy:
+      loaded.telemetryUnknownPolicy === 'block' ? 'block' : 'warn_allow',
+  });
+}
+
+function normalizeTelemetryAvailability(
+  telemetry: PrinterTelemetry,
+): PrinterTelemetry {
+  const meaningfulSupply = telemetry.ink.some(
+    (entry) => entry.level !== null || entry.status === 'low' || entry.status === 'empty',
+  );
+  const available =
+    telemetry.inkDetectionMethod !== 'none' &&
+    telemetry.inkDetectionMethod !== 'error-state' &&
+    meaningfulSupply;
+  const reason =
+    available || !telemetry.connected
+      ? null
+      : telemetry.inkDetectionMethod === 'none'
+        ? 'Driver did not expose ink telemetry fields'
+        : telemetry.inkDetectionMethod === 'error-state'
+          ? 'Only error-state inference available (no direct ink levels)'
+          : 'Ink telemetry unavailable';
+  return {
+    ...telemetry,
+    inkTelemetryAvailable: available,
+    inkTelemetryReason: reason,
+  };
+}
+
+function persistInkHistoryEntry(telemetry: PrinterTelemetry): void {
+  if (!db.data) return;
+  const nextEntry = {
+    id: randomUUID(),
+    timestamp: telemetry.lastCheckedAt,
+    printerName: telemetry.name ?? null,
+    printerStatus: telemetry.status,
+    inkDetectionMethod: telemetry.inkDetectionMethod,
+    inkTelemetryAvailable: telemetry.inkTelemetryAvailable ?? false,
+    inkTelemetryReason: telemetry.inkTelemetryReason ?? null,
+    supplies: telemetry.ink.map((entry) => ({
+      name: entry.name,
+      level: entry.level,
+      status: entry.status,
+    })),
+  };
+  db.data.inkHistory.unshift(nextEntry);
+  if (db.data.inkHistory.length > INK_HISTORY_RETENTION) {
+    db.data.inkHistory.length = INK_HISTORY_RETENTION;
+  }
+}
+
+function ensureCriticalNotAboveLow(
+  settings: InkMonitoringSettings,
+): InkMonitoringSettings {
+  if (settings.criticalThresholdPercent <= settings.lowThresholdPercent) {
+    return settings;
+  }
+  return {
+    ...settings,
+    criticalThresholdPercent: settings.lowThresholdPercent,
+  };
+}
+
 async function refresh(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
   try {
-    cached = await queryPrinterTelemetry();
+    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
+    persistInkHistoryEntry(cached);
+    await db.write();
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -208,6 +336,10 @@ async function refresh(): Promise<void> {
       statusFlags: [],
       ink: [],
       inkDetectionMethod: 'none',
+      targetPrinterName: null,
+      targetIsDefault: false,
+      inkTelemetryAvailable: false,
+      inkTelemetryReason: 'Telemetry refresh failed',
       lastCheckedAt: new Date().toISOString(),
       lastError: err instanceof Error ? err.message : String(err),
     };
@@ -252,9 +384,18 @@ export async function queryLivePrinterStatus(): Promise<{
   statusFlags: string[];
 }> {
   try {
+    const settings = getInkMonitoringSettings();
+    const targetName =
+      normalizeTargetPrinterName(settings.targetPrinterName)?.replace(
+        /'/g,
+        "''",
+      ) ?? null;
+    const filter = targetName
+      ? `| Where-Object {$_.Name -eq '${targetName}'} `
+      : `| Where-Object {$_.Default -eq $true} `;
     const json = await runPowerShell(
       `Get-CimInstance -ClassName Win32_Printer ` +
-        `| Where-Object {$_.Default -eq $true} ` +
+        filter +
         `| Select-Object PrinterStatus, PrinterState ` +
         `| ConvertTo-Json -Depth 2`,
       5_000,
@@ -263,7 +404,7 @@ export async function queryLivePrinterStatus(): Promise<{
     if (!json) {
       return {
         connected: false,
-        status: 'No default printer',
+        status: targetName ? 'Configured printer not found' : 'No default printer',
         statusFlags: [],
       };
     }
@@ -284,12 +425,21 @@ export async function queryLivePrinterStatus(): Promise<{
 
 async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
   const lastCheckedAt = new Date().toISOString();
+  const settings = getInkMonitoringSettings();
+  const targetPrinterName = normalizeTargetPrinterName(
+    settings.targetPrinterName,
+  );
+  const escapedTargetName = targetPrinterName?.replace(/'/g, "''") ?? null;
+  const queryFilter = escapedTargetName
+    ? `| Where-Object {$_.Name -eq '${escapedTargetName}'} `
+    : `| Where-Object {$_.Default -eq $true} `;
 
   // 1) Fetch default printer basic info
   let printerInfo: {
     Name: string;
     DriverName: string;
     PortName: string;
+    Default?: boolean;
     PrinterStatus: number;
     PrinterState: number;
   } | null = null;
@@ -297,13 +447,13 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
   try {
     const json = await runPowerShell(
       `Get-CimInstance -ClassName Win32_Printer ` +
-        `| Where-Object {$_.Default -eq $true} ` +
-        `| Select-Object Name, DriverName, PortName, PrinterStatus, PrinterState ` +
+        queryFilter +
+        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState ` +
         `| ConvertTo-Json -Depth 2`,
     );
 
     if (!json) {
-      return noDefaultPrinter(lastCheckedAt);
+      return noDefaultPrinter(lastCheckedAt, targetPrinterName);
     }
 
     printerInfo = JSON.parse(json);
@@ -320,12 +470,16 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
       statusFlags: [],
       ink: [],
       inkDetectionMethod: 'none',
+      targetPrinterName,
+      targetIsDefault: false,
+      inkTelemetryAvailable: false,
+      inkTelemetryReason: 'Printer query failed',
       lastCheckedAt,
       lastError: msg,
     };
   }
 
-  if (!printerInfo) return noDefaultPrinter(lastCheckedAt);
+  if (!printerInfo) return noDefaultPrinter(lastCheckedAt, targetPrinterName);
 
   const statusFlags = parsePrinterStateFlags(printerInfo.PrinterState);
   const status = humanStatusFromFlags(statusFlags, printerInfo.PrinterStatus);
@@ -351,22 +505,35 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
     statusFlags,
     ink,
     inkDetectionMethod: method,
+    targetPrinterName,
+    targetIsDefault: printerInfo.Default === true,
     lastCheckedAt,
     lastError: null,
   };
 }
 
-function noDefaultPrinter(lastCheckedAt: string): PrinterTelemetry {
+function noDefaultPrinter(
+  lastCheckedAt: string,
+  targetPrinterName: string | null,
+): PrinterTelemetry {
   return {
     connected: false,
     name: null,
     driverName: null,
     portName: null,
     connectionType: 'unknown',
-    status: 'No default printer',
+    status: targetPrinterName
+      ? 'Configured printer not found'
+      : 'No default printer',
     statusFlags: [],
     ink: [],
     inkDetectionMethod: 'none',
+    targetPrinterName,
+    targetIsDefault: false,
+    inkTelemetryAvailable: false,
+    inkTelemetryReason: targetPrinterName
+      ? `Configured printer "${targetPrinterName}" was not found`
+      : 'No default printer configured',
     lastCheckedAt,
     lastError: null,
   };
@@ -853,7 +1020,9 @@ export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
 
   refreshing = true;
   try {
-    cached = await queryPrinterTelemetry();
+    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
+    persistInkHistoryEntry(cached);
+    await db.write();
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -865,6 +1034,10 @@ export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
       statusFlags: [],
       ink: [],
       inkDetectionMethod: 'none',
+      targetPrinterName: null,
+      targetIsDefault: false,
+      inkTelemetryAvailable: false,
+      inkTelemetryReason: 'Telemetry refresh failed',
       lastCheckedAt: new Date().toISOString(),
       lastError: err instanceof Error ? err.message : String(err),
     };
@@ -884,4 +1057,173 @@ export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
   }
 
   return cached;
+}
+
+export async function listInstalledPrinters(): Promise<InstalledPrinterInfo[]> {
+  try {
+    const json = await runPowerShell(
+      `Get-CimInstance -ClassName Win32_Printer ` +
+        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState ` +
+        `| ConvertTo-Json -Depth 2`,
+      10_000,
+    );
+    if (!json || json === 'null') return [];
+    const parsed = JSON.parse(json) as InstalledPrinterInfo | InstalledPrinterInfo[];
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    return rows.filter((row) => row && typeof row.Name === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export async function runInkTelemetryDiagnostics(): Promise<{
+  targetPrinterName: string | null;
+  targetResolved: boolean;
+  telemetry: PrinterTelemetry;
+  installedPrinters: InstalledPrinterInfo[];
+  matchingProperties: Array<{ propertyName: string; value: unknown }>;
+}> {
+  const telemetry = await refreshPrinterTelemetry();
+  const installedPrinters = await listInstalledPrinters();
+  const settings = getInkMonitoringSettings();
+  const targetPrinterName =
+    normalizeTargetPrinterName(settings.targetPrinterName) ??
+    normalizeTargetPrinterName(telemetry.name);
+  const escaped = targetPrinterName?.replace(/'/g, "''") ?? null;
+  let matchingProperties: Array<{ propertyName: string; value: unknown }> = [];
+
+  if (escaped) {
+    try {
+      const raw = await runPowerShell(
+        `Get-PrinterProperty -PrinterName '${escaped}' 2>$null ` +
+          `| Where-Object { $_.PropertyName -match 'Ink|Supply|Level|Cartridge|Color|Cyan|Magenta|Yellow|Black|Gray|Photo|Toner' } ` +
+          `| Select-Object PropertyName,Value | ConvertTo-Json -Depth 4`,
+        10_000,
+      );
+      if (raw && raw !== 'null') {
+        const parsed = JSON.parse(raw) as
+          | { PropertyName?: unknown; Value?: unknown }
+          | Array<{ PropertyName?: unknown; Value?: unknown }>;
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        matchingProperties = rows
+          .filter((row) => typeof row?.PropertyName === 'string')
+          .map((row) => ({
+            propertyName: String(row.PropertyName),
+            value: row.Value ?? null,
+          }));
+      }
+    } catch {
+      matchingProperties = [];
+    }
+  }
+
+  return {
+    targetPrinterName: targetPrinterName ?? null,
+    targetResolved: Boolean(
+      targetPrinterName &&
+        installedPrinters.some(
+          (entry) =>
+            entry.Name.trim().toLowerCase() ===
+            targetPrinterName.trim().toLowerCase(),
+        ),
+    ),
+    telemetry,
+    installedPrinters,
+    matchingProperties,
+  };
+}
+
+export function evaluateInkPreflight(telemetry: PrinterTelemetry): InkPreflightEvaluation {
+  const settings = getInkMonitoringSettings();
+  if (!settings.enabled) {
+    return {
+      blocked: false,
+      code: 'ink_monitoring_disabled',
+      reason: null,
+      telemetryAvailable: Boolean(telemetry.inkTelemetryAvailable),
+      lowSupplies: [],
+      emptySupplies: [],
+    };
+  }
+
+  const meaningfulSupplies = telemetry.ink.filter(
+    (entry) =>
+      entry.level !== null || entry.status === 'low' || entry.status === 'empty',
+  );
+  const telemetryAvailable = Boolean(
+    telemetry.inkTelemetryAvailable || meaningfulSupplies.length > 0,
+  );
+
+  const emptySupplies = meaningfulSupplies.filter(
+    (entry) =>
+      entry.status === 'empty' || (typeof entry.level === 'number' && entry.level <= 0),
+  );
+  const lowSupplies = meaningfulSupplies.filter((entry) => {
+    if (emptySupplies.includes(entry)) return false;
+    if (entry.status === 'low') return true;
+    return (
+      typeof entry.level === 'number' && entry.level <= settings.lowThresholdPercent
+    );
+  });
+
+  const criticalSupplies = lowSupplies.filter(
+    (entry) =>
+      typeof entry.level === 'number' &&
+      entry.level <= settings.criticalThresholdPercent,
+  );
+
+  if (!telemetryAvailable) {
+    if (settings.telemetryUnknownPolicy === 'block') {
+      return {
+        blocked: true,
+        code: 'telemetry_unknown_blocked',
+        reason: telemetry.inkTelemetryReason ?? 'Ink telemetry is unavailable',
+        telemetryAvailable: false,
+        lowSupplies: [],
+        emptySupplies: [],
+      };
+    }
+    return {
+      blocked: false,
+      code: 'telemetry_unknown_allowed',
+      reason: telemetry.inkTelemetryReason ?? 'Ink telemetry is unavailable',
+      telemetryAvailable: false,
+      lowSupplies: [],
+      emptySupplies: [],
+    };
+  }
+
+  if (settings.blockOnEmpty && emptySupplies.length > 0) {
+    return {
+      blocked: true,
+      code: 'ink_empty_blocked',
+      reason: `Ink empty: ${emptySupplies.map((s) => s.name).join(', ')}`,
+      telemetryAvailable,
+      lowSupplies,
+      emptySupplies,
+    };
+  }
+
+  if (settings.blockOnLow && lowSupplies.length > 0) {
+    return {
+      blocked: true,
+      code: 'ink_low_blocked',
+      reason:
+        criticalSupplies.length > 0
+          ? `Ink critically low: ${criticalSupplies.map((s) => s.name).join(', ')}`
+          : `Ink low: ${lowSupplies.map((s) => s.name).join(', ')}`,
+      telemetryAvailable,
+      lowSupplies,
+      emptySupplies,
+    };
+  }
+
+  return {
+    blocked: false,
+    code: 'ok',
+    reason: null,
+    telemetryAvailable,
+    lowSupplies,
+    emptySupplies,
+  };
 }

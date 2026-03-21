@@ -350,6 +350,155 @@
                   >
                     <path
                       fill-rule="evenodd"
+                      d="M5 4a2 2 0 012-2h2a2 2 0 012 2v1h2a2 2 0 012 2v3a2 2 0 01-2 2h-1v2H4v-2H3a2 2 0 01-2-2V7a2 2 0 012-2h2V4zm2 0v1h2V4H7z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  <h3 class="sg__title">Ink Monitoring</h3>
+                </div>
+                <div class="fields">
+                  <div class="field field--stretch">
+                    <label class="toggle-lbl" for="inkMonitoringEnabled">
+                      <div class="toggle-lbl__text">
+                        <span class="toggle-lbl__title">Enable ink monitoring</span>
+                        <span class="toggle-lbl__desc"
+                          >Turn on preflight ink checks and ink telemetry warnings</span
+                        >
+                      </div>
+                      <div class="toggle">
+                        <input
+                          id="inkMonitoringEnabled"
+                          type="checkbox"
+                          role="switch"
+                          class="toggle__input"
+                        />
+                        <div class="toggle__track" aria-hidden="true">
+                          <div class="toggle__thumb"></div>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="field field--stretch">
+                    <label class="field__lbl" for="inkTargetPrinterName"
+                      >Target printer queue (optional)</label
+                    >
+                    <input
+                      id="inkTargetPrinterName"
+                      type="text"
+                      class="field__input"
+                      placeholder="e.g. EPSON L5290 Series (Copy 1)"
+                    />
+                    <p class="field__hint">
+                      Leave empty to monitor Windows default printer.
+                    </p>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="inkLowThresholdPercent"
+                      >Low threshold (%)</label
+                    >
+                    <div class="field__wrap field__wrap--post">
+                      <input
+                        id="inkLowThresholdPercent"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="field__input"
+                        required
+                      />
+                      <span class="field__affix">%</span>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="inkCriticalThresholdPercent"
+                      >Critical threshold (%)</label
+                    >
+                    <div class="field__wrap field__wrap--post">
+                      <input
+                        id="inkCriticalThresholdPercent"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        class="field__input"
+                        required
+                      />
+                      <span class="field__affix">%</span>
+                    </div>
+                  </div>
+
+                  <div class="field field--stretch">
+                    <label class="toggle-lbl" for="inkBlockOnLow">
+                      <div class="toggle-lbl__text">
+                        <span class="toggle-lbl__title"
+                          >Block printing on low ink</span
+                        >
+                        <span class="toggle-lbl__desc"
+                          >Reject print preflight when any supply is at/below low threshold</span
+                        >
+                      </div>
+                      <div class="toggle">
+                        <input
+                          id="inkBlockOnLow"
+                          type="checkbox"
+                          role="switch"
+                          class="toggle__input"
+                        />
+                        <div class="toggle__track" aria-hidden="true">
+                          <div class="toggle__thumb"></div>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="field field--stretch">
+                    <label class="toggle-lbl" for="inkBlockOnEmpty">
+                      <div class="toggle-lbl__text">
+                        <span class="toggle-lbl__title"
+                          >Block printing on empty ink</span
+                        >
+                        <span class="toggle-lbl__desc"
+                          >Reject print preflight when any supply is empty</span
+                        >
+                      </div>
+                      <div class="toggle">
+                        <input
+                          id="inkBlockOnEmpty"
+                          type="checkbox"
+                          role="switch"
+                          class="toggle__input"
+                        />
+                        <div class="toggle__track" aria-hidden="true">
+                          <div class="toggle__thumb"></div>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="inkTelemetryUnknownPolicy"
+                      >Unknown telemetry policy</label
+                    >
+                    <select id="inkTelemetryUnknownPolicy" class="field__input">
+                      <option value="warn_allow">Warn only, allow print</option>
+                      <option value="block">Block print until telemetry is available</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sg">
+                <div class="sg__head">
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
                       d="M8 15A7 7 0 108 1a7 7 0 000 14zm-.75-9.5v-.75a.75.75 0 011.5 0V5.5h.75a.75.75 0 010 1.5H8.75v1H10a.75.75 0 010 1.5H8.75V11a.75.75 0 01-1.5 0V9.5H6a.75.75 0 010-1.5h1.25v-1H6a.75.75 0 010-1.5h1.25z"
                       clip-rule="evenodd"
                     />
