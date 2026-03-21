@@ -338,9 +338,7 @@ export async function monitorSpoolerJob(
 
         const reason = `Print spooler reported failure: ${job.status}`;
         const autoRefund = job.pagesPrinted === 0;
-        let refundOutcome: Awaited<
-          ReturnType<typeof upsertSpoolerFailureRefund>
-        > | null = null;
+        let refundOutcome: Awaited<ReturnType<typeof upsertSpoolerFailureRefund>>;
         try {
           refundOutcome = await upsertSpoolerFailureRefund({
             chargedAmount,
@@ -414,27 +412,9 @@ export async function monitorSpoolerJob(
           }
           throw error;
         }
-        if (!refundOutcome) {
-          console.warn(
-            '[SPOOLER-MONITOR] refundOutcome was null after spooler failure handling.',
-            {
-              spoolerJobId: job.id,
-              spoolerStatus: job.status,
-              pagesPrinted: job.pagesPrinted,
-              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-              transactionId:
-                typeof jobContext.transactionId === 'string'
-                  ? jobContext.transactionId
-                  : null,
-            },
-          );
-          return {
-            detected: true,
-            jobStatus: job.status,
-            pagesPrinted: job.pagesPrinted,
-            failed: true,
-          };
-        }
+
+        // upsertSpoolerFailureRefund() returns a non-null result or throws;
+        // TRUSTED_TIME_UNAVAILABLE is handled in the catch branch above.
 
         const shouldEmitBalance =
           refundOutcome.autoRefunded && refundOutcome.restoredBalanceAmount > 0;
