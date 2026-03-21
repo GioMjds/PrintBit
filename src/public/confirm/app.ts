@@ -3,8 +3,11 @@ import {
   initializePageIdleTimeout,
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
+import { initKioskLocalization } from '../shared/kiosk-i18n';
 
 export {};
+
+void initKioskLocalization();
 
 // Initialize page idle timeout on load with warning modal
 void setupPageIdleWarningButton();

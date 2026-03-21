@@ -3,6 +3,7 @@ import {
   initializePageIdleTimeout,
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
+import { initKioskLocalization } from '../shared/kiosk-i18n';
 
 type UploadedFile = {
   documentId?: string;
@@ -10,6 +11,20 @@ type UploadedFile = {
   size?: number;
   sizeBytes?: number;
 };
+
+const bootKioskLocalization = (): void => {
+  void initKioskLocalization().catch((error: unknown) => {
+    console.error('[i18n] Failed to initialize localization.', error);
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootKioskLocalization, {
+    once: true
+  });
+} else {
+  bootKioskLocalization();
+}
 
 type SessionResponse = {
   sessionId: string;

@@ -2,8 +2,11 @@ import {
   initializePageIdleTimeout,
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
+import { initKioskLocalization } from '../shared/kiosk-i18n';
 
 export {};
+
+void initKioskLocalization();
 
 // ── Idle Timeout with Warning Modal (Copy Page) ───────────────────────────────────────────────
 

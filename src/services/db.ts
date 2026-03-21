@@ -21,7 +21,15 @@ export interface AdminSettings {
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
+  kioskPreferences: KioskPreferences;
   alerts: AlertSettings;
+}
+
+export type SupportedLanguage = 'en' | 'fil';
+
+export interface KioskPreferences {
+  language: SupportedLanguage;
+  highContrast: boolean;
 }
 
 export type AlertChannel = 'dashboard' | 'email';
@@ -293,6 +301,10 @@ const DEFAULT_DATA: Schema = {
     adminPin:
       '$argon2id$v=19$m=65536,t=3,p=4$gqSpsbLttLcalBC6SYKG0A$T34vxa4BxPcJ++fLZ+19qp9FGaQufJCCCqWu1fb35TQ',
     adminLocalOnly: true,
+    kioskPreferences: {
+      language: 'en',
+      highContrast: false,
+    },
     alerts: {
       severityThreshold: 'warning',
       dashboard: {
@@ -376,6 +388,7 @@ function wholePeso(value: number): number {
 function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const pricing = data?.settings?.pricing;
   const alertSettings = data?.settings?.alerts;
+  const kioskPreferences = data?.settings?.kioskPreferences;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
   const normalizeAnomalyIncidents = (
@@ -512,6 +525,14 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         typeof data?.settings?.adminLocalOnly === 'boolean'
           ? data.settings.adminLocalOnly
           : DEFAULT_DATA.settings.adminLocalOnly,
+      kioskPreferences: {
+        language:
+          kioskPreferences?.language === 'fil' ? 'fil' : 'en',
+        highContrast:
+          typeof kioskPreferences?.highContrast === 'boolean'
+            ? kioskPreferences.highContrast
+            : DEFAULT_DATA.settings.kioskPreferences.highContrast,
+      },
       alerts: {
         severityThreshold:
           alertSettings?.severityThreshold === 'critical'

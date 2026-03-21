@@ -1,4 +1,7 @@
 export {};
+import { initKioskLocalization } from '../shared/kiosk-i18n';
+
+void initKioskLocalization();
 
 declare global {
   interface Window {

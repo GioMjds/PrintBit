@@ -1,8 +1,11 @@
 import QRCode from 'qrcode';
+import { initKioskLocalization } from './shared/kiosk-i18n';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
 };
+
+void initKioskLocalization();
 
 const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }
