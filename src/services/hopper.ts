@@ -19,6 +19,7 @@ import {
   isRetryableError,
   type HopperErrorCodeValue,
 } from './hopper-protocol';
+import { getTrustedTimestamp } from './time-source';
 import { safeAmount } from '@/utils';
 
 export type HopperDispenseResult = {
@@ -38,9 +39,11 @@ class HopperService {
     reason: string,
     meta?: LogMeta,
   ): Promise<OwedChangeEntry> {
+    const trusted = getTrustedTimestamp();
     const entry: OwedChangeEntry = {
       id: randomUUID(),
-      timestamp: new Date().toISOString(),
+      timestamp: trusted.timestamp,
+      timestampMeta: trusted.meta,
       amount: safeAmount(amount),
       reason,
       status: 'open',

@@ -22,6 +22,10 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
+import {
+  assertTrustedTimeForFinancialOperation,
+  isTrustedTimeError,
+} from './time-source';
 
 const ACCEPTED_COINS = new Set([1, 5, 10, 20]);
 const FRAGMENT_WINDOW_MS = 140;
@@ -102,28 +106,28 @@ function completePendingHopperCommand(result: HopperCommandResult): boolean {
   if (pending.timer) clearTimeout(pending.timer);
   hopperCommandPending = false;
 
-    if (result.ok) {
-      hopperLastError = null;
-      hopperLastSuccessAt = new Date().toISOString();
-    } else {
-      hopperLastError = result.message;
-      void anomalyService.report({
-        type: 'hopper_command_failed',
-        source: 'serial',
-        category: 'hopper',
-        severity: mapHopperErrorSeverity(result.errorCode),
-        message: `Hopper command failed: ${result.message}`,
-        fingerprint: buildAnomalyFingerprint([
-          'hopper-command-failed',
-          result.errorCode ?? 'unknown',
-          result.message,
-        ]),
-        context: {
-          errorCode: result.errorCode ?? null,
-          message: result.message,
-        },
-      });
-    }
+  if (result.ok) {
+    hopperLastError = null;
+    hopperLastSuccessAt = new Date().toISOString();
+  } else {
+    hopperLastError = result.message;
+    void anomalyService.report({
+      type: 'hopper_command_failed',
+      source: 'serial',
+      category: 'hopper',
+      severity: mapHopperErrorSeverity(result.errorCode),
+      message: `Hopper command failed: ${result.message}`,
+      fingerprint: buildAnomalyFingerprint([
+        'hopper-command-failed',
+        result.errorCode ?? 'unknown',
+        result.message,
+      ]),
+      context: {
+        errorCode: result.errorCode ?? null,
+        message: result.message,
+      },
+    });
+  }
 
   pending.resolve(result);
   return true;
@@ -563,6 +567,34 @@ async function attemptSerialConnection(io: Server, attempt: number) {
           return;
         }
 
+        try {
+          assertTrustedTimeForFinancialOperation('coin_inserted');
+        } catch (error) {
+          if (isTrustedTimeError(error)) {
+            io.emit('coinRejected', {
+              value: coinValue,
+              reason: `Trusted time unavailable: ${error.trustedTime.detail}`,
+              printerStatus: telemetry.status,
+              telemetryLastCheckedAt: telemetry.lastCheckedAt,
+              faultLock: null,
+            });
+            void adminService.appendAdminLog(
+              'trusted_time_unsynced',
+              'Coin rejected because trusted time is unavailable.',
+              {
+                token,
+                coinValue,
+                detail: error.trustedTime.detail,
+                source: error.trustedTime.source,
+                offsetMs: error.trustedTime.offsetMs,
+              },
+            );
+            clearPending();
+            return;
+          }
+          throw error;
+        }
+
         await persistBalance(coinValue);
       };
 
@@ -602,63 +634,79 @@ async function attemptSerialConnection(io: Server, attempt: number) {
       };
 
       const processToken = async (token: string) => {
-        console.log(`[SERIAL] Token: "${token}"`);
-        if (pendingPrefix) {
-          if (token === '0') {
-            const combined = Number(`${pendingPrefix}${token}`);
-            clearPending();
-            if (ACCEPTED_COINS.has(combined)) {
-              await creditResolvedCoin(combined, `${pendingPrefix}${token}`);
-            } else {
-              io.emit('coinParserWarning', {
-                code: 'INVALID_COMBINATION',
-                message: `Ignored invalid coin '${combined}'.`,
-              });
-              void adminService.appendAdminLog(
-                'coin_parser_warning',
-                `Ignored invalid coin '${combined}'.`,
-                { combined },
-              );
+        try {
+          console.log(`[SERIAL] Token: "${token}"`);
+          if (pendingPrefix) {
+            if (token === '0') {
+              const combined = Number(`${pendingPrefix}${token}`);
+              clearPending();
+              if (ACCEPTED_COINS.has(combined)) {
+                await creditResolvedCoin(combined, `${pendingPrefix}${token}`);
+              } else {
+                io.emit('coinParserWarning', {
+                  code: 'INVALID_COMBINATION',
+                  message: `Ignored invalid coin '${combined}'.`,
+                });
+                void adminService.appendAdminLog(
+                  'coin_parser_warning',
+                  `Ignored invalid coin '${combined}'.`,
+                  { combined },
+                );
+              }
+              return;
             }
+
+            await flushPending('interrupted');
+          }
+
+          if (token === '1' || token === '2') {
+            armPending(token);
             return;
           }
 
-          await flushPending('interrupted');
-        }
+          const value = Number(token);
+          if (!Number.isInteger(value)) {
+            io.emit('coinParserWarning', {
+              code: 'NON_NUMERIC',
+              message: `Ignored serial token '${token}'.`,
+            });
+            void adminService.appendAdminLog(
+              'coin_parser_warning',
+              `Ignored non-numeric serial token '${token}'.`,
+              { token },
+            );
+            return;
+          }
 
-        if (token === '1' || token === '2') {
-          armPending(token);
-          return;
-        }
+          if (!ACCEPTED_COINS.has(value)) {
+            io.emit('coinParserWarning', {
+              code: 'UNSUPPORTED_COIN',
+              message: `Ignored unsupported coin '${value}'.`,
+            });
+            void adminService.appendAdminLog(
+              'coin_parser_warning',
+              `Ignored unsupported coin '${value}'.`,
+              { value },
+            );
+            return;
+          }
 
-        const value = Number(token);
-        if (!Number.isInteger(value)) {
-          io.emit('coinParserWarning', {
-            code: 'NON_NUMERIC',
-            message: `Ignored serial token '${token}'.`,
+          await creditResolvedCoin(value, token);
+        } catch (error) {
+          clearPending();
+          console.error('[SERIAL] Failed to process coin token.', {
+            token,
+            error: error instanceof Error ? error.message : String(error),
           });
           void adminService.appendAdminLog(
             'coin_parser_warning',
-            `Ignored non-numeric serial token '${token}'.`,
-            { token },
+            'Coin token processing failed due to an unexpected error.',
+            {
+              token,
+              error: error instanceof Error ? error.message : String(error),
+            },
           );
-          return;
         }
-
-        if (!ACCEPTED_COINS.has(value)) {
-          io.emit('coinParserWarning', {
-            code: 'UNSUPPORTED_COIN',
-            message: `Ignored unsupported coin '${value}'.`,
-          });
-          void adminService.appendAdminLog(
-            'coin_parser_warning',
-            `Ignored unsupported coin '${value}'.`,
-            { value },
-          );
-          return;
-        }
-
-        await creditResolvedCoin(value, token);
       };
 
       parser.on('data', (rawLine: string) => {

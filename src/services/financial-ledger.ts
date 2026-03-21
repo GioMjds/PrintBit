@@ -5,8 +5,10 @@ import {
   type FinancialLedgerEntry,
   type LogMeta,
 } from './db';
-import { getTrustedTimestamp } from './time-source';
-import { adminService } from './admin';
+import {
+  assertTrustedTimeForFinancialOperation,
+  getTrustedTimestamp,
+} from './time-source';
 
 interface AppendLedgerInput {
   eventType: FinancialEventType;
@@ -52,6 +54,9 @@ class FinancialLedgerService {
     await previousQueue;
 
     try {
+      assertTrustedTimeForFinancialOperation(
+        `ledger_append:${input.eventType}`,
+      );
       const trusted = getTrustedTimestamp();
       const id = randomUUID();
       const previous = db.data!.financialLedger[0] ?? null;
@@ -85,18 +90,6 @@ class FinancialLedgerService {
 
       db.data!.financialLedger.unshift(entry);
       await db.write();
-      if (!entry.timestampMeta.synced) {
-        void adminService.appendAdminLog(
-          'trusted_time_unsynced',
-          'Financial event recorded while trusted time sync is unavailable.',
-          {
-            ledgerEventType: entry.eventType,
-            ledgerEntryId: entry.id,
-            source: entry.timestampMeta.source,
-            offsetMs: entry.timestampMeta.offsetMs,
-          },
-        );
-      }
       return entry;
     } finally {
       release();

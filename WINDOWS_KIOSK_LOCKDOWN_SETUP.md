@@ -22,6 +22,33 @@ Install these first:
 - Scanner driver + NAPS2 (`C:\Program Files\NAPS2\NAPS2.Console.exe`)
 - Serial/USB drivers for coin acceptor / hopper controller
 
+## 2.1) Windows Time Service & NTP baseline
+
+Trusted financial timestamps require reliable time sync on every kiosk.
+
+- Ensure **Windows Time** service exists and runs automatically:
+
+```powershell
+sc config w32time start= auto
+Start-Service w32time
+```
+
+- Configure an NTP peer (example uses `time.windows.com`):
+
+```powershell
+w32tm /config /manualpeerlist:"time.windows.com,0x9" /syncfromflags:manual /update
+Restart-Service w32time
+```
+
+- Force a sync and verify source/status:
+
+```powershell
+w32tm /resync
+w32tm /query /status
+```
+
+- Confirm `Source` is **not** `Local CMOS Clock` or `Free-running System Clock`.
+
 ## 3) PrintBit app installation
 
 From the project root:

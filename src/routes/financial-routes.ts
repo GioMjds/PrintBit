@@ -18,13 +18,46 @@ import { buildPrintQuote } from '@/services/print-quote';
 import { randomUUID } from 'node:crypto';
 import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
-import { getTrustedTimestamp } from '@/services/time-source';
+import {
+  assertTrustedTimeForFinancialOperation,
+  getTrustedTimestamp,
+  isTrustedTimeError,
+} from '@/services/time-source';
 
 interface RegisterFinancialRoutesDeps {
   io: Server;
   sessionStore: SessionStore;
   uploadSingle: RequestHandler;
   resolvePublicBaseUrl: (req: Request) => URL;
+}
+
+function buildTrustedTimeBlockedResponse(error: unknown): {
+  code: 'TRUSTED_TIME_UNAVAILABLE';
+  error: string;
+  trustedTime?: Record<string, unknown>;
+} {
+  if (!isTrustedTimeError(error)) {
+    return {
+      code: 'TRUSTED_TIME_UNAVAILABLE',
+      error:
+        'Financial operations are temporarily unavailable because trusted time is not synchronized.',
+    };
+  }
+  return {
+    code: error.code,
+    error: `Financial operations are temporarily unavailable: ${error.trustedTime.detail}`,
+    trustedTime: {
+      operation: error.operation,
+      source: error.trustedTime.source,
+      synced: error.trustedTime.synced,
+      offsetMs: error.trustedTime.offsetMs,
+      driftExceeded: error.trustedTime.driftExceeded,
+      maxDriftMs: error.trustedTime.maxDriftMs,
+      detail: error.trustedTime.detail,
+      checkedAt: error.trustedTime.checkedAt,
+      ntpSource: error.trustedTime.ntpSource,
+    },
+  };
 }
 
 function getSessionDocuments(session: {
@@ -246,6 +279,20 @@ export function registerFinancialRoutes(
           .status(400)
           .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
       }
+      try {
+        assertTrustedTimeForFinancialOperation('coin_inserted:test');
+      } catch (error) {
+        const payload = buildTrustedTimeBlockedResponse(error);
+        void adminService.appendAdminLog(
+          'trusted_time_unsynced',
+          'Test coin rejected because trusted time is unavailable.',
+          {
+            source: 'test-ui',
+            detail: payload.error,
+          },
+        );
+        return res.status(503).json(payload);
+      }
 
       db.data!.balance += coinValue;
       await db.write();
@@ -312,6 +359,21 @@ export function registerFinancialRoutes(
         'Legacy print failed: filename missing.',
       );
       return res.status(400).json({ error: 'Filename is required' });
+    }
+    try {
+      assertTrustedTimeForFinancialOperation('legacy_print');
+    } catch (error) {
+      const payload = buildTrustedTimeBlockedResponse(error);
+      void adminService.appendAdminLog(
+        'trusted_time_unsynced',
+        'Legacy print blocked because trusted time is unavailable.',
+        {
+          source: 'legacy-print',
+          filename,
+          detail: payload.error,
+        },
+      );
+      return res.status(503).json(payload);
     }
 
     const minimumAmount = adminService.calculateJobAmount(
@@ -457,6 +519,21 @@ export function registerFinancialRoutes(
       }
       res.status(status).json(body);
     };
+
+    try {
+      assertTrustedTimeForFinancialOperation('confirm_payment');
+    } catch (error) {
+      const payload = buildTrustedTimeBlockedResponse(error);
+      void adminService.appendAdminLog(
+        'trusted_time_unsynced',
+        'Confirm payment blocked because trusted time is unavailable.',
+        {
+          transactionId,
+          detail: payload.error,
+        },
+      );
+      return sendResponse(503, payload);
+    }
 
     const { amount, mode, sessionId, documentId } = req.body as {
       amount?: number;
