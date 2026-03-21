@@ -9,6 +9,7 @@ import {
   type PrintMode,
   type PricingSettings,
 } from './db';
+import { getTrustedTimestamp } from './time-source';
 
 class AdminService {
   private readonly MAX_LOGS = 3000;
@@ -74,9 +75,11 @@ class AdminService {
     message: string,
     meta?: LogMeta,
   ): Promise<AdminLogEntry> {
+    const trusted = getTrustedTimestamp();
     const entry: AdminLogEntry = {
       id: randomUUID(),
-      timestamp: new Date().toISOString(),
+      timestamp: trusted.timestamp,
+      timestampMeta: trusted.meta,
       type,
       message,
       meta,

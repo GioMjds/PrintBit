@@ -21,6 +21,7 @@ import {
 } from '@/services/printer-status';
 import { detectDefaultPrinter, printFile } from '@/services/printer';
 import { getScannerStatus } from '@/services/scanner';
+import { getTrustedTimeStatus } from '@/services/time-source';
 import {
   checkLockout,
   clearLockout,
@@ -190,7 +191,10 @@ function parseAlertSettingsPayload(
 
   if (payload.dedupe) {
     const dedupeEntries: Array<
-      ['printerMs' | 'spoolerMs' | 'serialMs' | 'hopperMs' | 'networkMs', unknown]
+      [
+        'printerMs' | 'spoolerMs' | 'serialMs' | 'hopperMs' | 'networkMs',
+        unknown,
+      ]
     > = [
       ['printerMs', payload.dedupe.printerMs],
       ['spoolerMs', payload.dedupe.spoolerMs],
@@ -402,6 +406,7 @@ export function registerAdminRoutes(
           hopper: deps.getHopperStatus(),
           printer,
           scanner,
+          trustedTime: getTrustedTimeStatus(),
           host,
           wifiActive,
         },
@@ -427,9 +432,27 @@ export function registerAdminRoutes(
         hopper: deps.getHopperStatus(),
         printer,
         scanner,
+        trustedTime: getTrustedTimeStatus(),
         storage,
         host,
         wifiActive,
+      });
+    },
+  );
+
+  app.get(
+    '/api/admin/system/time-sync',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (_req: Request, res: Response) => {
+      const trustedTime = getTrustedTimeStatus();
+      const ok =
+        trustedTime.synced &&
+        !trustedTime.driftExceeded &&
+        (trustedTime.offsetMs !== null || !trustedTime.enforceForFinancial);
+      res.status(ok ? 200 : 503).json({
+        ok,
+        trustedTime,
       });
     },
   );
@@ -596,7 +619,10 @@ export function registerAdminRoutes(
     requireAdminLocalAccess,
     requireAdminPin,
     async (req: Request, res: Response) => {
-      const parsed = parseAlertSettingsPayload(req.body, db.data!.settings.alerts);
+      const parsed = parseAlertSettingsPayload(
+        req.body,
+        db.data!.settings.alerts,
+      );
       if (parsed.error) {
         return res.status(400).json({ ok: false, error: parsed.error });
       }
@@ -1056,6 +1082,13 @@ export function registerAdminRoutes(
         });
       } catch (error) {
         if (error instanceof PendingRefundServiceError) {
+          if (error.code === 'TRUSTED_TIME_UNAVAILABLE') {
+            return res.status(error.statusCode).json({
+              code: error.code,
+              error: error.message,
+              ...(error.context ?? {}),
+            });
+          }
           return res.status(error.statusCode).json({ error: error.message });
         }
         console.error('[ADMIN] Failed to process pending refund', error);
@@ -1098,6 +1131,13 @@ export function registerAdminRoutes(
         res.json({ ok: true, entry });
       } catch (error) {
         if (error instanceof PendingRefundServiceError) {
+          if (error.code === 'TRUSTED_TIME_UNAVAILABLE') {
+            return res.status(error.statusCode).json({
+              code: error.code,
+              error: error.message,
+              ...(error.context ?? {}),
+            });
+          }
           return res.status(error.statusCode).json({ error: error.message });
         }
         console.error('[ADMIN] Failed to dismiss pending refund', error);

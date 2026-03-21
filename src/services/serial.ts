@@ -22,6 +22,10 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
+import {
+  assertTrustedTimeForFinancialOperation,
+  isTrustedTimeError,
+} from './time-source';
 
 const ACCEPTED_COINS = new Set([1, 5, 10, 20]);
 const FRAGMENT_WINDOW_MS = 140;
@@ -102,28 +106,28 @@ function completePendingHopperCommand(result: HopperCommandResult): boolean {
   if (pending.timer) clearTimeout(pending.timer);
   hopperCommandPending = false;
 
-    if (result.ok) {
-      hopperLastError = null;
-      hopperLastSuccessAt = new Date().toISOString();
-    } else {
-      hopperLastError = result.message;
-      void anomalyService.report({
-        type: 'hopper_command_failed',
-        source: 'serial',
-        category: 'hopper',
-        severity: mapHopperErrorSeverity(result.errorCode),
-        message: `Hopper command failed: ${result.message}`,
-        fingerprint: buildAnomalyFingerprint([
-          'hopper-command-failed',
-          result.errorCode ?? 'unknown',
-          result.message,
-        ]),
-        context: {
-          errorCode: result.errorCode ?? null,
-          message: result.message,
-        },
-      });
-    }
+  if (result.ok) {
+    hopperLastError = null;
+    hopperLastSuccessAt = new Date().toISOString();
+  } else {
+    hopperLastError = result.message;
+    void anomalyService.report({
+      type: 'hopper_command_failed',
+      source: 'serial',
+      category: 'hopper',
+      severity: mapHopperErrorSeverity(result.errorCode),
+      message: `Hopper command failed: ${result.message}`,
+      fingerprint: buildAnomalyFingerprint([
+        'hopper-command-failed',
+        result.errorCode ?? 'unknown',
+        result.message,
+      ]),
+      context: {
+        errorCode: result.errorCode ?? null,
+        message: result.message,
+      },
+    });
+  }
 
   pending.resolve(result);
   return true;
@@ -561,6 +565,34 @@ async function attemptSerialConnection(io: Server, attempt: number) {
         if (printerBlocked) {
           rejectCoinCredit(token, coinValue, reason, telemetry, faultLock);
           return;
+        }
+
+        try {
+          assertTrustedTimeForFinancialOperation('coin_inserted');
+        } catch (error) {
+          if (isTrustedTimeError(error)) {
+            io.emit('coinRejected', {
+              value: coinValue,
+              reason: `Trusted time unavailable: ${error.trustedTime.detail}`,
+              printerStatus: telemetry.status,
+              telemetryLastCheckedAt: telemetry.lastCheckedAt,
+              faultLock: null,
+            });
+            void adminService.appendAdminLog(
+              'trusted_time_unsynced',
+              'Coin rejected because trusted time is unavailable.',
+              {
+                token,
+                coinValue,
+                detail: error.trustedTime.detail,
+                source: error.trustedTime.source,
+                offsetMs: error.trustedTime.offsetMs,
+              },
+            );
+            clearPending();
+            return;
+          }
+          throw error;
         }
 
         await persistBalance(coinValue);

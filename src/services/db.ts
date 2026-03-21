@@ -128,6 +128,7 @@ export interface HopperStats {
 export interface OwedChangeEntry {
   id: string;
   timestamp: string;
+  timestampMeta?: TrustedTimestampMeta;
   amount: number;
   reason: string;
   status: 'open' | 'resolved';
@@ -167,6 +168,7 @@ export interface FinancialLedgerEntry {
 export interface AdminLogEntry {
   id: string;
   timestamp: string;
+  timestampMeta?: TrustedTimestampMeta;
   type: string;
   message: string;
   meta?: LogMeta;
@@ -391,9 +393,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const kioskPreferences = data?.settings?.kioskPreferences;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
-  const normalizeAnomalyIncidents = (
-    raw: unknown,
-  ): AnomalyIncidentEntry[] => {
+  const normalizeAnomalyIncidents = (raw: unknown): AnomalyIncidentEntry[] => {
     if (!Array.isArray(raw)) return DEFAULT_DATA.anomalyIncidents;
     const incidents: AnomalyIncidentEntry[] = [];
     for (const entry of raw) {
@@ -459,7 +459,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           typeof candidate.acknowledgedAt === 'string'
             ? candidate.acknowledgedAt
             : null,
-        resolvedAt: typeof candidate.resolvedAt === 'string' ? candidate.resolvedAt : null,
+        resolvedAt:
+          typeof candidate.resolvedAt === 'string'
+            ? candidate.resolvedAt
+            : null,
         lastNotificationAt:
           typeof candidate.lastNotificationAt === 'string'
             ? candidate.lastNotificationAt
@@ -526,8 +529,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           ? data.settings.adminLocalOnly
           : DEFAULT_DATA.settings.adminLocalOnly,
       kioskPreferences: {
-        language:
-          kioskPreferences?.language === 'fil' ? 'fil' : 'en',
+        language: kioskPreferences?.language === 'fil' ? 'fil' : 'en',
         highContrast:
           typeof kioskPreferences?.highContrast === 'boolean'
             ? kioskPreferences.highContrast

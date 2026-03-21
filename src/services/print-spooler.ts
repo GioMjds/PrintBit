@@ -2,7 +2,10 @@ import { spawn } from 'node:child_process';
 import type { Server } from 'socket.io';
 import { db } from './db';
 import { adminService } from './admin';
-import { upsertSpoolerFailureRefund } from './pending-refund';
+import {
+  PendingRefundServiceError,
+  upsertSpoolerFailureRefund,
+} from './pending-refund';
 import { setPrinterFaultLock } from './printer-fault-lock';
 import { anomalyService, buildAnomalyFingerprint } from './anomaly';
 
@@ -335,21 +338,83 @@ export async function monitorSpoolerJob(
 
         const reason = `Print spooler reported failure: ${job.status}`;
         const autoRefund = job.pagesPrinted === 0;
-        const refundOutcome = await upsertSpoolerFailureRefund({
-          chargedAmount,
-          reason,
-          autoRefund,
-          jobContext: {
-            ...jobContext,
-            spoolerJobId: job.id,
-            spoolerStatus: job.status,
+        let refundOutcome: Awaited<
+          ReturnType<typeof upsertSpoolerFailureRefund>
+        > | null = null;
+        try {
+          refundOutcome = await upsertSpoolerFailureRefund({
+            chargedAmount,
+            reason,
+            autoRefund,
+            jobContext: {
+              ...jobContext,
+              spoolerJobId: job.id,
+              spoolerStatus: job.status,
+              pagesPrinted: job.pagesPrinted,
+              totalPages: job.totalPages,
+              jobDispatchedAt,
+              printerName,
+              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+            },
+          });
+        } catch (error) {
+          if (
+            error instanceof PendingRefundServiceError &&
+            error.code === 'TRUSTED_TIME_UNAVAILABLE'
+          ) {
+            const trustedDetail =
+              typeof error.context?.trustedTime === 'object' &&
+              error.context.trustedTime !== null
+                ? error.context.trustedTime
+                : null;
+            await adminService.appendAdminLog(
+              'trusted_time_unsynced',
+              'Spooler refund creation blocked because trusted time is unavailable.',
+              {
+                chargedAmount,
+                spoolerJobId: job.id,
+                spoolerStatus: job.status,
+                transactionId:
+                  typeof jobContext.transactionId === 'string'
+                    ? jobContext.transactionId
+                    : null,
+                trustedTime:
+                  trustedDetail != null ? JSON.stringify(trustedDetail) : null,
+              },
+            );
+            io.emit('printerSpoolerFailure', {
+              jobStatus: job.status,
+              chargedAmount,
+              refundId: null,
+              pagesPrinted: job.pagesPrinted,
+              totalPages: job.totalPages,
+              printerName,
+              reason,
+              refundDisposition: 'refund_blocked_trusted_time',
+              restoredBalanceAmount: 0,
+              transactionId:
+                typeof jobContext.transactionId === 'string'
+                  ? jobContext.transactionId
+                  : null,
+              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+            });
+            return {
+              detected: true,
+              jobStatus: job.status,
+              pagesPrinted: job.pagesPrinted,
+              failed: true,
+            };
+          }
+          throw error;
+        }
+        if (!refundOutcome) {
+          return {
+            detected: true,
+            jobStatus: job.status,
             pagesPrinted: job.pagesPrinted,
-            totalPages: job.totalPages,
-            jobDispatchedAt,
-            printerName,
-            spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-          },
-        });
+            failed: true,
+          };
+        }
 
         const shouldEmitBalance =
           refundOutcome.autoRefunded && refundOutcome.restoredBalanceAmount > 0;

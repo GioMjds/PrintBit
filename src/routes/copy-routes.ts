@@ -18,6 +18,10 @@ import {
 } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
+import {
+  assertTrustedTimeForFinancialOperation,
+  isTrustedTimeError,
+} from '@/services/time-source';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -175,6 +179,43 @@ export function registerCopyRoutes(app: Express, deps: { io: Server }): void {
       orientation: safeOrientation,
       paperSize: safePaperSize,
     };
+
+    try {
+      assertTrustedTimeForFinancialOperation('copy_job');
+    } catch (error) {
+      const trustedPayload = isTrustedTimeError(error)
+        ? {
+            code: error.code,
+            error: `Copy is temporarily unavailable: ${error.trustedTime.detail}`,
+            trustedTime: {
+              operation: error.operation,
+              source: error.trustedTime.source,
+              synced: error.trustedTime.synced,
+              offsetMs: error.trustedTime.offsetMs,
+              driftExceeded: error.trustedTime.driftExceeded,
+              maxDriftMs: error.trustedTime.maxDriftMs,
+              detail: error.trustedTime.detail,
+              checkedAt: error.trustedTime.checkedAt,
+              ntpSource: error.trustedTime.ntpSource,
+            },
+          }
+        : {
+            code: 'TRUSTED_TIME_UNAVAILABLE',
+            error:
+              'Copy is temporarily unavailable because trusted time is not synchronized.',
+          };
+      void adminService.appendAdminLog(
+        'trusted_time_unsynced',
+        'Copy job blocked because trusted time is unavailable.',
+        {
+          detail: trustedPayload.error,
+          mode: 'copy',
+        },
+      );
+      if (idempotencyClaimed)
+        releaseIdempotencyKey(idempotencyKey, 'POST:/api/copy/jobs');
+      return res.status(503).json(trustedPayload);
+    }
 
     // Create job with payment pending (charged after successful dispatch)
     const job = jobStore.createCopyJob(settings, null);

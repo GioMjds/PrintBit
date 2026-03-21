@@ -333,6 +333,49 @@ Each `ink` entry has:
 
 Returns system/runtime status (includes `printer` telemetry with the same shape as above).
 
+Both `/api/admin/summary` and `/api/admin/status` now include:
+
+```json
+{
+  "trustedTime": {
+    "source": "ntp",
+    "synced": true,
+    "offsetMs": 12,
+    "driftExceeded": false,
+    "maxDriftMs": 60000,
+    "enforceForFinancial": true,
+    "checkedAt": "2026-03-21T00:00:00.000Z",
+    "detail": "Trusted time synchronized via time.windows.com (offset 12ms).",
+    "ntpSource": "time.windows.com",
+    "lastSuccessfulSyncAt": "2026-03-21T00:00:00.000Z"
+  }
+}
+```
+
+### `GET /api/admin/system/time-sync`
+
+Returns trusted time health. HTTP `200` when trusted time is valid, HTTP `503` when unavailable/drift exceeded and financial enforcement is active.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "trustedTime": {
+    "source": "ntp",
+    "synced": true,
+    "offsetMs": 12,
+    "driftExceeded": false,
+    "maxDriftMs": 60000,
+    "enforceForFinancial": true,
+    "checkedAt": "2026-03-21T00:00:00.000Z",
+    "detail": "Trusted time synchronized via time.windows.com (offset 12ms).",
+    "ntpSource": "time.windows.com",
+    "lastSuccessfulSyncAt": "2026-03-21T00:00:00.000Z"
+  }
+}
+```
+
 ### `POST /api/admin/hopper/self-test`
 
 Triggers a coin hopper self-test. Returns `{ ok, amount, message, attempts }`.

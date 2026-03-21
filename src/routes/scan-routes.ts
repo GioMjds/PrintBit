@@ -22,6 +22,10 @@ import {
 } from '@/services/usb-drives';
 import { detectPdfColorContent } from '@/services/config';
 import { financialLedgerService } from '@/services/financial-ledger';
+import {
+  assertTrustedTimeForFinancialOperation,
+  isTrustedTimeError,
+} from '@/services/time-source';
 
 const VALID_SOURCES = new Set(['adf', 'flatbed']);
 const VALID_DPI = new Set([150, 300, 600]);
@@ -236,6 +240,41 @@ export function registerScanRoutes(
   app.post(
     '/api/scanner/soft-copy/charge',
     async (req: Request, res: Response) => {
+      try {
+        assertTrustedTimeForFinancialOperation('scan_soft_copy_charge');
+      } catch (error) {
+        const payload = isTrustedTimeError(error)
+          ? {
+              code: error.code,
+              error: `Scan soft-copy charging is temporarily unavailable: ${error.trustedTime.detail}`,
+              trustedTime: {
+                operation: error.operation,
+                source: error.trustedTime.source,
+                synced: error.trustedTime.synced,
+                offsetMs: error.trustedTime.offsetMs,
+                driftExceeded: error.trustedTime.driftExceeded,
+                maxDriftMs: error.trustedTime.maxDriftMs,
+                detail: error.trustedTime.detail,
+                checkedAt: error.trustedTime.checkedAt,
+                ntpSource: error.trustedTime.ntpSource,
+              },
+            }
+          : {
+              code: 'TRUSTED_TIME_UNAVAILABLE',
+              error:
+                'Scan soft-copy charging is temporarily unavailable because trusted time is not synchronized.',
+            };
+        await adminService.appendAdminLog(
+          'trusted_time_unsynced',
+          'Scan soft-copy charge blocked because trusted time is unavailable.',
+          {
+            detail: payload.error,
+            mode: 'scan',
+          },
+        );
+        return res.status(503).json(payload);
+      }
+
       const safeFilename = toSafeScanFilename(req.body?.filename);
       if (!safeFilename) {
         return res.status(400).json({ error: 'Invalid filename.' });

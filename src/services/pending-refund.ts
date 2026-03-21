@@ -1,12 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { db, type PendingRefundEntry, withBalanceLock } from './db';
 import { financialLedgerService } from './financial-ledger';
-import { getTrustedTimestamp } from './time-source';
+import {
+  assertTrustedTimeForFinancialOperation,
+  getTrustedTimestamp,
+  isTrustedTimeError,
+} from './time-source';
 
 export class PendingRefundServiceError extends Error {
   constructor(
     readonly statusCode: number,
     message: string,
+    readonly code?: string,
+    readonly context?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'PendingRefundServiceError';
@@ -91,6 +97,19 @@ export async function createPendingRefund(input: {
   closedAt?: string | null;
 }): Promise<PendingRefundEntry> {
   ensureDb();
+  try {
+    assertTrustedTimeForFinancialOperation('pending_refund:create');
+  } catch (error) {
+    if (isTrustedTimeError(error)) {
+      throw new PendingRefundServiceError(
+        error.statusCode,
+        error.message,
+        error.code,
+        { trustedTime: error.trustedTime },
+      );
+    }
+    throw error;
+  }
   const trusted = getTrustedTimestamp();
   const entry: PendingRefundEntry = {
     id: randomUUID(),
@@ -118,6 +137,21 @@ export async function upsertSpoolerFailureRefund(input: {
   restoredBalanceAmount: number;
 }> {
   ensureDb();
+  try {
+    assertTrustedTimeForFinancialOperation(
+      'pending_refund:upsert_spooler_failure',
+    );
+  } catch (error) {
+    if (isTrustedTimeError(error)) {
+      throw new PendingRefundServiceError(
+        error.statusCode,
+        error.message,
+        error.code,
+        { trustedTime: error.trustedTime },
+      );
+    }
+    throw error;
+  }
   const createdTs = getTrustedTimestamp().timestamp;
 
   const normalizedContext = normalizeJobContext(input.jobContext);
@@ -205,6 +239,19 @@ export async function processPendingRefund(input: {
   restoreBalance: boolean;
 }> {
   ensureDb();
+  try {
+    assertTrustedTimeForFinancialOperation('pending_refund:process');
+  } catch (error) {
+    if (isTrustedTimeError(error)) {
+      throw new PendingRefundServiceError(
+        error.statusCode,
+        error.message,
+        error.code,
+        { trustedTime: error.trustedTime },
+      );
+    }
+    throw error;
+  }
   const entry = findEntryById(input.entryId);
   if (entry.status !== 'open') {
     throw new PendingRefundServiceError(
@@ -244,6 +291,19 @@ export async function dismissPendingRefund(
   entryId: string,
 ): Promise<PendingRefundEntry> {
   ensureDb();
+  try {
+    assertTrustedTimeForFinancialOperation('pending_refund:dismiss');
+  } catch (error) {
+    if (isTrustedTimeError(error)) {
+      throw new PendingRefundServiceError(
+        error.statusCode,
+        error.message,
+        error.code,
+        { trustedTime: error.trustedTime },
+      );
+    }
+    throw error;
+  }
   const entry = findEntryById(entryId);
   if (entry.status !== 'open') {
     throw new PendingRefundServiceError(

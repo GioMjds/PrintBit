@@ -2,6 +2,7 @@ import type { Server } from 'socket.io';
 import { db, withBalanceLock } from './db';
 import { adminService } from './admin';
 import { hopperService, type HopperDispenseResult } from './hopper';
+import { assertTrustedTimeForFinancialOperation } from './time-source';
 
 export interface SettlementInput {
   requiredAmount: number;
@@ -33,6 +34,7 @@ export interface SettlementResult {
 class SettlementService {
   async settle(input: SettlementInput): Promise<SettlementResult> {
     const { requiredAmount, io, jobContext } = input;
+    assertTrustedTimeForFinancialOperation(`settlement:${jobContext.mode}`);
 
     return withBalanceLock(async () => {
       const currentBalance = db.data?.balance ?? 0;

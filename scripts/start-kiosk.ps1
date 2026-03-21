@@ -60,7 +60,39 @@ if (-not (Test-Path $edgePath)) {
     exit 1
 }
 
-# ── 4. START PRINTBIT SERVER ─────────────────────────────────────────────────
+# ── 4. VERIFY WINDOWS TIME (W32Time / NTP) ───────────────────────────────────
+Write-Host "[PrintBit] Verifying Windows Time (W32Time)..." -ForegroundColor Yellow
+$timeService = Get-Service -Name "W32Time" -ErrorAction SilentlyContinue
+if (-not $timeService) {
+    Write-Host "[PrintBit] WARNING: W32Time service not found. Trusted timestamps may be unavailable." -ForegroundColor Yellow
+} else {
+    if ($timeService.Status -ne "Running") {
+        Write-Host "[PrintBit] Starting W32Time service..." -ForegroundColor Yellow
+        try {
+            Start-Service -Name "W32Time" -ErrorAction Stop
+            Start-Sleep -Seconds 2
+        } catch {
+            Write-Host "[PrintBit] WARNING: Failed to start W32Time: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    try {
+        $w32Status = & w32tm /query /status 2>&1
+        $sourceLine = $w32Status | Where-Object { $_ -match '^\s*Source:\s*' } | Select-Object -First 1
+        if ($sourceLine) {
+            Write-Host "[PrintBit] Time source: $sourceLine" -ForegroundColor Gray
+            if ($sourceLine -match 'Local CMOS Clock|Free-running System Clock') {
+                Write-Host "[PrintBit] WARNING: System clock not NTP-synced. Financial actions may be blocked." -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "[PrintBit] WARNING: Could not determine Windows time source." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "[PrintBit] WARNING: w32tm status query failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
+# ── 5. START PRINTBIT SERVER ─────────────────────────────────────────────────
 Write-Host "[PrintBit] Starting server (pnpm run dev)..." -ForegroundColor Green
 
 $serverProc = Start-Process cmd.exe `
@@ -70,7 +102,7 @@ $serverProc = Start-Process cmd.exe `
 
 Write-Host "[PrintBit] Server PID: $($serverProc.Id)" -ForegroundColor Gray
 
-# ── 5. WAIT FOR SERVER ───────────────────────────────────────────────────────
+# ── 6. WAIT FOR SERVER ───────────────────────────────────────────────────────
 Write-Host "[PrintBit] Waiting for server on port $Port..." -ForegroundColor Yellow
 
 $maxWait  = 30   # seconds
@@ -98,7 +130,7 @@ if (-not $ready) {
     Write-Host "[PrintBit] WARNING: Server did not respond after $maxWait s — launching browser anyway." -ForegroundColor Yellow
 }
 
-# ── 6. RESOLVE LOCAL IP ──────────────────────────────────────────────────────
+# ── 7. RESOLVE LOCAL IP ──────────────────────────────────────────────────────
 # Prefer hotspot-style ranges (e.g. 192.168.5.x / 192.168.137.x) so the
 # kiosk URL matches what clients on the Wi‑Fi hotspot can actually reach.
 $ipCandidates = Get-NetIPAddress -AddressFamily IPv4 |
@@ -114,7 +146,7 @@ $localIP = if ($preferred) { $preferred.IPAddress } else { $null }
 $kioskUrl = if ($localIP) { "http://${localIP}:${Port}" } else { "http://localhost:${Port}" }
 Write-Host "[PrintBit] Kiosk URL: $kioskUrl" -ForegroundColor Cyan
 
-# ── 7. LAUNCH EDGE IN KIOSK MODE ─────────────────────────────────────────────
+# ── 8. LAUNCH EDGE IN KIOSK MODE ─────────────────────────────────────────────
 Write-Host "[PrintBit] Launching Edge in kiosk mode..." -ForegroundColor Green
 
 Start-Process $edgePath -ArgumentList @(

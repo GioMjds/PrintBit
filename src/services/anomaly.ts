@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import { runPowerShell } from '@/utils';
 import { adminService } from './admin';
+import { getTrustedTimestamp } from './time-source';
 import {
   db,
   type AlertChannel,
@@ -72,8 +73,8 @@ class AnomalyService {
     const limit = this.clampLimit(options.limit);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
 
-    const filtered = db.data!.anomalyIncidents
-      .filter((entry) => {
+    const filtered = db
+      .data!.anomalyIncidents.filter((entry) => {
         if (options.status && entry.status !== options.status) return false;
         if (options.severity && entry.severity !== options.severity)
           return false;
@@ -109,7 +110,7 @@ class AnomalyService {
     const incident = this.getIncidentById(id);
     if (!incident) return null;
 
-    const now = new Date().toISOString();
+    const now = getTrustedTimestamp().timestamp;
     incident.status = status;
     incident.updatedAt = now;
 
@@ -141,8 +142,9 @@ class AnomalyService {
   }
 
   async report(input: ReportAnomalyInput): Promise<ReportAnomalyResult> {
-    const nowIso = new Date().toISOString();
-    const nowMs = Date.now();
+    const trustedNow = getTrustedTimestamp();
+    const nowIso = trustedNow.timestamp;
+    const nowMs = Date.parse(nowIso);
     const normalizedFingerprint = input.fingerprint.trim().toLowerCase();
     const message = input.message.trim();
 
@@ -187,7 +189,10 @@ class AnomalyService {
       db.data!.anomalyIncidents.unshift(incident);
     }
 
-    const dedupeSuppressed = this.isSuppressedByDedupe(incident, nowMs);
+    const dedupeSuppressed = this.isSuppressedByDedupe(
+      incident,
+      Number.isFinite(nowMs) ? nowMs : Date.now(),
+    );
     const canNotify =
       this.isSeverityEligible(incident.severity) && !dedupeSuppressed;
 
@@ -338,6 +343,7 @@ class AnomalyService {
 
     if (settings.email.enabled) {
       const subject = `[PrintBit] ${incident.severity.toUpperCase()} anomaly: ${incident.type}`;
+      const trustedNow = getTrustedTimestamp();
       const body = [
         `Message: ${incident.message}`,
         `Type: ${incident.type}`,
@@ -345,6 +351,7 @@ class AnomalyService {
         `Category: ${incident.category}`,
         `Source: ${incident.source}`,
         `Detected: ${incident.lastDetectedAt}`,
+        `Trusted Timestamp Source: ${trustedNow.meta.source}`,
         `Occurrences: ${incident.occurrenceCount}`,
       ].join('\n');
 
@@ -387,7 +394,8 @@ class AnomalyService {
   private getRuntimeSmtpPassword(username: string): string | null {
     if (!username.trim()) return null;
     const password =
-      process.env[SMTP_PASSWORD_ENV_VAR] ?? process.env[SMTP_PASSWORD_TEST_ENV_VAR];
+      process.env[SMTP_PASSWORD_ENV_VAR] ??
+      process.env[SMTP_PASSWORD_TEST_ENV_VAR];
     if (typeof password !== 'string' || password.length === 0) return null;
     return password;
   }
@@ -469,11 +477,15 @@ if ('${username}' -and '${password}') {
       await runPowerShell(script, 20_000);
       const recipientSummary = this.summarizeRecipients(recipients);
       try {
-        await adminService.appendAdminLog(logType, 'Anomaly email alert sent.', {
-          recipientCount: recipients.length,
-          recipientSummary,
-          smtpHost: settings.smtpHost,
-        });
+        await adminService.appendAdminLog(
+          logType,
+          'Anomaly email alert sent.',
+          {
+            recipientCount: recipients.length,
+            recipientSummary,
+            smtpHost: settings.smtpHost,
+          },
+        );
       } catch (error) {
         this.logError('Failed to record anomaly email success log.', error, {
           logType,
@@ -515,9 +527,9 @@ if ('${username}' -and '${password}') {
 
   private escapePs(value: string): string {
     return value
-    .replace(/'/g, "''")
-    .replace(/[\r\n]/g, ' ')
-    .replace(/[\x00-\x1f]/g, '');
+      .replace(/'/g, "''")
+      .replace(/[\r\n]/g, ' ')
+      .replace(/[\x00-\x1f]/g, '');
   }
 
   private sanitizeEmailError(error: unknown, recipients: string[]): string {
