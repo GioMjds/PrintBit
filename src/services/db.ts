@@ -16,6 +16,18 @@ export interface PricingSettings {
   colorSurcharge: number;
 }
 
+export type InkTelemetryUnknownPolicy = 'warn_allow' | 'block';
+
+export interface InkMonitoringSettings {
+  enabled: boolean;
+  targetPrinterName: string | null;
+  lowThresholdPercent: number;
+  criticalThresholdPercent: number;
+  blockOnLow: boolean;
+  blockOnEmpty: boolean;
+  telemetryUnknownPolicy: InkTelemetryUnknownPolicy;
+}
+
 export interface AdminSettings {
   pricing: PricingSettings;
   idleTimeoutSeconds: number;
@@ -23,6 +35,7 @@ export interface AdminSettings {
   adminLocalOnly: boolean;
   kioskPreferences: KioskPreferences;
   alerts: AlertSettings;
+  inkMonitoring: InkMonitoringSettings;
 }
 
 export type SupportedLanguage = 'en' | 'fil';
@@ -264,6 +277,26 @@ export interface PendingRefundEntry {
   jobContext: Record<string, string | number | boolean | null>;
 }
 
+export interface InkHistoryEntry {
+  id: string;
+  timestamp: string;
+  printerName: string | null;
+  printerStatus: string;
+  inkDetectionMethod:
+    | 'snmp'
+    | 'vendor-wmi'
+    | 'printer-property'
+    | 'error-state'
+    | 'none';
+  inkTelemetryAvailable: boolean;
+  inkTelemetryReason: string | null;
+  supplies: Array<{
+    name: string;
+    level: number | null;
+    status: 'ok' | 'low' | 'empty' | 'unknown';
+  }>;
+}
+
 export type Schema = {
   adminLockout: AdminLockout;
   balance: number;
@@ -283,6 +316,7 @@ export type Schema = {
   pendingRefunds: PendingRefundEntry[];
   anomalyIncidents: AnomalyIncidentEntry[];
   financialLedger: FinancialLedgerEntry[];
+  inkHistory: InkHistoryEntry[];
 };
 
 const DEFAULT_DATA: Schema = {
@@ -329,6 +363,15 @@ const DEFAULT_DATA: Schema = {
         networkMs: 5 * 60 * 1_000,
       },
     },
+    inkMonitoring: {
+      enabled: true,
+      targetPrinterName: null,
+      lowThresholdPercent: 20,
+      criticalThresholdPercent: 5,
+      blockOnLow: false,
+      blockOnEmpty: true,
+      telemetryUnknownPolicy: 'warn_allow',
+    },
   },
   coinStats: {
     one: 0,
@@ -369,6 +412,7 @@ const DEFAULT_DATA: Schema = {
   pendingRefunds: [],
   anomalyIncidents: [],
   financialLedger: [],
+  inkHistory: [],
 };
 
 /**
@@ -387,9 +431,16 @@ function wholePeso(value: number): number {
   return rounded;
 }
 
+function normalizeTargetPrinterName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const sanitized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  return sanitized ? sanitized : null;
+}
+
 function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const pricing = data?.settings?.pricing;
   const alertSettings = data?.settings?.alerts;
+  const inkMonitoring = data?.settings?.inkMonitoring;
   const kioskPreferences = data?.settings?.kioskPreferences;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
@@ -599,6 +650,47 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           ),
         },
       },
+      inkMonitoring: {
+        enabled:
+          typeof inkMonitoring?.enabled === 'boolean'
+            ? inkMonitoring.enabled
+            : DEFAULT_DATA.settings.inkMonitoring.enabled,
+        targetPrinterName: normalizeTargetPrinterName(
+          inkMonitoring?.targetPrinterName,
+        ),
+        lowThresholdPercent: Math.max(
+          0,
+          Math.min(
+            100,
+            finiteOr(
+              inkMonitoring?.lowThresholdPercent,
+              DEFAULT_DATA.settings.inkMonitoring.lowThresholdPercent,
+            ),
+          ),
+        ),
+        criticalThresholdPercent: Math.max(
+          0,
+          Math.min(
+            100,
+            finiteOr(
+              inkMonitoring?.criticalThresholdPercent,
+              DEFAULT_DATA.settings.inkMonitoring.criticalThresholdPercent,
+            ),
+          ),
+        ),
+        blockOnLow:
+          typeof inkMonitoring?.blockOnLow === 'boolean'
+            ? inkMonitoring.blockOnLow
+            : DEFAULT_DATA.settings.inkMonitoring.blockOnLow,
+        blockOnEmpty:
+          typeof inkMonitoring?.blockOnEmpty === 'boolean'
+            ? inkMonitoring.blockOnEmpty
+            : DEFAULT_DATA.settings.inkMonitoring.blockOnEmpty,
+        telemetryUnknownPolicy:
+          inkMonitoring?.telemetryUnknownPolicy === 'block'
+            ? 'block'
+            : 'warn_allow',
+      },
     },
     coinStats: {
       one: finiteOr(data?.coinStats?.one, DEFAULT_DATA.coinStats.one),
@@ -696,6 +788,15 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
     financialLedger: Array.isArray(data?.financialLedger)
       ? data.financialLedger
       : DEFAULT_DATA.financialLedger,
+    inkHistory: Array.isArray(data?.inkHistory)
+      ? data.inkHistory.filter(
+          (entry): entry is InkHistoryEntry =>
+            typeof entry === 'object' &&
+            entry !== null &&
+            typeof (entry as InkHistoryEntry).id === 'string' &&
+            typeof (entry as InkHistoryEntry).timestamp === 'string',
+        )
+      : DEFAULT_DATA.inkHistory,
   };
 }
 

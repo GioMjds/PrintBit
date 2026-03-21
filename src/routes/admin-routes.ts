@@ -18,6 +18,8 @@ import { generateTestPagePdf } from '@/services/test-page';
 import {
   getPrinterTelemetry,
   refreshPrinterTelemetry,
+  listInstalledPrinters,
+  runInkTelemetryDiagnostics,
 } from '@/services/printer-status';
 import { detectDefaultPrinter, printFile } from '@/services/printer';
 import { getScannerStatus } from '@/services/scanner';
@@ -62,6 +64,12 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isWholePeso(value: number): boolean {
   return Number.isInteger(value) && value >= 0;
+}
+
+function normalizeTargetPrinterName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const sanitized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim();
+  return sanitized ? sanitized : null;
 }
 
 function isAnomalySeverity(value: unknown): value is 'warning' | 'critical' {
@@ -491,6 +499,15 @@ export function registerAdminRoutes(
         idleTimeoutSeconds?: number;
         adminPin?: string;
         adminLocalOnly?: boolean;
+        inkMonitoring?: {
+          enabled?: boolean;
+          targetPrinterName?: string | null;
+          lowThresholdPercent?: number;
+          criticalThresholdPercent?: number;
+          blockOnLow?: boolean;
+          blockOnEmpty?: boolean;
+          telemetryUnknownPolicy?: 'warn_allow' | 'block';
+        };
       };
 
       const printPerPage = body.pricing?.printPerPage;
@@ -575,7 +592,105 @@ export function registerAdminRoutes(
         db.data!.settings.adminLocalOnly = Boolean(body.adminLocalOnly);
       }
 
+      let refreshInkTelemetry = false;
+      if (body.inkMonitoring) {
+        const incoming = body.inkMonitoring;
+        const current = db.data!.settings.inkMonitoring;
+        const next = { ...current };
+        const previousTargetPrinterName = current.targetPrinterName;
+        if (incoming.enabled !== undefined) {
+          if (typeof incoming.enabled !== 'boolean') {
+            return res.status(400).json({ error: 'inkMonitoring.enabled must be boolean.' });
+          }
+          next.enabled = incoming.enabled;
+        }
+        if (incoming.targetPrinterName !== undefined) {
+          if (
+            incoming.targetPrinterName !== null &&
+            typeof incoming.targetPrinterName !== 'string'
+          ) {
+            return res
+              .status(400)
+              .json({ error: 'inkMonitoring.targetPrinterName must be string or null.' });
+          }
+          next.targetPrinterName = normalizeTargetPrinterName(
+            incoming.targetPrinterName,
+          );
+          refreshInkTelemetry = previousTargetPrinterName !== next.targetPrinterName;
+        }
+        if (incoming.lowThresholdPercent !== undefined) {
+          if (
+            !isFiniteNumber(incoming.lowThresholdPercent) ||
+            incoming.lowThresholdPercent < 0 ||
+            incoming.lowThresholdPercent > 100
+          ) {
+            return res
+              .status(400)
+              .json({ error: 'inkMonitoring.lowThresholdPercent must be 0..100.' });
+          }
+          next.lowThresholdPercent = Math.floor(incoming.lowThresholdPercent);
+        }
+        if (incoming.criticalThresholdPercent !== undefined) {
+          if (
+            !isFiniteNumber(incoming.criticalThresholdPercent) ||
+            incoming.criticalThresholdPercent < 0 ||
+            incoming.criticalThresholdPercent > 100
+          ) {
+            return res.status(400).json({
+              error: 'inkMonitoring.criticalThresholdPercent must be 0..100.',
+            });
+          }
+          next.criticalThresholdPercent = Math.floor(
+            incoming.criticalThresholdPercent,
+          );
+        }
+        if (next.criticalThresholdPercent > next.lowThresholdPercent) {
+          return res.status(400).json({
+            error:
+              'inkMonitoring.criticalThresholdPercent cannot be greater than lowThresholdPercent.',
+          });
+        }
+        if (incoming.blockOnLow !== undefined) {
+          if (typeof incoming.blockOnLow !== 'boolean') {
+            return res.status(400).json({ error: 'inkMonitoring.blockOnLow must be boolean.' });
+          }
+          next.blockOnLow = incoming.blockOnLow;
+        }
+        if (incoming.blockOnEmpty !== undefined) {
+          if (typeof incoming.blockOnEmpty !== 'boolean') {
+            return res
+              .status(400)
+              .json({ error: 'inkMonitoring.blockOnEmpty must be boolean.' });
+          }
+          next.blockOnEmpty = incoming.blockOnEmpty;
+        }
+        if (incoming.telemetryUnknownPolicy !== undefined) {
+          if (
+            incoming.telemetryUnknownPolicy !== 'warn_allow' &&
+            incoming.telemetryUnknownPolicy !== 'block'
+          ) {
+            return res.status(400).json({
+              error:
+                'inkMonitoring.telemetryUnknownPolicy must be "warn_allow" or "block".',
+            });
+          }
+          next.telemetryUnknownPolicy = incoming.telemetryUnknownPolicy;
+        }
+
+        db.data!.settings.inkMonitoring = next;
+      }
+
       await db.write();
+      if (refreshInkTelemetry) {
+        try {
+          await refreshPrinterTelemetry();
+        } catch (error) {
+          console.warn(
+            '[ADMIN] Failed to refresh printer telemetry after target printer update.',
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
       await adminService.appendAdminLog(
         'admin_settings_updated',
         'Admin settings updated.',
@@ -611,6 +726,52 @@ export function registerAdminRoutes(
         'Admin alert settings updated.',
       );
       res.json(toSafeAlertSettings(db.data!.settings.alerts));
+    },
+  );
+
+  app.get(
+    '/api/admin/printer/list',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (_req: Request, res: Response) => {
+      const printers = (await listInstalledPrinters()).map((printer) => ({
+        name: printer.Name,
+        driverName: printer.DriverName,
+        portName: printer.PortName,
+        isDefault: Boolean(printer.Default),
+        printerStatus: printer.PrinterStatus,
+        printerState: printer.PrinterState,
+      }));
+      res.json({
+        printers,
+        targetPrinterName: db.data!.settings.inkMonitoring.targetPrinterName,
+      });
+    },
+  );
+
+  app.get(
+    '/api/admin/printer/ink-diagnostics',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    async (_req: Request, res: Response) => {
+      const diagnostics = await runInkTelemetryDiagnostics();
+      res.json(diagnostics);
+    },
+  );
+
+  app.get(
+    '/api/admin/printer/ink-history',
+    requireAdminLocalAccess,
+    requireAdminPin,
+    (req: Request, res: Response) => {
+      const requestedLimit = Number(req.query.limit ?? 100);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(500, Math.floor(requestedLimit)))
+        : 100;
+      res.json({
+        total: db.data!.inkHistory.length,
+        items: db.data!.inkHistory.slice(0, limit),
+      });
     },
   );
 
@@ -980,7 +1141,7 @@ export function registerAdminRoutes(
           entry.status = 'resolved';
           count += 1;
         }
-      }
+        }
       await db.write();
 
       if (count > 0) {

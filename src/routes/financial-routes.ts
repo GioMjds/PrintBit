@@ -8,7 +8,7 @@ import {
   storeIdempotencyKey,
   releaseIdempotencyKey,
 } from '@/services/db';
-import { getPrinterTelemetry } from '@/services';
+import { evaluateInkPreflight, getPrinterTelemetry } from '@/services';
 import { adminService } from '@/services/admin';
 import { settlementService } from '@/services/settlement';
 import { printFile, type PrintJobOptions } from '@/services/printer';
@@ -779,6 +779,31 @@ export function registerFinancialRoutes(
         return res.status(409).json({
           error: `Printer is not ready: ${telemetry.status}. Please notify the operator.`,
           printerStatus: telemetry.status,
+        });
+      }
+
+      const inkPreflight = evaluateInkPreflight(telemetry);
+      if (inkPreflight.blocked) {
+        void adminService.appendAdminLog(
+          'print_preflight_failed_ink',
+          'Print rejected: ink preflight policy blocked the job.',
+          {
+            transactionId,
+            printerStatus: telemetry.status,
+            inkCode: inkPreflight.code,
+            inkReason: inkPreflight.reason ?? 'Unknown ink policy reason',
+            telemetryAvailable: inkPreflight.telemetryAvailable,
+            inkDetectionMethod: telemetry.inkDetectionMethod,
+          },
+        );
+        if (idempotencyClaimed)
+          releaseIdempotencyKey(idempotencyKey, 'POST:/api/confirm-payment');
+        return res.status(409).json({
+          error: inkPreflight.reason ?? 'Printer ink state is not ready for printing.',
+          printerStatus: telemetry.status,
+          inkStatus: inkPreflight.code,
+          inkReason: inkPreflight.reason,
+          telemetryAvailable: inkPreflight.telemetryAvailable,
         });
       }
 

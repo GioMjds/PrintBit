@@ -279,8 +279,7 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent =
-      'Printer unavailable. Please wait for printer connection before inserting coins.';
+    statusMessage.textContent = `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
     return;
   }
 
@@ -633,6 +632,7 @@ let pendingTerminalOutcome: {
   correlationKey: string | null;
 } | null = null;
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
+let latestPrinterStatusLabel = 'Checking...';
 
 type SpoolerFailureEvent = {
   jobStatus: string;
@@ -673,6 +673,14 @@ const CANONICAL_COIN_REJECTION_FAULT_REASONS = new Set([
   'printer telemetry is stale',
   'printer not connected',
 ]);
+
+function setPrinterReadyState(ready: boolean, status?: string): void {
+  printerReady = ready;
+  if (typeof status === 'string' && status.trim()) {
+    latestPrinterStatusLabel = status.trim();
+  }
+  applyConfirmGate();
+}
 
 function createSpoolerCorrelationKey(): string {
   if (
@@ -790,8 +798,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
   );
 
   setPrintingPhase('failed');
-  printerReady = false;
-  applyConfirmGate();
+  setPrinterReadyState(false, ev.jobStatus);
   if (jamRefundOverlay && jamRefundFocusTrapHandler) {
     jamRefundOverlay.removeEventListener('keydown', jamRefundFocusTrapHandler);
     jamRefundFocusTrapHandler = null;
@@ -1088,13 +1095,14 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
       hideOverlay(printingOverlay);
 
-      if (pollResult === 'succeeded') {
+      if (pollResult.state === 'succeeded') {
         showOverlay(thankYouOverlay);
         if (statusMessage) statusMessage.textContent = 'Your copies are ready!';
         clearConfirmSessionStorage();
-      } else if (pollResult === 'failed') {
+      } else if (pollResult.state === 'failed') {
         if (statusMessage)
-          statusMessage.textContent = 'Copy job failed. Please try again.';
+          statusMessage.textContent =
+            pollResult.reason ?? 'Copy job failed. Please try again.';
         isProcessingPayment = false;
         applyConfirmGate();
       } else {
@@ -1138,11 +1146,26 @@ modalConfirmBtn?.addEventListener('click', async () => {
       activeSpoolerCorrelationKey = null;
       lastSpoolerCorrelationKey = null;
       hideOverlay(printingOverlay);
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        printerStatus?: string;
+        inkStatus?: string;
+        inkReason?: string;
+      };
+      const blockingStatus = 
+        payload.printerStatus ??
+        payload.inkStatus ??
+        (payload.inkReason ? 'Ink preflight blocked' : undefined);
       if (statusMessage)
-        statusMessage.textContent =
-          payload.error ?? 'Payment confirmation failed.';
+        statusMessage.textContent = payload.inkReason
+          ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
+          : payload.error ?? 'Payment confirmation failed.';
+      
       isProcessingPayment = false;
+      if (blockingStatus) {
+        setPrinterReadyState(false, blockingStatus);
+        return;
+      }
       applyConfirmGate();
       return;
     }
@@ -1196,21 +1219,24 @@ modalConfirmBtn?.addEventListener('click', async () => {
   applyConfirmGate();
 });
 
-async function pollCopyJob(jobId: string): Promise<string> {
+async function pollCopyJob(
+  jobId: string,
+): Promise<{ state: 'succeeded' | 'failed' | 'cancelled'; reason?: string }> {
   return new Promise((resolve) => {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
         if (!res.ok) {
           clearInterval(interval);
-          resolve('failed');
+          resolve({ state: 'failed' });
           return;
         }
         const data = (await res.json()) as {
           state: string;
           progress?: { pagesCompleted: number; pagesTotal: number | null };
+          failure?: { message?: string };
         };
-        const { state, progress } = data;
+        const { state, progress, failure } = data;
 
         if (state === 'queued' && statusMessage) {
           statusMessage.textContent = 'Preparing printer...';
@@ -1228,11 +1254,17 @@ async function pollCopyJob(jobId: string): Promise<string> {
           state === 'cancelled'
         ) {
           clearInterval(interval);
-          resolve(state);
+          resolve({
+            state: state as 'succeeded' | 'failed' | 'cancelled',
+            reason:
+              typeof failure?.message === 'string' && failure.message.trim()
+                ? failure.message
+                : undefined,
+          });
         }
       } catch {
         clearInterval(interval);
-        resolve('failed');
+        resolve({ state: 'failed' });
       }
     }, 1500);
   });
@@ -1372,8 +1404,7 @@ if (typeof ioFactory === 'function') {
         CANONICAL_PRINTER_FAULT_STATUSES.has(faultStatusLower));
 
     if (hasCanonicalFaultStatus || hasCanonicalFaultReason) {
-      printerReady = false;
-      applyConfirmGate();
+      setPrinterReadyState(false, printerStatus ?? reason);
     }
   });
 
@@ -1454,17 +1485,29 @@ if (typeof ioFactory === 'function') {
   // [PRINTER GUARD] React to real-time printer state from printer-monitor.ts.
   // printerMalfunction fires when the printer enters a blocked/offline state.
   // printerRecovered fires when it comes back online.
-  socket.on('printerMalfunction', () => {
-    printerReady = false;
-    applyConfirmGate();
+  socket.on('printerMalfunction', (payload: unknown) => {
+    const status =
+      payload &&
+      typeof payload === 'object' &&
+      'status' in payload &&
+      typeof (payload as { status: unknown }).status === 'string'
+        ? (payload as { status: string }).status
+        : 'Printer fault';
+    setPrinterReadyState(false, status);
     setCoinEventMessage(
-      '⚠ Printer offline — do not insert coins until connection is restored.',
+      `⚠ Printer not ready: ${status}. Do not insert coins until resolved.`,
     );
   });
 
-  socket.on('printerRecovered', () => {
-    printerReady = true;
-    applyConfirmGate();
+  socket.on('printerRecovered', (payload: unknown) => {
+    const status =
+      payload &&
+      typeof payload === 'object' &&
+      'status' in payload &&
+      typeof (payload as { status: unknown }).status === 'string'
+        ? (payload as { status: string }).status
+        : 'Idle';
+    setPrinterReadyState(true, status);
     setCoinEventMessage('✓ Printer connected. You may now insert coins.');
   });
 
@@ -1632,22 +1675,20 @@ async function loadPrinterStatus(): Promise<void> {
   try {
     const res = await fetch('/api/printer/status');
     if (!res.ok) {
-      printerReady = false;
-      applyConfirmGate();
+      setPrinterReadyState(false, `HTTP ${res.status}`);
       return;
     }
     const data = (await res.json()) as { ready: boolean; status: string };
-    printerReady = data.ready;
-    if (!printerReady) {
+    setPrinterReadyState(data.ready, data.status);
+    if (!data.ready) {
       setCoinEventMessage(
         `⚠ Printer status: ${data.status}. Do not insert coins yet.`,
       );
     }
   } catch {
     // Network error — fail safe: keep printer locked
-    printerReady = false;
+    setPrinterReadyState(false, 'Status unavailable');
   }
-  applyConfirmGate();
 }
 
 async function boot(): Promise<void> {

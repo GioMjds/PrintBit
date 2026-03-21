@@ -54,6 +54,12 @@ const printerConnectionType = document.getElementById(
 const printerUpdatedAt = document.getElementById(
   'printerUpdatedAt',
 ) as HTMLElement | null;
+const printerInkDetectionMethod = document.getElementById(
+  'printerInkDetectionMethod',
+) as HTMLElement | null;
+const printerInkTelemetryStatus = document.getElementById(
+  'printerInkTelemetryStatus',
+) as HTMLElement | null;
 
 // ── New action button refs ────────────────────────────────────────────────────
 
@@ -93,12 +99,35 @@ interface PrinterTelemetryExt {
   driverName?: string | null;
   portName?: string | null;
   connectionType?: string | null;
+  inkDetectionMethod?: string | null;
+  inkTelemetryAvailable?: boolean;
+  inkTelemetryReason?: string | null;
   ink?: Array<{ name: string; level: number | null; status: string }>;
+  targetPrinterName?: string | null;
+  targetIsDefault?: boolean;
 }
 
 type PrinterTelemetryPatch = Partial<PrinterTelemetryExt>;
 
 let lastPrinterSnapshot: PrinterTelemetryExt | null = null;
+const BLOCKED_PRINTER_STATUSES = new Set([
+  'offline',
+  'error',
+  'paper jam',
+  'paper out',
+  'door open',
+  'user intervention required',
+  'paused',
+  'no default printer',
+  'not connected',
+  'unavailable',
+  'not available',
+]);
+
+function isPrinterReadyForJobs(p: PrinterTelemetryExt): boolean {
+  if (!p.connected) return false;
+  return !BLOCKED_PRINTER_STATUSES.has(p.status.trim().toLowerCase());
+}
 
 function mergePrinterSnapshot(
   patch: PrinterTelemetryPatch,
@@ -117,7 +146,12 @@ function mergePrinterSnapshot(
     driverName: lastPrinterSnapshot?.driverName,
     portName: lastPrinterSnapshot?.portName,
     connectionType: lastPrinterSnapshot?.connectionType,
+    inkDetectionMethod: lastPrinterSnapshot?.inkDetectionMethod,
+    inkTelemetryAvailable: lastPrinterSnapshot?.inkTelemetryAvailable,
+    inkTelemetryReason: lastPrinterSnapshot?.inkTelemetryReason,
     ink: lastPrinterSnapshot?.ink,
+    targetPrinterName: lastPrinterSnapshot?.targetPrinterName,
+    targetIsDefault: lastPrinterSnapshot?.targetIsDefault,
   };
 
   if (patch.name !== undefined) merged.name = patch.name;
@@ -128,6 +162,21 @@ function mergePrinterSnapshot(
   }
   if (patch.connected !== undefined) merged.connected = patch.connected;
   if (patch.status !== undefined) merged.status = patch.status;
+  if (patch.inkDetectionMethod !== undefined) {
+    merged.inkDetectionMethod = patch.inkDetectionMethod;
+  }
+  if (patch.inkTelemetryAvailable !== undefined) {
+    merged.inkTelemetryAvailable = patch.inkTelemetryAvailable;
+  }
+  if (patch.inkTelemetryReason !== undefined) {
+    merged.inkTelemetryReason = patch.inkTelemetryReason;
+  }
+  if (patch.targetPrinterName !== undefined) {
+    merged.targetPrinterName = patch.targetPrinterName;
+  }
+  if (patch.targetIsDefault !== undefined) {
+    merged.targetIsDefault = patch.targetIsDefault;
+  }
   if (patch.ink !== undefined) merged.ink = patch.ink;
 
   return merged;
@@ -150,6 +199,19 @@ function applyPrinterExt(p: PrinterTelemetryExt): void {
   }
   if (printerConnectionType) {
     printerConnectionType.textContent = p.connectionType ?? '—';
+  }
+  if (printerInkDetectionMethod) {
+    printerInkDetectionMethod.textContent = p.inkDetectionMethod ?? 'none';
+  }
+  if (printerInkTelemetryStatus) {
+    const targetLabel =
+      p.targetPrinterName && !p.targetIsDefault
+        ? ` (target: ${p.targetPrinterName})`
+        : '';
+    printerInkTelemetryStatus.textContent =
+      p.inkTelemetryAvailable === true
+        ? `Available${targetLabel}`
+        : `${p.inkTelemetryReason ?? 'Unavailable'}${targetLabel}`;
   }
   if (printerUpdatedAt) {
     printerUpdatedAt.textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -188,8 +250,9 @@ function applySystem(summary: SummaryResponse): void {
 
   // Printer — basic fields (same as before)
   const p = summary.status.printer;
+  const printerReady = isPrinterReadyForJobs(p as PrinterTelemetryExt);
   printerStatus.textContent = p.connected ? p.status : 'Not Found';
-  printerBadge?.setAttribute('data-ok', String(p.connected));
+  printerBadge?.setAttribute('data-ok', String(printerReady));
   printerNameEl.textContent = p.name ?? '—';
 
   // Printer — extended fields (opt-in; no error if fields absent)
@@ -305,12 +368,15 @@ reDetectBtn?.addEventListener('click', () => {
       }
       // Update the card immediately with the fresh telemetry
       const p = body.printer;
+      const printerReady = isPrinterReadyForJobs(p);
       lastPrinterSnapshot = { ...p };
       printerStatus.textContent = p.connected ? p.status : 'Not Found';
-      printerBadge?.setAttribute('data-ok', String(p.connected));
+      printerBadge?.setAttribute('data-ok', String(printerReady));
       printerNameEl.textContent = p.name ?? '—';
       applyPrinterExt(p);
-      setMessage(`Re-detected: ${p.name ?? 'unknown'}`);
+      setMessage(
+        `Re-detected: ${p.name ?? 'unknown'} (${printerReady ? 'ready' : 'not ready'})`,
+      );
     })
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Re-detection failed.'),
@@ -376,15 +442,32 @@ function connectSocket(): void {
 
   // Live printer card update (emitted by Phase 2 health monitor)
   socket.on('printerStatusChanged', (payload: unknown) => {
-    const next = mergePrinterSnapshot(payload as PrinterTelemetryPatch);
+    const normalizedPatch =
+      payload &&
+      typeof payload === 'object' &&
+      'printerName' in payload &&
+      typeof (payload as { printerName: unknown }).printerName !== 'undefined'
+        ? ({
+            ...(payload as Record<string, unknown>),
+            name:
+              typeof (payload as { printerName: unknown }).printerName ===
+                'string' ||
+              (payload as { printerName: unknown }).printerName === null
+                ? ((payload as { printerName: string | null }).printerName ??
+                  null)
+                : undefined,
+          } as PrinterTelemetryPatch)
+        : (payload as PrinterTelemetryPatch);
+    const next = mergePrinterSnapshot(normalizedPatch);
     if (!next) return;
 
+    const printerReady = isPrinterReadyForJobs(next);
     lastPrinterSnapshot = next;
     printerStatus.textContent = next.connected ? next.status : 'Not Found';
-    printerBadge?.setAttribute('data-ok', String(next.connected));
+    printerBadge?.setAttribute('data-ok', String(printerReady));
     if (next.name !== undefined) printerNameEl.textContent = next.name ?? '—';
     applyPrinterExt(next);
-    setMessage(`Printer: ${next.status}`);
+    setMessage(`Printer: ${next.status} (${printerReady ? 'ready' : 'not ready'})`);
   });
 
   // Spooler failure banner (emitted by Phase 3 spooler monitor)

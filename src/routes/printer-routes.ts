@@ -27,6 +27,9 @@ export function registerPrinterRoutes(app: Express) {
       status: telemetry.status,
       statusFlags: telemetry.statusFlags,
       printerName: telemetry.name,
+      inkDetectionMethod: telemetry.inkDetectionMethod,
+      inkTelemetryAvailable: telemetry.inkTelemetryAvailable ?? false,
+      inkTelemetryReason: telemetry.inkTelemetryReason ?? null,
       lastCheckedAt: telemetry.lastCheckedAt,
     });
   });
