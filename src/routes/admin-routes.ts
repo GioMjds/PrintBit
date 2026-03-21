@@ -21,6 +21,7 @@ import {
   listInstalledPrinters,
   runInkTelemetryDiagnostics,
 } from '@/services/printer-status';
+import { getExternalWatchdogState } from '@/services/watchdog-health';
 import { detectDefaultPrinter, printFile } from '@/services/printer';
 import { getScannerStatus } from '@/services/scanner';
 import { getTrustedTimeStatus, verifyTrustedClockSync } from '@/services/time-source';
@@ -414,6 +415,7 @@ export function registerAdminRoutes(
           hopper: deps.getHopperStatus(),
           printer,
           scanner,
+          watchdog: getExternalWatchdogState(),
           trustedTime: getTrustedTimeStatus(),
           host,
           wifiActive,
@@ -440,6 +442,7 @@ export function registerAdminRoutes(
         hopper: deps.getHopperStatus(),
         printer,
         scanner,
+        watchdog: getExternalWatchdogState(),
         trustedTime: getTrustedTimeStatus(),
         storage,
         host,

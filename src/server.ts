@@ -55,6 +55,13 @@ import {
   startTrustedTimeMonitor,
   stopTrustedTimeMonitor,
   verifyTrustedClockSync,
+  isClamdReachable,
+  getPrinterTelemetry,
+  startWatchdogHealthMonitor,
+  stopWatchdogHealthMonitor,
+  getWatchdogHealthSnapshot,
+  updateExternalWatchdogState,
+  getExternalWatchdogState,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
 
@@ -85,6 +92,30 @@ function getLocalIPv4(): string | null {
 
   return fallback;
 }
+
+function normalizeRemoteIp(rawIp: string): string {
+  const normalized = rawIp.toLowerCase();
+  if (normalized.startsWith('::ffff:')) {
+    return normalized.slice('::ffff:'.length);
+  }
+  return normalized;
+}
+
+function isLoopbackRequest(remoteIp: string): boolean {
+  const ip = normalizeRemoteIp(remoteIp);
+  return ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
+}
+
+function readWatchdogAlertThreshold(): number {
+  const raw = process.env.PRINTBIT_WATCHDOG_FAILURE_ALERT_THRESHOLD;
+  if (typeof raw !== 'string' || !raw.trim()) return 5;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 5;
+  return Math.floor(parsed);
+}
+
+const WATCHDOG_ALERT_THRESHOLD = readWatchdogAlertThreshold();
+let watchdogFailureEscalated = false;
 
 const upload = multer({ dest: UPLOAD_DIR });
 
@@ -130,6 +161,169 @@ app.post('/api/hotspot/start', async (_req, res) => {
 app.post('/api/hotspot/stop', (_req, res) => {
   stopHotspot();
   res.json({ ok: true });
+});
+
+app.get('/api/watchdog/health', (_req, res) => {
+  const remoteIp =
+    _req.ip || _req.socket.remoteAddress || _req.connection?.remoteAddress || '';
+  if (!isLoopbackRequest(remoteIp)) {
+    return res.status(403).json({ error: 'Watchdog health is loopback-only.' });
+  }
+  const snapshot = getWatchdogHealthSnapshot();
+  const statusCode = snapshot.status === 'unhealthy' ? 503 : 200;
+  res.status(statusCode).json(snapshot);
+});
+
+app.post('/api/watchdog/report', (req, res) => {
+  const remoteIp = req.ip || req.socket.remoteAddress || '';
+  if (!isLoopbackRequest(remoteIp)) {
+    return res.status(403).json({ error: 'Watchdog report is loopback-only.' });
+  }
+
+  const raw = req.body as Record<string, unknown>;
+  const toFiniteInt = (value: unknown): number | null => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    return Math.floor(value);
+  };
+  const toOptionalString = (value: unknown): string | null => {
+    if (value === null) return null;
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
+  const payload = {
+    running:
+      typeof raw.running === 'boolean'
+        ? raw.running
+        : getExternalWatchdogState().running,
+    watchdogPid:
+      raw.watchdogPid === null
+        ? null
+        : (toFiniteInt(raw.watchdogPid) ??
+          getExternalWatchdogState().watchdogPid),
+    consecutiveFailures:
+      toFiniteInt(raw.consecutiveFailures) ??
+      getExternalWatchdogState().consecutiveFailures,
+    recoveryAttempts:
+      toFiniteInt(raw.recoveryAttempts) ??
+      getExternalWatchdogState().recoveryAttempts,
+    backoffDelayMs:
+      toFiniteInt(raw.backoffDelayMs) ??
+      getExternalWatchdogState().backoffDelayMs,
+    nextRecoveryAt:
+      raw.nextRecoveryAt === null
+        ? null
+        : (toOptionalString(raw.nextRecoveryAt) ??
+          getExternalWatchdogState().nextRecoveryAt),
+    lastAction:
+      toOptionalString(raw.lastAction) ?? getExternalWatchdogState().lastAction,
+    lastError:
+      raw.lastError === null
+        ? null
+        : (toOptionalString(raw.lastError) ??
+          getExternalWatchdogState().lastError),
+  };
+
+  const state = updateExternalWatchdogState(payload);
+  if (
+    state.consecutiveFailures >= WATCHDOG_ALERT_THRESHOLD &&
+    !watchdogFailureEscalated
+  ) {
+    watchdogFailureEscalated = true;
+    void adminService
+      .appendAdminLog(
+        'watchdog_recovery_escalated',
+        `Watchdog reached ${state.consecutiveFailures} consecutive failures.`,
+        {
+          threshold: WATCHDOG_ALERT_THRESHOLD,
+          recoveryAttempts: state.recoveryAttempts,
+          backoffDelayMs: state.backoffDelayMs,
+          lastAction: state.lastAction,
+          lastError: state.lastError,
+        },
+      )
+      .catch((error) => {
+        console.error('[WATCHDOG] Failed to append escalation admin log.', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    void anomalyService
+      .report({
+        type: 'watchdog_recovery_escalated',
+        source: 'external-watchdog',
+        category: 'network',
+        severity: 'critical',
+        message: `Watchdog failed to recover the kiosk after ${state.consecutiveFailures} consecutive attempts.`,
+        fingerprint: buildAnomalyFingerprint([
+          'watchdog',
+          'external',
+          'escalated',
+        ]),
+        context: {
+          threshold: WATCHDOG_ALERT_THRESHOLD,
+          consecutiveFailures: state.consecutiveFailures,
+          recoveryAttempts: state.recoveryAttempts,
+          backoffDelayMs: state.backoffDelayMs,
+        },
+      })
+      .catch((error) => {
+        console.error('[WATCHDOG] Failed to report escalation anomaly.', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  if (state.consecutiveFailures === 0 && watchdogFailureEscalated) {
+    watchdogFailureEscalated = false;
+    void adminService
+      .appendAdminLog(
+        'watchdog_recovery_restored',
+        'Watchdog recovery failure streak cleared.',
+        {
+          recoveryAttempts: state.recoveryAttempts,
+          lastAction: state.lastAction,
+        },
+      )
+      .catch((error) => {
+        console.error('[WATCHDOG] Failed to append restore admin log.', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    void anomalyService
+      .report({
+        type: 'watchdog_recovery_restored',
+        source: 'external-watchdog',
+        category: 'network',
+        severity: 'warning',
+        message:
+          'Watchdog recovery failures have cleared and the kiosk is stable again.',
+        fingerprint: buildAnomalyFingerprint([
+          'watchdog',
+          'external',
+          'restored',
+        ]),
+        context: {
+          recoveryAttempts: state.recoveryAttempts,
+        },
+      })
+      .catch((error) => {
+        console.error('[WATCHDOG] Failed to report restore anomaly.', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  res.json(state);
+});
+
+app.get('/api/watchdog/report', (_req, res) => {
+  const remoteIp =
+    _req.ip || _req.socket.remoteAddress || _req.connection?.remoteAddress || '';
+  if (!isLoopbackRequest(remoteIp)) {
+    return res.status(403).json({ error: 'Watchdog report is loopback-only.' });
+  }
+  res.json(getExternalWatchdogState());
 });
 
 // Active session API
@@ -256,6 +450,12 @@ async function start() {
   await runHopperSelfTest();
 
   startPrinterMonitor(io);
+  startWatchdogHealthMonitor({
+    getSerialStatus,
+    getPrinterTelemetry,
+    isHotspotRunning,
+    isClamdReachable,
+  });
   anomalyService.setSocketIo(io);
   let trustedTimeBlocked = startupBlocked;
   startTrustedTimeMonitor(async (status) => {
@@ -364,6 +564,7 @@ function gracefulShutdown(signal: NodeJS.Signals): void {
   shuttingDown = true;
   console.log(`[SERVER] Received ${signal}. Shutting down gracefully...`);
   stopTrustedTimeMonitor();
+  stopWatchdogHealthMonitor();
   server.close((error) => {
     if (error) {
       console.error('[SERVER] Error while closing HTTP server.', {

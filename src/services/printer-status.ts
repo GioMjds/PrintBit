@@ -1,6 +1,11 @@
 import { runPowerShell } from '@/utils';
 import { randomUUID } from 'node:crypto';
 import { db, type InkMonitoringSettings } from './db';
+import { BLOCKED_STATUSES } from '@/utils';
+import {
+  markWatchdogHeartbeat,
+  setWatchdogComponentState,
+} from './watchdog-health';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -321,6 +326,45 @@ function ensureCriticalNotAboveLow(
   };
 }
 
+function updatePrinterWatchdogState(telemetry: PrinterTelemetry): void {
+  markWatchdogHeartbeat('printer', {
+    connected: telemetry.connected,
+    status: telemetry.status,
+    telemetryLastCheckedAt: telemetry.lastCheckedAt,
+  });
+  if (!telemetry.connected) {
+    setWatchdogComponentState('printer', 'unhealthy', 'Printer disconnected.', {
+      connected: false,
+      status: telemetry.status,
+      telemetryLastCheckedAt: telemetry.lastCheckedAt,
+    });
+    return;
+  }
+  if (BLOCKED_STATUSES.has(telemetry.status)) {
+    setWatchdogComponentState(
+      'printer',
+      'unhealthy',
+      `Printer blocked: ${telemetry.status}.`,
+      {
+        connected: true,
+        status: telemetry.status,
+        telemetryLastCheckedAt: telemetry.lastCheckedAt,
+      },
+    );
+    return;
+  }
+  setWatchdogComponentState(
+    'printer',
+    'healthy',
+    `Printer healthy (${telemetry.status}).`,
+    {
+      connected: true,
+      status: telemetry.status,
+      telemetryLastCheckedAt: telemetry.lastCheckedAt,
+    },
+  );
+}
+
 async function refresh(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
@@ -328,6 +372,7 @@ async function refresh(): Promise<void> {
     cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
     persistInkHistoryEntry(cached);
     await db.write();
+    updatePrinterWatchdogState(cached);
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -346,6 +391,22 @@ async function refresh(): Promise<void> {
       lastCheckedAt: new Date().toISOString(),
       lastError: err instanceof Error ? err.message : String(err),
     };
+    markWatchdogHeartbeat('printer', {
+      connected: false,
+      status: cached.status,
+      telemetryLastCheckedAt: cached.lastCheckedAt,
+    });
+    setWatchdogComponentState(
+      'printer',
+      'degraded',
+      `Printer telemetry refresh failed: ${cached.lastError}`,
+      {
+        connected: false,
+        status: 'Error',
+        telemetryLastCheckedAt: cached.lastCheckedAt,
+        lastError: cached.lastError,
+      },
+    );
   } finally {
     refreshing = false;
   }
@@ -1028,6 +1089,7 @@ export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
     cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
     persistInkHistoryEntry(cached);
     await db.write();
+    updatePrinterWatchdogState(cached);
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -1046,6 +1108,22 @@ export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
       lastCheckedAt: new Date().toISOString(),
       lastError: err instanceof Error ? err.message : String(err),
     };
+    markWatchdogHeartbeat('printer', {
+      connected: false,
+      status: cached.status,
+      telemetryLastCheckedAt: cached.lastCheckedAt,
+    });
+    setWatchdogComponentState(
+      'printer',
+      'degraded',
+      `Printer telemetry refresh failed: ${cached.lastError}`,
+      {
+        connected: false,
+        status: cached.status,
+        telemetryLastCheckedAt: cached.lastCheckedAt,
+        lastError: cached.lastError,
+      },
+    );
   } finally {
     refreshing = false;
   }

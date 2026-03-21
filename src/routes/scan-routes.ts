@@ -20,7 +20,7 @@ import {
   exportScanToUsbDrive,
   listRemovableDrives,
 } from '@/services/usb-drives';
-import { detectPdfColorContent } from '@/services/config';
+import { detectPdfColorContent } from '@/services/color-detection';
 import { financialLedgerService } from '@/services/financial-ledger';
 import {
   assertTrustedTimeForFinancialOperation,

@@ -66,6 +66,17 @@ export type SummaryResponse = {
       lastError: string | null;
       lastSuccessAt: string | null;
     };
+    watchdog?: {
+      running: boolean;
+      watchdogPid: number | null;
+      consecutiveFailures: number;
+      recoveryAttempts: number;
+      backoffDelayMs: number;
+      nextRecoveryAt: string | null;
+      lastAction: string;
+      lastError: string | null;
+      lastUpdatedAt: string;
+    };
     printer: {
       connected: boolean;
       name: string | null;
