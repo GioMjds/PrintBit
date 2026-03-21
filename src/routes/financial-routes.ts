@@ -1,5 +1,6 @@
 import type { Express, Request, RequestHandler, Response } from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
 import type { Server } from 'socket.io';
 import {
   db,
@@ -46,6 +47,69 @@ function resolveTargetDocument(
 
   if (!documentId) return allDocs[allDocs.length - 1];
   return allDocs.find((doc) => doc.documentId === documentId) ?? null;
+}
+
+interface UploadDeletionResult {
+  deleted: boolean;
+  alreadyMissing: boolean;
+  filePath: string;
+  error: string | null;
+}
+
+async function deleteUploadByStoredFilename(
+  storedFilename: string,
+): Promise<UploadDeletionResult> {
+  const uploadsDir = path.resolve('uploads');
+  const normalizedFilename = storedFilename.trim();
+  if (!normalizedFilename) {
+    return {
+      deleted: false,
+      alreadyMissing: false,
+      filePath: '',
+      error: 'Invalid filename',
+    };
+  }
+
+  const filePath = path.resolve(uploadsDir, normalizedFilename);
+  const relativePath = path.relative(uploadsDir, filePath);
+  const outsideUploads =
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath);
+  if (outsideUploads) {
+    return {
+      deleted: false,
+      alreadyMissing: false,
+      filePath,
+      error: 'Invalid filename',
+    };
+  }
+
+  try {
+    await fs.promises.unlink(filePath);
+    return {
+      deleted: true,
+      alreadyMissing: false,
+      filePath,
+      error: null,
+    };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      return {
+        deleted: true,
+        alreadyMissing: true,
+        filePath,
+        error: null,
+      };
+    }
+    return {
+      deleted: false,
+      alreadyMissing: false,
+      filePath,
+      error: err.message,
+    };
+  }
 }
 
 export function registerFinancialRoutes(
@@ -319,6 +383,31 @@ export function registerFinancialRoutes(
       },
     );
     await adminService.incrementJobStats('print');
+
+    const legacyCleanup = await deleteUploadByStoredFilename(filename);
+    if (legacyCleanup.deleted) {
+      await adminService.appendAdminLog(
+        'upload_deleted_after_print',
+        'Uploaded file deleted after legacy print.',
+        {
+          filename,
+          filePath: legacyCleanup.filePath || null,
+          alreadyMissing: legacyCleanup.alreadyMissing,
+          source: 'legacy-print',
+        },
+      );
+    } else {
+      await adminService.appendAdminLog(
+        'upload_delete_after_print_failed',
+        'Failed to delete uploaded file after legacy print.',
+        {
+          filename,
+          filePath: legacyCleanup.filePath || null,
+          source: 'legacy-print',
+          error: legacyCleanup.error ?? 'Unknown error',
+        },
+      );
+    }
 
     deps.io.emit('balance', 0);
     res.sendStatus(200);
@@ -703,6 +792,107 @@ export function registerFinancialRoutes(
         { transactionId, mode, error: message },
       );
       return sendResponse(500, { error: 'Failed to record financial event.' });
+    }
+
+    if (mode === 'print' && serverFilename) {
+      let cleaned = false;
+      if (sessionId && targetDocumentId) {
+        const removedDocument = await deps.sessionStore.removeDocument(
+          sessionId,
+          targetDocumentId,
+        );
+        if (removedDocument.success && removedDocument.deletedFile) {
+          cleaned = true;
+          await adminService.appendAdminLog(
+            'upload_deleted_after_print',
+            'Uploaded file deleted after print payment confirmation.',
+            {
+              transactionId,
+              sessionId,
+              documentId: targetDocumentId,
+              filename: serverFilename,
+              source: 'session-store',
+              alreadyMissing: false,
+            },
+          );
+        } else {
+          const fallbackCleanup =
+            await deleteUploadByStoredFilename(serverFilename);
+          if (fallbackCleanup.deleted) {
+            cleaned = true;
+            await adminService.appendAdminLog(
+              'upload_deleted_after_print',
+              'Uploaded file deleted after print payment confirmation.',
+              {
+                transactionId,
+                sessionId,
+                documentId: targetDocumentId,
+                filename: serverFilename,
+                source: 'fallback-unlink',
+                alreadyMissing: fallbackCleanup.alreadyMissing,
+                sessionRemoveErrorCode: removedDocument.errorCode ?? null,
+              },
+            );
+          } else {
+            await adminService.appendAdminLog(
+              'upload_delete_after_print_failed',
+              'Failed to delete uploaded file after print payment confirmation.',
+              {
+                transactionId,
+                sessionId,
+                documentId: targetDocumentId,
+                filename: serverFilename,
+                source: 'confirm-payment',
+                sessionRemoveErrorCode: removedDocument.errorCode ?? null,
+                sessionDeletedFile: removedDocument.deletedFile,
+                error: fallbackCleanup.error ?? 'Unknown error',
+              },
+            );
+          }
+        }
+      } else {
+        const cleanup = await deleteUploadByStoredFilename(serverFilename);
+        cleaned = cleanup.deleted;
+        if (cleanup.deleted) {
+          await adminService.appendAdminLog(
+            'upload_deleted_after_print',
+            'Uploaded file deleted after print payment confirmation.',
+            {
+              transactionId,
+              sessionId: sessionId ?? null,
+              documentId: targetDocumentId ?? null,
+              filename: serverFilename,
+              source: 'confirm-payment',
+              alreadyMissing: cleanup.alreadyMissing,
+            },
+          );
+        } else {
+          await adminService.appendAdminLog(
+            'upload_delete_after_print_failed',
+            'Failed to delete uploaded file after print payment confirmation.',
+            {
+              transactionId,
+              sessionId: sessionId ?? null,
+              documentId: targetDocumentId ?? null,
+              filename: serverFilename,
+              source: 'confirm-payment',
+              error: cleanup.error ?? 'Unknown error',
+            },
+          );
+        }
+      }
+
+      if (!cleaned) {
+        console.error(
+          '[CONFIRM-PAYMENT] Uploaded file cleanup failed after successful settlement.',
+          {
+            transactionId,
+            sessionId: sessionId ?? null,
+            documentId: targetDocumentId ?? null,
+            filename: serverFilename,
+          },
+        );
+      }
     }
 
     sendResponse(200, {
