@@ -2,6 +2,7 @@ export { registerAdminRoutes } from './admin-routes';
 export { registerCopyRoutes } from './copy-routes';
 export { registerFeedbackRoutes } from './feedback-routes';
 export { registerFinancialRoutes } from './financial-routes';
+export { registerLanguageRoutes } from './language-routes';
 export { registerPageRoutes } from './page-routes';
 export { registerPrinterRoutes } from './printer-routes';
 export { registerReportRoutes } from './report-routes';

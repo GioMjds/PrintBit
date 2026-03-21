@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import type { SessionStore } from "@/services/session";
-import { CAPTIVE_PORTAL_ENABLED } from "@/config/http";
+import { CAPTIVE_PORTAL_ENABLED } from "@/config/http.config";
 import { adminService } from "@/services/admin";
 
 const CAPTIVE_PATHS = new Set([

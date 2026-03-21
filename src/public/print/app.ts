@@ -3,6 +3,7 @@ import {
   initializePageIdleTimeout,
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
+import { initKioskLocalization } from '../shared/kiosk-i18n';
 
 type UploadedFile = {
   documentId?: string;
@@ -10,6 +11,8 @@ type UploadedFile = {
   size?: number;
   sizeBytes?: number;
 };
+
+void initKioskLocalization();
 
 type SessionResponse = {
   sessionId: string;

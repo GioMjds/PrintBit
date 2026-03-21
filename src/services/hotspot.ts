@@ -9,7 +9,7 @@ import {
   HOTSPOT_PASSWORD,
   HOTSPOT_AUTH_TYPE,
   ESP32_CAPTIVE_PORTAL_PATH,
-} from '@/config/http';
+} from '@/config/http.config';
 
 const MPWF_EXE = path.join(MYPUBLICWIFI_PATH, 'MyPublicWiFi.exe');
 const MPWF_DB = path.join(MYPUBLICWIFI_PATH, 'Data.db');
