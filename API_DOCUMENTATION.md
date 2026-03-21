@@ -299,6 +299,11 @@ Requests copy job cancellation.
 
 All routes below require admin local access + valid `x-admin-pin`.
 
+Watchdog-facing routes are exempt from this admin contract and are loopback-only:
+- `GET /api/watchdog/health`
+- `GET /api/watchdog/report`
+- `POST /api/watchdog/report`
+
 ### `POST /api/admin/auth`
 
 Validates PIN.
@@ -409,6 +414,7 @@ Clears top-level files under upload directory.
 ### `GET /api/watchdog/health`
 
 Returns watchdog-oriented machine health for local self-healing.
+Auth/Access: loopback-only (`127.0.0.1`/`::1`), no admin PIN.
 
 - `200` when overall watchdog status is `healthy` or `degraded`
 - `503` when overall watchdog status is `unhealthy`
@@ -456,6 +462,7 @@ Response shape:
 ### `POST /api/watchdog/report`
 
 Loopback-only endpoint (`127.0.0.1`/`::1`) for external watchdog runtime state reporting.
+Auth/Access: loopback-only, no admin PIN.
 
 Request body fields:
 
@@ -471,6 +478,11 @@ Request body fields:
 Response:
 
 - Latest normalized watchdog state persisted in memory and surfaced in admin status payloads.
+
+### `GET /api/watchdog/report`
+
+Returns the latest normalized external watchdog state that was reported by the watchdog loop.
+Auth/Access: loopback-only (`127.0.0.1`/`::1`), no admin PIN.
 
 ### `GET /api/admin/owed-changes`
 

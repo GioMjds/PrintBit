@@ -80,7 +80,10 @@ const PRINTER_TELEMETRY_STALE_AFTER_MS = readPositiveIntEnv(
   90_000,
 );
 
-let startedAt = new Date().toISOString();
+const PROCESS_STARTED_AT = new Date(
+  Date.now() - Math.floor(process.uptime() * 1_000),
+).toISOString();
+
 let appHeartbeatTimer: NodeJS.Timeout | null = null;
 let componentPollTimer: NodeJS.Timeout | null = null;
 let componentPollInFlight = false;
@@ -157,6 +160,10 @@ function worstStatus(a: WatchdogStatus, b: WatchdogStatus): WatchdogStatus {
   return 'healthy';
 }
 
+function cloneContext(context?: WatchdogContext): WatchdogContext {
+  return context ? { ...context } : {};
+}
+
 function updateComponentState(
   component: WatchdogComponent,
   update: {
@@ -170,7 +177,7 @@ function updateComponentState(
     ...components[component],
     status: update.status,
     detail: update.detail,
-    context: update.context ?? {},
+    context: cloneContext(update.context),
     lastHeartbeatAt: update.heartbeatAt ?? new Date().toISOString(),
   };
 }
@@ -182,7 +189,7 @@ export function markWatchdogHeartbeat(
   components[component] = {
     ...components[component],
     lastHeartbeatAt: new Date().toISOString(),
-    context: context ?? components[component].context,
+    context: context ? cloneContext(context) : cloneContext(components[component].context),
   };
 }
 
@@ -258,57 +265,86 @@ export function updateExternalWatchdogState(
 }
 
 async function pollWatchdogComponents(): Promise<void> {
-  if (!monitorDeps) return;
+  const deps = monitorDeps;
+  if (!deps) return;
   if (componentPollInFlight) return;
   componentPollInFlight = true;
 
   try {
-    const serial = monitorDeps.getSerialStatus();
-    updateComponentState('serial', {
-      status: serial.connected ? 'healthy' : 'degraded',
-      detail: serial.connected
-        ? `Serial connected on ${serial.portPath ?? 'unknown port'}.`
-        : `Serial disconnected${serial.lastError ? `: ${serial.lastError}` : '.'}`,
-      context: {
-        connected: serial.connected,
-        portPath: serial.portPath,
-        hasError: serial.lastError ? true : false,
-      },
-    });
-
-    const printer = monitorDeps.getPrinterTelemetry();
-    const printerCheckedAtMs = toTimestampMs(printer.lastCheckedAt);
-    const printerTelemetryStale =
-      !Number.isFinite(printerCheckedAtMs) ||
-      Date.now() - printerCheckedAtMs > PRINTER_TELEMETRY_STALE_AFTER_MS;
-
-    let printerStatus: WatchdogStatus = 'healthy';
-    let printerDetail = `Printer healthy (${printer.status}).`;
-
-    if (!printer.connected) {
-      printerStatus = 'degraded';
-      printerDetail = 'Printer disconnected.';
-    } else if (BLOCKED_STATUSES.has(printer.status)) {
-      printerStatus = 'degraded';
-      printerDetail = `Printer blocked: ${printer.status}.`;
-    } else if (printerTelemetryStale) {
-      printerStatus = 'degraded';
-      printerDetail = 'Printer telemetry is stale.';
+    try {
+      const serial = deps.getSerialStatus();
+      updateComponentState('serial', {
+        status: serial.connected ? 'healthy' : 'degraded',
+        detail: serial.connected
+          ? `Serial connected on ${serial.portPath ?? 'unknown port'}.`
+          : `Serial disconnected${serial.lastError ? `: ${serial.lastError}` : '.'}`,
+        context: {
+          connected: serial.connected,
+          portPath: serial.portPath,
+          hasError: serial.lastError ? true : false,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[WATCHDOG-HEALTH] Failed to poll serial health.', {
+        error: message,
+      });
+      updateComponentState('serial', {
+        status: 'degraded',
+        detail: `Serial health check failed: ${message}`,
+        context: {
+          connected: false,
+        },
+      });
     }
 
-    updateComponentState('printer', {
-      status: printerStatus,
-      detail: printerDetail,
-      context: {
-        connected: printer.connected,
-        status: printer.status,
-        telemetryStale: printerTelemetryStale,
-        lastError: printer.lastError,
-      },
-    });
+    try {
+      const printer = deps.getPrinterTelemetry();
+      const printerCheckedAtMs = toTimestampMs(printer.lastCheckedAt);
+      const printerTelemetryStale =
+        !Number.isFinite(printerCheckedAtMs) ||
+        Date.now() - printerCheckedAtMs > PRINTER_TELEMETRY_STALE_AFTER_MS;
+
+      let printerStatus: WatchdogStatus = 'healthy';
+      let printerDetail = `Printer healthy (${printer.status}).`;
+
+      if (!printer.connected) {
+        printerStatus = 'degraded';
+        printerDetail = 'Printer disconnected.';
+      } else if (BLOCKED_STATUSES.has(printer.status)) {
+        printerStatus = 'degraded';
+        printerDetail = `Printer blocked: ${printer.status}.`;
+      } else if (printerTelemetryStale) {
+        printerStatus = 'degraded';
+        printerDetail = 'Printer telemetry is stale.';
+      }
+
+      updateComponentState('printer', {
+        status: printerStatus,
+        detail: printerDetail,
+        context: {
+          connected: printer.connected,
+          status: printer.status,
+          telemetryStale: printerTelemetryStale,
+          lastError: printer.lastError,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[WATCHDOG-HEALTH] Failed to poll printer health.', {
+        error: message,
+      });
+      updateComponentState('printer', {
+        status: 'degraded',
+        detail: `Printer health check failed: ${message}`,
+        context: {
+          connected: false,
+        },
+      });
+    }
 
     try {
-      const clamdReachable = await monitorDeps.isClamdReachable();
+      const clamdReachable = await deps.isClamdReachable();
       updateComponentState('clamd', {
         status: clamdReachable ? 'healthy' : 'degraded',
         detail: clamdReachable
@@ -332,16 +368,30 @@ async function pollWatchdogComponents(): Promise<void> {
       });
     }
 
-    const hotspotRunning = monitorDeps.isHotspotRunning();
-    updateComponentState('hotspot', {
-      status: hotspotRunning ? 'healthy' : 'degraded',
-      detail: hotspotRunning
-        ? 'Hotspot service is running.'
-        : 'Hotspot service is not running.',
-      context: {
-        running: hotspotRunning,
-      },
-    });
+    try {
+      const hotspotRunning = deps.isHotspotRunning();
+      updateComponentState('hotspot', {
+        status: hotspotRunning ? 'healthy' : 'degraded',
+        detail: hotspotRunning
+          ? 'Hotspot service is running.'
+          : 'Hotspot service is not running.',
+        context: {
+          running: hotspotRunning,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[WATCHDOG-HEALTH] Failed to poll hotspot health.', {
+        error: message,
+      });
+      updateComponentState('hotspot', {
+        status: 'degraded',
+        detail: `Hotspot health check failed: ${message}`,
+        context: {
+          running: false,
+        },
+      });
+    }
   } finally {
     componentPollInFlight = false;
   }
@@ -353,7 +403,6 @@ export function startWatchdogHealthMonitor(
   if (appHeartbeatTimer || componentPollTimer) return;
 
   monitorDeps = deps;
-  startedAt = new Date().toISOString();
 
   updateComponentState('app', {
     status: 'healthy',
@@ -406,26 +455,31 @@ export function getWatchdogHealthSnapshot(): WatchdogHealthSnapshot {
   const computed: WatchdogHealthSnapshot['components'] = {
     app: {
       ...components.app,
+      context: cloneContext(components.app.context),
       stale: false,
       staleForMs: 0,
     },
     serial: {
       ...components.serial,
+      context: cloneContext(components.serial.context),
       stale: false,
       staleForMs: 0,
     },
     printer: {
       ...components.printer,
+      context: cloneContext(components.printer.context),
       stale: false,
       staleForMs: 0,
     },
     clamd: {
       ...components.clamd,
+      context: cloneContext(components.clamd.context),
       stale: false,
       staleForMs: 0,
     },
     hotspot: {
       ...components.hotspot,
+      context: cloneContext(components.hotspot.context),
       stale: false,
       staleForMs: 0,
     },
@@ -450,6 +504,7 @@ export function getWatchdogHealthSnapshot(): WatchdogHealthSnapshot {
       staleForMs: Number.isFinite(staleForMs)
         ? Math.max(0, Math.floor(staleForMs))
         : Number.MAX_SAFE_INTEGER,
+      context: cloneContext(entry.context),
     };
     overall = worstStatus(overall, status);
   }
@@ -460,7 +515,7 @@ export function getWatchdogHealthSnapshot(): WatchdogHealthSnapshot {
     process: {
       pid: process.pid,
       uptimeSeconds: Math.floor(process.uptime()),
-      startedAt,
+      startedAt: PROCESS_STARTED_AT,
     },
     monitor: {
       appHeartbeatIntervalMs: APP_HEARTBEAT_INTERVAL_MS,

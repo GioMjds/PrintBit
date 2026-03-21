@@ -95,21 +95,31 @@ function scheduleClamdRestart(reason: string): void {
   }, delayMs);
 }
 
-export async function startClamd(): Promise<void> {
-  if (clamdProcess && !clamdProcess.killed) {
-    setWatchdogComponentState(
-      'clamd',
-      'degraded',
-      'ClamAV process exists but reachability pending.',
-      {
-        reachable: false,
-      },
-    );
-    return;
+function cleanupClamdProcess(reason: string): void {
+  if (!clamdProcess) return;
+  try {
+    clamdProcess.removeAllListeners('error');
+    clamdProcess.removeAllListeners('exit');
+  } catch {
+    // ignore listener cleanup failures
   }
+  try {
+    if (!clamdProcess.killed) {
+      clamdProcess.kill();
+    }
+  } catch (error) {
+    console.warn('[CLAMD] Failed to terminate stale process.', {
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  clamdProcess = null;
+}
 
+export async function startClamd(): Promise<void> {
   // If already reachable (user started it manually), skip
-  if (await isClamdReachable()) {
+  const reachable = await isClamdReachable();
+  if (reachable) {
     console.log('[CLAMD] ✓ Already running — skipping auto-start');
     clearClamdReconnectTimer();
     reconnectAttempts = 0;
@@ -118,6 +128,21 @@ export async function startClamd(): Promise<void> {
       reachable: true,
     });
     return;
+  }
+
+  if (clamdProcess && !clamdProcess.killed) {
+    console.warn(
+      '[CLAMD] Existing clamd process is unreachable; replacing stale process.',
+    );
+    setWatchdogComponentState(
+      'clamd',
+      'degraded',
+      'ClamAV process exists but is unreachable; restarting.',
+      {
+        reachable: false,
+      },
+    );
+    cleanupClamdProcess('unreachable_existing_process');
   }
 
   if (!fs.existsSync(CLAMD_EXE)) {
@@ -202,8 +227,7 @@ export function stopClamd(): void {
   clearClamdReconnectTimer();
   reconnectAttempts = 0;
   if (!clamdProcess) return;
-  clamdProcess.kill();
-  clamdProcess = null;
+  cleanupClamdProcess('stop_requested');
   console.log('[CLAMD] ✗ Stopped');
   setWatchdogComponentState('clamd', 'degraded', 'ClamAV daemon stopped.', {
     reachable: false,

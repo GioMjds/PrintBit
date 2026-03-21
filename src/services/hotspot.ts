@@ -17,6 +17,8 @@ import {
 
 const MPWF_EXE = path.join(MYPUBLICWIFI_PATH, 'MyPublicWiFi.exe');
 const MPWF_DB = path.join(MYPUBLICWIFI_PATH, 'Data.db');
+const HOTSPOT_STARTUP_TIMEOUT_MS = 8_000;
+const HOTSPOT_STARTUP_POLL_INTERVAL_MS = 500;
 
 function ipToInt32(ip: string): number {
   const parts = ip.split('.').map(Number);
@@ -100,6 +102,19 @@ function ensureFirewallRules(): void {
         /* not admin or exists */
       }
     }
+  }
+}
+
+function isMyPublicWifiRunning(): boolean {
+  try {
+    const output = execSync('tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH', {
+      encoding: 'utf-8',
+      timeout: 5_000,
+      stdio: 'pipe',
+    });
+    return output.includes('MyPublicWiFi.exe');
+  } catch {
+    return false;
   }
 }
 
@@ -201,22 +216,50 @@ class HotspotService {
       );
     });
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 3_000));
-    this.running = true;
-    console.log('[HOTSPOT] ✓ MyPublicWiFi launched — hotspot starting');
-    markWatchdogHeartbeat('hotspot', {
-      running: true,
-      provider: 'mypublicwifi',
-    });
-    setWatchdogComponentState(
-      'hotspot',
-      'healthy',
-      'MyPublicWiFi launched successfully.',
-      {
+    const deadline = Date.now() + HOTSPOT_STARTUP_TIMEOUT_MS;
+    let detectedRunning = false;
+    while (Date.now() < deadline) {
+      if (isMyPublicWifiRunning()) {
+        detectedRunning = true;
+        break;
+      }
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, HOTSPOT_STARTUP_POLL_INTERVAL_MS),
+      );
+    }
+
+    if (detectedRunning) {
+      this.running = true;
+      console.log('[HOTSPOT] ✓ MyPublicWiFi launched — hotspot starting');
+      markWatchdogHeartbeat('hotspot', {
         running: true,
         provider: 'mypublicwifi',
-      },
-    );
+      });
+      setWatchdogComponentState(
+        'hotspot',
+        'healthy',
+        'MyPublicWiFi launched successfully.',
+        {
+          running: true,
+          provider: 'mypublicwifi',
+        },
+      );
+      return;
+    }
+
+    this.running = false;
+    const detail =
+      'MyPublicWiFi did not appear in process list after launch attempt.';
+    console.warn(`[HOTSPOT] ⚠ ${detail}`, {
+      processSpawned: this.process ? true : false,
+      executable: MPWF_EXE,
+      workingDirectory: MYPUBLICWIFI_PATH,
+    });
+    setWatchdogComponentState('hotspot', 'degraded', detail, {
+      running: false,
+      provider: 'mypublicwifi',
+      executable: MPWF_EXE,
+    });
   }
 
   stop(): void {

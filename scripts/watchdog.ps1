@@ -143,12 +143,12 @@ function Get-NodeServerProcess {
 
 function Stop-ProcessSafely {
     param(
-        [int]$Pid
+        [int]$ProcessId
     )
     try {
-        Stop-Process -Id $Pid -Force -ErrorAction Stop
+        Stop-Process -Id $ProcessId -Force -ErrorAction Stop
     } catch {
-        Write-Warning "[Watchdog] Failed to stop PID ${Pid}: $($_.Exception.Message)"
+        Write-Warning "[Watchdog] Failed to stop PID ${ProcessId}: $($_.Exception.Message)"
     }
 }
 
@@ -194,11 +194,24 @@ function Ensure-EdgeRunning {
     param(
         [pscustomobject]$State
     )
-    $edge = Get-Process -Name "msedge" -ErrorAction SilentlyContinue
-    if ($edge) { return $false }
+    try {
+        $escapedUrl = [Regex]::Escape($KioskUrl)
+        $kioskEdge = Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
+            Where-Object {
+                $cmd = [string]$_.CommandLine
+                $cmd -match "--kiosk" -and $cmd -match $escapedUrl
+            } |
+            Select-Object -First 1
+        if ($null -ne $kioskEdge) {
+            return $false
+        }
+    } catch {
+        Write-Warning "[Watchdog] Failed to inspect Edge command line: $($_.Exception.Message)"
+    }
     try {
         Start-Process "msedge.exe" -ArgumentList @("--kiosk", $KioskUrl, "--edge-kiosk-type=fullscreen", "--no-first-run", "--disable-infobars")
         $State.lastAction = "edge_started"
+        $State.lastError = $null
         return $true
     } catch {
         $State.lastAction = "edge_start_failed"
@@ -214,7 +227,7 @@ function Restart-Server {
     )
     $server = Get-NodeServerProcess
     if ($null -ne $server) {
-        Stop-ProcessSafely -Pid ([int]$server.ProcessId)
+        Stop-ProcessSafely -ProcessId ([int]$server.ProcessId)
         Start-Sleep -Milliseconds 500
     }
     return (Ensure-ServerRunning -State $State -Reason $Reason)
@@ -236,7 +249,7 @@ while ($true) {
     $healthError = $null
 
     try {
-        $health = Invoke-RestMethod -Method Get -Uri $HealthUrl -TimeoutSec ([Math]::Max(1, [int]([Math]::Ceiling($RequestTimeoutMs / 1000.0))))
+        $health = Invoke-RestMethod -Method Get -Uri $HealthUrl -SkipHttpErrorCheck -TimeoutSec ([Math]::Max(1, [int]([Math]::Ceiling($RequestTimeoutMs / 1000.0))))
         $healthOk = $true
     } catch {
         $healthError = $_.Exception.Message

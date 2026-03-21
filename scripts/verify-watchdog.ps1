@@ -35,7 +35,8 @@ function Ensure-WatchdogTaskRunning {
     if ($task.State -ne "Running") {
         Write-Warning "[PrintBit] Watchdog task is not running (state: $($task.State)); starting."
         Start-ScheduledTask -TaskName $TaskName
-        return $false
+        Start-Sleep -Seconds 2
+        return $true
     }
     return $true
 }
@@ -51,6 +52,12 @@ if ($ageMs -gt $MaxHeartbeatAgeMs) {
         Write-Warning "[PrintBit] Failed to stop watchdog task: $($_.Exception.Message)"
     }
     Start-ScheduledTask -TaskName $TaskName
+    Start-Sleep -Seconds 2
+    $ageAfterRestart = Read-HeartbeatAgeMs
+    if ($ageAfterRestart -le $MaxHeartbeatAgeMs) {
+        Write-Host "[PrintBit] Watchdog heartbeat recovered after restart. heartbeatAgeMs=$ageAfterRestart" -ForegroundColor Green
+        exit 0
+    }
     exit 1
 }
 

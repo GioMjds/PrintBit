@@ -164,6 +164,11 @@ app.post('/api/hotspot/stop', (_req, res) => {
 });
 
 app.get('/api/watchdog/health', (_req, res) => {
+  const remoteIp =
+    _req.ip || _req.socket.remoteAddress || _req.connection?.remoteAddress || '';
+  if (!isLoopbackRequest(remoteIp)) {
+    return res.status(403).json({ error: 'Watchdog health is loopback-only.' });
+  }
   const snapshot = getWatchdogHealthSnapshot();
   const statusCode = snapshot.status === 'unhealthy' ? 503 : 200;
   res.status(statusCode).json(snapshot);
@@ -313,6 +318,11 @@ app.post('/api/watchdog/report', (req, res) => {
 });
 
 app.get('/api/watchdog/report', (_req, res) => {
+  const remoteIp =
+    _req.ip || _req.socket.remoteAddress || _req.connection?.remoteAddress || '';
+  if (!isLoopbackRequest(remoteIp)) {
+    return res.status(403).json({ error: 'Watchdog report is loopback-only.' });
+  }
   res.json(getExternalWatchdogState());
 });
 
