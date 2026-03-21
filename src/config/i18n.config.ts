@@ -10,7 +10,7 @@ i18next
     backend: {},
     detection: {},
     fallbackLng: 'en',
-    preload: ['en', 'tl'],
+    preload: ['en', 'fil'],
     ns: ['translation'],
     defaultNS: 'translation',
   });
