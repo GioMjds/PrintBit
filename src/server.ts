@@ -53,6 +53,7 @@ import {
   adminService,
   getTrustedTimeStatus,
   startTrustedTimeMonitor,
+  stopTrustedTimeMonitor,
   verifyTrustedClockSync,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
@@ -356,4 +357,31 @@ async function start() {
   });
 }
 
-start();
+let shuttingDown = false;
+
+function gracefulShutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[SERVER] Received ${signal}. Shutting down gracefully...`);
+  stopTrustedTimeMonitor();
+  server.close((error) => {
+    if (error) {
+      console.error('[SERVER] Error while closing HTTP server.', {
+        error: error.message,
+      });
+      process.exit(1);
+      return;
+    }
+    process.exit(0);
+  });
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+void start().catch((error) => {
+  console.error('[SERVER] Fatal startup error.', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+  process.exit(1);
+});

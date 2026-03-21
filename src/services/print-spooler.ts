@@ -415,6 +415,19 @@ export async function monitorSpoolerJob(
           throw error;
         }
         if (!refundOutcome) {
+          console.warn(
+            '[SPOOLER-MONITOR] refundOutcome was null after spooler failure handling.',
+            {
+              spoolerJobId: job.id,
+              spoolerStatus: job.status,
+              pagesPrinted: job.pagesPrinted,
+              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+              transactionId:
+                typeof jobContext.transactionId === 'string'
+                  ? jobContext.transactionId
+                  : null,
+            },
+          );
           return {
             detected: true,
             jobStatus: job.status,

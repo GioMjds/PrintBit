@@ -93,9 +93,18 @@ function readNtpServerOverride(): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+type W32StatusKey = 'Source' | 'Last Successful Sync Time';
+
+const STATUS_VALUE_REGEX: Record<W32StatusKey, RegExp> = {
+  Source: /^\s*Source\s*:\s*(.+)$/im,
+  'Last Successful Sync Time': /^\s*Last Successful Sync Time\s*:\s*(.+)$/im,
+};
+
 function parseStatusValue(rawStatus: string, key: string): string | null {
-  const matcher = new RegExp(`^\\s*${key}\\s*:\\s*(.+)$`, 'im');
-  const match = rawStatus.match(matcher);
+  if (key !== 'Source' && key !== 'Last Successful Sync Time') {
+    return null;
+  }
+  const match = rawStatus.match(STATUS_VALUE_REGEX[key as W32StatusKey]);
   return match?.[1]?.trim() ?? null;
 }
 
