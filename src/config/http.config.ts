@@ -2,7 +2,11 @@ import os from 'node:os';
 import path from 'node:path';
 
 const DEFAULT_PORT = 3000;
-const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
+const rawPort = process.env.PORT?.trim();
+const parsedPort =
+  rawPort !== undefined && /^\d+$/.test(rawPort)
+    ? Number(rawPort)
+    : Number.NaN;
 export const PORT =
   Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535
     ? parsedPort

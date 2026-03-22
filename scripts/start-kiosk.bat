@@ -89,11 +89,10 @@ for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.137\
     for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
     goto :detect_done
 )
-for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*[0-9][0-9]*\.[0-9]"') do (
+for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*[0-9][0-9]*\.[0-9]" ^| findstr /V /R "169\.254\."') do (
     for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
     goto :detect_done
 )
 :detect_done
 for /f "tokens=1 delims= (" %%A in ("%LOCAL_IP%") do set "LOCAL_IP=%%A"
-if "%LOCAL_IP:~0,8%"=="169.254." set "LOCAL_IP="
 exit /b
