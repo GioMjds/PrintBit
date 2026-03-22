@@ -289,6 +289,8 @@ class AnomalyService {
         return dedupe.hopperMs;
       case 'network':
         return dedupe.networkMs;
+      case 'security':
+        return dedupe.securityMs;
     }
   }
 

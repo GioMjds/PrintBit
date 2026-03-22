@@ -4,7 +4,13 @@ interface AnomalyIncident {
   id: string;
   type: string;
   source: string;
-  category: 'printer' | 'spooler' | 'serial' | 'hopper' | 'network';
+  category:
+    | 'printer'
+    | 'spooler'
+    | 'serial'
+    | 'hopper'
+    | 'network'
+    | 'security';
   severity: 'warning' | 'critical';
   status: 'open' | 'acknowledged' | 'resolved';
   message: string;
