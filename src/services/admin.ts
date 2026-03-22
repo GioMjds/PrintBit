@@ -10,6 +10,7 @@ import {
   type PricingSettings,
 } from './db';
 import { getTrustedTimestamp } from './time-source';
+import { adminLogStore } from '@/core/database/sqlite-storage';
 
 class AdminService {
   private readonly MAX_LOGS = 3000;
@@ -85,12 +86,31 @@ class AdminService {
       meta,
     };
 
-    db.data!.logs.unshift(entry);
-    if (db.data!.logs.length > this.MAX_LOGS) {
-      db.data!.logs.length = this.MAX_LOGS;
-    }
-    await db.write();
+    adminLogStore.append(entry, this.MAX_LOGS);
     return entry;
+  }
+
+  listLogs(limit: number): AdminLogEntry[] {
+    const safeLimit = Number.isFinite(limit)
+      ? Math.max(1, Math.min(1000, Math.floor(limit)))
+      : 200;
+    return adminLogStore.list(safeLimit);
+  }
+
+  listAllLogs(): AdminLogEntry[] {
+    return adminLogStore.listAll();
+  }
+
+  listLogsByTypes(types: ReadonlyArray<string>): AdminLogEntry[] {
+    const normalized = Array.from(
+      new Set(types.map((value) => value.trim()).filter((value) => value.length > 0)),
+    );
+    if (normalized.length === 0) return [];
+    return adminLogStore.listByTypes(normalized);
+  }
+
+  async clearLogs(): Promise<void> {
+    adminLogStore.clear();
   }
 
   async incrementCoinStats(coinValue: number): Promise<void> {
@@ -145,7 +165,7 @@ class AdminService {
     let today = 0;
     let week = 0;
 
-    for (const log of db.data!.logs) {
+    for (const log of this.listLogsByTypes(['payment_confirmed'])) {
       if (log.type !== 'payment_confirmed') continue;
       const amountRaw = log.meta?.amount;
       const amount =

@@ -28,7 +28,10 @@ interface ValidationPolicy {
   readonly allowedExtensions: Set<string>;
   readonly allowedMimeTypes: Set<string>;
   readonly extensionMimeMap: Record<string, string>;
-  readonly magicSignatures: Record<string, Array<{ bytes: number[]; offset?: number }>>;
+  readonly magicSignatures: Record<
+    string,
+    Array<{ bytes: number[]; offset?: number }>
+  >;
   readonly surface: UploadSurface;
 }
 
@@ -133,23 +136,27 @@ function detectDisguisedExecutableName(originalName: string): {
 function getRequestClientIp(req: Request): string {
   const forwarded = req.header('x-forwarded-for');
   if (forwarded) {
-    return forwarded
-      .split(',')
-      .map((part) => part.trim())
-      .find((part) => part.length > 0) ?? (req.ip || '');
+    return (
+      forwarded
+        .split(',')
+        .map((part) => part.trim())
+        .find((part) => part.length > 0) ??
+      (req.ip || '')
+    );
   }
   return req.ip || '';
 }
 
-function extractRequestContext(req: Request): Record<string, string | number | boolean | null> {
+function extractRequestContext(
+  req: Request,
+): Record<string, string | number | boolean | null> {
   return {
     route: req.route?.path?.toString() ?? null,
     method: req.method,
     ipAddress: getRequestClientIp(req) || null,
     sessionId:
       typeof req.params?.sessionId === 'string' ? req.params.sessionId : null,
-    uploadToken:
-      typeof req.query?.token === 'string' ? req.query.token : null,
+    uploadToken: typeof req.query?.token === 'string' ? req.query.token : null,
     uploadClientId:
       req.header('x-upload-client-id') ??
       req.header('x-session-client-id') ??
@@ -198,7 +205,11 @@ function appendSecurityLog(
 
 function quarantineUploadBuffer(
   file: Express.Multer.File,
-  reason: 'UNSUPPORTED_TYPE' | 'MAGIC_BYTE_MISMATCH' | 'FILE_INFECTED' | 'SCAN_ERROR',
+  reason:
+    | 'UNSUPPORTED_TYPE'
+    | 'MAGIC_BYTE_MISMATCH'
+    | 'FILE_INFECTED'
+    | 'SCAN_ERROR',
   virusName?: string,
 ): void {
   void quarantineBuffer(
@@ -451,7 +462,10 @@ function findEndOfCentralDirectoryOffset(buffer: Buffer): number {
   return -1;
 }
 
-function validateOoxmlStructure(buffer: Buffer, directoryMarker: string): boolean {
+function validateOoxmlStructure(
+  buffer: Buffer,
+  directoryMarker: string,
+): boolean {
   const centralDirectoryHeaderSignature = 0x02014b50;
   const eocdOffset = findEndOfCentralDirectoryOffset(buffer);
 
@@ -492,7 +506,10 @@ function validateOoxmlStructure(buffer: Buffer, directoryMarker: string): boolea
       hasContentTypes = true;
     }
 
-    if (entryName.startsWith(directoryMarker) && entryName.length > directoryMarker.length) {
+    if (
+      entryName.startsWith(directoryMarker) &&
+      entryName.length > directoryMarker.length
+    ) {
       hasDirectoryEntry = true;
     }
 
@@ -524,13 +541,18 @@ export async function validateMagicBytes(
     mime,
     MAGIC_SIGNATURES,
   );
-  
+
   // For OOXML formats, also validate internal ZIP structure
   const ooxmlMarker = OOXML_DIRECTORY_MARKERS[mime];
   const isOoxmlFormat = !!ooxmlMarker;
   const magicBytesFailed = !hasValidMagicBytes;
-  const ooxmlStructureFailed = isOoxmlFormat && hasValidMagicBytes && !validateOoxmlStructure(file.buffer, ooxmlMarker);
-  const isValidOoxml = !isOoxmlFormat || (hasValidMagicBytes && validateOoxmlStructure(file.buffer, ooxmlMarker));
+  const ooxmlStructureFailed =
+    isOoxmlFormat &&
+    hasValidMagicBytes &&
+    !validateOoxmlStructure(file.buffer, ooxmlMarker);
+  const isValidOoxml =
+    !isOoxmlFormat ||
+    (hasValidMagicBytes && validateOoxmlStructure(file.buffer, ooxmlMarker));
 
   if (!hasValidMagicBytes || !isValidOoxml) {
     const detectedMime = classifyDetectedMime(file.buffer, MAGIC_SIGNATURES);
@@ -540,14 +562,13 @@ export async function validateMagicBytes(
       declaredMimeType: mime,
       detectedMimeType: detectedMime,
       detectedExecutableExtension: null,
-      validationReason: magicBytesFailed ? 'MAGIC_BYTE_MISMATCH' : 'OOXML_STRUCTURE_INVALID',
+      validationReason: magicBytesFailed
+        ? 'MAGIC_BYTE_MISMATCH'
+        : 'OOXML_STRUCTURE_INVALID',
       uploadSurface: 'wireless-session-upload' as UploadSurface,
       sizeBytes: file.size,
     };
-    quarantineUploadBuffer(
-      file,
-      'MAGIC_BYTE_MISMATCH',
-    );
+    quarantineUploadBuffer(file, 'MAGIC_BYTE_MISMATCH');
     appendSecurityLog(
       'upload_security_violation',
       'Rejected upload because file signature or OOXML structure is invalid.',
@@ -594,13 +615,19 @@ async function validateMagicBytesWithPolicy(
   }
 
   const mime = file.mimetype.toLowerCase();
-  const hasKnownHeader = matchesMagicBytes(file.buffer, mime, policy.magicSignatures);
-  const webpValid =
-    mime !== 'image/webp' || hasValidWebpSignature(file.buffer);
+  const hasKnownHeader = matchesMagicBytes(
+    file.buffer,
+    mime,
+    policy.magicSignatures,
+  );
+  const webpValid = mime !== 'image/webp' || hasValidWebpSignature(file.buffer);
   const hasValidMagicBytes = hasKnownHeader && webpValid;
 
   if (!hasValidMagicBytes) {
-    const detectedMime = classifyDetectedMime(file.buffer, policy.magicSignatures);
+    const detectedMime = classifyDetectedMime(
+      file.buffer,
+      policy.magicSignatures,
+    );
     const meta = {
       ...extractRequestContext(req),
       originalFilename: file.originalname,
@@ -657,12 +684,7 @@ export async function validateReportIssueAttachmentMagicBytes(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  return validateMagicBytesWithPolicy(
-    req,
-    res,
-    next,
-    REPORT_ATTACHMENT_POLICY,
-  );
+  return validateMagicBytesWithPolicy(req, res, next, REPORT_ATTACHMENT_POLICY);
 }
 
 export async function scanForMalware(
@@ -712,7 +734,8 @@ async function scanForMalwareWithSurface(
     });
     res.status(503).json({
       code: 'SCAN_UNAVAILABLE',
-      error: 'File scanning is currently unavailable. Please try again shortly.',
+      error:
+        'File scanning is currently unavailable. Please try again shortly.',
     });
     return;
   }
@@ -731,7 +754,11 @@ async function scanForMalwareWithSurface(
         sizeBytes: file.size,
         virusName: result.virusName ?? null,
       };
-      quarantineUploadBuffer(file, 'FILE_INFECTED', result.virusName ?? undefined);
+      quarantineUploadBuffer(
+        file,
+        'FILE_INFECTED',
+        result.virusName ?? undefined,
+      );
       appendSecurityLog(
         'upload_security_violation',
         'Rejected upload because malware was detected.',
@@ -742,7 +769,11 @@ async function scanForMalwareWithSurface(
         source: surface,
         severity: 'critical',
         message: 'Upload rejected because malware scanner flagged the file.',
-        fingerprintParts: [surface, 'malware-detected', result.virusName ?? 'unknown'],
+        fingerprintParts: [
+          surface,
+          'malware-detected',
+          result.virusName ?? 'unknown',
+        ],
         context: meta,
       });
       res.status(422).json({

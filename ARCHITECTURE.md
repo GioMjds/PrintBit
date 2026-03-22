@@ -29,7 +29,8 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 
 ## 3) Service layer (`src/services`)
 
-- `db.ts`: LowDB persistence (`db.json`) for balance, earnings, settings, stats, logs.
+- `db.ts`: shared schema/runtime database facade backed by SQLite runtime-state persistence.
+- `sqlite-storage.ts`: SQLite persistence (`printbit.sqlite`) for operational domains.
 - `serial.ts`: coin input parsing, balance mutation, and hopper command transport (shared 9600-baud serial line).
 - `hopper.ts`: coin hopper orchestration — dispense with retries, stats tracking, owed-change fallback.
 - `hopper-protocol.ts`: Arduino hopper serial protocol contract (command builders, response parser, error codes).
@@ -58,7 +59,7 @@ Frontend pages use REST APIs + Socket.IO to reflect machine state in near real-t
 
 ## Data model
 
-Persistent (`db.json`):
+Persistent (`printbit.sqlite`):
 
 - `balance`
 - `earnings`
@@ -103,7 +104,7 @@ Ephemeral (process memory):
 3. Arduino acknowledges with `HOPPER ACK`, sends `HOPPER PROGRESS` updates, then `HOPPER DONE` or `HOPPER ERR`.
 4. Protocol defined in `hopper-protocol.ts`; request IDs are 4-char hex for Arduino memory efficiency.
 5. Hopper only dispenses **1-peso coins** — all pricing enforced as whole-peso integers.
-6. On dispense failure, owed change is recorded for admin resolution (`owedChanges` in db.json).
+6. On dispense failure, owed change is recorded for admin resolution (`owedChanges` in SQLite state).
 7. Retries happen only for retryable error codes (JAM, MOTOR_TIMEOUT, PARTIAL).
 
 ## D) Admin flow

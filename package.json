@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon",
     "build": "node scripts/build-client.js",
+    "db:migrate:legacy": "ts-node -r tsconfig-paths/register --swc src/scripts/migrate-dbjson-to-sqlite.ts",
     "kiosk": "node ./scripts/launch-kiosk.js",
     "start": "cmd /c ./scripts/start-kiosk.bat",
     "install-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1",
@@ -38,7 +39,6 @@
     "i18next": "^25.9.0",
     "i18next-fs-backend": "^2.6.1",
     "i18next-http-middleware": "^3.9.2",
-    "lowdb": "^7.0.1",
     "multer": "^2.0.2",
     "nodemon": "^3.1.14",
     "pdfjs": "^2.5.4",

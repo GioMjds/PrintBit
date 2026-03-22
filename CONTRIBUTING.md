@@ -15,6 +15,7 @@ Useful commands:
 ```bash
 pnpm run build
 pnpm exec tsc --noEmit
+pnpm run db:migrate:legacy
 ```
 
 ## Workflow
@@ -41,7 +42,7 @@ pnpm exec tsc --noEmit
 
 - Avoid destructive changes to runtime artifacts:
   - `uploads/`
-  - `db.json`
+  - `printbit.sqlite`
 - Printing depends on `bin/SumatraPDF.exe`; do not change printer integration casually.
 - Serial/hotspot/scanner behavior should degrade gracefully when hardware is unavailable.
 
