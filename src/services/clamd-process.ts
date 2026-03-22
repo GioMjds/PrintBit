@@ -24,8 +24,13 @@ const CLAMD_RESTART_MAX_ATTEMPTS = readNonNegativeIntEnv(
   'PRINTBIT_CLAMD_RESTART_MAX_ATTEMPTS',
   0,
 );
+const CLAMD_UNREACHABLE_REPLACE_GRACE_MS = readPositiveIntEnv(
+  'PRINTBIT_CLAMD_UNREACHABLE_REPLACE_GRACE_MS',
+  45_000,
+);
 
 let clamdProcess: ChildProcess | null = null;
+let clamdProcessStartedAt = 0;
 let reconnectTimer: NodeJS.Timeout | null = null;
 let reconnectAttempts = 0;
 
@@ -114,6 +119,7 @@ function cleanupClamdProcess(reason: string): void {
     });
   }
   clamdProcess = null;
+  clamdProcessStartedAt = 0;
 }
 
 export async function startClamd(): Promise<void> {
@@ -131,6 +137,23 @@ export async function startClamd(): Promise<void> {
   }
 
   if (clamdProcess && !clamdProcess.killed) {
+    const processAgeMs =
+      clamdProcessStartedAt > 0 ? Math.max(0, Date.now() - clamdProcessStartedAt) : null;
+    if (
+      processAgeMs !== null &&
+      processAgeMs < CLAMD_UNREACHABLE_REPLACE_GRACE_MS
+    ) {
+      const detail = `ClamAV process warming up (${processAgeMs}ms elapsed; grace ${CLAMD_UNREACHABLE_REPLACE_GRACE_MS}ms).`;
+      console.warn(`[CLAMD] ${detail}`);
+      setWatchdogComponentState('clamd', 'degraded', detail, {
+        reachable: false,
+        processAgeMs,
+        replaceGraceMs: CLAMD_UNREACHABLE_REPLACE_GRACE_MS,
+      });
+      scheduleClamdRestart('process_warmup');
+      return;
+    }
+
     console.warn(
       '[CLAMD] Existing clamd process is unreachable; replacing stale process.',
     );
@@ -162,6 +185,9 @@ export async function startClamd(): Promise<void> {
   }
 
   console.log(`[CLAMD] Starting clamd.exe from ${path.dirname(CLAMD_EXE)}...`);
+  console.log(
+    `[CLAMD] Startup timeout=${STARTUP_TIMEOUT_MS}ms, replace grace=${CLAMD_UNREACHABLE_REPLACE_GRACE_MS}ms.`,
+  );
 
   clamdProcess = spawn(CLAMD_EXE, [], {
     cwd: path.dirname(CLAMD_EXE),
@@ -169,10 +195,12 @@ export async function startClamd(): Promise<void> {
     windowsHide: true,
     stdio: 'ignore',
   });
+  clamdProcessStartedAt = Date.now();
 
   clamdProcess.on('error', (err) => {
     console.error(`[CLAMD] ✗ Failed to start: ${err.message}`);
     clamdProcess = null;
+    clamdProcessStartedAt = 0;
     setWatchdogComponentState('clamd', 'unhealthy', `Failed to start: ${err.message}`, {
       reachable: false,
     });
@@ -182,6 +210,7 @@ export async function startClamd(): Promise<void> {
   clamdProcess.on('exit', (code) => {
     console.warn(`[CLAMD] Process exited with code ${code}`);
     clamdProcess = null;
+    clamdProcessStartedAt = 0;
     setWatchdogComponentState(
       'clamd',
       'degraded',

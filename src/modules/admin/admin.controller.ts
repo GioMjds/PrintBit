@@ -37,6 +37,7 @@ import {
 } from '@/utils/lockout';
 import { hashPassword, verifyPassword } from '@/utils/hash';
 import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
+import type { AlertSettings } from './admin.schema';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -109,8 +110,8 @@ function isAnomalyCategory(
 
 function parseAlertSettingsPayload(
   body: unknown,
-  current: typeof db.data.settings.alerts,
-): { next?: typeof db.data.settings.alerts; error?: string } {
+  current: AlertSettings,
+): { next?: AlertSettings; error?: string } {
   const payload = body as {
     severityThreshold?: unknown;
     dashboard?: { enabled?: unknown };
@@ -245,7 +246,7 @@ function parseAlertSettingsPayload(
   return { next };
 }
 
-function toSafeAlertSettings(alerts: typeof db.data.settings.alerts): {
+function toSafeAlertSettings(alerts: AlertSettings): {
   severityThreshold: 'warning' | 'critical';
   dashboard: { enabled: boolean };
   email: {
@@ -594,7 +595,8 @@ export class AdminController {
       'printer_malfunction_detected',
       'printer_midjob_malfunction',
     ]);
-    const jamEvents = db.data!.logs.filter((entry) =>
+    const jamEvents = this.adminService.listLogsByTypes([...jamLogTypes]).filter(
+      (entry) =>
       jamLogTypes.has(entry.type),
     );
     const nowMs = Date.now();
@@ -1139,11 +1141,11 @@ export class AdminController {
     const limit = Number.isFinite(rawLimit)
       ? Math.max(1, Math.min(1000, Math.floor(rawLimit)))
       : 200;
-    res.json({ logs: db.data!.logs.slice(0, limit) });
+    res.json({ logs: this.adminService.listLogs(limit) });
   };
 
   private handleExportLogs = (_req: Request, res: Response) => {
-    const csv = this.adminService.logsToCsv(db.data!.logs);
+    const csv = this.adminService.logsToCsv(this.adminService.listAllLogs());
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
@@ -1153,8 +1155,7 @@ export class AdminController {
   };
 
   private handleDeleteLogs = async (_req: Request, res: Response) => {
-    db.data!.logs = [];
-    await db.write();
+    await this.adminService.clearLogs();
     res.json({ ok: true });
   };
 

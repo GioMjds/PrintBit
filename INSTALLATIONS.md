@@ -11,7 +11,7 @@ This guide explains what software to install, what dependencies are used, and ho
 
 ## Core runtime
 
-- **Node.js:** 20.x LTS (recommended baseline).
+- **Node.js:** 22.5.0+ (required for built-in `node:sqlite` support).
 - **pnpm:** `10.13.1` (as declared by `packageManager` in `package.json`).
 - **Git:** latest stable.
 
@@ -28,7 +28,7 @@ This guide explains what software to install, what dependencies are used, and ho
 ## App dependencies (runtime)
 
 - **Server/framework:** `express`, `socket.io`, `cookie-parser`.
-- **Data/storage:** `lowdb`.
+- **Data/storage:** built-in Node SQLite (`node:sqlite`).
 - **File handling:** `multer`, `file-type`, `xlsx`.
 - **Document/media:** `pdfjs`, `pdfjs-dist`, `canvas`, `sharp`, `qrcode`.
 - **Security/hash:** `argon2`.
@@ -77,7 +77,7 @@ pnpm exec tsc --noEmit
 - Scanner is recognized by Windows/scanner APIs.
 - Serial coin/hopper controller is connected and readable.
 - `uploads/` directory is writable.
-- `db.json` exists (or can be created by app init).
+- `printbit.sqlite` exists (or can be created by app init).
 - Admin PIN and pricing configured through admin settings.
 
 ## 6) Common installation issues

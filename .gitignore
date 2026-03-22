@@ -3,7 +3,9 @@ package-lock.json
 .env
 dist
 *bundle.js
-db.json
+printbit.sqlite
+printbit.sqlite-shm
+printbit.sqlite-wal
 *app.js
 *uploads
 bin/

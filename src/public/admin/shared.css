@@ -552,7 +552,7 @@ body {
   .sidebar__names,
   .sidebar__env,
   .nav-btn > span:not(.nav-count-badge) {
-    display: none;
+    display: none !important;
   }
   .sidebar__logomark {
     width: 32px;
@@ -588,6 +588,10 @@ body {
   }
   .topbar-btn span {
     display: none;
+  }
+  /* Hide badge indicators on mobile */
+  .nav-count-badge {
+    display: none !important;
   }
 }
 

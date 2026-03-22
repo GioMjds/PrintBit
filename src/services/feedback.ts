@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  db,
   type FeedbackStatus,
   type FeedbackCategory,
   type FeedbackEntry,
@@ -8,6 +7,7 @@ import {
   type LogMeta,
 } from './db';
 import { adminService } from './admin';
+import { feedbackStore } from '@/core/database/sqlite-storage';
 
 const FEEDBACK_SESSION_TTL_MS = 15 * 60 * 1000;
 const FEEDBACK_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -61,8 +61,7 @@ class FeedbackService {
       submittedAt: null,
     };
 
-    db.data!.feedbackSessions.unshift(session);
-    await db.write();
+    feedbackStore.createSession(session);
 
     return {
       sessionId,
@@ -78,9 +77,7 @@ class FeedbackService {
     const normalizedToken = token.trim();
     if (!normalizedToken) return null;
 
-    const session =
-      db.data!.feedbackSessions.find((s) => s.token === normalizedToken) ??
-      null;
+    const session = feedbackStore.getSessionByToken(normalizedToken);
     if (!session) return null;
     if (this.isExpired(session.expiresAt)) return null;
 
@@ -96,8 +93,9 @@ class FeedbackService {
     const category = this.normalizeCategory(input.category);
     const rating = this.normalizeRating(input.rating);
 
-    const session = db.data!.feedbackSessions.find(
-      (s) => s.id === input.sessionId && s.token === input.token,
+    const session = feedbackStore.findSessionByIdAndToken(
+      input.sessionId,
+      input.token,
     );
     if (!session) throw new Error('Invalid session');
     if (this.isExpired(session.expiresAt))
@@ -115,9 +113,7 @@ class FeedbackService {
       meta: input.meta,
     };
 
-    db.data!.feedback.unshift(entry);
-    session.submittedAt = entry.timestamp;
-    await db.write();
+    feedbackStore.createFeedbackSubmission(entry);
 
     await adminService.appendAdminLog(
       'feedback_submitted',
@@ -137,30 +133,15 @@ class FeedbackService {
     const status = options.status;
     const limit = this.clampLimit(options.limit);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
-
-    const filtered =
-      status == null
-        ? db.data!.feedback
-        : db.data!.feedback.filter((entry) => entry.status === status);
-
-    const items = filtered.slice(offset, offset + limit);
-
-    return {
-      total: filtered.length,
-      items,
-    };
+    return feedbackStore.listFeedback({ status, limit, offset });
   }
 
   async toggleResolved(
     feedbackId: string,
     resolved: boolean,
   ): Promise<FeedbackEntry | null> {
-    const entry = db.data!.feedback.find((f) => f.id === feedbackId) ?? null;
+    const entry = feedbackStore.updateFeedbackResolved(feedbackId, resolved);
     if (!entry) return null;
-
-    entry.status = resolved ? 'resolved' : 'open';
-    entry.resolvedAt = resolved ? new Date().toISOString() : null;
-    await db.write();
 
     await adminService.appendAdminLog(
       resolved ? 'feedback_resolved' : 'feedback_reopened',
@@ -172,11 +153,8 @@ class FeedbackService {
   }
 
   async deleteFeedback(feedbackId: string): Promise<boolean> {
-    const before = db.data!.feedback.length;
-    db.data!.feedback = db.data!.feedback.filter((f) => f.id !== feedbackId);
-    if (db.data!.feedback.length === before) return false;
-
-    await db.write();
+    const deleted = feedbackStore.deleteFeedback(feedbackId);
+    if (!deleted) return false;
 
     await adminService.appendAdminLog(
       'feedback_deleted',
@@ -188,11 +166,8 @@ class FeedbackService {
   }
 
   async clearFeedback(): Promise<number> {
-    const removed = db.data!.feedback.length;
+    const removed = feedbackStore.clearFeedback();
     if (removed === 0) return 0;
-
-    db.data!.feedback = [];
-    await db.write();
 
     await adminService.appendAdminLog(
       'feedback_cleared',
@@ -204,7 +179,7 @@ class FeedbackService {
   }
 
   listAllFeedback(): FeedbackEntry[] {
-    return db.data!.feedback.slice();
+    return feedbackStore.listAllFeedback();
   }
 
   feedbackToCsv(entries: FeedbackEntry[]): string {
@@ -245,24 +220,7 @@ class FeedbackService {
   }
 
   async cleanupExpiredSessions(now = new Date()): Promise<void> {
-    const nowMs = now.getTime();
-    const retentionCutoff = nowMs - FEEDBACK_SESSION_RETENTION_MS;
-    const before = db.data!.feedbackSessions.length;
-
-    db.data!.feedbackSessions = db.data!.feedbackSessions.filter((session) => {
-      const expiresAtMs = Date.parse(session.expiresAt);
-      const createdAtMs = Date.parse(session.createdAt);
-
-      if (!Number.isFinite(expiresAtMs)) return false;
-      if (expiresAtMs >= nowMs) return true;
-
-      if (!Number.isFinite(createdAtMs)) return false;
-      return createdAtMs >= retentionCutoff;
-    });
-
-    if (db.data!.feedbackSessions.length !== before) {
-      await db.write();
-    }
+    feedbackStore.cleanupExpiredSessions(now, FEEDBACK_SESSION_RETENTION_MS);
   }
 
   private buildFeedbackUrl(publicBaseUrl: URL, token: string): string {

@@ -64,7 +64,7 @@ Troubleshooting:
 ## Tech stack
 
 - **Backend:** Node.js, Express, Socket.IO, TypeScript
-- **Storage:** LowDB (`db.json`)
+- **Storage:** SQLite (`printbit.sqlite`) for persisted kiosk state
 - **Upload handling:** Multer
 - **Printing:** SumatraPDF portable executable (`bin/SumatraPDF.exe`)
 - **Serial integration:** `serialport`
@@ -98,6 +98,20 @@ pnpm run build
 pnpm exec tsc --noEmit
 ```
 
+### 5) One-time legacy import (optional)
+
+If upgrading from an older deployment that still has `db.json`, run:
+
+```bash
+pnpm run db:migrate:legacy
+```
+
+Use `--force` to rerun import after clearing the migration marker:
+
+```bash
+pnpm run db:migrate:legacy -- --force
+```
+
 ## Project structure
 
 ```text
@@ -109,7 +123,7 @@ src/
   services/                 # Printer, serial, session, hotspot, db, admin logic
   public/                   # Browser UI pages (print/upload/config/confirm/copy/scan/admin)
 uploads/                    # Runtime uploaded files
-db.json                     # Runtime persisted machine state
+printbit.sqlite             # Runtime persisted machine state (SQLite)
 bin/                        # External executables (ex: SumatraPDF.exe)
 ```
 
@@ -152,7 +166,7 @@ Troubleshooting mobile captive onboarding:
 
 ## Important notes
 
-- Upload and machine state are persisted in `uploads/` and `db.json`; do not delete these unintentionally during operation.
+- Upload and machine state are persisted in `uploads/` and `printbit.sqlite`; do not delete these unintentionally during operation.
 - Admin routes are restricted by local-network checks and admin PIN header requirements.
 - Current hotspot/captive behavior is optimized for Android flow; iOS flow improvements are being planned.
 

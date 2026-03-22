@@ -5,6 +5,8 @@
 - Start dev server: `pnpm dev`
 - Build client bundle: `pnpm build`
 - Type-check: `pnpm exec tsc --noEmit`
+- Run one-time legacy JSON->SQLite import: `pnpm run db:migrate:legacy`
+- Force rerun legacy import (clears import marker): `pnpm run db:migrate:legacy -- --force`
 - Apply controlled updates policy: `pnpm run updates:apply`
 - Verify controlled updates policy: `pnpm run updates:verify`
 - Revert controlled updates policy: `pnpm run updates:revert`
@@ -39,7 +41,10 @@
 
 ### Staged rollout process (one-kiosk canary first)
 
-1. Select one kiosk as canary and back up `db.json`.
+1. Select one kiosk as canary and back up critical runtime state:
+   - **SQLite database:** Copy `printbit.sqlite` (and .sqlite-shm/.sqlite-wal if present) to a timestamped backup directory.
+   - **Uploads directory:** Copy the entire `uploads/` directory to preserve queued documents and scans.
+   - Verify backup integrity by checking file sizes and testing SQLite file with `sqlite3 backup.sqlite "PRAGMA integrity_check;"` before proceeding.
 2. Apply update controls:
    - `pnpm run updates:apply`
    - `pnpm run updates:verify`
@@ -139,9 +144,10 @@
 
 - Runtime artifacts:
   - `uploads/`
-  - `db.json`
+  - `printbit.sqlite`
+- Legacy `db.json` import is idempotent and marker-guarded; use the force command only during controlled migration recovery.
 - Scanned files in `uploads/scans` are auto-cleaned based on `PRINTBIT_SCAN_FILE_RETENTION_MS` (default 24 hours).
-- Back up `db.json` before maintenance.
+- Back up `printbit.sqlite` before maintenance.
 - Use admin endpoints to clear storage instead of manual destructive deletes when possible.
 
 ## Install/software dependency reference

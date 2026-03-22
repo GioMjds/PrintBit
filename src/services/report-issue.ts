@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import {
-  db,
   type LogMeta,
   type ReportIssueAttachmentEntry,
   type ReportIssueCategory,
@@ -10,6 +9,7 @@ import {
   type ReportIssueStatus,
 } from './db';
 import { adminService } from './admin';
+import { reportIssueStore } from '@/core/database/sqlite-storage';
 
 const REPORT_SESSION_TTL_MS = 15 * 60 * 1000;
 const REPORT_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -85,8 +85,7 @@ class ReportIssueService {
       submittedAt: null,
     };
 
-    db.data!.reportIssueSessions.unshift(session);
-    await db.write();
+    reportIssueStore.createSession(session);
 
     return { sessionId, token, reportUrl, expiresAt: session.expiresAt };
   }
@@ -99,9 +98,7 @@ class ReportIssueService {
     const normalizedToken = token.trim();
     if (!normalizedToken) return null;
 
-    const session =
-      db.data!.reportIssueSessions.find((s) => s.token === normalizedToken) ??
-      null;
+    const session = reportIssueStore.getSessionByToken(normalizedToken);
     if (!session) return null;
     if (this.isExpired(session.expiresAt)) return null;
 
@@ -117,9 +114,7 @@ class ReportIssueService {
       throw new Error('Session has expired');
     if (session.submittedAt) throw new Error('Session already submitted');
 
-    const existingCount = db.data!.reportIssueAttachments.filter(
-      (a) => a.sessionId === session.id,
-    ).length;
+    const existingCount = reportIssueStore.countSessionAttachments(session.id);
     if (existingCount >= MAX_ATTACHMENTS_PER_SESSION)
       throw new Error('Attachment limit reached');
 
@@ -135,8 +130,7 @@ class ReportIssueService {
       filePath: input.filePath,
     };
 
-    db.data!.reportIssueAttachments.unshift(attachment);
-    await db.write();
+    reportIssueStore.registerAttachment(attachment);
 
     await adminService.appendAdminLog(
       'report_issue_attachment_uploaded',
@@ -189,16 +183,7 @@ class ReportIssueService {
       meta: input.meta,
     };
 
-    db.data!.reportIssues.unshift(entry);
-
-    for (const attachment of db.data!.reportIssueAttachments) {
-      if (attachmentIds.includes(attachment.id)) {
-        attachment.reportIssueId = entry.id;
-      }
-    }
-
-    session.submittedAt = entry.timestamp;
-    await db.write();
+    reportIssueStore.createSessionIssueWithAttachments(entry);
 
     await adminService.appendAdminLog(
       'report_issue_submitted',
@@ -241,8 +226,7 @@ class ReportIssueService {
       meta: input.meta,
     };
 
-    db.data!.reportIssues.unshift(entry);
-    await db.write();
+    reportIssueStore.createReportIssue(entry);
 
     await adminService.appendAdminLog(
       'report_issue_created_admin',
@@ -260,34 +244,26 @@ class ReportIssueService {
     const limit = this.clampLimit(options.limit);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
 
-    const filtered = db.data!.reportIssues.filter((entry) => {
-      if (status && entry.status !== status) return false;
-      if (category && entry.category !== category) return false;
-      return true;
+    return reportIssueStore.listReportIssues({
+      status,
+      category,
+      limit,
+      offset,
     });
-
-    return {
-      total: filtered.length,
-      items: filtered.slice(offset, offset + limit),
-    };
   }
 
   getReportIssueById(id: string): ReportIssueEntry | null {
-    return db.data!.reportIssues.find((r) => r.id === id) ?? null;
+    return reportIssueStore.getReportIssueById(id);
   }
 
   listAttachmentsForReport(
     reportIssueId: string,
   ): ReportIssueAttachmentEntry[] {
-    return db.data!.reportIssueAttachments.filter(
-      (a) => a.reportIssueId === reportIssueId,
-    );
+    return reportIssueStore.listAttachmentsForReport(reportIssueId);
   }
 
   findAttachmentById(attachmentId: string): ReportIssueAttachmentEntry | null {
-    return (
-      db.data!.reportIssueAttachments.find((a) => a.id === attachmentId) ?? null
-    );
+    return reportIssueStore.findAttachmentById(attachmentId);
   }
 
   async updateStatus(
@@ -297,76 +273,48 @@ class ReportIssueService {
     const entry = this.getReportIssueById(id);
     if (!entry) return null;
 
-    entry.status = status;
+    const nowIso = new Date().toISOString();
+    let acknowledgedAt = entry.acknowledgedAt;
+    let resolvedAt = entry.resolvedAt;
     if (status === 'acknowledged' && !entry.acknowledgedAt) {
-      entry.acknowledgedAt = new Date().toISOString();
+      acknowledgedAt = nowIso;
     }
     if (status === 'resolved') {
-      if (!entry.acknowledgedAt)
-        entry.acknowledgedAt = new Date().toISOString();
-      entry.resolvedAt = new Date().toISOString();
+      if (!acknowledgedAt) acknowledgedAt = nowIso;
+      resolvedAt = nowIso;
     }
     if (status === 'open') {
-      entry.acknowledgedAt = null;
-      entry.resolvedAt = null;
+      acknowledgedAt = null;
+      resolvedAt = null;
     }
-
-    await db.write();
+    const updated = reportIssueStore.updateIssueStatus(
+      id,
+      status,
+      acknowledgedAt,
+      resolvedAt,
+    );
+    if (!updated) return null;
 
     await adminService.appendAdminLog(
       'report_issue_status_changed',
       'Report issue status updated',
-      { reportIssueId: entry.id, status: entry.status },
+      { reportIssueId: updated.id, status: updated.status },
     );
 
-    return entry;
+    return updated;
   }
 
   async cleanupExpiredSessions(now = new Date()): Promise<void> {
-    const nowMs = now.getTime();
-    const retentionCutoff = nowMs - REPORT_SESSION_RETENTION_MS;
-    const before = db.data!.reportIssueSessions.length;
-
-    const removedSessionIds = new Set<string>();
-
-    db.data!.reportIssueSessions = db.data!.reportIssueSessions.filter(
-      (session) => {
-        const expiresAtMs = Date.parse(session.expiresAt);
-        const createdAtMs = Date.parse(session.createdAt);
-
-        if (!Number.isFinite(expiresAtMs)) {
-          removedSessionIds.add(session.id);
-          return false;
-        }
-        if (expiresAtMs >= nowMs) return true;
-        if (!Number.isFinite(createdAtMs)) {
-          removedSessionIds.add(session.id);
-          return false;
-        }
-        const keep = createdAtMs >= retentionCutoff;
-        if (!keep) removedSessionIds.add(session.id);
-        return keep;
-      },
+    const cleanup = reportIssueStore.cleanupExpiredSessions(
+      now,
+      REPORT_SESSION_RETENTION_MS,
     );
-
-    if (removedSessionIds.size > 0) {
-      const orphaned = db.data!.reportIssueAttachments.filter(
-        (a) => removedSessionIds.has(a.sessionId) && !a.reportIssueId,
-      );
-
-      for (const att of orphaned) {
+    if (cleanup.orphanedAttachments.length > 0) {
+      for (const att of cleanup.orphanedAttachments) {
         try {
           fs.unlinkSync(att.filePath);
         } catch {}
       }
-
-      db.data!.reportIssueAttachments = db.data!.reportIssueAttachments.filter(
-        (a) => !(removedSessionIds.has(a.sessionId) && !a.reportIssueId),
-      );
-    }
-
-    if (before !== db.data!.reportIssueSessions.length) {
-      await db.write();
     }
   }
 
@@ -374,21 +322,15 @@ class ReportIssueService {
     sessionId: string,
     token: string,
   ): ReportIssueSessionEntry | null {
-    return (
-      db.data!.reportIssueSessions.find(
-        (s) => s.id === sessionId && s.token === token,
-      ) ?? null
-    );
+    return reportIssueStore.findSessionByIdAndToken(sessionId, token);
   }
 
   private resolveAttachmentIds(ids: string[], sessionId: string): string[] {
     const unique = [
       ...new Set(ids.filter((id) => typeof id === 'string' && id.trim())),
     ];
-    const valid = db
-      .data!.reportIssueAttachments.filter(
-        (a) => a.sessionId === sessionId && a.reportIssueId === null,
-      )
+    const valid = reportIssueStore
+      .listUnlinkedSessionAttachments(sessionId)
       .map((a) => a.id);
     return unique.filter((id) => valid.includes(id));
   }
