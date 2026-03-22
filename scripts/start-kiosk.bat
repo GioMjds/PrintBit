@@ -49,7 +49,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-set "PORT=3000"
+if "%PORT%"=="" set "PORT=3000"
 
 :: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
 echo [PrintBit] Starting server...
@@ -60,10 +60,19 @@ echo [PrintBit] Waiting for server to start...
 timeout /t 10 /nobreak >nul
 
 call :detect_ip
-if "%LOCAL_IP%"=="" (
-    timeout /t 3 /nobreak >nul
-    call :detect_ip
+set "INITIAL_IP=%LOCAL_IP%"
+timeout /t 3 /nobreak >nul
+call :detect_ip
+set "NEW_IP=%LOCAL_IP%"
+
+set "LOCAL_IP=%INITIAL_IP%"
+if not "%NEW_IP%"=="" (
+    echo %NEW_IP% | findstr /R "^192\.168\.5\." >nul && set "LOCAL_IP=%NEW_IP%"
+    echo %NEW_IP% | findstr /R "^192\.168\.137\." >nul && set "LOCAL_IP=%NEW_IP%"
+    if "%LOCAL_IP%"=="" set "LOCAL_IP=%NEW_IP%"
 )
+set "INITIAL_IP="
+set "NEW_IP="
 if "%LOCAL_IP%"=="" (
     echo [PrintBit] WARNING: Could not detect local IP. Falling back to localhost.
     set "LOCAL_IP=localhost"
