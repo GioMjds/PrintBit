@@ -140,6 +140,7 @@ export type SettingsResponse = {
       serialMs: number;
       hopperMs: number;
       networkMs: number;
+      securityMs: number;
     };
   };
 };

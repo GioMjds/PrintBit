@@ -3,12 +3,17 @@ const { spawn } = require('child_process');
 
 function getLocalIPv4() {
   const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+  const all = [];
+
+  for (const ifaces of Object.values(interfaces)) {
+    for (const iface of ifaces || []) {
+      if (iface.family === 'IPv4' && !iface.internal) all.push(iface.address);
     }
   }
-  return null;
+
+  // Prefer hotspot ranges first (matches MyPublicWiFi defaults)
+  const preferred = all.find(ip => ip.startsWith('192.168.5.') || ip.startsWith('192.168.137.'));
+  return preferred ?? all[0] ?? null;
 }
 
 const host = getLocalIPv4() || 'localhost';

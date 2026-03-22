@@ -53,7 +53,8 @@ export type AnomalyCategory =
   | 'spooler'
   | 'serial'
   | 'hopper'
-  | 'network';
+  | 'network'
+  | 'security';
 
 export interface AlertDashboardSettings {
   enabled: boolean;
@@ -75,6 +76,7 @@ export interface AlertDedupeSettings {
   serialMs: number;
   hopperMs: number;
   networkMs: number;
+  securityMs: number;
 }
 
 export interface AlertSettings {
@@ -361,6 +363,7 @@ const DEFAULT_DATA: Schema = {
         serialMs: 2 * 60 * 1_000,
         hopperMs: 2 * 60 * 1_000,
         networkMs: 5 * 60 * 1_000,
+        securityMs: 2 * 60 * 1_000,
       },
     },
     inkMonitoring: {
@@ -470,14 +473,15 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         id: candidate.id,
         type: candidate.type,
         source: candidate.source,
-        category:
-          candidate.category === 'printer' ||
-          candidate.category === 'spooler' ||
-          candidate.category === 'serial' ||
-          candidate.category === 'hopper' ||
-          candidate.category === 'network'
-            ? candidate.category
-            : 'printer',
+          category:
+            candidate.category === 'printer' ||
+            candidate.category === 'spooler' ||
+            candidate.category === 'serial' ||
+            candidate.category === 'hopper' ||
+            candidate.category === 'network' ||
+            candidate.category === 'security'
+              ? candidate.category
+              : 'printer',
         severity: candidate.severity === 'critical' ? 'critical' : 'warning',
         status:
           candidate.status === 'acknowledged' || candidate.status === 'resolved'
@@ -647,6 +651,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           networkMs: finiteOr(
             alertSettings?.dedupe?.networkMs,
             DEFAULT_DATA.settings.alerts.dedupe.networkMs,
+          ),
+          securityMs: finiteOr(
+            alertSettings?.dedupe?.securityMs,
+            DEFAULT_DATA.settings.alerts.dedupe.securityMs,
           ),
         },
       },

@@ -1,4 +1,4 @@
-import type { Express, Request, RequestHandler, Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { Server } from 'socket.io';
@@ -19,6 +19,12 @@ import { randomUUID } from 'node:crypto';
 import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
 import {
+  legacyUploadMiddleware,
+  validateLegacyUploadMagicBytes,
+  scanLegacyUploadForMalware,
+  handleMulterError,
+} from '@/middleware/file-validation';
+import {
   assertTrustedTimeForFinancialOperation,
   getTrustedTimestamp,
   isTrustedTimeError,
@@ -27,7 +33,6 @@ import {
 interface RegisterFinancialRoutesDeps {
   io: Server;
   sessionStore: SessionStore;
-  uploadSingle: RequestHandler;
   resolvePublicBaseUrl: (req: Request) => URL;
 }
 
@@ -87,6 +92,39 @@ interface UploadDeletionResult {
   alreadyMissing: boolean;
   filePath: string;
   error: string | null;
+}
+
+const LEGACY_UPLOAD_STAGING_DIR = path.resolve('uploads/staging/legacy');
+
+async function persistLegacyUploadWithStaging(
+  buffer: Buffer,
+  storedFilename: string,
+): Promise<string> {
+  const uploadsDir = path.resolve('uploads');
+  const finalPath = path.resolve(uploadsDir, storedFilename);
+  const relativePath = path.relative(uploadsDir, finalPath);
+  const outsideUploads =
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath);
+  if (outsideUploads) {
+    throw new Error('Invalid filename');
+  }
+
+  await fs.promises.mkdir(uploadsDir, { recursive: true });
+  await fs.promises.mkdir(LEGACY_UPLOAD_STAGING_DIR, { recursive: true });
+
+  const stagingPath = path.join(LEGACY_UPLOAD_STAGING_DIR, `${storedFilename}.part`);
+  await fs.promises.writeFile(stagingPath, buffer, { flag: 'wx' });
+
+  try {
+    await fs.promises.rename(stagingPath, finalPath);
+  } catch (error) {
+    await fs.promises.unlink(stagingPath).catch(() => {});
+    throw error;
+  }
+
+  return finalPath;
 }
 
 async function deleteUploadByStoredFilename(
@@ -329,26 +367,50 @@ export function registerFinancialRoutes(
     },
   );
 
-  app.post('/upload', deps.uploadSingle, (req: Request, res: Response) => {
-    if (!req.file) {
-      void adminService.appendAdminLog(
-        'upload_failed',
-        'Upload failed: no file provided.',
-      );
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+  app.post(
+    '/upload',
+    legacyUploadMiddleware.single('file'),
+    validateLegacyUploadMagicBytes,
+    scanLegacyUploadForMalware,
+    async (req: Request, res: Response) => {
+      if (!req.file) {
+        await adminService.appendAdminLog(
+          'upload_failed',
+          'Upload failed: no file provided.',
+        );
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
 
-    void adminService.appendAdminLog(
-      'upload_completed',
-      'Upload completed via /upload.',
-      {
-        filename: req.file.originalname,
-        storedFilename: req.file.filename,
-        sizeBytes: req.file.size,
-      },
-    );
-    res.status(200).json({ filename: req.file.filename });
-  });
+      const safeFilename = `${randomUUID()}${path.extname(req.file.originalname).toLowerCase()}`;
+
+      try {
+        await persistLegacyUploadWithStaging(req.file.buffer, safeFilename);
+      } catch (error) {
+        await adminService.appendAdminLog(
+          'upload_failed',
+          'Upload failed while persisting validated file.',
+          {
+            filename: req.file.originalname,
+            sizeBytes: req.file.size,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        return res.status(500).json({ error: 'Failed to store uploaded file.' });
+      }
+
+      await adminService.appendAdminLog(
+        'upload_completed',
+        'Upload completed via /upload.',
+        {
+          filename: req.file.originalname,
+          storedFilename: safeFilename,
+          sizeBytes: req.file.size,
+        },
+      );
+      res.status(200).json({ filename: safeFilename });
+    },
+  );
+  app.use('/upload', handleMulterError);
 
   app.post('/print', async (req: Request, res: Response) => {
     const { filename } = req.body as { filename?: string };

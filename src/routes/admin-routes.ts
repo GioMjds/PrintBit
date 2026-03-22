@@ -85,13 +85,20 @@ function isAnomalyStatus(
 
 function isAnomalyCategory(
   value: unknown,
-): value is 'printer' | 'spooler' | 'serial' | 'hopper' | 'network' {
+): value is
+  | 'printer'
+  | 'spooler'
+  | 'serial'
+  | 'hopper'
+  | 'network'
+  | 'security' {
   return (
     value === 'printer' ||
     value === 'spooler' ||
     value === 'serial' ||
     value === 'hopper' ||
-    value === 'network'
+    value === 'network' ||
+    value === 'security'
   );
 }
 
@@ -117,6 +124,7 @@ function parseAlertSettingsPayload(
       serialMs?: unknown;
       hopperMs?: unknown;
       networkMs?: unknown;
+      securityMs?: unknown;
     };
   };
 
@@ -201,7 +209,12 @@ function parseAlertSettingsPayload(
   if (payload.dedupe) {
     const dedupeEntries: Array<
       [
-        'printerMs' | 'spoolerMs' | 'serialMs' | 'hopperMs' | 'networkMs',
+        | 'printerMs'
+        | 'spoolerMs'
+        | 'serialMs'
+        | 'hopperMs'
+        | 'networkMs'
+        | 'securityMs',
         unknown,
       ]
     > = [
@@ -210,6 +223,7 @@ function parseAlertSettingsPayload(
       ['serialMs', payload.dedupe.serialMs],
       ['hopperMs', payload.dedupe.hopperMs],
       ['networkMs', payload.dedupe.networkMs],
+      ['securityMs', payload.dedupe.securityMs],
     ];
     for (const [key, raw] of dedupeEntries) {
       if (raw === undefined) continue;
@@ -242,6 +256,7 @@ function toSafeAlertSettings(alerts: typeof db.data.settings.alerts): {
     serialMs: number;
     hopperMs: number;
     networkMs: number;
+    securityMs: number;
   };
 } {
   return {

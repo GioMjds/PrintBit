@@ -29,6 +29,20 @@ export const ALLOWED_EXTENSIONS = new Set([
   '.png',
 ]);
 
+export const REPORT_ATTACHMENT_ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/octet-stream',
+]);
+
+export const REPORT_ATTACHMENT_ALLOWED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+]);
+
 export const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 export const MAX_FILE_SIZE_LABEL = '25 MB';
 
@@ -68,6 +82,17 @@ export const MAGIC_SIGNATURES: Record<string, MagicSignature[]> = {
   'image/png': [{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] }],
 };
 
+export const REPORT_ATTACHMENT_MAGIC_SIGNATURES: Record<
+  string,
+  MagicSignature[]
+> = {
+  'image/jpeg': [{ bytes: [0xff, 0xd8, 0xff] }],
+  'image/png': [{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] }],
+  // WebP files begin with RIFF....WEBP (RIFF at offset 0 + WEBP at offset 8).
+  // The second marker is enforced through a custom validator in middleware.
+  'image/webp': [{ bytes: [0x52, 0x49, 0x46, 0x46], offset: 0 }],
+};
+
 // Extension-to-MIME mapping for consistent lookups
 export const EXTENSION_MIME_MAP: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -82,6 +107,13 @@ export const EXTENSION_MIME_MAP: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
+};
+
+export const REPORT_ATTACHMENT_EXTENSION_MIME_MAP: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
 };
 
 // OOXML internal directory markers for structural validation

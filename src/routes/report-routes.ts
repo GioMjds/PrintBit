@@ -1,19 +1,27 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import type { Express, Request, RequestHandler, Response } from 'express';
+import type { Express, Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { requireAdminLocalAccess, requireAdminPin } from '@/middleware';
 import { reportIssueService } from '@/services';
 import type { ReportIssueCategory, ReportIssueStatus } from '@/services';
+import {
+  reportIssueAttachmentUploadMiddleware,
+  validateReportIssueAttachmentMagicBytes,
+  scanReportIssueAttachmentForMalware,
+  handleMulterError,
+} from '@/middleware/file-validation';
 
 export interface RegisterReportRoutesDeps {
   resolvePublicBaseUrl: (req: Request) => URL;
-  reportIssueUploadSingle: RequestHandler;
 }
 
 const REPORT_PORTAL_DIR = path.resolve('src/public/report');
 const REPORT_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 const REPORT_IMAGE_DIR = path.resolve('uploads/report-issues');
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const REPORT_ATTACHMENT_STAGING_DIR = path.resolve(
+  'uploads/staging/report-issues',
+);
 
 const EXPIRED_HTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -48,11 +56,75 @@ function renderReportPortal(token: string): string {
   );
 }
 
+function resolveAttachmentExtension(
+  originalName: string,
+  mimeType: string,
+): string {
+  const fromName = path.extname(originalName).toLowerCase();
+  if (fromName === '.jpg' || fromName === '.jpeg') return '.jpg';
+  if (fromName === '.png') return '.png';
+  if (fromName === '.webp') return '.webp';
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/webp') return '.webp';
+  return '.jpg';
+}
+
+async function persistAttachmentWithStaging(
+  buffer: Buffer,
+  storedName: string,
+): Promise<string> {
+  const resolvedReportDir = path.resolve(REPORT_IMAGE_DIR);
+  const finalPath = path.resolve(resolvedReportDir, storedName);
+  const relativePath = path.relative(resolvedReportDir, finalPath);
+  const outsideDir =
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath);
+  if (outsideDir) {
+    throw new Error('Invalid file name.');
+  }
+
+  await fs.promises.mkdir(REPORT_IMAGE_DIR, { recursive: true });
+  await fs.promises.mkdir(REPORT_ATTACHMENT_STAGING_DIR, { recursive: true });
+
+  const resolvedStagingDir = path.resolve(REPORT_ATTACHMENT_STAGING_DIR);
+  const stagingName = `${storedName}.part`;
+  const stagingPath = path.resolve(resolvedStagingDir, stagingName);
+  const stagingRelativePath = path.relative(resolvedStagingDir, stagingPath);
+  const outsideStagingDir =
+    stagingRelativePath === '..' ||
+    stagingRelativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(stagingRelativePath);
+  if (outsideStagingDir) {
+    throw new Error('Invalid file name.');
+  }
+
+  await fs.promises.writeFile(stagingPath, buffer, { flag: 'wx' });
+  try {
+    const finalPathResolved = path.resolve(finalPath);
+    if (!finalPathResolved.startsWith(resolvedReportDir + path.sep)) {
+      await fs.promises.unlink(stagingPath).catch(() => {});
+      throw new Error('Invalid file name.');
+    }
+    if (!stagingPath.startsWith(resolvedStagingDir + path.sep)) {
+      await fs.promises.unlink(stagingPath).catch(() => {});
+      throw new Error('Invalid file name.');
+    }
+    await fs.promises.rename(stagingPath, finalPath);
+  } catch (error) {
+    await fs.promises.unlink(stagingPath).catch(() => {});
+    throw error;
+  }
+
+  return finalPath;
+}
+
 export function registerReportRoutes(
   app: Express,
   deps: RegisterReportRoutesDeps,
 ) {
   fs.mkdirSync(REPORT_IMAGE_DIR, { recursive: true });
+  fs.mkdirSync(REPORT_ATTACHMENT_STAGING_DIR, { recursive: true });
 
   // ── Public session creation ────────────────────────────────────────────────
 
@@ -86,7 +158,9 @@ export function registerReportRoutes(
 
   app.post(
     '/api/report-issues/sessions/:sessionId/attachments',
-    deps.reportIssueUploadSingle,
+    reportIssueAttachmentUploadMiddleware.single('file'),
+    validateReportIssueAttachmentMagicBytes,
+    scanReportIssueAttachmentForMalware,
     async (req: Request, res: Response) => {
       const { sessionId } = req.params as { sessionId: string };
       const token = typeof req.query.token === 'string' ? req.query.token : '';
@@ -96,22 +170,23 @@ export function registerReportRoutes(
         return res.status(400).json({ error: 'No file provided.' });
       }
 
-      if (!ALLOWED_IMAGE_TYPES.has(file.mimetype)) {
-        fs.unlink(file.path, () => {});
-        return res
-          .status(400)
-          .json({ error: 'Only JPEG, PNG, and WebP images are allowed.' });
-      }
+      const extension = resolveAttachmentExtension(
+        file.originalname,
+        file.mimetype,
+      );
+      const storedName = `${randomUUID()}${extension}`;
+      let finalPath = '';
 
       try {
+        finalPath = await persistAttachmentWithStaging(file.buffer, storedName);
         const attachment = await reportIssueService.registerAttachment({
           sessionId,
           token,
           originalName: file.originalname,
-          storedName: file.filename,
+          storedName,
           contentType: file.mimetype,
           sizeBytes: file.size,
-          filePath: file.path,
+          filePath: finalPath,
         });
 
         res.status(201).json({
@@ -122,12 +197,15 @@ export function registerReportRoutes(
           uploadedAt: attachment.timestamp,
         });
       } catch (err) {
-        fs.unlink(file.path, () => {});
+        if (finalPath) {
+          await fs.promises.unlink(finalPath).catch(() => {});
+        }
         const message = err instanceof Error ? err.message : String(err);
         res.status(400).json({ error: message });
       }
     },
   );
+  app.use('/api/report-issues/sessions/:sessionId/attachments', handleMulterError);
 
   // ── Report submission ──────────────────────────────────────────────────────
 

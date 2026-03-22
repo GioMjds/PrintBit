@@ -49,38 +49,59 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Resolve dynamic local IPv4 (first non-loopback adapter)
-for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*"') do (
-    set "LOCAL_IP=%%A"
-    goto :got_ip
+if "%PORT%"=="" set "PORT=3000"
+
+:: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
+echo [PrintBit] Starting server...
+start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && pnpm run dev"
+
+:: Wait for server + hotspot to come up before selecting kiosk IP
+echo [PrintBit] Waiting for server to start...
+timeout /t 10 /nobreak >nul
+
+call :detect_ip
+set "INITIAL_IP=%LOCAL_IP%"
+timeout /t 3 /nobreak >nul
+call :detect_ip
+set "NEW_IP=%LOCAL_IP%"
+
+set "LOCAL_IP=%INITIAL_IP%"
+if not "%NEW_IP%"=="" (
+    echo %NEW_IP% | findstr /R "^192\.168\.5\." >nul && set "LOCAL_IP=%NEW_IP%"
+    echo %NEW_IP% | findstr /R "^192\.168\.137\." >nul && set "LOCAL_IP=%NEW_IP%"
+    if "%LOCAL_IP%"=="" set "LOCAL_IP=%NEW_IP%"
 )
-:got_ip
-:: Strip leading space left by the "delims=:" split
-
-for /f "tokens=1 delims= (" %%A in ("%LOCAL_IP%") do set "LOCAL_IP=%%A"
-
-:: Exclude link-local addresses (fallback to localhost)
-if "%LOCAL_IP:~0,8%"=="169.254." set "LOCAL_IP="
-
+set "INITIAL_IP="
+set "NEW_IP="
 if "%LOCAL_IP%"=="" (
     echo [PrintBit] WARNING: Could not detect local IP. Falling back to localhost.
     set "LOCAL_IP=localhost"
 )
 
-set "PORT=3000"
 set "KIOSK_URL=http://%LOCAL_IP%:%PORT%"
 echo [PrintBit] Kiosk URL: %KIOSK_URL%
-
-:: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
-echo [PrintBit] Starting server...
-start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && set PRINTBIT_KIOSK_LOCKDOWN=%PRINTBIT_KIOSK_LOCKDOWN% && set PRINTBIT_USB_EXPORT_ENABLED=%PRINTBIT_USB_EXPORT_ENABLED% && pnpm run dev"
-
-:: Wait for server to come up
-echo [PrintBit] Waiting for server to start...
-timeout /t 8 /nobreak >nul
 
 :: Launch Edge in kiosk mode pointed at the dynamic IP
 echo [PrintBit] Launching kiosk browser...
 start "" msedge.exe --kiosk %KIOSK_URL% --edge-kiosk-type=fullscreen
 
 echo [PrintBit] Kiosk started successfully at %KIOSK_URL%.
+goto :eof
+
+:detect_ip
+set "LOCAL_IP="
+for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.5\."') do (
+    for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
+    goto :detect_done
+)
+for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.137\."') do (
+    for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
+    goto :detect_done
+)
+for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*[0-9][0-9]*\.[0-9]" ^| findstr /V /R "169\.254\."') do (
+    for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
+    goto :detect_done
+)
+:detect_done
+for /f "tokens=1 delims= (" %%A in ("%LOCAL_IP%") do set "LOCAL_IP=%%A"
+exit /b
