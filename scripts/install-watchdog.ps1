@@ -87,13 +87,16 @@ Register-ScheduledTask `
     -Principal $principal `
     -Description "PrintBit secondary watchdog verifier and auto-restart task." | Out-Null
 
+$TASK_UPDATE = 4
+$TASK_LOGON_INTERACTIVE_TOKEN = 3
+
 $svc = New-Object -ComObject "Schedule.Service"
 $svc.Connect()
 $taskDef = $svc.GetFolder("\").GetTask($VerifyTaskName).Definition
 $taskDef.Triggers.Item(1).Repetition.Interval = "PT2M"
 $taskDef.Triggers.Item(1).Repetition.Duration = ""   # empty = run indefinitely
 $svc.GetFolder("\").RegisterTaskDefinition(
-    $VerifyTaskName, $taskDef, 4, $null, $null, 3
+    $VerifyTaskName, $taskDef, $TASK_UPDATE, $null, $null, $TASK_LOGON_INTERACTIVE_TOKEN
 ) | Out-Null
 
 Start-ScheduledTask -TaskName $TaskName

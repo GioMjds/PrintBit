@@ -1,7 +1,12 @@
 import os from 'node:os';
 import path from 'node:path';
 
-export const PORT = 3000;
+const DEFAULT_PORT = 3000;
+const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
+export const PORT =
+  Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535
+    ? parsedPort
+    : DEFAULT_PORT;
 export const UPLOAD_DIR = 'uploads/';
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PORTAL_DIR = path.resolve('src/public/upload');

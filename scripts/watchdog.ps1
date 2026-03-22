@@ -51,8 +51,6 @@ function Get-KioskLocalIp {
     return "127.0.0.1"
 }
 
-$KioskUrl = "http://$(Get-KioskLocalIp):$Port"
-
 if (-not (Test-Path $StateDir)) {
     New-Item -ItemType Directory -Path $StateDir | Out-Null
 }
@@ -213,14 +211,23 @@ function Ensure-EdgeRunning {
     $currentKioskUrl = "http://$(Get-KioskLocalIp):$Port"
     try {
         $escapedUrl = [Regex]::Escape($currentKioskUrl)
-        $kioskEdge = Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
-            Where-Object {
-                $cmd = [string]$_.CommandLine
-                $cmd -match "--kiosk" -and $cmd -match $escapedUrl
-            } |
-            Select-Object -First 1
-        if ($null -ne $kioskEdge) {
-            return $false
+        $kioskEdges = @(
+            Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
+                Where-Object {
+                    $cmd = [string]$_.CommandLine
+                    $cmd -match "--kiosk"
+                }
+        )
+        foreach ($kioskEdge in $kioskEdges) {
+            if ([string]$kioskEdge.CommandLine -match $escapedUrl) {
+                return $false
+            }
+        }
+        foreach ($kioskEdge in $kioskEdges) {
+            Stop-ProcessSafely -ProcessId ([int]$kioskEdge.ProcessId)
+        }
+        if ($kioskEdges.Count -gt 0) {
+            Start-Sleep -Milliseconds 500
         }
     } catch {
         Write-Warning "[Watchdog] Failed to inspect Edge command line: $($_.Exception.Message)"

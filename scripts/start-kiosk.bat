@@ -53,7 +53,7 @@ set "PORT=3000"
 
 :: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
 echo [PrintBit] Starting server...
-start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && set PRINTBIT_KIOSK_LOCKDOWN=%PRINTBIT_KIOSK_LOCKDOWN% && set PRINTBIT_USB_EXPORT_ENABLED=%PRINTBIT_USB_EXPORT_ENABLED% && pnpm run dev"
+start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && pnpm run dev"
 
 :: Wait for server + hotspot to come up before selecting kiosk IP
 echo [PrintBit] Waiting for server to start...

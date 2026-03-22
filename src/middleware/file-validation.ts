@@ -528,9 +528,9 @@ export async function validateMagicBytes(
   // For OOXML formats, also validate internal ZIP structure
   const ooxmlMarker = OOXML_DIRECTORY_MARKERS[mime];
   const isOoxmlFormat = !!ooxmlMarker;
-  const isValidOoxml =
-    !isOoxmlFormat ||
-    (hasValidMagicBytes && validateOoxmlStructure(file.buffer, ooxmlMarker));
+  const magicBytesFailed = !hasValidMagicBytes;
+  const ooxmlStructureFailed = isOoxmlFormat && hasValidMagicBytes && !validateOoxmlStructure(file.buffer, ooxmlMarker);
+  const isValidOoxml = !isOoxmlFormat || (hasValidMagicBytes && validateOoxmlStructure(file.buffer, ooxmlMarker));
 
   if (!hasValidMagicBytes || !isValidOoxml) {
     const detectedMime = classifyDetectedMime(file.buffer, MAGIC_SIGNATURES);
@@ -540,7 +540,7 @@ export async function validateMagicBytes(
       declaredMimeType: mime,
       detectedMimeType: detectedMime,
       detectedExecutableExtension: null,
-      validationReason: isValidOoxml ? 'MAGIC_BYTE_MISMATCH' : 'OOXML_STRUCTURE_INVALID',
+      validationReason: magicBytesFailed ? 'MAGIC_BYTE_MISMATCH' : 'OOXML_STRUCTURE_INVALID',
       uploadSurface: 'wireless-session-upload' as UploadSurface,
       sizeBytes: file.size,
     };

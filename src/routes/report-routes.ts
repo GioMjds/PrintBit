@@ -73,15 +73,43 @@ async function persistAttachmentWithStaging(
   buffer: Buffer,
   storedName: string,
 ): Promise<string> {
+  const resolvedReportDir = path.resolve(REPORT_IMAGE_DIR);
+  const finalPath = path.resolve(resolvedReportDir, storedName);
+  const relativePath = path.relative(resolvedReportDir, finalPath);
+  const outsideDir =
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath);
+  if (outsideDir) {
+    throw new Error('Invalid file name.');
+  }
+
   await fs.promises.mkdir(REPORT_IMAGE_DIR, { recursive: true });
   await fs.promises.mkdir(REPORT_ATTACHMENT_STAGING_DIR, { recursive: true });
 
+  const resolvedStagingDir = path.resolve(REPORT_ATTACHMENT_STAGING_DIR);
   const stagingName = `${storedName}.part`;
-  const stagingPath = path.join(REPORT_ATTACHMENT_STAGING_DIR, stagingName);
-  const finalPath = path.join(REPORT_IMAGE_DIR, storedName);
+  const stagingPath = path.resolve(resolvedStagingDir, stagingName);
+  const stagingRelativePath = path.relative(resolvedStagingDir, stagingPath);
+  const outsideStagingDir =
+    stagingRelativePath === '..' ||
+    stagingRelativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(stagingRelativePath);
+  if (outsideStagingDir) {
+    throw new Error('Invalid file name.');
+  }
 
   await fs.promises.writeFile(stagingPath, buffer, { flag: 'wx' });
   try {
+    const finalPathResolved = path.resolve(finalPath);
+    if (!finalPathResolved.startsWith(resolvedReportDir + path.sep)) {
+      await fs.promises.unlink(stagingPath).catch(() => {});
+      throw new Error('Invalid file name.');
+    }
+    if (!stagingPath.startsWith(resolvedStagingDir + path.sep)) {
+      await fs.promises.unlink(stagingPath).catch(() => {});
+      throw new Error('Invalid file name.');
+    }
     await fs.promises.rename(stagingPath, finalPath);
   } catch (error) {
     await fs.promises.unlink(stagingPath).catch(() => {});
