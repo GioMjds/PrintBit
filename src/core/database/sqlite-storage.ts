@@ -486,6 +486,32 @@ export class AdminLogSqliteStore {
     return rows.map((row) => this.toLogEntry(row));
   }
 
+  listByTypesSince(
+    types: ReadonlyArray<string>,
+    sinceTimestamp: string,
+  ): AdminLogEntry[] {
+    if (types.length === 0) return [];
+    const db = getSqliteDb();
+    const placeholders = types.map(() => '?').join(', ');
+    const rows = db
+      .prepare(
+        `SELECT
+          id,
+          timestamp,
+          timestamp_meta_json,
+          type,
+          message,
+          meta_json
+         FROM admin_logs
+         WHERE type IN (${placeholders})
+           AND timestamp >= ?
+         ORDER BY timestamp DESC, rowid DESC`,
+      )
+      .all(...types, sinceTimestamp) as Array<Record<string, unknown>>;
+
+    return rows.map((row) => this.toLogEntry(row));
+  }
+
   clear(): void {
     getSqliteDb().exec('DELETE FROM admin_logs');
   }

@@ -167,7 +167,12 @@ class AdminService {
     let today = 0;
     let week = 0;
 
-    for (const log of this.listLogsByTypes(['payment_confirmed'])) {
+    // Use date-bounded query to avoid transferring all payment logs
+    const weekTimestamp = startOfWeek.toISOString();
+    for (const log of adminLogStore.listByTypesSince(
+      ['payment_confirmed'],
+      weekTimestamp,
+    )) {
       const amountRaw = log.meta?.amount;
       const amount =
         typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);

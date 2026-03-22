@@ -552,9 +552,7 @@ export async function validateMagicBytes(
     isOoxmlFormat && hasValidMagicBytes
       ? validateOoxmlStructure(file.buffer, ooxmlMarker)
       : false;
-  
-  const ooxmlStructureFailed =
-    isOoxmlFormat && hasValidMagicBytes && !ooxmlStructureIsValid;
+
   const isValidOoxml =
     !isOoxmlFormat || (hasValidMagicBytes && ooxmlStructureIsValid);
 
