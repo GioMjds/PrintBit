@@ -1,33 +1,10 @@
-import os from 'os';
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cookieParser from 'cookie-parser';
-import {
-  PORT,
-  PORTAL_ASSETS,
-  PORTAL_DIR,
-  PUBLIC_PAGE_ROUTES,
-  UPLOAD_DIR,
-  CAPTIVE_PORTAL_ENABLED,
-} from '@/config';
-import {
-  registerStaticAssets,
-  createCaptivePortalMiddleware,
-} from '@/middleware';
-import {
-  registerFinancialRoutes,
-  registerPageRoutes,
-  registerAdminRoutes,
-  registerFeedbackRoutes,
-  registerReportRoutes,
-  registerUploadPortalRoutes,
-  registerWirelessSessionRoutes,
-  registerScanRoutes,
-  registerCopyRoutes,
-  registerPrinterRoutes,
-  registerLanguageRoutes,
-} from '@/routes';
+import { PORT, UPLOAD_DIR, CAPTIVE_PORTAL_ENABLED } from '@/config';
+import { createCaptivePortalMiddleware } from '@/middleware';
+import { registerAppModules } from '@/app.module';
 import {
   initDB,
   detectDefaultPrinter,
@@ -37,12 +14,9 @@ import {
   getHopperStatus,
   getSerialStatus,
   initSerial,
-  getHotspotConfig,
-  startHotspot,
-  stopHotspot,
   isHotspotRunning,
+  startHotspot,
   SessionStore,
-  renderUploadPortal,
   resolvePublicBaseUrl,
   runHopperSelfTest,
   startPrinterMonitor,
@@ -57,63 +31,15 @@ import {
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
-  getWatchdogHealthSnapshot,
-  updateExternalWatchdogState,
-  getExternalWatchdogState,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
+import { getLocalIPv4 } from '@/utils/network';
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(cookieParser());
-
-function getLocalIPv4(): string | null {
-  const interfaces = os.networkInterfaces();
-  let fallback: string | null = null;
-
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]!) {
-      if (iface.family !== 'IPv4' || iface.internal) continue;
-
-      // Prefer hotspot adapter: MyPublicWiFi (192.168.5.x) or Windows Mobile Hotspot (192.168.137.x)
-      const isHotspot =
-        /Wi-Fi Direct|Local Area Connection\*/i.test(name) ||
-        iface.address.startsWith('192.168.5.') ||
-        iface.address.startsWith('192.168.137.');
-      if (isHotspot) return iface.address;
-
-      if (!fallback) fallback = iface.address;
-    }
-  }
-
-  return fallback;
-}
-
-function normalizeRemoteIp(rawIp: string): string {
-  const normalized = rawIp.toLowerCase();
-  if (normalized.startsWith('::ffff:')) {
-    return normalized.slice('::ffff:'.length);
-  }
-  return normalized;
-}
-
-function isLoopbackRequest(remoteIp: string): boolean {
-  const ip = normalizeRemoteIp(remoteIp);
-  return ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
-}
-
-function readWatchdogAlertThreshold(): number {
-  const raw = process.env.PRINTBIT_WATCHDOG_FAILURE_ALERT_THRESHOLD;
-  if (typeof raw !== 'string' || !raw.trim()) return 5;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 5;
-  return Math.floor(parsed);
-}
-
-const WATCHDOG_ALERT_THRESHOLD = readWatchdogAlertThreshold();
-let watchdogFailureEscalated = false;
 
 const sessionStore = new SessionStore(UPLOAD_DIR);
 
@@ -124,242 +50,16 @@ if (CAPTIVE_PORTAL_ENABLED) {
   app.use(createCaptivePortalMiddleware(sessionStore));
 }
 
-// Hotspot config API (used by print page to generate Wi-Fi QR)
-app.get('/api/config/hotspot', (_req, res) => {
-  res.json(getHotspotConfig());
-});
-
-// On-demand hotspot control (called by print page when session starts)
-app.post('/api/hotspot/start', async (_req, res) => {
-  try {
-    await startHotspot();
-    res.json({ ok: true, running: isHotspotRunning() });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ ok: false, error: msg });
-  }
-});
-
-app.post('/api/hotspot/stop', (_req, res) => {
-  stopHotspot();
-  res.json({ ok: true });
-});
-
-app.get('/api/watchdog/health', (_req, res) => {
-  const remoteIp =
-    _req.ip || _req.socket.remoteAddress || _req.connection?.remoteAddress || '';
-  if (!isLoopbackRequest(remoteIp)) {
-    return res.status(403).json({ error: 'Watchdog health is loopback-only.' });
-  }
-  const snapshot = getWatchdogHealthSnapshot();
-  const statusCode = snapshot.status === 'unhealthy' ? 503 : 200;
-  res.status(statusCode).json(snapshot);
-});
-
-app.post('/api/watchdog/report', (req, res) => {
-  const remoteIp = req.ip || req.socket.remoteAddress || '';
-  if (!isLoopbackRequest(remoteIp)) {
-    return res.status(403).json({ error: 'Watchdog report is loopback-only.' });
-  }
-
-  const raw = req.body as Record<string, unknown>;
-  const toFiniteInt = (value: unknown): number | null => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-    return Math.floor(value);
-  };
-  const toOptionalString = (value: unknown): string | null => {
-    if (value === null) return null;
-    if (typeof value !== 'string') return null;
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  };
-
-  const payload = {
-    running:
-      typeof raw.running === 'boolean'
-        ? raw.running
-        : getExternalWatchdogState().running,
-    watchdogPid:
-      raw.watchdogPid === null
-        ? null
-        : (toFiniteInt(raw.watchdogPid) ??
-          getExternalWatchdogState().watchdogPid),
-    consecutiveFailures:
-      toFiniteInt(raw.consecutiveFailures) ??
-      getExternalWatchdogState().consecutiveFailures,
-    recoveryAttempts:
-      toFiniteInt(raw.recoveryAttempts) ??
-      getExternalWatchdogState().recoveryAttempts,
-    backoffDelayMs:
-      toFiniteInt(raw.backoffDelayMs) ??
-      getExternalWatchdogState().backoffDelayMs,
-    nextRecoveryAt:
-      raw.nextRecoveryAt === null
-        ? null
-        : (toOptionalString(raw.nextRecoveryAt) ??
-          getExternalWatchdogState().nextRecoveryAt),
-    lastAction:
-      toOptionalString(raw.lastAction) ?? getExternalWatchdogState().lastAction,
-    lastError:
-      raw.lastError === null
-        ? null
-        : (toOptionalString(raw.lastError) ??
-          getExternalWatchdogState().lastError),
-  };
-
-  const state = updateExternalWatchdogState(payload);
-  if (
-    state.consecutiveFailures >= WATCHDOG_ALERT_THRESHOLD &&
-    !watchdogFailureEscalated
-  ) {
-    watchdogFailureEscalated = true;
-    void adminService
-      .appendAdminLog(
-        'watchdog_recovery_escalated',
-        `Watchdog reached ${state.consecutiveFailures} consecutive failures.`,
-        {
-          threshold: WATCHDOG_ALERT_THRESHOLD,
-          recoveryAttempts: state.recoveryAttempts,
-          backoffDelayMs: state.backoffDelayMs,
-          lastAction: state.lastAction,
-          lastError: state.lastError,
-        },
-      )
-      .catch((error) => {
-        console.error('[WATCHDOG] Failed to append escalation admin log.', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    void anomalyService
-      .report({
-        type: 'watchdog_recovery_escalated',
-        source: 'external-watchdog',
-        category: 'network',
-        severity: 'critical',
-        message: `Watchdog failed to recover the kiosk after ${state.consecutiveFailures} consecutive attempts.`,
-        fingerprint: buildAnomalyFingerprint([
-          'watchdog',
-          'external',
-          'escalated',
-        ]),
-        context: {
-          threshold: WATCHDOG_ALERT_THRESHOLD,
-          consecutiveFailures: state.consecutiveFailures,
-          recoveryAttempts: state.recoveryAttempts,
-          backoffDelayMs: state.backoffDelayMs,
-        },
-      })
-      .catch((error) => {
-        console.error('[WATCHDOG] Failed to report escalation anomaly.', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
-
-  if (state.consecutiveFailures === 0 && watchdogFailureEscalated) {
-    watchdogFailureEscalated = false;
-    void adminService
-      .appendAdminLog(
-        'watchdog_recovery_restored',
-        'Watchdog recovery failure streak cleared.',
-        {
-          recoveryAttempts: state.recoveryAttempts,
-          lastAction: state.lastAction,
-        },
-      )
-      .catch((error) => {
-        console.error('[WATCHDOG] Failed to append restore admin log.', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    void anomalyService
-      .report({
-        type: 'watchdog_recovery_restored',
-        source: 'external-watchdog',
-        category: 'network',
-        severity: 'warning',
-        message:
-          'Watchdog recovery failures have cleared and the kiosk is stable again.',
-        fingerprint: buildAnomalyFingerprint([
-          'watchdog',
-          'external',
-          'restored',
-        ]),
-        context: {
-          recoveryAttempts: state.recoveryAttempts,
-        },
-      })
-      .catch((error) => {
-        console.error('[WATCHDOG] Failed to report restore anomaly.', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
-
-  res.json(state);
-});
-
-app.get('/api/watchdog/report', (_req, res) => {
-  const remoteIp =
-    _req.ip || _req.socket.remoteAddress || _req.connection?.remoteAddress || '';
-  if (!isLoopbackRequest(remoteIp)) {
-    return res.status(403).json({ error: 'Watchdog report is loopback-only.' });
-  }
-  res.json(getExternalWatchdogState());
-});
-
-// Active session API
-app.get('/api/session/active', (req, res) => {
-  const token = sessionStore.getActiveSessionToken();
-  if (token) {
-    const uploadUrl = new URL(
-      `/upload/${encodeURIComponent(token)}`,
-      resolvePublicBaseUrl(req),
-    ).toString();
-    res.json({ token, uploadUrl });
-  } else {
-    res.status(404).json({ error: 'No active session' });
-  }
-});
-
-registerPageRoutes(app, {
-  sessionStore,
-  publicPageRoutes: PUBLIC_PAGE_ROUTES,
-  resolvePublicBaseUrl,
-});
-registerStaticAssets(app);
-registerAdminRoutes(app, {
+registerAppModules(app, {
   io,
+  sessionStore,
   uploadDir: UPLOAD_DIR,
   getSerialStatus,
   getHopperStatus,
   runHopperSelfTest,
-});
-registerFeedbackRoutes(app, { resolvePublicBaseUrl });
-registerReportRoutes(app, {
-  resolvePublicBaseUrl,
-});
-registerFinancialRoutes(app, {
-  io,
-  sessionStore,
-  resolvePublicBaseUrl,
-});
-registerUploadPortalRoutes(app, {
-  portalDir: PORTAL_DIR,
-  portalAssets: PORTAL_ASSETS,
-  renderUploadPortal,
-  sessionStore,
-});
-registerWirelessSessionRoutes(app, {
-  io,
-  sessionStore,
   resolvePublicBaseUrl,
   convertToPdfPreview,
 });
-registerScanRoutes(app, { io, resolvePublicBaseUrl });
-registerCopyRoutes(app, { io });
-registerPrinterRoutes(app);
-registerLanguageRoutes(app);
 
 io.on('connection', (socket) => {
   socket.on('joinSession', (sessionId: string) => {
