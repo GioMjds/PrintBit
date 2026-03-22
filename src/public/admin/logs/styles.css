@@ -181,3 +181,34 @@
   background: rgba(167, 170, 225, 0.12);
   color: var(--lavender);
 }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .logs-scroll {
+    max-height: calc(100vh - 60px - 40px - 40px - 40px);
+  }
+  .logs-table {
+    font-size: 11px;
+  }
+  .logs-th {
+    padding: 8px 12px;
+    font-size: 10px;
+  }
+  .logs-th--ts {
+    width: 140px;
+  }
+  .logs-th--type {
+    width: 90px;
+  }
+  .logs-table tbody td {
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+  .logs-table tbody td:first-child {
+    font-size: 10.5px;
+  }
+  .log-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+}

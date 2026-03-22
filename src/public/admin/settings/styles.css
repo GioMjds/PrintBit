@@ -236,3 +236,34 @@
   background: rgba(105, 111, 199, 0.28);
   box-shadow: none;
 }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .settings-form {
+    max-width: 100%;
+  }
+  .fields {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 14px;
+  }
+  .sg__head {
+    padding: 12px 14px;
+  }
+  .sg__title {
+    font-size: 12px;
+  }
+  .field__input {
+    font-size: 14px;
+    padding: 9px 12px;
+  }
+  .toggle-lbl {
+    padding: 12px 0;
+  }
+  .toggle-lbl__title {
+    font-size: 13px;
+  }
+  .toggle-lbl__desc {
+    font-size: 11px;
+  }
+}

@@ -4,7 +4,7 @@
   "description": "A self-service printing kiosk application built with Node.js and Express.js.",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev -r tsconfig-paths/register src/server.ts",
+    "dev": "ts-node-dev --respawn --ignore-watch uploads --ignore-watch printbit.sqlite --ignore-watch printbit.sqlite-shm --ignore-watch printbit.sqlite-wal -r tsconfig-paths/register src/server.ts",
     "build": "node scripts/build-client.js",
     "db:migrate:legacy": "ts-node -r tsconfig-paths/register --swc src/scripts/migrate-dbjson-to-sqlite.ts",
     "kiosk": "node ./scripts/launch-kiosk.js",
