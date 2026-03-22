@@ -70,8 +70,6 @@ $verifyAction = New-ScheduledTaskAction `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$VerifyScript`""
 
 $verifyTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date
-$verifyTrigger.RepetitionInterval = (New-TimeSpan -Minutes 2)
-$verifyTrigger.RepetitionDuration = (New-TimeSpan -Days 3650)
 
 $verifySettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -88,6 +86,15 @@ Register-ScheduledTask `
     -Settings $verifySettings `
     -Principal $principal `
     -Description "PrintBit secondary watchdog verifier and auto-restart task." | Out-Null
+
+$svc = New-Object -ComObject "Schedule.Service"
+$svc.Connect()
+$taskDef = $svc.GetFolder("\").GetTask($VerifyTaskName).Definition
+$taskDef.Triggers.Item(1).Repetition.Interval = "PT2M"
+$taskDef.Triggers.Item(1).Repetition.Duration = ""   # empty = run indefinitely
+$svc.GetFolder("\").RegisterTaskDefinition(
+    $VerifyTaskName, $taskDef, 4, $null, $null, 3
+) | Out-Null
 
 Start-ScheduledTask -TaskName $TaskName
 Start-ScheduledTask -TaskName $VerifyTaskName

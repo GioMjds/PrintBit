@@ -33,9 +33,25 @@ $RestartBaseDelayMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_RESTART_BASE_DELAY_MS"
 $RestartMaxDelayMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_RESTART_MAX_DELAY_MS" -Default 60000
 $FailureThreshold = Get-EnvInt -Name "PRINTBIT_WATCHDOG_FAILURE_ALERT_THRESHOLD" -Default 5
 $Port = Get-EnvInt -Name "PRINTBIT_WATCHDOG_PORT" -Default 3000
-$KioskUrl = "http://127.0.0.1:$Port"
-$HealthUrl = "$KioskUrl/api/watchdog/health"
-$ReportUrl = "$KioskUrl/api/watchdog/report"
+$HealthUrl = "http://127.0.0.1:$Port/api/watchdog/health"
+$ReportUrl = "http://127.0.0.1:$Port/api/watchdog/report"
+
+function Get-KioskLocalIp {
+    $ipCandidates = Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
+        $_.IPAddress -notmatch '^127\.' -and
+        $_.PrefixOrigin -ne 'WellKnown'
+    }
+    $preferred = $ipCandidates |
+        Where-Object { $_.IPAddress -like "192.168.5.*" -or $_.IPAddress -like "192.168.137.*" } |
+        Select-Object -First 1
+    if (-not $preferred) {
+        $preferred = $ipCandidates | Select-Object -First 1
+    }
+    if ($preferred) { return [string]$preferred.IPAddress }
+    return "127.0.0.1"
+}
+
+$KioskUrl = "http://$(Get-KioskLocalIp):$Port"
 
 if (-not (Test-Path $StateDir)) {
     New-Item -ItemType Directory -Path $StateDir | Out-Null
@@ -194,8 +210,9 @@ function Ensure-EdgeRunning {
     param(
         [pscustomobject]$State
     )
+    $currentKioskUrl = "http://$(Get-KioskLocalIp):$Port"
     try {
-        $escapedUrl = [Regex]::Escape($KioskUrl)
+        $escapedUrl = [Regex]::Escape($currentKioskUrl)
         $kioskEdge = Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
             Where-Object {
                 $cmd = [string]$_.CommandLine
@@ -209,7 +226,7 @@ function Ensure-EdgeRunning {
         Write-Warning "[Watchdog] Failed to inspect Edge command line: $($_.Exception.Message)"
     }
     try {
-        Start-Process "msedge.exe" -ArgumentList @("--kiosk", $KioskUrl, "--edge-kiosk-type=fullscreen", "--no-first-run", "--disable-infobars")
+        Start-Process "msedge.exe" -ArgumentList @("--kiosk", $currentKioskUrl, "--edge-kiosk-type=fullscreen", "--no-first-run", "--disable-infobars")
         $State.lastAction = "edge_started"
         $State.lastError = $null
         return $true

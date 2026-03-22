@@ -9,6 +9,7 @@
     "kiosk": "node ./scripts/launch-kiosk.js",
     "start": "cmd /c ./scripts/start-kiosk.bat",
     "install-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1",
+    "uninstall-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1 -Uninstall",
     "watchdog:install": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-watchdog.ps1",
     "watchdog:uninstall": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-watchdog.ps1 -Uninstall",
     "watchdog:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-watchdog.ps1",
