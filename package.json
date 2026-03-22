@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "A self-service printing kiosk application built with Node.js and Express.js.",
   "main": "index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "dev": "ts-node-dev --respawn --ignore-watch uploads --ignore-watch printbit.sqlite --ignore-watch printbit.sqlite-shm --ignore-watch printbit.sqlite-wal -r tsconfig-paths/register src/server.ts",
     "build": "node scripts/build-client.js",

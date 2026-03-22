@@ -546,25 +546,30 @@ export async function validateMagicBytes(
   const ooxmlMarker = OOXML_DIRECTORY_MARKERS[mime];
   const isOoxmlFormat = !!ooxmlMarker;
   const magicBytesFailed = !hasValidMagicBytes;
+  
+  // Compute OOXML structure validation once to avoid duplicate parsing
+  const ooxmlStructureIsValid = 
+    isOoxmlFormat && hasValidMagicBytes
+      ? validateOoxmlStructure(file.buffer, ooxmlMarker)
+      : false;
+  
   const ooxmlStructureFailed =
-    isOoxmlFormat &&
-    hasValidMagicBytes &&
-    !validateOoxmlStructure(file.buffer, ooxmlMarker);
+    isOoxmlFormat && hasValidMagicBytes && !ooxmlStructureIsValid;
   const isValidOoxml =
-    !isOoxmlFormat ||
-    (hasValidMagicBytes && validateOoxmlStructure(file.buffer, ooxmlMarker));
+    !isOoxmlFormat || (hasValidMagicBytes && ooxmlStructureIsValid);
 
   if (!hasValidMagicBytes || !isValidOoxml) {
     const detectedMime = classifyDetectedMime(file.buffer, MAGIC_SIGNATURES);
+    const validationReason = magicBytesFailed
+      ? 'MAGIC_BYTE_MISMATCH'
+      : 'OOXML_STRUCTURE_INVALID';
     const meta = {
       ...extractRequestContext(req),
       originalFilename: file.originalname,
       declaredMimeType: mime,
       detectedMimeType: detectedMime,
       detectedExecutableExtension: null,
-      validationReason: magicBytesFailed
-        ? 'MAGIC_BYTE_MISMATCH'
-        : 'OOXML_STRUCTURE_INVALID',
+      validationReason,
       uploadSurface: 'wireless-session-upload' as UploadSurface,
       sizeBytes: file.size,
     };

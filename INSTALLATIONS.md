@@ -11,7 +11,7 @@ This guide explains what software to install, what dependencies are used, and ho
 
 ## Core runtime
 
-- **Node.js:** 20.x LTS (recommended baseline).
+- **Node.js:** 22.5.0+ (required for built-in `node:sqlite` support).
 - **pnpm:** `10.13.1` (as declared by `packageManager` in `package.json`).
 - **Git:** latest stable.
 

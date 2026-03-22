@@ -41,7 +41,10 @@
 
 ### Staged rollout process (one-kiosk canary first)
 
-1. Select one kiosk as canary and back up `printbit.sqlite`.
+1. Select one kiosk as canary and back up critical runtime state:
+   - **SQLite database:** Copy `printbit.sqlite` (and .sqlite-shm/.sqlite-wal if present) to a timestamped backup directory.
+   - **Uploads directory:** Copy the entire `uploads/` directory to preserve queued documents and scans.
+   - Verify backup integrity by checking file sizes and testing SQLite file with `sqlite3 backup.sqlite "PRAGMA integrity_check;"` before proceeding.
 2. Apply update controls:
    - `pnpm run updates:apply`
    - `pnpm run updates:verify`

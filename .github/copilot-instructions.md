@@ -19,15 +19,18 @@
 
 ## Repository File & Directory Layout
 
-```
+```text
 printbit/
 ├── .github/
 │   └── copilot-instructions.md
 ├── scripts/              # Shell/bash scripts for setup and kiosk lifecycle (see below)
 ├── src/
 │   ├── server.ts         # Express + HTTP + Socket.IO entrypoint
+│   ├── core/
+│   │   └── database/
+│   │       ├── db.ts          # Shared schema/runtime database facade (SQLite runtime_state)
+│   │       └── sqlite-storage.ts  # SQLite persistence for operational domains
 │   ├── services/
-│   │   ├── db.ts         # LowDB balance/earnings state (persists to db.json)
 │   │   ├── serial.ts     # Coin acceptor hardware via serialport
 │   │   ├── printer.ts    # OS print dispatch
 │   │   └── session.ts    # Upload session tokens + MIME type enforcement
@@ -39,7 +42,7 @@ printbit/
 │       ├── *.html        # Kiosk UI pages (one per workflow)
 │       └── *.css         # Component styles co-located with their *.ts modules
 ├── uploads/              # Runtime multer upload destination
-├── db.json               # Runtime LowDB state { balance, earnings }
+├── printbit.sqlite       # Runtime SQLite database (state, feedback, reports, logs)
 ├── PRINTBIT_NOTES.txt    # Developer notes and operational reminders
 ├── PRINTBIT_PRINTING_FLOW.md  # Full end-to-end printing flow documentation
 ├── package.json
@@ -47,7 +50,7 @@ printbit/
 └── tsconfig.json
 ```
 
-> `uploads/` and `db.json` are **runtime state artifacts**. Do not destructively modify or delete these paths during feature work; they hold live kiosk state.
+> `uploads/` and `printbit.sqlite*` are **runtime state artifacts**. Do not destructively modify or delete these paths during feature work; they hold live kiosk state.
 
 ---
 
@@ -152,7 +155,7 @@ The minimum balance threshold required to trigger a print job lives in the `POST
 - **CSS co-location:** Global styles → `src/globals.css`. Component styles → `*.css` files next to their corresponding `*.ts` module in `src/public/`.
 - **TypeScript config:** Strict mode, CommonJS modules (`tsconfig.json`). New modules must follow the existing import/export style and pass strict type checking.
 - **Bundle is committed:** `src/public/bundle.js` is checked into the repo. Run `pnpm run build` before every commit that touches browser TypeScript.
-- **No direct `db.json` writes:** Always use LowDB's write APIs to mutate and persist state.
+- **No direct SQLite file writes:** Always use the application's SQLite persistence APIs (`getSqliteDb()` and repository methods in `src/core/database/sqlite-storage.ts`) to mutate and persist state. Never write to `printbit.sqlite` directly.
 - **pnpm only:** Never use `npm` or `yarn` commands in this repo.
 
 ---

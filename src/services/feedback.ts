@@ -220,11 +220,7 @@ class FeedbackService {
   }
 
   async cleanupExpiredSessions(now = new Date()): Promise<void> {
-    const changed = feedbackStore.cleanupExpiredSessions(
-      now,
-      FEEDBACK_SESSION_RETENTION_MS,
-    );
-    if (changed) return;
+    feedbackStore.cleanupExpiredSessions(now, FEEDBACK_SESSION_RETENTION_MS);
   }
 
   private buildFeedbackUrl(publicBaseUrl: URL, token: string): string {

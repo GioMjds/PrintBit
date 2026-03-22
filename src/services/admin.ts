@@ -109,7 +109,9 @@ class AdminService {
     return adminLogStore.listByTypes(normalized);
   }
 
-  async clearLogs(): Promise<void> {
+  clearLogs(): void {
+    // Note: adminLogStore.clear() is synchronous (calls getSqliteDb().exec('DELETE FROM admin_logs'))
+    // but we keep void return for API consistency with other mutation methods
     adminLogStore.clear();
   }
 
@@ -166,7 +168,6 @@ class AdminService {
     let week = 0;
 
     for (const log of this.listLogsByTypes(['payment_confirmed'])) {
-      if (log.type !== 'payment_confirmed') continue;
       const amountRaw = log.meta?.amount;
       const amount =
         typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);

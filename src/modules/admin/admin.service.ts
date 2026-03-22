@@ -109,7 +109,7 @@ export class AdminService {
     return adminLogStore.listByTypes(normalized);
   }
 
-  async clearLogs(): Promise<void> {
+  clearLogs(): void {
     adminLogStore.clear();
   }
 
@@ -161,7 +161,6 @@ export class AdminService {
     let week = 0;
 
     for (const log of this.listLogsByTypes(['payment_confirmed'])) {
-      if (log.type !== 'payment_confirmed') continue;
       const amountRaw = log.meta?.amount;
       const amount =
         typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);

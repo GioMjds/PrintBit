@@ -27,10 +27,12 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `admin-routes.ts`: protected settings, status, logs, and maintenance endpoints.
 - `page-routes.ts`: HTML page routing.
 
-## 3) Service layer (`src/services`)
+## 3) Database layer (`src/core/database`)
 
-- `db.ts`: shared schema/runtime database facade backed by SQLite runtime-state persistence.
-- `sqlite-storage.ts`: SQLite persistence (`printbit.sqlite`) for operational domains.
+- `db.ts`: shared schema/runtime database facade backed by SQLite `runtime_state` table persistence.
+- `sqlite-storage.ts`: SQLite persistence (`printbit.sqlite`) for operational domains (admin logs, feedback, report issues).
+
+## 4) Service layer (`src/services`)
 - `serial.ts`: coin input parsing, balance mutation, and hopper command transport (shared 9600-baud serial line).
 - `hopper.ts`: coin hopper orchestration — dispense with retries, stats tracking, owed-change fallback.
 - `hopper-protocol.ts`: Arduino hopper serial protocol contract (command builders, response parser, error codes).

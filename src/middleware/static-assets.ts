@@ -21,6 +21,6 @@ export function registerStaticAssets(app: Express) {
       },
     }),
   );
-  app.use(express.static('src/public'));
-  app.use(express.static('dist/public'));
+  app.use(express.static(path.resolve('src/public')));
+  app.use(express.static(path.resolve('dist/public')));
 }

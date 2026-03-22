@@ -746,37 +746,26 @@ export class FeedbackSqliteStore {
     retentionMs: number,
   ): boolean {
     const nowMs = now.getTime();
+    const nowIso = now.toISOString();
     const retentionCutoff = nowMs - retentionMs;
-    const rows = getSqliteDb()
-      .prepare('SELECT id, created_at, expires_at FROM feedback_sessions')
-      .all() as Array<Record<string, unknown>>;
 
-    const toDelete: string[] = [];
-    for (const row of rows) {
-      const id = typeof row.id === 'string' ? row.id : '';
-      if (!id) continue;
-      const expiresAt = typeof row.expires_at === 'string' ? row.expires_at : '';
-      const createdAt = typeof row.created_at === 'string' ? row.created_at : '';
-      const expiresAtMs = dateMs(expiresAt);
-      const createdAtMs = dateMs(createdAt);
+    // Delete sessions with invalid or missing expires_at
+    const invalidExpiresStmt = getSqliteDb().prepare(
+      `DELETE FROM feedback_sessions 
+       WHERE expires_at IS NULL OR expires_at = ''`
+    );
+    const invalidExpiresResult = invalidExpiresStmt.run();
 
-      if (!Number.isFinite(expiresAtMs)) {
-        toDelete.push(id);
-        continue;
-      }
-      if (expiresAtMs >= nowMs) continue;
-      if (!Number.isFinite(createdAtMs) || createdAtMs < retentionCutoff) {
-        toDelete.push(id);
-      }
-    }
+    // Delete expired sessions that are past retention
+    const expiredStmt = getSqliteDb().prepare(
+      `DELETE FROM feedback_sessions 
+       WHERE expires_at < ?
+         AND (created_at IS NULL OR created_at = '' OR created_at < ?)`
+    );
+    const expiredResult = expiredStmt.run(nowIso, new Date(retentionCutoff).toISOString());
 
-    if (toDelete.length === 0) return false;
-
-    const placeholders = toDelete.map(() => '?').join(', ');
-    getSqliteDb()
-      .prepare(`DELETE FROM feedback_sessions WHERE id IN (${placeholders})`)
-      .run(...toDelete);
-    return true;
+    const totalChanges = Number(invalidExpiresResult.changes) + Number(expiredResult.changes);
+    return totalChanges > 0;
   }
 
   private toSessionEntry(row: Record<string, unknown>): FeedbackSessionEntry {
