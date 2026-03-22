@@ -1,0 +1,522 @@
+import path from 'node:path';
+import fs from 'node:fs';
+import type { Server } from 'socket.io';
+import { jobStore } from '@/services/job-store';
+import { printFile, type PrintJobOptions } from '@/services/printer';
+import {
+  db,
+  acquireIdempotencyKey,
+  storeIdempotencyKey,
+  releaseIdempotencyKey,
+} from '@/services/db';
+import { adminService } from '@/services/admin';
+import {
+  evaluateInkPreflight,
+  getPrinterTelemetry,
+  settlementService,
+  watchJobForMalfunction,
+} from '@/services';
+import { BLOCKED_STATUSES } from '@/utils';
+import { financialLedgerService } from '@/services/financial-ledger';
+import {
+  assertTrustedTimeForFinancialOperation,
+  isTrustedTimeError,
+} from '@/services/time-source';
+
+const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
+const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
+const VALID_PAPER_SIZES = new Set(['A4', 'Letter', 'Legal']);
+const IDEMPOTENCY_SCOPE = 'POST:/api/copy/jobs';
+
+export interface CreateCopyJobInput {
+  copies?: number;
+  colorMode?: string;
+  orientation?: string;
+  paperSize?: string;
+  amount?: number;
+  previewPath?: string;
+}
+
+export interface IdempotencyKeyHitResult {
+  kind: 'hit';
+  statusCode: number;
+  body: unknown;
+}
+
+export interface IdempotencyKeyInflightResult {
+  kind: 'inflight';
+  promise: Promise<{ statusCode: number; response: unknown } | null>;
+}
+
+export interface IdempotencyKeyClaimedResult {
+  kind: 'claimed';
+}
+
+export type ClaimIdempotencyResult =
+  | IdempotencyKeyHitResult
+  | IdempotencyKeyInflightResult
+  | IdempotencyKeyClaimedResult;
+
+export interface ServiceResponse {
+  statusCode: number;
+  body: unknown;
+}
+
+interface CreateCopyJobResult extends ServiceResponse {
+  cacheIdempotencyResponse: boolean;
+}
+
+interface NormalizedCopyJobInput {
+  copies: number;
+  colorMode: 'colored' | 'grayscale';
+  orientation: 'portrait' | 'landscape';
+  paperSize: 'A4' | 'Letter' | 'Legal';
+  amount?: number;
+  previewPath: string;
+}
+
+export interface CopyServiceDeps {
+  io: Server;
+}
+
+export class CopyService {
+  constructor(private readonly deps: CopyServiceDeps) {}
+
+  claimIdempotencyKey(idempotencyKey: string): ClaimIdempotencyResult {
+    if (!idempotencyKey) return { kind: 'claimed' };
+    const slot = acquireIdempotencyKey(idempotencyKey, IDEMPOTENCY_SCOPE);
+    if (slot.type === 'hit') {
+      return {
+        kind: 'hit',
+        statusCode: slot.entry.statusCode,
+        body: slot.entry.response,
+      };
+    }
+    if (slot.type === 'inflight') {
+      return {
+        kind: 'inflight',
+        promise: slot.promise,
+      };
+    }
+    return { kind: 'claimed' };
+  }
+
+  storeIdempotencyResponse(
+    idempotencyKey: string,
+    statusCode: number,
+    body: unknown,
+  ): void {
+    if (!idempotencyKey) return;
+    storeIdempotencyKey(idempotencyKey, IDEMPOTENCY_SCOPE, statusCode, body);
+  }
+
+  releaseIdempotencyKey(idempotencyKey: string): void {
+    if (!idempotencyKey) return;
+    releaseIdempotencyKey(idempotencyKey, IDEMPOTENCY_SCOPE);
+  }
+
+  async createCopyJob(
+    input: CreateCopyJobInput,
+    idempotencyKeyClaimed: boolean,
+    idempotencyKey: string,
+  ): Promise<CreateCopyJobResult> {
+    const normalized = this.normalizeInput(input);
+
+    if (!normalized.previewPath) {
+      return {
+        statusCode: 400,
+        body: {
+          error:
+            'Missing checked document. Please go back to /copy and tap Check for Document again.',
+        },
+        cacheIdempotencyResponse: idempotencyKeyClaimed,
+      };
+    }
+
+    const previewFilename = path.basename(normalized.previewPath);
+    if (previewFilename !== normalized.previewPath) {
+      return {
+        statusCode: 400,
+        body: {
+          error: 'Invalid preview path. Please check your document again.',
+        },
+        cacheIdempotencyResponse: idempotencyKeyClaimed,
+      };
+    }
+
+    const previewAbsPath = path.resolve('uploads', 'scans', previewFilename);
+    if (!fs.existsSync(previewAbsPath)) {
+      return {
+        statusCode: 409,
+        body: {
+          error:
+            'Checked document not found. Please go back to /copy and scan again.',
+        },
+        cacheIdempotencyResponse: idempotencyKeyClaimed,
+      };
+    }
+
+    const requiredAmount = adminService.calculateJobAmount(
+      'copy',
+      normalized.colorMode,
+      normalized.copies,
+    );
+
+    if ((db.data?.balance ?? 0) < requiredAmount) {
+      const errorBody = {
+        error: 'Insufficient balance',
+        balance: db.data?.balance ?? 0,
+        requiredAmount,
+      };
+      void adminService.appendAdminLog(
+        'payment_failed',
+        'Copy job failed: insufficient balance.',
+        {
+          balance: db.data?.balance ?? 0,
+          requiredAmount,
+        },
+      );
+      if (idempotencyKeyClaimed) {
+        this.releaseIdempotencyKey(idempotencyKey);
+      }
+      return {
+        statusCode: 400,
+        body: errorBody,
+        cacheIdempotencyResponse: false,
+      };
+    }
+
+    if (
+      typeof normalized.amount === 'number' &&
+      Number.isFinite(normalized.amount) &&
+      normalized.amount !== requiredAmount
+    ) {
+      void adminService.appendAdminLog(
+        'payment_amount_mismatch',
+        'Client amount differed from server pricing.',
+        {
+          amount: normalized.amount,
+          requiredAmount,
+        },
+      );
+    }
+
+    try {
+      assertTrustedTimeForFinancialOperation('copy_job');
+    } catch (error) {
+      const trustedPayload = isTrustedTimeError(error)
+        ? {
+            code: error.code,
+            error: `Copy is temporarily unavailable: ${error.trustedTime.detail}`,
+            trustedTime: {
+              operation: error.operation,
+              source: error.trustedTime.source,
+              synced: error.trustedTime.synced,
+              offsetMs: error.trustedTime.offsetMs,
+              driftExceeded: error.trustedTime.driftExceeded,
+              maxDriftMs: error.trustedTime.maxDriftMs,
+              detail: error.trustedTime.detail,
+              checkedAt: error.trustedTime.checkedAt,
+              ntpSource: error.trustedTime.ntpSource,
+            },
+          }
+        : {
+            code: 'TRUSTED_TIME_UNAVAILABLE',
+            error:
+              'Copy is temporarily unavailable because trusted time is not synchronized.',
+          };
+      void adminService.appendAdminLog(
+        'trusted_time_unsynced',
+        'Copy job blocked because trusted time is unavailable.',
+        {
+          detail: trustedPayload.error,
+          mode: 'copy',
+        },
+      );
+      if (idempotencyKeyClaimed) {
+        this.releaseIdempotencyKey(idempotencyKey);
+      }
+      return {
+        statusCode: 503,
+        body: trustedPayload,
+        cacheIdempotencyResponse: false,
+      };
+    }
+
+    const settings = {
+      copies: normalized.copies,
+      colorMode: normalized.colorMode,
+      orientation: normalized.orientation,
+      paperSize: normalized.paperSize,
+    };
+
+    const job = jobStore.createCopyJob(settings, null);
+    void adminService.appendAdminLog('copy_job_created', 'Copy job created.', {
+      jobId: job.id,
+      copies: normalized.copies,
+      colorMode: normalized.colorMode,
+      orientation: normalized.orientation,
+      paperSize: normalized.paperSize,
+    });
+    this.runCopyJob(job.id, normalized, previewFilename, requiredAmount);
+
+    const responseBody = JSON.parse(JSON.stringify(job)) as typeof job;
+    return {
+      statusCode: 201,
+      body: responseBody,
+      cacheIdempotencyResponse: idempotencyKeyClaimed,
+    };
+  }
+
+  getCopyJob(jobId: string): ServiceResponse {
+    const job = jobStore.getJob(jobId);
+    if (!job) {
+      return {
+        statusCode: 404,
+        body: { error: 'Job not found' },
+      };
+    }
+    return {
+      statusCode: 200,
+      body: job,
+    };
+  }
+
+  cancelCopyJob(jobId: string): ServiceResponse {
+    const job = jobStore.getJob(jobId);
+    if (!job) {
+      return {
+        statusCode: 404,
+        body: { error: 'Job not found' },
+      };
+    }
+
+    const cancelled = jobStore.requestCancel(job.id);
+    if (!cancelled) {
+      return {
+        statusCode: 409,
+        body: { error: 'Job is already in a terminal state' },
+      };
+    }
+
+    return {
+      statusCode: 202,
+      body: { ok: true, state: 'cancel_requested' },
+    };
+  }
+
+  private normalizeInput(input: CreateCopyJobInput): NormalizedCopyJobInput {
+    const safeCopies =
+      typeof input.copies === 'number' && Number.isFinite(input.copies)
+        ? Math.max(1, Math.floor(input.copies))
+        : 1;
+    const safeColorMode =
+      input.colorMode && VALID_COLOR_MODES.has(input.colorMode)
+        ? (input.colorMode as 'colored' | 'grayscale')
+        : 'grayscale';
+    const safeOrientation =
+      input.orientation && VALID_ORIENTATIONS.has(input.orientation)
+        ? (input.orientation as 'portrait' | 'landscape')
+        : 'portrait';
+    const safePaperSize =
+      input.paperSize && VALID_PAPER_SIZES.has(input.paperSize)
+        ? (input.paperSize as 'A4' | 'Letter' | 'Legal')
+        : 'A4';
+    const safePreviewPath =
+      typeof input.previewPath === 'string' ? input.previewPath.trim() : '';
+
+    return {
+      copies: safeCopies,
+      colorMode: safeColorMode,
+      orientation: safeOrientation,
+      paperSize: safePaperSize,
+      amount: input.amount,
+      previewPath: safePreviewPath,
+    };
+  }
+
+  private runCopyJob(
+    jobId: string,
+    normalized: NormalizedCopyJobInput,
+    previewFilename: string,
+    requiredAmount: number,
+  ): void {
+    void (async () => {
+      jobStore.updateJobState(jobId, 'running');
+      try {
+        const telemetry = getPrinterTelemetry();
+        if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
+          void adminService.appendAdminLog(
+            'copy_preflight_failed',
+            'Copy job rejected: printer not ready.',
+            {
+              jobId,
+              printerStatus: telemetry.status,
+              printerConnected: telemetry.connected,
+            },
+          );
+          jobStore.updateJobState(jobId, 'failed', {
+            failure: {
+              code: 'PRINTER_NOT_READY',
+              message: `Printer is not ready: ${telemetry.status}. Please notify the operator.`,
+              retryable: true,
+              stage: 'precheck',
+            },
+          });
+          return;
+        }
+        const inkPreflight = evaluateInkPreflight(telemetry);
+        if (inkPreflight.blocked) {
+          void adminService.appendAdminLog(
+            'copy_preflight_failed_ink',
+            'Copy job rejected: ink preflight policy blocked the job.',
+            {
+              jobId,
+              printerStatus: telemetry.status,
+              inkCode: inkPreflight.code,
+              inkReason: inkPreflight.reason ?? 'Unknown ink policy reason',
+              telemetryAvailable: inkPreflight.telemetryAvailable,
+              inkDetectionMethod: telemetry.inkDetectionMethod,
+            },
+          );
+          jobStore.updateJobState(jobId, 'failed', {
+            failure: {
+              code: 'INK_NOT_READY',
+              message:
+                inkPreflight.reason ??
+                'Ink telemetry indicates printing should be blocked.',
+              retryable: true,
+              stage: 'precheck',
+            },
+          });
+          return;
+        }
+
+        const printOptions: PrintJobOptions = {
+          copies: normalized.copies,
+          colorMode: normalized.colorMode,
+          orientation: normalized.orientation,
+          paperSize: normalized.paperSize,
+        };
+        const relPath = path.join('scans', previewFilename);
+        await financialLedgerService.append({
+          eventType: 'job_started',
+          amount: requiredAmount,
+          referenceId: jobId,
+          meta: {
+            mode: 'copy',
+            copies: normalized.copies,
+            colorMode: normalized.colorMode,
+            previewFilename,
+          },
+        });
+        await printFile(relPath, printOptions);
+
+        void watchJobForMalfunction(this.deps.io, {
+          jobId,
+          onFailure: (failedJobId, fault) => {
+            const activeJob = jobStore.getJob(failedJobId);
+            if (!activeJob || activeJob.state !== 'running') {
+              return;
+            }
+
+            jobStore.updateJobState(failedJobId, 'failed', {
+              failure: {
+                code: 'PRINTER_MALFUNCTION',
+                message: `Printer fault detected during copy job: ${fault.reason}`,
+                retryable: true,
+                stage: 'running',
+              },
+            });
+
+            void adminService.appendAdminLog(
+              'copy_job_failed_printer_malfunction',
+              'Copy job marked failed due to mid-job printer malfunction.',
+              {
+                jobId: failedJobId,
+                reason: fault.reason,
+                severity: fault.severity,
+                timestamp: fault.timestamp,
+              },
+            );
+          },
+        });
+
+        const settlement = await settlementService.settle({
+          requiredAmount,
+          io: this.deps.io,
+          jobContext: {
+            mode: 'copy',
+            jobId,
+            copies: normalized.copies,
+            colorMode: normalized.colorMode,
+          },
+        });
+
+        if (settlement.ok) {
+          const completedJob = jobStore.getJob(jobId);
+          if (completedJob && completedJob.type === 'copy') {
+            completedJob.payment = {
+              chargedAmount: settlement.chargedAmount,
+              remainingBalance: settlement.remainingBalance,
+            };
+          }
+          jobStore.updateJobState(jobId, 'succeeded');
+          await financialLedgerService.append({
+            eventType: 'job_completed',
+            amount: settlement.chargedAmount,
+            referenceId: jobId,
+            meta: {
+              mode: 'copy',
+              changeState: settlement.change.state,
+              changeRequested: settlement.change.requested,
+              changeDispensed: settlement.change.dispensed,
+            },
+          });
+          await adminService.incrementJobStats('copy');
+          void adminService.appendAdminLog(
+            'copy_job_completed',
+            'Copy job completed and charged.',
+            {
+              jobId,
+              chargedAmount: settlement.chargedAmount,
+              remainingBalance: settlement.remainingBalance,
+              changeState: settlement.change.state,
+              changeRequested: settlement.change.requested,
+              changeDispensed: settlement.change.dispensed,
+            },
+          );
+        } else {
+          jobStore.updateJobState(jobId, 'failed', {
+            failure: {
+              code: 'COPY_ERROR',
+              message:
+                settlement.error ??
+                'Balance drained before charge could complete.',
+              retryable: false,
+              stage: 'running',
+            },
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        jobStore.updateJobState(jobId, 'failed', {
+          failure: {
+            code: 'COPY_ERROR',
+            message,
+            retryable: true,
+            stage: 'running',
+          },
+        });
+        void adminService.appendAdminLog(
+          'copy_job_failed',
+          'Copy job failed — balance NOT charged.',
+          {
+            jobId,
+            error: message,
+          },
+        );
+      }
+    })();
+  }
+}

@@ -1,10 +1,10 @@
 {
-  "name": "printbit-web",
+  "name": "printbit",
   "version": "1.0.0",
-  "description": "",
+  "description": "A self-service printing kiosk application built with Node.js and Express.js.",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev -r tsconfig-paths/register src/server.ts",
+    "dev": "nodemon",
     "build": "node scripts/build-client.js",
     "kiosk": "node ./scripts/launch-kiosk.js",
     "start": "cmd /c ./scripts/start-kiosk.bat",
@@ -40,6 +40,7 @@
     "i18next-http-middleware": "^3.9.2",
     "lowdb": "^7.0.1",
     "multer": "^2.0.2",
+    "nodemon": "^3.1.14",
     "pdfjs": "^2.5.4",
     "pdfjs-dist": "^5.4.624",
     "qrcode": "^1.5.4",
@@ -49,6 +50,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@swc/core": "^1.15.18",
+    "@swc/helpers": "^0.5.19",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.0.0",
@@ -56,7 +59,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.27.3",
-    "ts-node-dev": "^2.0.0",
+    "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3"
   }

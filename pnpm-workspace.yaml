@@ -1,6 +1,7 @@
 onlyBuiltDependencies:
   - '@parcel/watcher'
   - '@serialport/bindings-cpp'
+  - '@swc/core'
   - argon2
   - canvas
   - esbuild
