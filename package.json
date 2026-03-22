@@ -4,7 +4,7 @@
   "description": "A self-service printing kiosk application built with Node.js and Express.js.",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon",
+    "dev": "ts-node-dev -r tsconfig-paths/register src/server.ts",
     "build": "node scripts/build-client.js",
     "db:migrate:legacy": "ts-node -r tsconfig-paths/register --swc src/scripts/migrate-dbjson-to-sqlite.ts",
     "kiosk": "node ./scripts/launch-kiosk.js",
@@ -60,6 +60,7 @@
     "@types/ws": "^8.18.1",
     "esbuild": "^0.27.3",
     "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3"
   }

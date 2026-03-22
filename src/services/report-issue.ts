@@ -168,9 +168,6 @@ class ReportIssueService {
       input.attachmentIds ?? [],
       session.id,
     );
-    if (attachmentIds.length === 0) {
-      throw new Error('At least one image attachment is required.');
-    }
 
     const entry: ReportIssueEntry = {
       id: randomUUID(),
