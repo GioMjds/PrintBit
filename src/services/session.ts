@@ -1,8 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import type { Request } from 'express';
-import { PUBLIC_URL } from '@/config/http.config';
+import {
+  PUBLIC_URL,
+  NETWORK_PROVIDER,
+  ESP32_AP_BASE_URL,
+  ESP32_KIOSK_SUBNET_PREFIX,
+  ESP32_KIOSK_IP,
+  PORT,
+} from '@/config/http.config';
 
 export interface DocumentPageAnalysis {
   index: number;
@@ -671,9 +679,63 @@ export function renderUploadPortal(token: string, portalHtmlPath: string) {
 
 export function resolvePublicBaseUrl(req: Request): URL {
   if (PUBLIC_URL) return new URL(PUBLIC_URL);
-
   const protocol = req.protocol;
-  const host = req.get('host') ?? 'localhost';
+  const hostHeader = req.get('host') ?? '';
+  const requestHost = hostHeader.split(':')[0];
+
+  if (NETWORK_PROVIDER === 'esp32') {
+    // If the incoming request already uses a non-loopback host, trust it first.
+    // This keeps QR/upload links aligned with the actual kiosk URL users opened.
+    if (
+      hostHeader &&
+      requestHost !== 'localhost' &&
+      requestHost !== '127.0.0.1'
+    ) {
+      return new URL(`${protocol}://${hostHeader}`);
+    }
+
+    // Prefer explicit kiosk IP if configured
+    if (ESP32_KIOSK_IP) {
+      return new URL(`http://${ESP32_KIOSK_IP}:${PORT}`);
+    }
+    const alreadyOnEsp32Subnet = requestHost.startsWith(
+      ESP32_KIOSK_SUBNET_PREFIX,
+    );
+    if (!alreadyOnEsp32Subnet) {
+      const detectedHost = detectEsp32KioskAddress();
+      if (detectedHost) {
+        return new URL(`http://${detectedHost}:${PORT}`);
+      }
+    }
+  }
+
+  const host = hostHeader || 'localhost';
 
   return new URL(`${protocol}://${host}`);
+}
+
+function detectEsp32KioskAddress(): string | null {
+  const interfaces = os.networkInterfaces();
+  for (const interfaceName of Object.keys(interfaces)) {
+    for (const iface of interfaces[interfaceName] ?? []) {
+      if (iface.family !== 'IPv4' || iface.internal) continue;
+      if (iface.address.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) {
+        return iface.address;
+      }
+    }
+  }
+
+  try {
+    const apHost = new URL(ESP32_AP_BASE_URL).hostname;
+    if (apHost.startsWith('192.168.')) {
+      const octets = apHost.split('.');
+      if (octets.length === 4) {
+        return `${octets[0]}.${octets[1]}.${octets[2]}.2`;
+      }
+    }
+  } catch {
+    /* keep request-host fallback */
+  }
+
+  return null;
 }

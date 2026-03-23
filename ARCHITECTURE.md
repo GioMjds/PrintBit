@@ -33,7 +33,8 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `sqlite-storage.ts`: SQLite persistence (`printbit.sqlite`) for operational domains (admin logs, feedback, report issues).
 
 ## 4) Service layer (`src/services`)
-- `serial.ts`: coin input parsing, balance mutation, and hopper command transport (shared 9600-baud serial line).
+
+- `serial.ts`: coin input parsing, balance mutation, and hopper command transport (shared 115200-baud serial line).
 - `hopper.ts`: coin hopper orchestration — dispense with retries, stats tracking, owed-change fallback.
 - `hopper-protocol.ts`: Arduino hopper serial protocol contract (command builders, response parser, error codes).
 - `settlement.ts`: shared payment settlement logic (charge balance + dispense change) used by print and copy flows.
@@ -119,7 +120,7 @@ Ephemeral (process memory):
 
 - MyPublicWiFi (hotspot + captive behavior)
 - SumatraPDF executable for print dispatch
-- Serial device for coin input + coin hopper (shared 9600-baud line via Arduino Uno)
+- Serial device for coin input + coin hopper (shared 115200-baud line via Arduino Uno)
 - Scanner hardware adapter
 
 ## Design considerations

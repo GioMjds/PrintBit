@@ -49,6 +49,7 @@ const SERIAL_RECONNECT_MAX_ATTEMPTS = readNonNegativeIntEnv(
   'PRINTBIT_SERIAL_RECONNECT_MAX_ATTEMPTS',
   0,
 );
+const SERIAL_PORT_HINT = process.env.PRINTBIT_SERIAL_PORT?.trim() || '';
 
 let serialConnected = false;
 let serialPortPath: string | null = null;
@@ -469,17 +470,25 @@ async function attemptSerialConnection(
       return;
     }
 
-    const portPath = ports[0].path;
+    const selectedPort =
+      SERIAL_PORT_HINT.length > 0
+        ? ports.find((portInfo) =>
+            portInfo.path
+              .toLowerCase()
+              .includes(SERIAL_PORT_HINT.toLowerCase()),
+          ) ?? ports[0]
+        : ports[0];
+    const portPath = selectedPort.path;
     serialPortPath = portPath;
     console.log(
-      `[SERIAL] Selected port: ${portPath} (baud: 9600)${attempt > 0 ? ` — retry #${attempt}` : ''}`,
+      `[SERIAL] Selected port: ${portPath} (baud: 115200)${attempt > 0 ? ` — retry #${attempt}` : ''}`,
     );
 
     await new Promise<void>((resolve, reject) => {
       const port = new SerialPort(
         {
           path: portPath,
-          baudRate: 9600,
+          baudRate: 115200,
         },
         (err) => {
           if (err) return reject(err);
@@ -880,9 +889,17 @@ async function attemptSerialConnection(
           connected: serialConnected,
           portPath: serialPortPath,
         });
-        console.log(`[SERIAL] Raw data: "${rawLine}"`);
-        if (tryHandleHopperResponse(rawLine)) return;
         const token = rawLine.trim();
+        if (token.length === 0) return;
+
+        if (token.startsWith('[')) {
+          console.log(`[SERIAL] Device message: "${token}"`);
+          return;
+        }
+
+        if (tryHandleHopperResponse(rawLine)) return;
+
+        console.log(`[SERIAL] Raw data: "${rawLine}"`);
         if (!/^\d+$/.test(token)) return;
         void processToken(token);
       });

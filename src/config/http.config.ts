@@ -20,20 +20,41 @@ export const PREVIEW_CACHE_DIR = path.join(
   'printbit-preview-cache',
 );
 
-/** Hotspot settings (configurable via env) */
-export const HOTSPOT_SSID =
-  process.env.PRINTBIT_HOTSPOT_SSID ?? 'PrintBit-Kiosk';
-export const HOTSPOT_PASSWORD =
-  process.env.PRINTBIT_HOTSPOT_PASSWORD ?? 'printbit123';
 export const NETWORK_PROVIDER =
   process.env.PRINTBIT_NETWORK_PROVIDER?.trim().toLowerCase() === 'esp32'
     ? 'esp32'
     : 'mypublicwifi';
+const DEFAULT_HOTSPOT_SSID =
+  NETWORK_PROVIDER === 'esp32' ? 'PrintBit' : 'PrintBit-Kiosk';
+const DEFAULT_HOTSPOT_PASSWORD =
+  NETWORK_PROVIDER === 'esp32' ? '' : 'printbit123';
+
+/** Hotspot settings (configurable via env) */
+export const HOTSPOT_SSID =
+  process.env.PRINTBIT_HOTSPOT_SSID ?? DEFAULT_HOTSPOT_SSID;
+export const HOTSPOT_PASSWORD =
+  process.env.PRINTBIT_HOTSPOT_PASSWORD ?? DEFAULT_HOTSPOT_PASSWORD;
+const rawHotspotAuthType = process.env.PRINTBIT_HOTSPOT_AUTH_TYPE?.trim();
+const normalizedHotspotAuthType =
+  rawHotspotAuthType && rawHotspotAuthType.length > 0
+    ? rawHotspotAuthType
+    : HOTSPOT_PASSWORD.trim().length > 0
+      ? 'WPA'
+      : 'nopass';
 export const HOTSPOT_AUTH_TYPE =
-  process.env.PRINTBIT_HOTSPOT_AUTH_TYPE ??
-  (HOTSPOT_PASSWORD.trim().length > 0 ? 'WPA' : 'nopass');
+  HOTSPOT_PASSWORD.trim().length > 0 &&
+  normalizedHotspotAuthType.toUpperCase() === 'NOPASS'
+    ? 'WPA'
+    : normalizedHotspotAuthType;
 export const ESP32_CAPTIVE_PORTAL_PATH =
   process.env.PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH ?? '/portal';
+export const ESP32_AP_BASE_URL =
+  process.env.PRINTBIT_ESP32_AP_BASE_URL?.trim() || 'http://192.168.4.1';
+export const ESP32_KIOSK_SUBNET_PREFIX =
+  process.env.PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX?.trim() || '192.168.4.';
+/** Explicit kiosk IP on the ESP32 AP network (bypasses auto-detection). */
+export const ESP32_KIOSK_IP =
+  process.env.PRINTBIT_ESP32_KIOSK_IP?.trim() || undefined;
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
 
