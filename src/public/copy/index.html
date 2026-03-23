@@ -160,12 +160,25 @@
               style="display: none"
               aria-live="polite"
             >
-              <iframe
-                id="previewFrame"
-                class="preview-result__frame"
-                title="Scanned document preview"
-                sandbox="allow-same-origin"
-              ></iframe>
+              <div class="preview-result__paper" id="previewPaper">
+                <canvas
+                  id="previewCanvas"
+                  class="preview-result__canvas"
+                  style="display: none"
+                ></canvas>
+                <div
+                  id="previewImageStage"
+                  class="preview-result__img-stage"
+                  style="display: none"
+                >
+                  <img
+                    id="previewImage"
+                    class="preview-result__img"
+                    alt="Scanned document preview"
+                    style="display: none"
+                  />
+                </div>
+              </div>
               <div class="preview-result__ready-badge">
                 <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                   <path

@@ -300,6 +300,7 @@ Requests copy job cancellation.
 All routes below require admin local access + valid `x-admin-pin`.
 
 Watchdog-facing routes are exempt from this admin contract and are loopback-only:
+
 - `GET /api/watchdog/health`
 - `GET /api/watchdog/report`
 - `POST /api/watchdog/report`
@@ -390,6 +391,50 @@ Returns settings. All pricing values are whole-peso integers.
 ### `PUT /api/admin/settings`
 
 Updates pricing, timeout, PIN, and local-only guard. Pricing fields (`printPerPage`, `copyPerPage`, `scanDocument`, `colorSurcharge`) must be non-negative integers (whole pesos). Fractional values are rejected with `400`.
+
+### `GET /api/admin/printer/list`
+
+Returns installed Windows printer queues plus the currently configured ink-monitoring target.
+
+Response includes:
+
+- `printers[]` entries with:
+  - `name`, `driverName`, `portName`, `isDefault`, `printerStatus`, `printerState`
+  - `pnpInstanceId` (nullable) — best-effort PnP printer device instance identifier
+  - `pnpFriendlyName` (nullable) — matched PnP device display name
+  - `deviceSerialNumber` (nullable) — best-effort `DEVPKEY_Device_SerialNumber`
+- `targetPrinterName` — configured `inkMonitoring.targetPrinterName`
+
+### `GET /api/admin/printer/ink-diagnostics`
+
+Returns diagnostics for Issue #24 ink monitoring checks, including:
+
+- `targetPrinterName`
+- `targetResolved`
+- `telemetry`
+- `installedPrinters`
+- `matchingProperties`
+- `targetPrinterIdentity` (nullable) with:
+  - `pnpInstanceId`
+  - `pnpFriendlyName`
+  - `deviceSerialNumber`
+
+`targetPrinterIdentity` helps verify that the configured target queue maps to the expected connected hardware even when a true serial number is not exposed by the driver.
+
+### `GET /api/admin/printer/ink-history`
+
+Returns ink telemetry history snapshots.
+
+- Query: `limit` (`1..500`, default `100`)
+- Response: `{ total, items[] }`
+
+### `POST /api/admin/printer/re-detect`
+
+Forces immediate printer re-detection and telemetry refresh. Returns `{ ok, printer }`.
+
+### `POST /api/admin/printer/test-print`
+
+Prints a diagnostic test page to the currently connected printer.
 
 ### `GET /api/admin/logs`
 

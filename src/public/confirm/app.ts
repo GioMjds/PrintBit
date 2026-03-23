@@ -617,22 +617,9 @@ const thankYouDoneBtn = document.getElementById(
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 let lastSpoolerCorrelationKey: string | null = null;
-const SPOOLER_CLEANUP_WAIT_MS = 6_000;
-
-type PrintOutcome = 'confirmed' | 'failure' | 'timeout';
-type PendingPrintOutcomeWait = {
-  correlationKey: string;
-  settled: boolean;
-  timeoutId: number;
-  resolve: (outcome: PrintOutcome) => void;
-};
-let pendingPrintOutcomeWait: PendingPrintOutcomeWait | null = null;
-let pendingTerminalOutcome: {
-  outcome: Exclude<PrintOutcome, 'timeout'>;
-  correlationKey: string | null;
-} | null = null;
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 let latestPrinterStatusLabel = 'Checking...';
+let spoolerTimedOut = false;
 
 type SpoolerFailureEvent = {
   jobStatus: string;
@@ -655,6 +642,16 @@ type SpoolerConfirmedEvent = {
   printerName: string | null;
   transactionId: string | null;
   spoolerCorrelationKey: string | null;
+};
+
+type SpoolerTimeoutEvent = {
+  jobStatus: string | null;
+  pagesPrinted: number;
+  totalPages: number;
+  printerName: string | null;
+  transactionId: string | null;
+  spoolerCorrelationKey: string | null;
+  monitorWindowMs: number;
 };
 
 const CANONICAL_PRINTER_FAULT_STATUSES = new Set([
@@ -865,71 +862,6 @@ function teardownJamRefundFocusTrap(): void {
   jamRefundFocusTrapHandler = null;
 }
 
-function settlePendingPrintOutcome(
-  outcome: PrintOutcome,
-  spoolerCorrelationKey: string | null,
-): void {
-  if (!spoolerCorrelationKey) return;
-  if (!pendingPrintOutcomeWait) {
-    if (outcome === 'confirmed' || outcome === 'failure') {
-      pendingTerminalOutcome = {
-        outcome,
-        correlationKey: spoolerCorrelationKey,
-      };
-    }
-    return;
-  }
-  if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey) return;
-  if (pendingPrintOutcomeWait.settled) return;
-
-  pendingPrintOutcomeWait.settled = true;
-  window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
-  const { resolve } = pendingPrintOutcomeWait;
-  pendingPrintOutcomeWait = null;
-  pendingTerminalOutcome = null;
-  resolve(outcome);
-}
-
-async function awaitPrintOutcomeOrTimeout(
-  spoolerCorrelationKey: string,
-): Promise<PrintOutcome> {
-  if (pendingPrintOutcomeWait && !pendingPrintOutcomeWait.settled) {
-    pendingPrintOutcomeWait.settled = true;
-    window.clearTimeout(pendingPrintOutcomeWait.timeoutId);
-    pendingPrintOutcomeWait.resolve('timeout');
-    pendingPrintOutcomeWait = null;
-  }
-
-  return await new Promise<PrintOutcome>((resolve) => {
-    const timeoutId = window.setTimeout(() => {
-      if (!pendingPrintOutcomeWait) return;
-      if (pendingPrintOutcomeWait.correlationKey !== spoolerCorrelationKey)
-        return;
-      if (pendingPrintOutcomeWait.settled) return;
-
-      pendingPrintOutcomeWait.settled = true;
-      pendingPrintOutcomeWait = null;
-      resolve('timeout');
-    }, SPOOLER_CLEANUP_WAIT_MS);
-
-    pendingPrintOutcomeWait = {
-      correlationKey: spoolerCorrelationKey,
-      settled: false,
-      timeoutId,
-      resolve,
-    };
-
-    if (
-      pendingTerminalOutcome &&
-      pendingTerminalOutcome.correlationKey === spoolerCorrelationKey
-    ) {
-      const bufferedOutcome = pendingTerminalOutcome.outcome;
-      pendingTerminalOutcome = null;
-      settlePendingPrintOutcome(bufferedOutcome, spoolerCorrelationKey);
-    }
-  });
-}
-
 confirmBtn?.addEventListener('click', () => showModal());
 modalCancelBtn?.addEventListener('click', () => hideModal());
 
@@ -940,7 +872,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   isProcessingPayment = true;
   activeSpoolerCorrelationKey = null;
   lastSpoolerCorrelationKey = null;
-  pendingTerminalOutcome = null;
+  spoolerTimedOut = false;
 
   showOverlay(printingOverlay);
 
@@ -1177,46 +1109,40 @@ modalConfirmBtn?.addEventListener('click', async () => {
         message?: string;
       };
     };
+    const awaitingSpoolerTerminal =
+      lastSpoolerCorrelationKey === spoolerCorrelationKey;
 
-    if (payload.change?.state === 'failed') {
+    if (awaitingSpoolerTerminal && payload.change?.state === 'failed') {
       setPrintingPhase('failed');
       if (statusMessage) {
         statusMessage.textContent =
-          'Document printed. Change dispensing failed. Please contact staff.';
+          'Print job accepted. Change dispensing failed. Please contact staff.';
       }
       setCoinEventMessage(
         `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required.`,
       );
-    } else if (payload.change?.state === 'dispensed') {
-      setPrintingPhase('done');
+    } else if (awaitingSpoolerTerminal && payload.change?.state === 'dispensed') {
+      setPrintingPhase('printing');
       if (statusMessage) {
-        statusMessage.textContent = 'Document printed and change dispensed.';
+        statusMessage.textContent =
+          'Payment confirmed. Waiting for printer completion...';
       }
-    } else if (statusMessage) {
-      statusMessage.textContent = 'Document sent to printer!';
+    } else if (awaitingSpoolerTerminal && statusMessage) {
+      statusMessage.textContent = 'Payment confirmed. Sending to spooler...';
     }
 
     // Ensure the printing overlay is visible for at least MIN_OVERLAY_MS
     const remaining = MIN_OVERLAY_MS - (Date.now() - overlayStart);
     if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
 
-    hideOverlay(printingOverlay);
-
-    // Show thank-you overlay
-    showOverlay(thankYouOverlay);
-
-    if (statusMessage) {
-      statusMessage.textContent = 'Your document has been sent to the printer!';
-    }
-    const printOutcome = await awaitPrintOutcomeOrTimeout(
-      spoolerCorrelationKey,
-    );
-    if (printOutcome !== 'failure') {
-      clearConfirmSessionStorage();
+    if (awaitingSpoolerTerminal && statusMessage) {
+      statusMessage.textContent = 'Waiting for printer spooler confirmation...';
     }
   }
-  isProcessingPayment = false;
-  applyConfirmGate();
+  if (config.mode !== 'print' || lastSpoolerCorrelationKey === null) {
+    isProcessingPayment = false;
+    applyConfirmGate();
+  }
 });
 
 async function pollCopyJob(
@@ -1541,6 +1467,7 @@ if (typeof ioFactory === 'function') {
         ? `✓ Job sent to "${printerName}". Printing...`
         : '✓ Job sent to printer. Printing...';
     }
+    spoolerTimedOut = false;
     activeSpoolerCorrelationKey = null;
     setPrintingPhase('printing');
   });
@@ -1583,7 +1510,26 @@ if (typeof ioFactory === 'function') {
           : null,
     };
 
-    settlePendingPrintOutcome('confirmed', event.spoolerCorrelationKey);
+    if (
+      !event.spoolerCorrelationKey ||
+      event.spoolerCorrelationKey !== lastSpoolerCorrelationKey
+    ) {
+      return;
+    }
+
+    hideOverlay(printingOverlay);
+    showOverlay(thankYouOverlay);
+    activeSpoolerCorrelationKey = null;
+    if (statusMessage) {
+      statusMessage.textContent = event.printerName
+        ? `Printing complete on "${event.printerName}". Thank you!`
+        : 'Printing complete. Thank you!';
+    }
+    clearConfirmSessionStorage();
+    lastSpoolerCorrelationKey = null;
+    spoolerTimedOut = false;
+    isProcessingPayment = false;
+    applyConfirmGate();
   });
 
   socket.on('printerSpoolerFailure', (payload: unknown) => {
@@ -1663,8 +1609,85 @@ if (typeof ioFactory === 'function') {
     };
 
     activeSpoolerCorrelationKey = null;
-    settlePendingPrintOutcome('failure', event.spoolerCorrelationKey);
+    lastSpoolerCorrelationKey = null;
+    spoolerTimedOut = false;
+    isProcessingPayment = false;
+    applyConfirmGate();
     showSpoolerFailureNotice(event);
+  });
+
+  socket.on('printerSpoolerTimeout', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    const event: SpoolerTimeoutEvent = {
+      jobStatus:
+        'jobStatus' in payload &&
+        typeof (payload as { jobStatus: unknown }).jobStatus === 'string'
+          ? (payload as { jobStatus: string }).jobStatus
+          : null,
+      pagesPrinted:
+        'pagesPrinted' in payload &&
+        typeof (payload as { pagesPrinted: unknown }).pagesPrinted === 'number'
+          ? (payload as { pagesPrinted: number }).pagesPrinted
+          : 0,
+      totalPages:
+        'totalPages' in payload &&
+        typeof (payload as { totalPages: unknown }).totalPages === 'number'
+          ? (payload as { totalPages: number }).totalPages
+          : 0,
+      printerName:
+        'printerName' in payload &&
+        typeof (payload as { printerName: unknown }).printerName === 'string'
+          ? (payload as { printerName: string }).printerName
+          : null,
+      transactionId:
+        'transactionId' in payload &&
+        typeof (payload as { transactionId: unknown }).transactionId ===
+          'string'
+          ? (payload as { transactionId: string }).transactionId
+          : null,
+      spoolerCorrelationKey:
+        'spoolerCorrelationKey' in payload &&
+        typeof (payload as { spoolerCorrelationKey: unknown })
+          .spoolerCorrelationKey === 'string'
+          ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+          : null,
+      monitorWindowMs:
+        'monitorWindowMs' in payload &&
+        typeof (payload as { monitorWindowMs: unknown }).monitorWindowMs ===
+          'number'
+          ? (payload as { monitorWindowMs: number }).monitorWindowMs
+          : 0,
+    };
+
+    if (
+      !event.spoolerCorrelationKey ||
+      event.spoolerCorrelationKey !== lastSpoolerCorrelationKey
+    ) {
+      return;
+    }
+    if (spoolerTimedOut) return;
+
+    activeSpoolerCorrelationKey = null;
+    spoolerTimedOut = true;
+    setPrintingPhase('printing');
+    const progressLabel =
+      event.totalPages > 0
+        ? ` (${event.pagesPrinted}/${event.totalPages} pages reported)`
+        : '';
+    const timeoutMinutes =
+      event.monitorWindowMs > 0
+        ? Math.max(1, Math.round(event.monitorWindowMs / 60_000))
+        : 3;
+    if (statusMessage) {
+      statusMessage.textContent = event.printerName
+        ? `Still processing on "${event.printerName}"${progressLabel}. Please wait for final printer confirmation.`
+        : `Still processing in printer spooler${progressLabel}. Please wait for final confirmation.`;
+    }
+    if (printingHint) {
+      printingHint.textContent =
+        `Processing is taking longer than usual (over ${timeoutMinutes} min). Do not turn off the machine.`;
+    }
   });
 }
 

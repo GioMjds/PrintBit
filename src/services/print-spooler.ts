@@ -48,6 +48,7 @@ export interface SpoolerMonitorResult {
   jobStatus: string | null;
   pagesPrinted: number;
   failed: boolean;
+  timedOut?: boolean;
   /** ID of the created PendingRefundEntry when failed === true */
   refundId?: string;
 }
@@ -183,6 +184,11 @@ function matchesStatusSet(status: string, set: Set<string>): boolean {
 /**
  * Fire-and-forget: call this AFTER settlement has completed.
  * It polls the Windows print spooler in the background.
+ * It emits lifecycle events over Socket.IO for kiosk UI synchronization:
+ *   - `printJobDispatched` (job accepted by app and monitor started)
+ *   - `printerSpoolerConfirmed` (terminal success)
+ *   - `printerSpoolerFailure` (terminal failure)
+ *   - `printerSpoolerTimeout` (monitor window expired before terminal status)
  * On spooler-reported failure it:
  *   - creates a PendingRefundEntry in the DB
  *   - writes an admin log entry
@@ -217,6 +223,7 @@ export async function monitorSpoolerJob(
   const deadline = Date.now() + MONITOR_WINDOW_MS;
   let lastStatus: string | null = null;
   let lastPagesPrinted = 0;
+  let lastTotalPages = 0;
   let trackedJobId: number | null = null;
   const dispatchedAtMs = Date.parse(jobDispatchedAt);
   const submittedTimeCutoffMs = Number.isFinite(dispatchedAtMs)
@@ -290,6 +297,7 @@ export async function monitorSpoolerJob(
 
       lastStatus = job.status;
       lastPagesPrinted = job.pagesPrinted;
+      lastTotalPages = job.totalPages;
 
       console.log(
         `[SPOOLER-MONITOR] Job #${job.id} status="${job.status}" pages=${job.pagesPrinted}/${job.totalPages}`,
@@ -512,11 +520,24 @@ export async function monitorSpoolerJob(
     console.log(
       `[SPOOLER-MONITOR] Window expired. Last known status: "${lastStatus ?? 'none'}"`,
     );
+    io.emit('printerSpoolerTimeout', {
+      jobStatus: lastStatus,
+      pagesPrinted: lastPagesPrinted,
+      totalPages: lastTotalPages,
+      printerName,
+      transactionId:
+        typeof jobContext.transactionId === 'string'
+          ? jobContext.transactionId
+          : null,
+      spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+      monitorWindowMs: MONITOR_WINDOW_MS,
+    });
     return {
       detected: lastStatus !== null,
       jobStatus: lastStatus,
       pagesPrinted: lastPagesPrinted,
       failed: false,
+      timedOut: true,
     };
   } finally {
     // Always clean up the PS process — whether we returned early, timed out,

@@ -957,6 +957,9 @@ export class AdminController {
       isDefault: Boolean(printer.Default),
       printerStatus: printer.PrinterStatus,
       printerState: printer.PrinterState,
+      pnpInstanceId: printer.PnpInstanceId ?? null,
+      pnpFriendlyName: printer.PnpFriendlyName ?? null,
+      deviceSerialNumber: printer.DeviceSerialNumber ?? null,
     }));
     res.json({
       printers,

@@ -53,6 +53,9 @@ export interface InstalledPrinterInfo {
   Default?: boolean;
   PrinterStatus: number;
   PrinterState: number;
+  PnpInstanceId?: string | null;
+  PnpFriendlyName?: string | null;
+  DeviceSerialNumber?: string | null;
 }
 
 export interface InkPreflightEvaluation {
@@ -68,6 +71,13 @@ export interface InkPreflightEvaluation {
   telemetryAvailable: boolean;
   lowSupplies: InkLevel[];
   emptySupplies: InkLevel[];
+}
+
+interface PnpPrinterDeviceInfo {
+  FriendlyName: string | null;
+  InstanceId: string | null;
+  Status: string | null;
+  SerialNumber: string | null;
 }
 
 // ── PrinterState bitmask (Win32_Printer) ─────────────────────────
@@ -1155,7 +1165,17 @@ export async function listInstalledPrinters(): Promise<InstalledPrinterInfo[]> {
       | InstalledPrinterInfo
       | InstalledPrinterInfo[];
     const rows = Array.isArray(parsed) ? parsed : [parsed];
-    return rows.filter((row) => row && typeof row.Name === 'string');
+    const printers = rows.filter((row) => row && typeof row.Name === 'string');
+    const pnpDevices = await listPnpPrinterDevices();
+    return printers.map((printer) => {
+      const matchedDevice = matchPnpDeviceToPrinter(printer, pnpDevices);
+      return {
+        ...printer,
+        PnpInstanceId: matchedDevice?.InstanceId ?? null,
+        PnpFriendlyName: matchedDevice?.FriendlyName ?? null,
+        DeviceSerialNumber: matchedDevice?.SerialNumber ?? null,
+      };
+    });
   } catch {
     return [];
   }
@@ -1166,6 +1186,11 @@ export async function runInkTelemetryDiagnostics(): Promise<{
   targetResolved: boolean;
   telemetry: PrinterTelemetry;
   installedPrinters: InstalledPrinterInfo[];
+  targetPrinterIdentity: {
+    pnpInstanceId: string | null;
+    pnpFriendlyName: string | null;
+    deviceSerialNumber: string | null;
+  } | null;
   matchingProperties: Array<{ propertyName: string; value: unknown }>;
 }> {
   const telemetry = await refreshPrinterTelemetry();
@@ -1202,6 +1227,22 @@ export async function runInkTelemetryDiagnostics(): Promise<{
     }
   }
 
+  const targetPrinterIdentity = targetPrinterName
+    ? (() => {
+        const matched = installedPrinters.find(
+          (entry) =>
+            entry.Name.trim().toLowerCase() ===
+            targetPrinterName.trim().toLowerCase(),
+        );
+        if (!matched) return null;
+        return {
+          pnpInstanceId: matched.PnpInstanceId ?? null,
+          pnpFriendlyName: matched.PnpFriendlyName ?? null,
+          deviceSerialNumber: matched.DeviceSerialNumber ?? null,
+        };
+      })()
+    : null;
+
   return {
     targetPrinterName: targetPrinterName ?? null,
     targetResolved: Boolean(
@@ -1214,8 +1255,83 @@ export async function runInkTelemetryDiagnostics(): Promise<{
     ),
     telemetry,
     installedPrinters,
+    targetPrinterIdentity,
     matchingProperties,
   };
+}
+
+function normalizeComparableName(value: string | null | undefined): string {
+  if (!value) return '';
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function extractPortTokenFromInstanceId(
+  instanceId: string | null | undefined,
+): string | null {
+  if (!instanceId) return null;
+  const match = instanceId.match(/&(USB\d{3})$/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function matchPnpDeviceToPrinter(
+  printer: InstalledPrinterInfo,
+  devices: PnpPrinterDeviceInfo[],
+): PnpPrinterDeviceInfo | null {
+  const normalizedName = normalizeComparableName(printer.Name);
+  const normalizedDriver = normalizeComparableName(printer.DriverName);
+  const portName = (printer.PortName ?? '').trim().toUpperCase();
+
+  if (portName) {
+    const byPort = devices.find((device) => {
+      const token = extractPortTokenFromInstanceId(device.InstanceId);
+      return token === portName;
+    });
+    if (byPort) return byPort;
+  }
+
+  const byExactName = devices.find(
+    (device) => normalizeComparableName(device.FriendlyName) === normalizedName,
+  );
+  if (byExactName) return byExactName;
+
+  const byDriverName = devices.find((device) => {
+    const friendly = normalizeComparableName(device.FriendlyName);
+    if (!friendly || !normalizedDriver) return false;
+    return (
+      (friendly.includes(normalizedDriver) || normalizedDriver.includes(friendly))
+    );
+  });
+  if (byDriverName) return byDriverName;
+
+  return null;
+}
+
+async function listPnpPrinterDevices(): Promise<PnpPrinterDeviceInfo[]> {
+  try {
+    const json = await runPowerShell(
+      `$devices = Get-PnpDevice -Class Printer -ErrorAction SilentlyContinue | ForEach-Object { ` +
+        `$serial = ($_ | Get-PnpDeviceProperty -KeyName 'DEVPKEY_Device_SerialNumber' -ErrorAction SilentlyContinue).Data; ` +
+        `[PSCustomObject]@{ FriendlyName = $_.FriendlyName; InstanceId = $_.InstanceId; Status = $_.Status; SerialNumber = if ($null -eq $serial -or $serial -eq '') { $null } else { [string]$serial } } ` +
+      `}; ` +
+      `if ($devices) { $devices | ConvertTo-Json -Depth 4 } else { '[]' }`,
+      10_000,
+    );
+    if (!json || json === 'null') return [];
+    const parsed = JSON.parse(json) as
+      | PnpPrinterDeviceInfo
+      | PnpPrinterDeviceInfo[];
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    return rows.filter(
+      (row) =>
+        row &&
+        (typeof row.InstanceId === 'string' || typeof row.FriendlyName === 'string'),
+    );
+  } catch {
+    return [];
+  }
 }
 
 export function evaluateInkPreflight(
