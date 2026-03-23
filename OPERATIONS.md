@@ -128,6 +128,18 @@
 - Confirm tokenized route `/upload/:token` is reachable.
 - Retry session creation from kiosk print page.
 
+### ESP32 captive portal checks
+
+- When using ESP32 onboarding, set `PRINTBIT_NETWORK_PROVIDER=esp32`.
+- Align AP values with firmware (`SSID=PrintBit`, password/auth must match).
+- In ESP32 `.ino`, expose `POST /kiosk/register` so the kiosk can dynamically publish its current IP and captive path.
+- Keep `PRINTBIT_ESP32_AP_BASE_URL` pointed to the ESP32 AP gateway (default `http://192.168.4.1`).
+- Validate end-to-end:
+  - Start a new print session on kiosk (`/print`)
+  - Scan QR and join ESP32 AP
+  - Phone captive portal opens and reaches PrintBit upload page
+  - Upload appears in kiosk file list for the active session
+
 ## Scanner preview fails
 
 - Confirm scanner is available and not in use.

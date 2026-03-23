@@ -2,7 +2,7 @@
  * Hopper serial protocol contract between Node.js and Arduino Uno.
  *
  * All communication uses newline-delimited, space-separated tokens over a
- * shared 9600-baud serial line. Lines that start with "HOPPER" belong to the
+ * shared 115200-baud serial line. Lines that start with "HOPPER" belong to the
  * hopper subsystem; all other lines are handled by the coin-acceptor parser.
  *
  * ── Commands (Node → Arduino) ────────────────────────────────────────────────

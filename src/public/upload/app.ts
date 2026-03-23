@@ -776,6 +776,150 @@ window.addEventListener('pageshow', () => {
   void refreshSessionLease();
 });
 
+// ── Captive portal detection ──────────────────────────────────────────────────
+
+/**
+ * Detects if we're running inside a captive portal webview.
+ * These webviews often restrict file input access.
+ */
+function detectCaptivePortalWebview(): boolean {
+  const ua = navigator.userAgent.toLowerCase();
+  
+  // Android captive portal browser indicators
+  if (ua.includes('captiveportal') || ua.includes('cna')) return true;
+  
+  // iOS CaptiveNetworkSupport
+  if (ua.includes('captivenetworksupport')) return true;
+  
+  // Check if running in standalone mode (not a real browser)
+  const isStandalone =
+    'standalone' in navigator && (navigator as { standalone?: boolean }).standalone === true;
+  
+  // Check for limited features typical of captive webviews
+  const hasLimitedFeatures =
+    !window.indexedDB || 
+    !window.localStorage ||
+    typeof FileReader === 'undefined';
+  
+  // Chrome Custom Tabs and similar can work, but captive webviews often have restrictions
+  // The safest indicator is if file input doesn't work
+  if (isStandalone || hasLimitedFeatures) return true;
+  
+  return false;
+}
+
+/**
+ * Shows a banner prompting user to open in full browser if in captive webview.
+ */
+function showOpenInBrowserBanner(): void {
+  const currentUrl = window.location.href;
+  
+  const banner = document.createElement('div');
+  banner.className = 'captive-banner';
+  banner.innerHTML = `
+    <div class="captive-banner__content">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <div>
+        <strong>File picker may be blocked</strong>
+        <p>Open this page in your browser to upload files.</p>
+      </div>
+    </div>
+    <div class="captive-banner__actions">
+      <button type="button" class="captive-banner__copy" id="copyUrlBtn">
+        Copy Link
+      </button>
+      <button type="button" class="captive-banner__dismiss" id="dismissBannerBtn">
+        Try Anyway
+      </button>
+    </div>
+  `;
+  
+  // Insert at top of upload card
+  const uploadCard = document.querySelector('.upload-card');
+  if (uploadCard) {
+    uploadCard.insertBefore(banner, uploadCard.firstChild);
+  }
+  
+  // Copy URL button
+  const copyBtn = document.getElementById('copyUrlBtn');
+  copyBtn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(currentUrl);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy Link';
+      }, 2000);
+    } catch {
+      // Fallback: select text
+      const textArea = document.createElement('textarea');
+      textArea.value = currentUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy Link';
+      }, 2000);
+    }
+  });
+  
+  // Dismiss button
+  const dismissBtn = document.getElementById('dismissBannerBtn');
+  dismissBtn?.addEventListener('click', () => {
+    banner.remove();
+  });
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
+
+// Check for captive portal and show banner if needed
+if (detectCaptivePortalWebview()) {
+  showOpenInBrowserBanner();
+}
+
+// Detect file picker failure: if user taps drop zone but no file dialog opens
+// (common in captive portal webviews), show the banner after a timeout
+let filePickerOpened = false;
+let filePickerTimeout: number | null = null;
+
+dropZone.addEventListener('click', () => {
+  // When drop zone is clicked, file input should open dialog
+  // Set a timeout - if no blur/focus change happens, dialog probably didn't open
+  filePickerOpened = false;
+  
+  if (filePickerTimeout) clearTimeout(filePickerTimeout);
+  
+  filePickerTimeout = window.setTimeout(() => {
+    // If no files added and banner not already shown, show it
+    if (!filePickerOpened && queue.length === 0 && !document.querySelector('.captive-banner')) {
+      showOpenInBrowserBanner();
+    }
+  }, 1500); // Give enough time for dialog to appear
+});
+
+// Cancel the timeout if dialog actually opened (file selected or window blurred)
+fileInput.addEventListener('change', () => {
+  filePickerOpened = true;
+  if (filePickerTimeout) {
+    clearTimeout(filePickerTimeout);
+    filePickerTimeout = null;
+  }
+});
+
+window.addEventListener('blur', () => {
+  // Window blur often indicates file dialog opened
+  filePickerOpened = true;
+  if (filePickerTimeout) {
+    clearTimeout(filePickerTimeout);
+    filePickerTimeout = null;
+  }
+});
 
 void initSession();

@@ -73,7 +73,7 @@ Initializes Express + HTTP + Socket.IO, serves static files from `src/public` (a
 Uses **LowDB** with `db.json` storing `{ balance, earnings }`. This state object is shared across route handlers and serial event callbacks. Always persist via the LowDB write methods — never write `db.json` directly.
 
 ### Coin Hardware Flow — `src/services/serial.ts`
-Auto-selects the first available serial port at **9600 baud**, parses incoming data as integer coin values, increments `db.data.balance`, persists to `db.json`, and emits a live `balance` update over Socket.IO to all connected clients.
+Auto-selects the first available serial port at **115200 baud**, parses incoming data as integer coin values, increments `db.data.balance`, persists to `db.json`, and emits a live `balance` update over Socket.IO to all connected clients.
 
 > **Port selection note:** Auto-detection works for single-port setups. If multiple serial ports exist on the host, the first enumerated port wins. Consider adding an explicit `SERIAL_PORT` environment variable if multi-port ambiguity becomes an issue.
 

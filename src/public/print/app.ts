@@ -16,11 +16,11 @@ const bootKioskLocalization = (): void => {
   void initKioskLocalization().catch((error: unknown) => {
     console.error('[i18n] Failed to initialize localization.', error);
   });
-}
+};
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bootKioskLocalization, {
-    once: true
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootKioskLocalization, {
+    once: true,
   });
 } else {
   bootKioskLocalization();
@@ -112,16 +112,6 @@ const SESSION_COUNTDOWN_TICK_MS = 1000;
 let sessionCountdownBaselineSeconds: number | null = null;
 let sessionCountdownSyncedAtMs: number | null = null;
 let sessionCountdownHandle: number | null = null;
-
-function buildWifiQrPayload(config: HotspotConfig): string {
-  const rawAuth = config.authType?.trim().toUpperCase() ?? '';
-  const auth = rawAuth === 'NOPASS' ? 'nopass' : rawAuth || 'WPA';
-  const escapeField = (value: string): string =>
-    value.replace(/([\\;,:"])/g, '\\$1');
-  const ssid = escapeField(config.ssid);
-  const password = escapeField(config.password);
-  return `WIFI:T:${auth};S:${ssid};P:${password};;`;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -484,14 +474,13 @@ function updateUploadLink(uploadUrl: string): void {
     if (wifiStepEl) wifiStepEl.style.display = '';
 
     if (hotspotConfig.provider === 'esp32') {
-      if (qrStepLabelEl)
-        qrStepLabelEl.textContent = 'Scan to connect to kiosk Wi-Fi';
+      if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
       if (wifiStepLabelEl)
         wifiStepLabelEl.textContent =
-          'Connect your phone to this kiosk network';
+          'Connect your phone to this kiosk Wi-Fi first';
       if (mobileGuideTextEl) {
         mobileGuideTextEl.innerHTML =
-          'Scan the QR code to join the kiosk Wi-Fi.<br />Your phone should open the upload page automatically. If not, use the button below.';
+          'Connect to the kiosk Wi-Fi first, then scan the QR code to upload.<br />';
       }
     } else {
       if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
@@ -511,11 +500,7 @@ function updateUploadLink(uploadUrl: string): void {
   }
 
   if (uploadQrCanvas) {
-    const qrPayload =
-      hotspotConfig?.provider === 'esp32'
-        ? buildWifiQrPayload(hotspotConfig)
-        : uploadUrl;
-    void QRCode.toCanvas(uploadQrCanvas, qrPayload, {
+    void QRCode.toCanvas(uploadQrCanvas, uploadUrl, {
       width: 220,
       margin: 1,
       color: { dark: '#1a1a2e', light: '#ffffff' },

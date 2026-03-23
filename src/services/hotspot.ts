@@ -9,6 +9,10 @@ import {
   HOTSPOT_PASSWORD,
   HOTSPOT_AUTH_TYPE,
   ESP32_CAPTIVE_PORTAL_PATH,
+  ESP32_AP_BASE_URL,
+  ESP32_KIOSK_SUBNET_PREFIX,
+  ESP32_KIOSK_IP,
+  PORT,
 } from '@/config/http.config';
 import {
   markWatchdogHeartbeat,
@@ -19,6 +23,9 @@ const MPWF_EXE = path.join(MYPUBLICWIFI_PATH, 'MyPublicWiFi.exe');
 const MPWF_DB = path.join(MYPUBLICWIFI_PATH, 'Data.db');
 const HOTSPOT_STARTUP_TIMEOUT_MS = 8_000;
 const HOTSPOT_STARTUP_POLL_INTERVAL_MS = 500;
+const ESP32_REGISTER_ROUTE = '/kiosk/register';
+const ESP32_REGISTER_INTERVAL_MS = 15_000;
+const ESP32_REGISTER_TIMEOUT_MS = 2_500;
 
 function ipToInt32(ip: string): number {
   const parts = ip.split('.').map(Number);
@@ -118,9 +125,110 @@ function isMyPublicWifiRunning(): boolean {
   }
 }
 
+function detectEsp32KioskIp(): string | null {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] ?? []) {
+      if (iface.family !== 'IPv4' || iface.internal) continue;
+      if (iface.address.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) {
+        return iface.address;
+      }
+    }
+  }
+  return null;
+}
+
+async function registerKioskWithEsp32(): Promise<boolean> {
+  // Skip registration if kiosk IP is explicitly configured (no need to tell ESP32)
+  if (ESP32_KIOSK_IP) {
+    console.log(
+      `[HOTSPOT] ESP32 mode with explicit kiosk IP: ${ESP32_KIOSK_IP}:${PORT}`,
+    );
+    console.log(
+      `[HOTSPOT] Ensure kiosk WiFi is connected to "${HOTSPOT_SSID}" network`,
+    );
+    return true;
+  }
+
+  // Try auto-detection only if no explicit IP is set
+  const kioskIp = detectEsp32KioskIp();
+  if (!kioskIp) {
+    console.warn(
+      `[HOTSPOT] ⚠ ESP32 provider active, but no adapter IP matches ${ESP32_KIOSK_SUBNET_PREFIX}x`,
+    );
+    console.warn(
+      `[HOTSPOT]   Set PRINTBIT_ESP32_KIOSK_IP in .env or connect kiosk WiFi to ESP32 AP`,
+    );
+    return false;
+  }
+
+  const requestUrl = new URL(ESP32_REGISTER_ROUTE, `${ESP32_AP_BASE_URL}/`);
+  const payload = new URLSearchParams({
+    ip: kioskIp,
+    port: String(PORT),
+    path: ESP32_CAPTIVE_PORTAL_PATH,
+  });
+  const abortController = new AbortController();
+  const timeout = setTimeout(
+    () => abortController.abort(),
+    ESP32_REGISTER_TIMEOUT_MS,
+  );
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: payload.toString(),
+      signal: abortController.signal,
+    });
+    if (!response.ok) {
+      console.warn(
+        `[HOTSPOT] ⚠ ESP32 kiosk registration failed (${response.status}) at ${requestUrl.toString()}`,
+      );
+      return false;
+    }
+    console.log(
+      `[HOTSPOT] ✓ ESP32 kiosk registration updated: ${kioskIp}:${PORT}${ESP32_CAPTIVE_PORTAL_PATH}`,
+    );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[HOTSPOT] ⚠ Could not register kiosk with ESP32 at ${requestUrl.toString()}: ${message}`,
+    );
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 class HotspotService {
   private running = false;
   private process: ChildProcess | null = null;
+  private esp32RegistrationTimer: NodeJS.Timeout | null = null;
+
+  private stopEsp32RegistrationLoop(): void {
+    if (this.esp32RegistrationTimer) {
+      clearInterval(this.esp32RegistrationTimer);
+      this.esp32RegistrationTimer = null;
+    }
+  }
+
+  private async startEsp32RegistrationLoop(): Promise<void> {
+    this.stopEsp32RegistrationLoop();
+    
+    // When explicit IP is set, just log once - no need to loop
+    if (ESP32_KIOSK_IP) {
+      await registerKioskWithEsp32();
+      return;
+    }
+    
+    // Only loop if we need to auto-detect and register
+    await registerKioskWithEsp32();
+    this.esp32RegistrationTimer = setInterval(() => {
+      void registerKioskWithEsp32();
+    }, ESP32_REGISTER_INTERVAL_MS);
+  }
 
   isRunning(): boolean {
     return this.running;
@@ -146,6 +254,7 @@ class HotspotService {
       console.log(
         '[HOTSPOT] ESP32 provider enabled — skipping MyPublicWiFi launch',
       );
+      await this.startEsp32RegistrationLoop();
       markWatchdogHeartbeat('hotspot', { running: true, provider: 'esp32' });
       setWatchdogComponentState(
         'hotspot',
@@ -158,6 +267,8 @@ class HotspotService {
       );
       return;
     }
+
+    this.stopEsp32RegistrationLoop();
 
     if (!fs.existsSync(MPWF_EXE)) {
       console.warn(
@@ -266,6 +377,7 @@ class HotspotService {
     if (!this.running) return;
     if (NETWORK_PROVIDER === 'esp32') {
       this.running = false;
+      this.stopEsp32RegistrationLoop();
       console.log('[HOTSPOT] ESP32 provider stop requested (no-op)');
       markWatchdogHeartbeat('hotspot', { running: false, provider: 'esp32' });
       setWatchdogComponentState(
@@ -279,6 +391,7 @@ class HotspotService {
       );
       return;
     }
+    this.stopEsp32RegistrationLoop();
     try {
       execSync('taskkill /F /IM MyPublicWiFi.exe', {
         stdio: 'ignore',

@@ -154,15 +154,37 @@ bin/                        # External executables (ex: SumatraPDF.exe)
 
 Related env knobs:
 
-- `PRINTBIT_HOTSPOT_SSID` (default `PrintBit-Kiosk`)
-- `PRINTBIT_HOTSPOT_PASSWORD` (default `printbit123`)
-- `PRINTBIT_HOTSPOT_AUTH_TYPE` (default `WPA`, use `nopass` for open AP)
+- `PRINTBIT_HOTSPOT_SSID` (default `PrintBit` in `esp32` mode, else `PrintBit-Kiosk`)
+- `PRINTBIT_HOTSPOT_PASSWORD` (default empty in `esp32` mode, else `printbit123`)
+- `PRINTBIT_HOTSPOT_AUTH_TYPE` (derived from password by default: `nopass` when empty, `WPA` otherwise)
 - `PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH` (default `/portal`)
+- `PRINTBIT_ESP32_AP_BASE_URL` (default `http://192.168.4.1`) for kiosk registration endpoint
+- `PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX` (default `192.168.4.`) to detect kiosk IP for ESP32 mode
+- `PRINTBIT_ESP32_KIOSK_IP` (optional) explicitly set the kiosk's IP on the ESP32 network (bypasses auto-detection)
+- `PRINTBIT_SERIAL_PORT` (optional) to pin the serial coin/hopper device when multiple COM ports are present
+
+Recommended `.env` for ESP32 mode:
+
+```env
+PRINTBIT_NETWORK_PROVIDER=esp32
+PRINTBIT_HOTSPOT_SSID=PrintBit
+PRINTBIT_HOTSPOT_PASSWORD=printbit123
+PRINTBIT_HOTSPOT_AUTH_TYPE=WPA
+PRINTBIT_ESP32_KIOSK_IP=192.168.4.2
+PRINTBIT_ESP32_AP_BASE_URL=http://192.168.4.1
+```
+
+Recommended `.ino` alignment for ESP32 mode:
+
+- AP SSID: `PrintBit`
+- AP password: `printbit123`
+- Captive redirect target should be dynamically updated via ESP32 `POST /kiosk/register` (kiosk server sends its current IP)
 
 Troubleshooting mobile captive onboarding:
 
 - If captive page does not auto-open after joining kiosk Wi-Fi, open the fallback upload link shown on Print screen.
 - If session is expired/owned by another device, generate a new kiosk print session and scan again.
+- If logs show `no adapter IP matches 192.168.4.x`, set `PRINTBIT_ESP32_KIOSK_IP` to the kiosk's expected IP on the ESP32 network (e.g., `192.168.4.2`).
 
 ## Important notes
 
