@@ -20,6 +20,7 @@ import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
 import {
   assertTrustedTimeForFinancialOperation,
+  getTrustedTimeStatus,
   getTrustedTimestamp,
   isTrustedTimeError,
 } from '@/services/time-source';
@@ -320,19 +321,25 @@ export class FinancialService {
         .status(400)
         .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
     }
-    try {
-      assertTrustedTimeForFinancialOperation('coin_inserted:test');
-    } catch (error) {
-      const payload = buildTrustedTimeBlockedResponse(error);
+    const trustedTime = getTrustedTimeStatus();
+    if (
+      trustedTime.enforceForFinancial &&
+      (!trustedTime.synced ||
+        trustedTime.offsetMs === null ||
+        trustedTime.driftExceeded)
+    ) {
       void adminService.appendAdminLog(
-        'trusted_time_unsynced',
-        'Test coin rejected because trusted time is unavailable.',
+        'coin_accepted_trusted_time_unsynced',
+        'Test coin accepted while trusted time is unsynchronized.',
         {
           source: 'test-ui',
-          detail: payload.error,
+          coinValue,
+          detail: trustedTime.detail,
+          offsetMs: trustedTime.offsetMs,
+          driftExceeded: trustedTime.driftExceeded,
+          checkedAt: trustedTime.checkedAt,
         },
       );
-      return res.status(503).json(payload);
     }
 
     db.data!.balance += coinValue;

@@ -1,8 +1,6 @@
 export { adminService } from './admin';
 export { anomalyService } from './anomaly';
 export * from './db';
-export * from './clamd-process';
-export * from './clamd';
 export * from './color-detection';
 export * from './document-analysis';
 export * from './feedback';

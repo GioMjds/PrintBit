@@ -1,6 +1,6 @@
 import { BLOCKED_STATUSES } from '@/utils';
 
-type WatchdogComponent = 'app' | 'serial' | 'printer' | 'clamd' | 'hotspot';
+type WatchdogComponent = 'app' | 'serial' | 'printer' | 'hotspot';
 type WatchdogStatus = 'healthy' | 'degraded' | 'unhealthy';
 
 type WatchdogContextValue = string | number | boolean | null;
@@ -48,7 +48,6 @@ export interface WatchdogHealthMonitorDeps {
     name: string | null;
   };
   isHotspotRunning: () => boolean;
-  isClamdReachable: () => Promise<boolean>;
 }
 
 export interface ExternalWatchdogState {
@@ -121,13 +120,6 @@ const components: Record<WatchdogComponent, WatchdogComponentState> = {
   printer: {
     status: 'degraded',
     detail: 'Printer health polling not started yet.',
-    lastHeartbeatAt: new Date(0).toISOString(),
-    staleAfterMs: DEFAULT_STALE_AFTER_MS,
-    context: {},
-  },
-  clamd: {
-    status: 'degraded',
-    detail: 'ClamAV health polling not started yet.',
     lastHeartbeatAt: new Date(0).toISOString(),
     staleAfterMs: DEFAULT_STALE_AFTER_MS,
     context: {},
@@ -344,31 +336,6 @@ async function pollWatchdogComponents(): Promise<void> {
     }
 
     try {
-      const clamdReachable = await deps.isClamdReachable();
-      updateComponentState('clamd', {
-        status: clamdReachable ? 'healthy' : 'degraded',
-        detail: clamdReachable
-          ? 'ClamAV daemon reachable.'
-          : 'ClamAV daemon unreachable.',
-        context: {
-          reachable: clamdReachable,
-        },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('[WATCHDOG-HEALTH] Failed to poll clamd health.', {
-        error: message,
-      });
-      updateComponentState('clamd', {
-        status: 'degraded',
-        detail: `ClamAV health check failed: ${message}`,
-        context: {
-          reachable: false,
-        },
-      });
-    }
-
-    try {
       const hotspotRunning = deps.isHotspotRunning();
       updateComponentState('hotspot', {
         status: hotspotRunning ? 'healthy' : 'degraded',
@@ -468,12 +435,6 @@ export function getWatchdogHealthSnapshot(): WatchdogHealthSnapshot {
     printer: {
       ...components.printer,
       context: cloneContext(components.printer.context),
-      stale: false,
-      staleForMs: 0,
-    },
-    clamd: {
-      ...components.clamd,
-      context: cloneContext(components.clamd.context),
       stale: false,
       staleForMs: 0,
     },

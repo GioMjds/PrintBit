@@ -12,7 +12,6 @@ import {
 import {
   reportIssueAttachmentUploadMiddleware,
   validateReportIssueAttachmentMagicBytes,
-  scanReportIssueAttachmentForMalware,
   handleMulterError,
 } from '@/middleware/file-validation';
 import { ReportService } from './report.service';
@@ -57,7 +56,6 @@ export class ReportController {
       '/api/report-issues/sessions/:sessionId/attachments',
       reportIssueAttachmentUploadMiddleware.single('file'),
       validateReportIssueAttachmentMagicBytes,
-      scanReportIssueAttachmentForMalware,
       this.uploadAttachment.bind(this),
     );
     this.router.use(

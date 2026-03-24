@@ -53,6 +53,8 @@ export interface Session {
   token: string;
   /** Full URL the phone should open to upload a file */
   uploadUrl: string;
+  /** Public internet URL (optional, when PRINTBIT_PUBLIC_URL is configured). */
+  publicUploadUrl?: string;
   status: 'pending' | 'uploaded';
   documents?: UploadedDocument[];
   document?: UploadedDocument;
@@ -182,13 +184,15 @@ export class SessionStore {
   createSession(baseUrl: URL): Session {
     const sessionId = randomUUID();
     const token = randomUUID();
-    const uploadUrl = new URL(`/upload/${token}`, baseUrl).toString();
+    const uploadUrl = buildUploadUrl(baseUrl, token);
+    const publicUploadUrl = buildPublicUploadUrl(token);
     const now = new Date();
 
     const session: Session = {
       sessionId,
       token,
       uploadUrl,
+      ...(publicUploadUrl ? { publicUploadUrl } : {}),
       status: 'pending',
       createdAt: now,
       lastActivityAt: now,
@@ -422,13 +426,12 @@ export class SessionStore {
   }
 
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
-    const freshUrl = new URL(
-      `/upload/${encodeURIComponent(session.token)}`,
-      publicBaseUrl,
-    ).toString();
+    const freshUrl = buildUploadUrl(publicBaseUrl, session.token);
+    const freshPublicUrl = buildPublicUploadUrl(session.token);
     return {
       ...session,
       uploadUrl: freshUrl,
+      ...(freshPublicUrl ? { publicUploadUrl: freshPublicUrl } : {}),
       expiresAt: new Date(this.getExpiryTimestamp(session)),
       remainingSeconds: this.getRemainingSeconds(session),
       ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
@@ -678,40 +681,83 @@ export function renderUploadPortal(token: string, portalHtmlPath: string) {
 }
 
 export function resolvePublicBaseUrl(req: Request): URL {
-  if (PUBLIC_URL) return new URL(PUBLIC_URL);
   const protocol = req.protocol;
   const hostHeader = req.get('host') ?? '';
   const requestHost = hostHeader.split(':')[0];
 
-  if (NETWORK_PROVIDER === 'esp32') {
-    // If the incoming request already uses a non-loopback host, trust it first.
-    // This keeps QR/upload links aligned with the actual kiosk URL users opened.
-    if (
-      hostHeader &&
-      requestHost !== 'localhost' &&
-      requestHost !== '127.0.0.1'
-    ) {
-      return new URL(`${protocol}://${hostHeader}`);
-    }
+  // Local kiosk IP should be preferred for QR/upload links in print flow.
+  const preferredLocalHost = detectPreferredLocalKioskAddress(requestHost);
+  if (preferredLocalHost) {
+    return new URL(`http://${preferredLocalHost}:${PORT}`);
+  }
 
-    // Prefer explicit kiosk IP if configured
-    if (ESP32_KIOSK_IP) {
-      return new URL(`http://${ESP32_KIOSK_IP}:${PORT}`);
-    }
-    const alreadyOnEsp32Subnet = requestHost.startsWith(
-      ESP32_KIOSK_SUBNET_PREFIX,
-    );
-    if (!alreadyOnEsp32Subnet) {
-      const detectedHost = detectEsp32KioskAddress();
-      if (detectedHost) {
-        return new URL(`http://${detectedHost}:${PORT}`);
+  if (hostHeader && !isLoopbackHost(requestHost)) {
+    return new URL(`${protocol}://${hostHeader}`);
+  }
+
+  if (PUBLIC_URL) return new URL(PUBLIC_URL);
+
+  const host = hostHeader || 'localhost';
+  return new URL(`${protocol}://${host}`);
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === '' ||
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1'
+  );
+}
+
+function isPrivateIpv4(host: string): boolean {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(host)) return false;
+  if (host.startsWith('10.')) return true;
+  if (host.startsWith('192.168.')) return true;
+  return /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+}
+
+function detectPreferredLocalKioskAddress(requestHost: string): string | null {
+  if (NETWORK_PROVIDER === 'esp32') {
+    if (ESP32_KIOSK_IP) return ESP32_KIOSK_IP;
+    const detectedEsp32 = detectEsp32KioskAddress();
+    if (detectedEsp32) return detectedEsp32;
+    if (requestHost.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) return requestHost;
+  }
+
+  if (isPrivateIpv4(requestHost)) return requestHost;
+
+  return detectHotspotAddress();
+}
+
+function detectHotspotAddress(): string | null {
+  const interfaces = os.networkInterfaces();
+  let privateFallback: string | null = null;
+
+  for (const interfaceName of Object.keys(interfaces)) {
+    for (const iface of interfaces[interfaceName] ?? []) {
+      if (iface.family !== 'IPv4' || iface.internal) continue;
+
+      const address = iface.address;
+      if (address.startsWith('192.168.5.')) return address;
+      if (address.startsWith('192.168.137.')) return address;
+      if (!privateFallback && isPrivateIpv4(address)) {
+        privateFallback = address;
       }
     }
   }
 
-  const host = hostHeader || 'localhost';
+  return privateFallback;
+}
 
-  return new URL(`${protocol}://${host}`);
+function buildUploadUrl(baseUrl: URL, token: string): string {
+  return new URL(`/upload/${encodeURIComponent(token)}`, baseUrl).toString();
+}
+
+function buildPublicUploadUrl(token: string): string | undefined {
+  if (!PUBLIC_URL) return undefined;
+  return buildUploadUrl(new URL(PUBLIC_URL), token);
 }
 
 function detectEsp32KioskAddress(): string | null {

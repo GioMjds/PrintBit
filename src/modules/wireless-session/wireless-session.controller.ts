@@ -3,7 +3,6 @@ import {
   uploadMiddleware,
   handleMulterError,
   validateMagicBytes,
-  scanForMalware,
 } from '@/middleware/file-validation';
 import { WirelessSessionService } from './wireless-session.service';
 
@@ -35,7 +34,6 @@ export class WirelessSessionController {
       this.wirelessSessionService.verifyOwnedUploadTarget,
       uploadMiddleware.single('file'),
       validateMagicBytes,
-      scanForMalware,
       this.wirelessSessionService.uploadToSession,
     );
     this.router.delete(

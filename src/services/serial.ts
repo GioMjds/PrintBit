@@ -22,10 +22,7 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
-import {
-  assertTrustedTimeForFinancialOperation,
-  isTrustedTimeError,
-} from './time-source';
+import { getTrustedTimeStatus } from './time-source';
 import {
   markWatchdogHeartbeat,
   setWatchdogComponentState,
@@ -742,32 +739,26 @@ async function attemptSerialConnection(
           return;
         }
 
-        try {
-          assertTrustedTimeForFinancialOperation('coin_inserted');
-        } catch (error) {
-          if (isTrustedTimeError(error)) {
-            io.emit('coinRejected', {
-              value: coinValue,
-              reason: `Trusted time unavailable: ${error.trustedTime.detail}`,
-              printerStatus: telemetry.status,
-              telemetryLastCheckedAt: telemetry.lastCheckedAt,
-              faultLock: null,
-            });
-            void adminService.appendAdminLog(
-              'trusted_time_unsynced',
-              'Coin rejected because trusted time is unavailable.',
-              {
-                token,
-                coinValue,
-                detail: error.trustedTime.detail,
-                source: error.trustedTime.source,
-                offsetMs: error.trustedTime.offsetMs,
-              },
-            );
-            clearPending();
-            return;
-          }
-          throw error;
+        const trustedTime = getTrustedTimeStatus();
+        if (
+          trustedTime.enforceForFinancial &&
+          (!trustedTime.synced ||
+            trustedTime.offsetMs === null ||
+            trustedTime.driftExceeded)
+        ) {
+          void adminService.appendAdminLog(
+            'coin_accepted_trusted_time_unsynced',
+            'Coin accepted while trusted time is unsynchronized.',
+            {
+              token,
+              coinValue,
+              detail: trustedTime.detail,
+              source: trustedTime.source,
+              offsetMs: trustedTime.offsetMs,
+              driftExceeded: trustedTime.driftExceeded,
+              checkedAt: trustedTime.checkedAt,
+            },
+          );
         }
 
         await persistBalance(coinValue);

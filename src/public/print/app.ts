@@ -31,6 +31,7 @@ type SessionResponse = {
   token: string;
   status: 'pending' | 'uploaded';
   uploadUrl: string;
+  publicUploadUrl?: string;
   remainingSeconds?: number;
   warningThresholdSeconds?: number;
   /** Single document (legacy) */
@@ -47,11 +48,6 @@ type DeleteDocumentResponse = {
 };
 
 type HotspotConfig = {
-  provider: 'mypublicwifi' | 'esp32';
-  ssid: string;
-  password: string;
-  authType?: string;
-  captivePortalPath?: string;
   startsManagedHotspot?: boolean;
 };
 
@@ -80,20 +76,21 @@ const filesEmpty = document.getElementById('filesEmpty') as HTMLElement | null;
 const fileList = document.getElementById('fileList') as HTMLUListElement | null;
 const filesCount = document.getElementById('filesCount') as HTMLElement | null;
 const footerHint = document.getElementById('footerHint') as HTMLElement | null;
-const wifiSsidEl = document.getElementById('wifiSsid') as HTMLElement | null;
-const wifiPasswordEl = document.getElementById(
-  'wifiPassword',
-) as HTMLElement | null;
-const wifiStepEl = document.getElementById('wifiStep') as HTMLElement | null;
 const qrStepLabelEl = document.getElementById(
   'qrStepLabel',
-) as HTMLElement | null;
-const wifiStepLabelEl = document.getElementById(
-  'wifiStepLabel',
 ) as HTMLElement | null;
 const mobileGuideTextEl = document.getElementById(
   'mobileGuideText',
 ) as HTMLElement | null;
+const networkModeToggle = document.getElementById(
+  'networkModeToggle',
+) as HTMLElement | null;
+const modeLocalBtn = document.getElementById(
+  'modeLocalBtn',
+) as HTMLButtonElement | null;
+const modeInternetBtn = document.getElementById(
+  'modeInternetBtn',
+) as HTMLButtonElement | null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -107,6 +104,9 @@ let deletingDocumentIds = new Set<string>();
 let lastRenderedFileSignature = '';
 let attachedSessionId: string | null = null;
 let hotspotConfig: HotspotConfig | null = null;
+let localUploadUrl = '';
+let publicUploadUrl = '';
+let activeUploadMode: 'local' | 'internet' = 'local';
 let sessionWarningThresholdSeconds = 60;
 const SESSION_COUNTDOWN_TICK_MS = 1000;
 let sessionCountdownBaselineSeconds: number | null = null;
@@ -447,66 +447,77 @@ function renderFiles(files: UploadedFile[]): void {
 
 // ── Session management ────────────────────────────────────────────────────────
 
-function updateUploadLink(uploadUrl: string): void {
+function setUploadMode(mode: 'local' | 'internet'): void {
+  const hasInternetOption = publicUploadUrl.length > 0;
+  if (mode === 'internet' && !hasInternetOption) mode = 'local';
+  activeUploadMode = mode;
+
+  const activeUrl =
+    mode === 'internet' && publicUploadUrl ? publicUploadUrl : localUploadUrl;
+  if (!activeUrl) return;
+
   let href: string;
   try {
-    href = new URL(uploadUrl).pathname;
+    const parsed = new URL(activeUrl);
+    const currentOrigin = window.location.origin;
+    href = parsed.origin === currentOrigin ? parsed.pathname : activeUrl;
   } catch {
-    href = uploadUrl;
+    href = activeUrl;
   }
 
   if (uploadLink) {
     uploadLink.href = href;
-    uploadLink.textContent = uploadUrl;
+    uploadLink.textContent = activeUrl;
   }
 
   if (openUploadBtn) {
     openUploadBtn.onclick = () => window.open(href, '_blank');
   }
 
-  if (hotspotConfig) {
-    if (wifiSsidEl) wifiSsidEl.textContent = hotspotConfig.ssid;
-    if (wifiPasswordEl)
-      wifiPasswordEl.textContent =
-        hotspotConfig.password.trim().length > 0
-          ? hotspotConfig.password
-          : '(open network)';
-    if (wifiStepEl) wifiStepEl.style.display = '';
-
-    if (hotspotConfig.provider === 'esp32') {
-      if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
-      if (wifiStepLabelEl)
-        wifiStepLabelEl.textContent =
-          'Connect your phone to this kiosk Wi-Fi first';
-      if (mobileGuideTextEl) {
-        mobileGuideTextEl.innerHTML =
-          'Connect to the kiosk Wi-Fi first, then scan the QR code to upload.<br />';
-      }
-    } else {
-      if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
-      if (wifiStepLabelEl) wifiStepLabelEl.textContent = 'Wi-Fi credentials';
-      if (mobileGuideTextEl) {
-        mobileGuideTextEl.innerHTML =
-          "Scan the QR code with your phone's camera to upload.<br />";
-      }
-    }
-  } else {
-    if (wifiStepEl) wifiStepEl.style.display = 'none';
-    if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
-    if (mobileGuideTextEl) {
+  if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
+  if (mobileGuideTextEl) {
+    if (hasInternetOption) {
       mobileGuideTextEl.innerHTML =
-        "Scan the QR code with your phone's camera to upload.<br />";
+        mode === 'internet'
+          ? "Internet mode: use this if your phone is on mobile data or different Wi-Fi.<br />If it fails, switch to Kiosk Wi-Fi mode."
+          : "Kiosk Wi-Fi mode: use this if your phone is connected to the kiosk network.<br />If it fails, switch to Internet mode.";
+    } else {
+      mobileGuideTextEl.innerHTML =
+        "Scan the QR code with your phone's camera to upload.<br />If scanning fails, open the Upload link below.";
     }
   }
 
+  if (networkModeToggle) {
+    networkModeToggle.style.display = hasInternetOption ? 'flex' : 'none';
+  }
+  if (modeLocalBtn) {
+    modeLocalBtn.classList.toggle('is-active', mode === 'local');
+    modeLocalBtn.disabled = !localUploadUrl;
+  }
+  if (modeInternetBtn) {
+    modeInternetBtn.classList.toggle('is-active', mode === 'internet');
+    modeInternetBtn.disabled = !hasInternetOption;
+  }
+
   if (uploadQrCanvas) {
-    void QRCode.toCanvas(uploadQrCanvas, uploadUrl, {
+    void QRCode.toCanvas(uploadQrCanvas, activeUrl, {
       width: 220,
       margin: 1,
       color: { dark: '#1a1a2e', light: '#ffffff' },
       errorCorrectionLevel: 'M',
     });
   }
+}
+
+function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
+  localUploadUrl = uploadUrl;
+  publicUploadUrl = internetUploadUrl ?? '';
+
+  if (publicUploadUrl) {
+    setUploadMode(activeUploadMode);
+    return;
+  }
+  setUploadMode('local');
 }
 
 async function createSession(): Promise<void> {
@@ -518,17 +529,15 @@ async function createSession(): Promise<void> {
   activeSessionId = '';
   activeSessionToken = '';
 
-  // Fetch hotspot config (for Wi-Fi QR code)
   if (!hotspotConfig) {
     try {
       const cfgRes = await fetch('/api/config/hotspot');
       if (cfgRes.ok) hotspotConfig = (await cfgRes.json()) as HotspotConfig;
     } catch {
-      /* non-critical — falls back to URL QR */
+      /* non-critical */
     }
   }
 
-  // Start the hotspot on-demand so the Wi-Fi network is ready for scanning
   if (hotspotConfig?.startsManagedHotspot) {
     try {
       await fetch('/api/hotspot/start', { method: 'POST' });
@@ -573,7 +582,7 @@ async function createSession(): Promise<void> {
   setSessionText(session.sessionId);
   setSessionActive(true);
   updateSessionCountdown(session.remainingSeconds);
-  updateUploadLink(session.uploadUrl);
+  updateUploadLink(session.uploadUrl, session.publicUploadUrl);
 
   attachSocket(session.sessionId);
   void checkUploadStatus();
@@ -786,15 +795,6 @@ async function restoreSession(sid: string): Promise<void> {
   activeSessionId = sid;
   activeSessionToken = sessionStorage.getItem('printbit.sessionToken') ?? '';
 
-  if (!hotspotConfig) {
-    try {
-      const cfgRes = await fetch('/api/config/hotspot');
-      if (cfgRes.ok) hotspotConfig = (await cfgRes.json()) as HotspotConfig;
-    } catch {
-      /* non-critical */
-    }
-  }
-
   setSessionText(sid);
   setSessionActive(true);
 
@@ -813,7 +813,7 @@ async function restoreSession(sid: string): Promise<void> {
     sessionWarningThresholdSeconds = session.warningThresholdSeconds ?? 60;
     sessionStorage.setItem('printbit.sessionToken', session.token);
     updateSessionCountdown(session.remainingSeconds);
-    updateUploadLink(session.uploadUrl);
+    updateUploadLink(session.uploadUrl, session.publicUploadUrl);
   }
 
   if (pollHandle !== null) window.clearInterval(pollHandle);
@@ -828,6 +828,14 @@ refreshSessionBtn?.addEventListener('click', () => {
   } else {
     void createSession();
   }
+});
+
+modeLocalBtn?.addEventListener('click', () => {
+  setUploadMode('local');
+});
+
+modeInternetBtn?.addEventListener('click', () => {
+  setUploadMode('internet');
 });
 
 continueBtn?.addEventListener('click', () => {

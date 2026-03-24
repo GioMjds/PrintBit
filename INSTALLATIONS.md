@@ -33,7 +33,6 @@ This guide explains what software to install, what dependencies are used, and ho
 - **Document/media:** `pdfjs`, `pdfjs-dist`, `canvas`, `sharp`, `qrcode`.
 - **Security/hash:** `argon2`.
 - **Hardware/serial:** `serialport`, `@serialport/parser-readline`.
-- **Malware scanning integration:** `clamscan`, `clamdjs`.
 
 ## Development dependencies
 

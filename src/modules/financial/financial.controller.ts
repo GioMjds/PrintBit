@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import {
   legacyUploadMiddleware,
   validateLegacyUploadMagicBytes,
-  scanLegacyUploadForMalware,
   handleMulterError,
 } from '@/middleware/file-validation';
 import { FinancialService } from './financial.service';
@@ -25,7 +24,6 @@ export class FinancialController {
       '/upload',
       legacyUploadMiddleware.single('file'),
       validateLegacyUploadMagicBytes,
-      scanLegacyUploadForMalware,
       this.uploadLegacy,
     );
     this.router.use('/upload', handleMulterError);

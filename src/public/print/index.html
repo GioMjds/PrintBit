@@ -106,24 +106,6 @@
                 ></canvas>
               </div>
 
-              <div class="step-block" id="wifiStep" style="display: none">
-                <div class="step-badge">
-                  <span class="step-label" id="wifiStepLabel"
-                    >Wi-Fi credentials</span
-                  >
-                </div>
-                <div class="wifi-credentials">
-                  <div class="wifi-credential">
-                    <span class="wifi-label">SSID</span>
-                    <span class="wifi-value" id="wifiSsid">—</span>
-                  </div>
-                  <div class="wifi-credential">
-                    <span class="wifi-label">Password</span>
-                    <span class="wifi-value" id="wifiPassword">—</span>
-                  </div>
-                </div>
-              </div>
-
               <div class="qr-link-row">
                 <svg
                   class="qr-link-icon"
@@ -145,6 +127,25 @@
                 <a id="uploadLink" href="#" target="_blank" rel="noopener">
                   Upload link
                 </a>
+              </div>
+
+              <div
+                class="network-mode-toggle"
+                id="networkModeToggle"
+                style="display: none"
+                role="group"
+                aria-label="Upload access mode"
+              >
+                <button
+                  id="modeLocalBtn"
+                  type="button"
+                  class="network-mode-btn is-active"
+                >
+                  Kiosk Wi-Fi
+                </button>
+                <button id="modeInternetBtn" type="button" class="network-mode-btn">
+                  Internet
+                </button>
               </div>
             </div>
 
@@ -246,6 +247,7 @@
             <p class="files-empty__title">Waiting for files…</p>
             <p class="files-empty__sub" id="mobileGuideText">
               Scan the QR code with your phone's camera to upload.<br />
+              If scanning fails, open the Upload link below.
             </p>
           </div>
 

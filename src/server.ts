@@ -21,14 +21,12 @@ import {
   resolvePublicBaseUrl,
   runHopperSelfTest,
   startPrinterMonitor,
-  startClamd,
   anomalyService,
   adminService,
   getTrustedTimeStatus,
   startTrustedTimeMonitor,
   stopTrustedTimeMonitor,
   verifyTrustedClockSync,
-  isClamdReachable,
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
@@ -135,7 +133,6 @@ async function start() {
     getSerialStatus,
     getPrinterTelemetry,
     isHotspotRunning,
-    isClamdReachable,
   });
   anomalyService.setSocketIo(io);
   let trustedTimeBlocked = startupBlocked;
@@ -221,7 +218,6 @@ async function start() {
     }
   });
 
-  await startClamd();
   await startHotspot();
 
   server.listen(PORT, '0.0.0.0', () => {

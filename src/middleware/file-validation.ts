@@ -15,7 +15,6 @@ import {
   REPORT_ATTACHMENT_MAGIC_SIGNATURES,
 } from '@/utils/file-types';
 import { adminService } from '@/services';
-import { scanBuffer, isClamdReachable } from '@/services/clamd';
 import { quarantineBuffer } from '@/services/quarantine';
 import { anomalyService, buildAnomalyFingerprint } from '@/services/anomaly';
 
@@ -205,19 +204,13 @@ function appendSecurityLog(
 
 function quarantineUploadBuffer(
   file: Express.Multer.File,
-  reason:
-    | 'UNSUPPORTED_TYPE'
-    | 'MAGIC_BYTE_MISMATCH'
-    | 'FILE_INFECTED'
-    | 'SCAN_ERROR',
-  virusName?: string,
+  reason: 'UNSUPPORTED_TYPE' | 'MAGIC_BYTE_MISMATCH',
 ): void {
   void quarantineBuffer(
     file.buffer,
     file.originalname,
     file.size,
     reason,
-    virusName,
   ).catch((error) => {
     console.error('[UPLOAD_SECURITY] Failed to quarantine upload buffer.', {
       reason,
@@ -688,152 +681,4 @@ export async function validateReportIssueAttachmentMagicBytes(
   next: NextFunction,
 ): Promise<void> {
   return validateMagicBytesWithPolicy(req, res, next, REPORT_ATTACHMENT_POLICY);
-}
-
-export async function scanForMalware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  return scanForMalwareWithSurface(req, res, next, 'wireless-session-upload');
-}
-
-async function scanForMalwareWithSurface(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-  surface: UploadSurface,
-): Promise<void> {
-  const file = req.file;
-  if (!file) {
-    next();
-    return;
-  }
-
-  const daemonUp = await isClamdReachable();
-  if (!daemonUp) {
-    const meta = {
-      ...extractRequestContext(req),
-      originalFilename: file.originalname,
-      declaredMimeType: file.mimetype.toLowerCase(),
-      detectedMimeType: null,
-      detectedExecutableExtension: null,
-      validationReason: 'SCAN_UNAVAILABLE',
-      uploadSurface: surface,
-      sizeBytes: file.size,
-    };
-    appendSecurityLog(
-      'scan_unavailable',
-      'ClamAV daemon unreachable — upload blocked.',
-      meta,
-    );
-    void reportUploadSecurityAnomaly({
-      type: 'upload_scan_unavailable',
-      source: surface,
-      severity: 'critical',
-      message: 'Upload blocked because ClamAV scanner is unavailable.',
-      fingerprintParts: [surface, 'scan-unavailable'],
-      context: meta,
-    });
-    res.status(503).json({
-      code: 'SCAN_UNAVAILABLE',
-      error:
-        'File scanning is currently unavailable. Please try again shortly.',
-    });
-    return;
-  }
-
-  try {
-    const result = await scanBuffer(file.buffer);
-    if (!result.isClean) {
-      const meta = {
-        ...extractRequestContext(req),
-        originalFilename: file.originalname,
-        declaredMimeType: file.mimetype.toLowerCase(),
-        detectedMimeType: null,
-        detectedExecutableExtension: null,
-        validationReason: 'FILE_INFECTED',
-        uploadSurface: surface,
-        sizeBytes: file.size,
-        virusName: result.virusName ?? null,
-      };
-      quarantineUploadBuffer(
-        file,
-        'FILE_INFECTED',
-        result.virusName ?? undefined,
-      );
-      appendSecurityLog(
-        'upload_security_violation',
-        'Rejected upload because malware was detected.',
-        meta,
-      );
-      void reportUploadSecurityAnomaly({
-        type: 'upload_malware_detected',
-        source: surface,
-        severity: 'critical',
-        message: 'Upload rejected because malware scanner flagged the file.',
-        fingerprintParts: [
-          surface,
-          'malware-detected',
-          result.virusName ?? 'unknown',
-        ],
-        context: meta,
-      });
-      res.status(422).json({
-        code: 'FILE_INFECTED',
-        error:
-          'This file was flagged by our security scanner and cannot be accepted.',
-      });
-      return;
-    }
-
-    next();
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : 'Unknown scan error';
-    const meta = {
-      ...extractRequestContext(req),
-      originalFilename: file.originalname,
-      declaredMimeType: file.mimetype.toLowerCase(),
-      detectedMimeType: null,
-      detectedExecutableExtension: null,
-      validationReason: 'SCAN_ERROR',
-      uploadSurface: surface,
-      sizeBytes: file.size,
-      scanError: reason,
-    };
-    quarantineUploadBuffer(file, 'SCAN_ERROR');
-    appendSecurityLog(
-      'upload_security_violation',
-      'Upload scan failed due to scanner processing error.',
-      meta,
-    );
-    void reportUploadSecurityAnomaly({
-      type: 'upload_scan_error',
-      source: surface,
-      severity: 'warning',
-      message: 'Upload scanner returned an unexpected processing error.',
-      fingerprintParts: [surface, 'scan-error'],
-      context: meta,
-    });
-    res.status(500).json({
-      code: 'SCAN_ERROR',
-      error: 'An error occurred while scanning the file. Please try again.',
-    });
-  }
-}
-
-export async function scanLegacyUploadForMalware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  return scanForMalwareWithSurface(req, res, next, 'legacy-upload');
-}
-
-export async function scanReportIssueAttachmentForMalware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  return scanForMalwareWithSurface(req, res, next, 'report-issue-attachment');
 }

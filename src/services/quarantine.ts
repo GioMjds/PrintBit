@@ -12,12 +12,7 @@ export interface QuarantineRecord {
   timestamp: string;
   originalName: string;
   sizeBytes: number;
-  reason:
-    | 'UNSUPPORTED_TYPE'
-    | 'MAGIC_BYTE_MISMATCH'
-    | 'FILE_INFECTED'
-    | 'SCAN_ERROR';
-  virusName?: string;
+  reason: 'UNSUPPORTED_TYPE' | 'MAGIC_BYTE_MISMATCH';
   savedAs: string;
 }
 
@@ -26,7 +21,6 @@ export async function quarantineBuffer(
   originalName: string,
   sizeBytes: number,
   reason: QuarantineRecord['reason'],
-  virusName?: string,
 ): Promise<void> {
   try {
     await ensureQuarantineDir();
@@ -46,7 +40,6 @@ export async function quarantineBuffer(
       originalName,
       sizeBytes,
       reason,
-      ...(virusName ? { virusName } : {}),
       savedAs,
     };
 

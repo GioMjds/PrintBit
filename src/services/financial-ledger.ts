@@ -54,9 +54,11 @@ class FinancialLedgerService {
     await previousQueue;
 
     try {
-      assertTrustedTimeForFinancialOperation(
-        `ledger_append:${input.eventType}`,
-      );
+      if (input.eventType !== 'coin_inserted') {
+        assertTrustedTimeForFinancialOperation(
+          `ledger_append:${input.eventType}`,
+        );
+      }
       const trusted = getTrustedTimestamp();
       const id = randomUUID();
       const previous = db.data!.financialLedger[0] ?? null;

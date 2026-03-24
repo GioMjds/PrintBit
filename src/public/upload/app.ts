@@ -198,7 +198,7 @@ function mapError(r: UploadErrorResponse): string {
     case 'DUPLICATE_FILE':
       return 'This file was already sent in this session.';
     case 'INVALID_TOKEN':
-      return 'Invalid token. Scan a fresh kiosk QR.';
+      return 'Invalid token. Scan a fresh kiosk QR or reopen the upload link from the kiosk.';
     case 'UNSUPPORTED_TYPE':
       return 'Unsupported file type.';
     case 'UNSUPPORTED_FILE_TYPE':
@@ -206,9 +206,9 @@ function mapError(r: UploadErrorResponse): string {
     case 'FILE_TOO_LARGE':
       return r.error ?? 'File exceeds the 25 MB limit.';
     case 'SESSION_NOT_FOUND':
-      return 'Session not found. Scan a fresh kiosk QR.';
+      return 'Session not found. Scan a fresh kiosk QR or reopen the upload link from the kiosk.';
     case 'SESSION_EXPIRED':
-      return 'Session expired. Please scan a fresh kiosk QR.';
+      return 'Session expired. Please scan a fresh kiosk QR or reopen the latest upload link.';
     case 'SESSION_OWNED':
       return 'This session is already active on another phone.';
     case 'MISSING_CLIENT_ID':
@@ -329,7 +329,7 @@ async function refreshSessionLease(): Promise<void> {
         payload.code === 'SESSION_EXPIRED'
       ) {
         setSessionUnavailable(
-          'This session has expired. Please scan a fresh kiosk QR.',
+          'This session has expired. Please scan a fresh kiosk QR or reopen the latest upload link.',
         );
         return;
       }
@@ -510,7 +510,7 @@ async function initSession(): Promise<void> {
   resetSessionCountdown();
   setAppState('session-loading');
   setSessionUI('Connecting to session…', 'idle');
-  setStatus('Connecting to kiosk session…', 'info');
+  setStatus('Connecting to kiosk session over local network or internet…', 'info');
 
   if (!token) {
     setSessionUnavailable(
@@ -714,7 +714,7 @@ async function uploadPendingFiles(): Promise<void> {
     refreshUploadBtn();
   } else {
     setStatus(
-      'All uploads failed. Please check your connection and try again.',
+      'All uploads failed. Please check your network/internet connection and try again.',
       'error',
     );
     setAppState('session-ready');
@@ -825,7 +825,7 @@ function showOpenInBrowserBanner(): void {
       </svg>
       <div>
         <strong>File picker may be blocked</strong>
-        <p>Open this page in your browser to upload files.</p>
+        <p>Open this page in your browser to upload files reliably.</p>
       </div>
     </div>
     <div class="captive-banner__actions">

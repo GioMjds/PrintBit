@@ -370,6 +370,31 @@ body {
   flex-shrink: 0;
 }
 
+.network-mode-toggle {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+}
+
+.network-mode-btn {
+  flex: 1;
+  border: 1px solid rgba(167, 170, 225, 0.25);
+  background: rgba(167, 170, 225, 0.08);
+  color: var(--lavender);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.network-mode-btn.is-active {
+  background: rgba(105, 111, 199, 0.35);
+  border-color: rgba(167, 170, 225, 0.5);
+  color: var(--white);
+}
+
 #uploadLink {
   color: var(--lavender);
   text-decoration: none;
