@@ -1,12 +1,11 @@
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import {
   PUBLIC_URL,
   NETWORK_PROVIDER,
-  ESP32_AP_BASE_URL,
   ESP32_KIOSK_SUBNET_PREFIX,
   ESP32_KIOSK_IP,
   PORT,
@@ -720,10 +719,10 @@ function isPrivateIpv4(host: string): boolean {
 
 function detectPreferredLocalKioskAddress(requestHost: string): string | null {
   if (NETWORK_PROVIDER === 'esp32') {
-    if (ESP32_KIOSK_IP) return ESP32_KIOSK_IP;
+    if (requestHost.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) return requestHost;
     const detectedEsp32 = detectEsp32KioskAddress();
     if (detectedEsp32) return detectedEsp32;
-    if (requestHost.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) return requestHost;
+    if (ESP32_KIOSK_IP) return ESP32_KIOSK_IP;
   }
 
   if (isPrivateIpv4(requestHost)) return requestHost;
@@ -769,18 +768,6 @@ function detectEsp32KioskAddress(): string | null {
         return iface.address;
       }
     }
-  }
-
-  try {
-    const apHost = new URL(ESP32_AP_BASE_URL).hostname;
-    if (apHost.startsWith('192.168.')) {
-      const octets = apHost.split('.');
-      if (octets.length === 4) {
-        return `${octets[0]}.${octets[1]}.${octets[2]}.2`;
-      }
-    }
-  } catch {
-    /* keep request-host fallback */
   }
 
   return null;

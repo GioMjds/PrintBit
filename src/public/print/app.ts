@@ -447,6 +447,17 @@ function renderFiles(files: UploadedFile[]): void {
 
 // ── Session management ────────────────────────────────────────────────────────
 
+function normalizeLocalUploadUrl(uploadUrl: string): string {
+  try {
+    const parsed = new URL(uploadUrl);
+    if (!parsed.pathname.startsWith('/upload/')) return uploadUrl;
+    const pathWithQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return new URL(pathWithQuery, window.location.origin).toString();
+  } catch {
+    return uploadUrl;
+  }
+}
+
 function setUploadMode(mode: 'local' | 'internet'): void {
   const hasInternetOption = publicUploadUrl.length > 0;
   if (mode === 'internet' && !hasInternetOption) mode = 'local';
@@ -510,7 +521,7 @@ function setUploadMode(mode: 'local' | 'internet'): void {
 }
 
 function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
-  localUploadUrl = uploadUrl;
+  localUploadUrl = normalizeLocalUploadUrl(uploadUrl);
   publicUploadUrl = internetUploadUrl ?? '';
 
   if (publicUploadUrl) {

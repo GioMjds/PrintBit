@@ -114,11 +114,14 @@ function ensureFirewallRules(): void {
 
 function isMyPublicWifiRunning(): boolean {
   try {
-    const output = execSync('tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH', {
-      encoding: 'utf-8',
-      timeout: 5_000,
-      stdio: 'pipe',
-    });
+    const output = execSync(
+      'tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH',
+      {
+        encoding: 'utf-8',
+        timeout: 5_000,
+        stdio: 'pipe',
+      },
+    );
     return output.includes('MyPublicWiFi.exe');
   } catch {
     return false;
@@ -216,13 +219,13 @@ class HotspotService {
 
   private async startEsp32RegistrationLoop(): Promise<void> {
     this.stopEsp32RegistrationLoop();
-    
+
     // When explicit IP is set, just log once - no need to loop
     if (ESP32_KIOSK_IP) {
       await registerKioskWithEsp32();
       return;
     }
-    
+
     // Only loop if we need to auto-detect and register
     await registerKioskWithEsp32();
     this.esp32RegistrationTimer = setInterval(() => {
