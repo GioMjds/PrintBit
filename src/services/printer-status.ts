@@ -77,6 +77,8 @@ interface PnpPrinterDeviceInfo {
   FriendlyName: string | null;
   InstanceId: string | null;
   Status: string | null;
+  Present: boolean | null;
+  Problem: number | null;
   SerialNumber: string | null;
 }
 
@@ -134,6 +136,45 @@ function humanStatusFromFlags(
   if (flags.includes('Paused')) return 'Paused';
   if (flags.length === 0 || printerStatusCode === 3) return 'Idle';
   return flags[0] ?? 'Unknown';
+}
+
+function applyConnectionSignals(input: {
+  status: string;
+  statusFlags: string[];
+  connectionType: PrinterTelemetry['connectionType'];
+  workOffline: boolean | null | undefined;
+  pnpDevice?: PnpPrinterDeviceInfo | null;
+}): { connected: boolean; status: string; statusFlags: string[] } {
+  const statusFlags = Array.from(new Set(input.statusFlags));
+  let connected = true;
+
+  if (input.status === 'Offline' || statusFlags.includes('Offline')) {
+    connected = false;
+    if (!statusFlags.includes('Offline')) statusFlags.push('Offline');
+  }
+
+  if (input.workOffline === true) {
+    connected = false;
+    if (!statusFlags.includes('Offline')) statusFlags.push('Offline');
+  }
+
+  if (input.connectionType === 'usb' && input.pnpDevice) {
+    const notPresent = input.pnpDevice.Present === false;
+    const deviceNotConnected = input.pnpDevice.Problem === 45;
+    if (notPresent || deviceNotConnected) {
+      connected = false;
+      if (!statusFlags.includes('Offline')) statusFlags.push('Offline');
+      if (!statusFlags.includes('Device Not Connected')) {
+        statusFlags.push('Device Not Connected');
+      }
+    }
+  }
+
+  return {
+    connected,
+    status: connected ? input.status : 'Offline',
+    statusFlags,
+  };
 }
 
 // ── Port → connection type ───────────────────────────────────────
@@ -242,6 +283,7 @@ let cached: PrinterTelemetry = {
   lastError: null,
 };
 let refreshing = false;
+let pendingRefresh: Promise<PrinterTelemetry> | null = null;
 
 function normalizeTargetPrinterName(
   value: string | null | undefined,
@@ -376,13 +418,259 @@ function updatePrinterWatchdogState(telemetry: PrinterTelemetry): void {
 }
 
 async function refresh(): Promise<void> {
-  if (refreshing) return;
+  if (pendingRefresh) {
+    await pendingRefresh;
+    return;
+  }
+
+  pendingRefresh = runRefreshCycle();
+  try {
+    await pendingRefresh;
+  } finally {
+    pendingRefresh = null;
+  }
+}
+
+void refresh();
+setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+
+/** Returns the latest cached printer telemetry (never blocks). */
+export function getPrinterTelemetry(): PrinterTelemetry {
+  return cached;
+}
+
+/**
+ * Performs a fast, ink-free status query directly against Win32_Printer.
+ * Completes in < 1 s on most systems — intentionally skips all ink-detection
+ * strategies so the mid-job watchdog can poll tightly without blocking.
+ *
+ * Unlike getPrinterTelemetry() this always issues a live PowerShell call
+ * instead of returning the 30 s cached value.
+ */
+export async function queryLivePrinterStatus(): Promise<{
+  connected: boolean;
+  status: string;
+  statusFlags: string[];
+  pnpDevice: PnpPrinterDeviceInfo | null;
+}> {
+  try {
+    const settings = getInkMonitoringSettings();
+    const targetName =
+      normalizeTargetPrinterName(settings.targetPrinterName)?.replace(
+        /'/g,
+        "''",
+      ) ?? null;
+    const filter = targetName
+      ? `| Where-Object {$_.Name -eq '${targetName}'} `
+      : `| Where-Object {$_.Default -eq $true} `;
+    const json = await runPowerShell(
+      `Get-CimInstance -ClassName Win32_Printer ` +
+        filter +
+        `| Select-Object Name, DriverName, PortName, PrinterStatus, PrinterState, WorkOffline ` +
+        `| ConvertTo-Json -Depth 2`,
+      5_000,
+    );
+
+    if (!json) {
+      return {
+        connected: false,
+        status: targetName
+          ? 'Configured printer not found'
+          : 'No default printer',
+        statusFlags: [],
+        pnpDevice: null,
+      };
+    }
+
+    const raw = JSON.parse(json) as {
+      Name: string;
+      DriverName: string;
+      PortName: string;
+      PrinterStatus: number;
+      PrinterState: number;
+      WorkOffline?: boolean | null;
+    };
+    const statusFlags = parsePrinterStateFlags(raw.PrinterState);
+    const status = humanStatusFromFlags(statusFlags, raw.PrinterStatus);
+    const connectionType = detectConnectionType(raw.PortName ?? null);
+    let matchedPnpDevice: PnpPrinterDeviceInfo | null = null;
+    if (connectionType === 'usb') {
+      const pnpDevices = await listPnpPrinterDevices(1_000);
+      matchedPnpDevice = matchPnpDeviceToPrinter(
+        {
+          Name: raw.Name,
+          DriverName: raw.DriverName,
+          PortName: raw.PortName,
+          Default: true,
+          PrinterStatus: raw.PrinterStatus,
+          PrinterState: raw.PrinterState,
+        },
+        pnpDevices,
+      );
+    }
+    const printerRecord = { ...raw, pnpDevice: matchedPnpDevice };
+    const normalized = applyConnectionSignals({
+      status,
+      statusFlags,
+      connectionType,
+      workOffline: printerRecord.WorkOffline,
+      pnpDevice: printerRecord.pnpDevice,
+    });
+    return {
+      ...normalized,
+      pnpDevice: printerRecord.pnpDevice,
+    };
+  } catch {
+    return {
+      connected: false,
+      status: 'Error',
+      statusFlags: [],
+      pnpDevice: null,
+    };
+  }
+}
+
+// ── Main telemetry query ─────────────────────────────────────────
+
+async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
+  const lastCheckedAt = new Date().toISOString();
+  const settings = getInkMonitoringSettings();
+  const targetPrinterName = normalizeTargetPrinterName(
+    settings.targetPrinterName,
+  );
+  const escapedTargetName = targetPrinterName?.replace(/'/g, "''") ?? null;
+  const queryFilter = escapedTargetName
+    ? `| Where-Object {$_.Name -eq '${escapedTargetName}'} `
+    : `| Where-Object {$_.Default -eq $true} `;
+
+  // 1) Fetch default printer basic info
+  let printerInfo: {
+    Name: string;
+    DriverName: string;
+    PortName: string;
+    Default?: boolean;
+    PrinterStatus: number;
+    PrinterState: number;
+    WorkOffline?: boolean | null;
+    pnpDevice?: PnpPrinterDeviceInfo | null;
+  } | null = null;
+
+  try {
+    const json = await runPowerShell(
+      `Get-CimInstance -ClassName Win32_Printer ` +
+        queryFilter +
+        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState, WorkOffline ` +
+        `| ConvertTo-Json -Depth 2`,
+    );
+
+    if (!json) {
+      return noDefaultPrinter(lastCheckedAt, targetPrinterName);
+    }
+
+    printerInfo = JSON.parse(json);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[PRINTER-STATUS] ⚠ Could not query printer: ${msg}`);
+    return {
+      connected: false,
+      name: null,
+      driverName: null,
+      portName: null,
+      connectionType: 'unknown',
+      status: 'Error',
+      statusFlags: [],
+      ink: [],
+      inkDetectionMethod: 'none',
+      targetPrinterName,
+      targetIsDefault: false,
+      inkTelemetryAvailable: false,
+      inkTelemetryReason: 'Printer query failed',
+      lastCheckedAt,
+      lastError: msg,
+    };
+  }
+
+  if (!printerInfo) return noDefaultPrinter(lastCheckedAt, targetPrinterName);
+
+  const statusFlags = parsePrinterStateFlags(printerInfo.PrinterState);
+  const status = humanStatusFromFlags(statusFlags, printerInfo.PrinterStatus);
+  const connectionType = detectConnectionType(printerInfo.PortName);
+  let matchedPnpDevice: PnpPrinterDeviceInfo | null = null;
+  if (connectionType === 'usb') {
+    const pnpDevices = await listPnpPrinterDevices();
+    matchedPnpDevice = matchPnpDeviceToPrinter(printerInfo, pnpDevices);
+  }
+  printerInfo.pnpDevice = matchedPnpDevice;
+  const connectivity = applyConnectionSignals({
+    status,
+    statusFlags,
+    connectionType,
+    workOffline: printerInfo.WorkOffline,
+    pnpDevice: printerInfo.pnpDevice,
+  });
+
+  // 2) Attempt ink detection with a prioritized strategy chain only when
+  // connectivity indicates the printer is actually reachable.
+  const isBlocked =
+    !connectivity.connected || BLOCKED_STATUSES.has(connectivity.status);
+  const { ink, method } = isBlocked
+    ? {
+        ink: [
+          { name: 'Ink / Toner', level: null, status: 'unknown' },
+        ] as InkLevel[],
+        method: 'none' as const,
+      }
+    : await detectInkLevels(
+        printerInfo.Name,
+        printerInfo.DriverName,
+        printerInfo.PortName,
+        printerInfo.PrinterState,
+        printerInfo.PrinterStatus,
+        connectionType,
+      );
+
+  return {
+    connected: connectivity.connected,
+    name: printerInfo.Name,
+    driverName: printerInfo.DriverName,
+    portName: printerInfo.PortName,
+    connectionType,
+    status: connectivity.status,
+    statusFlags: connectivity.statusFlags,
+    ink,
+    inkDetectionMethod: method,
+    targetPrinterName,
+    targetIsDefault: printerInfo.Default === true,
+    lastCheckedAt,
+    lastError: null,
+  };
+}
+
+async function runRefreshCycle(): Promise<PrinterTelemetry> {
+  if (refreshing) return cached;
   refreshing = true;
   try {
-    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
-    persistInkHistoryEntry(cached);
-    await db.write();
-    updatePrinterWatchdogState(cached);
+    const next = normalizeTelemetryAvailability(await queryPrinterTelemetry());
+    cached = next;
+
+    try {
+      persistInkHistoryEntry(next);
+      await db.write();
+    } catch (err) {
+      console.warn(
+        '[PRINTER-STATUS] Failed to persist telemetry history:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    try {
+      updatePrinterWatchdogState(next);
+    } catch (err) {
+      console.warn(
+        '[PRINTER-STATUS] Failed to update printer watchdog:',
+        err instanceof Error ? err.message : err,
+      );
+    }
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -421,9 +709,6 @@ async function refresh(): Promise<void> {
     refreshing = false;
   }
 
-  // Notify all registered subscribers with the latest snapshot.
-  // Each callback is wrapped individually so one failing subscriber cannot
-  // prevent the others from receiving the update.
   for (const cb of refreshCallbacks) {
     try {
       cb(cached);
@@ -434,158 +719,8 @@ async function refresh(): Promise<void> {
       );
     }
   }
-}
 
-void refresh();
-setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
-
-/** Returns the latest cached printer telemetry (never blocks). */
-export function getPrinterTelemetry(): PrinterTelemetry {
   return cached;
-}
-
-/**
- * Performs a fast, ink-free status query directly against Win32_Printer.
- * Completes in < 1 s on most systems — intentionally skips all ink-detection
- * strategies so the mid-job watchdog can poll tightly without blocking.
- *
- * Unlike getPrinterTelemetry() this always issues a live PowerShell call
- * instead of returning the 30 s cached value.
- */
-export async function queryLivePrinterStatus(): Promise<{
-  connected: boolean;
-  status: string;
-  statusFlags: string[];
-}> {
-  try {
-    const settings = getInkMonitoringSettings();
-    const targetName =
-      normalizeTargetPrinterName(settings.targetPrinterName)?.replace(
-        /'/g,
-        "''",
-      ) ?? null;
-    const filter = targetName
-      ? `| Where-Object {$_.Name -eq '${targetName}'} `
-      : `| Where-Object {$_.Default -eq $true} `;
-    const json = await runPowerShell(
-      `Get-CimInstance -ClassName Win32_Printer ` +
-        filter +
-        `| Select-Object PrinterStatus, PrinterState ` +
-        `| ConvertTo-Json -Depth 2`,
-      5_000,
-    );
-
-    if (!json) {
-      return {
-        connected: false,
-        status: targetName
-          ? 'Configured printer not found'
-          : 'No default printer',
-        statusFlags: [],
-      };
-    }
-
-    const raw = JSON.parse(json) as {
-      PrinterStatus: number;
-      PrinterState: number;
-    };
-    const statusFlags = parsePrinterStateFlags(raw.PrinterState);
-    const status = humanStatusFromFlags(statusFlags, raw.PrinterStatus);
-    return { connected: true, status, statusFlags };
-  } catch {
-    return { connected: false, status: 'Error', statusFlags: [] };
-  }
-}
-
-// ── Main telemetry query ─────────────────────────────────────────
-
-async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
-  const lastCheckedAt = new Date().toISOString();
-  const settings = getInkMonitoringSettings();
-  const targetPrinterName = normalizeTargetPrinterName(
-    settings.targetPrinterName,
-  );
-  const escapedTargetName = targetPrinterName?.replace(/'/g, "''") ?? null;
-  const queryFilter = escapedTargetName
-    ? `| Where-Object {$_.Name -eq '${escapedTargetName}'} `
-    : `| Where-Object {$_.Default -eq $true} `;
-
-  // 1) Fetch default printer basic info
-  let printerInfo: {
-    Name: string;
-    DriverName: string;
-    PortName: string;
-    Default?: boolean;
-    PrinterStatus: number;
-    PrinterState: number;
-  } | null = null;
-
-  try {
-    const json = await runPowerShell(
-      `Get-CimInstance -ClassName Win32_Printer ` +
-        queryFilter +
-        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState ` +
-        `| ConvertTo-Json -Depth 2`,
-    );
-
-    if (!json) {
-      return noDefaultPrinter(lastCheckedAt, targetPrinterName);
-    }
-
-    printerInfo = JSON.parse(json);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[PRINTER-STATUS] ⚠ Could not query printer: ${msg}`);
-    return {
-      connected: false,
-      name: null,
-      driverName: null,
-      portName: null,
-      connectionType: 'unknown',
-      status: 'Error',
-      statusFlags: [],
-      ink: [],
-      inkDetectionMethod: 'none',
-      targetPrinterName,
-      targetIsDefault: false,
-      inkTelemetryAvailable: false,
-      inkTelemetryReason: 'Printer query failed',
-      lastCheckedAt,
-      lastError: msg,
-    };
-  }
-
-  if (!printerInfo) return noDefaultPrinter(lastCheckedAt, targetPrinterName);
-
-  const statusFlags = parsePrinterStateFlags(printerInfo.PrinterState);
-  const status = humanStatusFromFlags(statusFlags, printerInfo.PrinterStatus);
-  const connectionType = detectConnectionType(printerInfo.PortName);
-
-  // 2) Attempt ink detection with a prioritized strategy chain
-  const { ink, method } = await detectInkLevels(
-    printerInfo.Name,
-    printerInfo.DriverName,
-    printerInfo.PortName,
-    printerInfo.PrinterState,
-    printerInfo.PrinterStatus,
-    connectionType,
-  );
-
-  return {
-    connected: true,
-    name: printerInfo.Name,
-    driverName: printerInfo.DriverName,
-    portName: printerInfo.PortName,
-    connectionType,
-    status,
-    statusFlags,
-    ink,
-    inkDetectionMethod: method,
-    targetPrinterName,
-    targetIsDefault: printerInfo.Default === true,
-    lastCheckedAt,
-    lastError: null,
-  };
 }
 
 function noDefaultPrinter(
@@ -1079,77 +1214,23 @@ function inkStatusFromLevel(level: number | null): InkLevel['status'] {
  * the admin panel reflects the new hardware state without waiting for the next
  * automatic refresh cycle.
  *
- * Safe to call concurrently — if a background refresh is already running it is
- * allowed to finish first (we await it via the shared `refreshing` guard),
- * then we run a fresh query on top so the caller always gets a post-action
- * snapshot, not a stale one.
+ * Safe to call concurrently — callers are coalesced onto one shared in-flight
+ * refresh Promise so only one telemetry query + callback dispatch runs at once.
  *
  * @returns The freshly-queried PrinterTelemetry object (also updates the cache
  *          so subsequent `getPrinterTelemetry()` calls see the same value).
  */
 export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
-  // If a refresh is already in flight, wait for it to settle before we
-  // fire our own so we don't race against it.
-  while (refreshing) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  if (pendingRefresh) {
+    return pendingRefresh;
   }
+  pendingRefresh = runRefreshCycle();
 
-  refreshing = true;
   try {
-    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
-    persistInkHistoryEntry(cached);
-    await db.write();
-    updatePrinterWatchdogState(cached);
-  } catch (err: unknown) {
-    cached = {
-      connected: false,
-      name: null,
-      driverName: null,
-      portName: null,
-      connectionType: 'unknown',
-      status: 'Error',
-      statusFlags: [],
-      ink: [],
-      inkDetectionMethod: 'none',
-      targetPrinterName: null,
-      targetIsDefault: false,
-      inkTelemetryAvailable: false,
-      inkTelemetryReason: 'Telemetry refresh failed',
-      lastCheckedAt: new Date().toISOString(),
-      lastError: err instanceof Error ? err.message : String(err),
-    };
-    markWatchdogHeartbeat('printer', {
-      connected: false,
-      status: cached.status,
-      telemetryLastCheckedAt: cached.lastCheckedAt,
-    });
-    setWatchdogComponentState(
-      'printer',
-      'degraded',
-      `Printer telemetry refresh failed: ${cached.lastError}`,
-      {
-        connected: false,
-        status: cached.status,
-        telemetryLastCheckedAt: cached.lastCheckedAt,
-        lastError: cached.lastError,
-      },
-    );
+    return await pendingRefresh;
   } finally {
-    refreshing = false;
+    pendingRefresh = null;
   }
-
-  for (const cb of refreshCallbacks) {
-    try {
-      cb(cached);
-    } catch (error) {
-      console.warn(
-        '[PRINTER-STATUS] refresh callback threw:',
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-
-  return cached;
 }
 
 export async function listInstalledPrinters(): Promise<InstalledPrinterInfo[]> {
@@ -1262,10 +1343,7 @@ export async function runInkTelemetryDiagnostics(): Promise<{
 
 function normalizeComparableName(value: string | null | undefined): string {
   if (!value) return '';
-  return value
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 function extractPortTokenFromInstanceId(
@@ -1301,7 +1379,7 @@ function matchPnpDeviceToPrinter(
     const friendly = normalizeComparableName(device.FriendlyName);
     if (!friendly || !normalizedDriver) return false;
     return (
-      (friendly.includes(normalizedDriver) || normalizedDriver.includes(friendly))
+      friendly.includes(normalizedDriver) || normalizedDriver.includes(friendly)
     );
   });
   if (byDriverName) return byDriverName;
@@ -1309,15 +1387,17 @@ function matchPnpDeviceToPrinter(
   return null;
 }
 
-async function listPnpPrinterDevices(): Promise<PnpPrinterDeviceInfo[]> {
+async function listPnpPrinterDevices(
+  timeoutMs = 10_000,
+): Promise<PnpPrinterDeviceInfo[]> {
   try {
     const json = await runPowerShell(
       `$devices = Get-PnpDevice -Class Printer -ErrorAction SilentlyContinue | ForEach-Object { ` +
         `$serial = ($_ | Get-PnpDeviceProperty -KeyName 'DEVPKEY_Device_SerialNumber' -ErrorAction SilentlyContinue).Data; ` +
-        `[PSCustomObject]@{ FriendlyName = $_.FriendlyName; InstanceId = $_.InstanceId; Status = $_.Status; SerialNumber = if ($null -eq $serial -or $serial -eq '') { $null } else { [string]$serial } } ` +
-      `}; ` +
-      `if ($devices) { $devices | ConvertTo-Json -Depth 4 } else { '[]' }`,
-      10_000,
+        `[PSCustomObject]@{ FriendlyName = $_.FriendlyName; InstanceId = $_.InstanceId; Status = $_.Status; Present = $_.Present; Problem = $_.Problem; SerialNumber = if ($null -eq $serial -or $serial -eq '') { $null } else { [string]$serial } } ` +
+        `}; ` +
+        `if ($devices) { $devices | ConvertTo-Json -Depth 4 } else { '[]' }`,
+      timeoutMs,
     );
     if (!json || json === 'null') return [];
     const parsed = JSON.parse(json) as
@@ -1327,7 +1407,8 @@ async function listPnpPrinterDevices(): Promise<PnpPrinterDeviceInfo[]> {
     return rows.filter(
       (row) =>
         row &&
-        (typeof row.InstanceId === 'string' || typeof row.FriendlyName === 'string'),
+        (typeof row.InstanceId === 'string' ||
+          typeof row.FriendlyName === 'string'),
     );
   } catch {
     return [];

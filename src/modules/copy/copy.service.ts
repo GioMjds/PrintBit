@@ -13,6 +13,7 @@ import { adminService } from '@/services/admin';
 import {
   evaluateInkPreflight,
   getPrinterTelemetry,
+  refreshPrinterTelemetry,
   settlementService,
   watchJobForMalfunction,
 } from '@/services';
@@ -344,7 +345,7 @@ export class CopyService {
     void (async () => {
       jobStore.updateJobState(jobId, 'running');
       try {
-        const telemetry = getPrinterTelemetry();
+        const telemetry = await refreshPrinterTelemetry();
         if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
           void adminService.appendAdminLog(
             'copy_preflight_failed',

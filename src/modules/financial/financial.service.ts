@@ -9,7 +9,11 @@ import {
   storeIdempotencyKey,
   releaseIdempotencyKey,
 } from '@/services/db';
-import { evaluateInkPreflight, getPrinterTelemetry } from '@/services';
+import {
+  evaluateInkPreflight,
+  getPrinterTelemetry,
+  refreshPrinterTelemetry,
+} from '@/services';
 import { adminService } from '@/services/admin';
 import { settlementService } from '@/services/settlement';
 import { printFile, type PrintJobOptions } from '@/services/printer';
@@ -461,6 +465,52 @@ export class FinancialService {
       paperSize: 'A4',
     };
 
+    const legacyTelemetry = await refreshPrinterTelemetry();
+    if (
+      !legacyTelemetry.connected ||
+      BLOCKED_STATUSES.has(legacyTelemetry.status)
+    ) {
+      void adminService.appendAdminLog(
+        'print_preflight_failed',
+        'Legacy print rejected: printer not ready.',
+        {
+          filename,
+          printerStatus: legacyTelemetry.status,
+          printerConnected: legacyTelemetry.connected,
+        },
+      );
+      return res.status(409).json({
+        error: `Printer is not ready: ${legacyTelemetry.status}. Please notify the operator.`,
+        printerStatus: legacyTelemetry.status,
+      });
+    }
+
+    const legacyInkPreflight = evaluateInkPreflight(legacyTelemetry);
+    if (legacyInkPreflight.blocked) {
+      void adminService.appendAdminLog(
+        'print_preflight_failed_ink',
+        'Legacy print rejected: ink preflight policy blocked the job.',
+        {
+          filename,
+          printerStatus: legacyTelemetry.status,
+          inkCode: legacyInkPreflight.code,
+          inkReason:
+            legacyInkPreflight.reason ?? 'Unknown ink policy reason',
+          telemetryAvailable: legacyInkPreflight.telemetryAvailable,
+          inkDetectionMethod: legacyTelemetry.inkDetectionMethod,
+        },
+      );
+      return res.status(409).json({
+        error:
+          legacyInkPreflight.reason ??
+          'Printer ink state is not ready for printing.',
+        printerStatus: legacyTelemetry.status,
+        inkStatus: legacyInkPreflight.code,
+        inkReason: legacyInkPreflight.reason,
+        telemetryAvailable: legacyInkPreflight.telemetryAvailable,
+      });
+    }
+
     try {
       await printFile(filename, defaultOptions);
     } catch (err) {
@@ -819,7 +869,8 @@ export class FinancialService {
       return;
     }
 
-    const telemetry = getPrinterTelemetry();
+    const telemetry =
+      mode === 'print' ? await refreshPrinterTelemetry() : getPrinterTelemetry();
     let jobDispatchedAt: string | null = null;
 
     if (mode === 'print' && serverFilename && printOptions) {
