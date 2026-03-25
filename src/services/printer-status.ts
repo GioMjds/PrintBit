@@ -77,6 +77,8 @@ interface PnpPrinterDeviceInfo {
   FriendlyName: string | null;
   InstanceId: string | null;
   Status: string | null;
+  Present: boolean | null;
+  Problem: number | null;
   SerialNumber: string | null;
 }
 
@@ -134,6 +136,40 @@ function humanStatusFromFlags(
   if (flags.includes('Paused')) return 'Paused';
   if (flags.length === 0 || printerStatusCode === 3) return 'Idle';
   return flags[0] ?? 'Unknown';
+}
+
+function applyConnectionSignals(input: {
+  status: string;
+  statusFlags: string[];
+  connectionType: PrinterTelemetry['connectionType'];
+  workOffline: boolean | null | undefined;
+  pnpDevice?: PnpPrinterDeviceInfo | null;
+}): { connected: boolean; status: string; statusFlags: string[] } {
+  const statusFlags = [...input.statusFlags];
+  let connected = true;
+
+  if (input.workOffline === true) {
+    connected = false;
+    if (!statusFlags.includes('Offline')) statusFlags.push('Offline');
+  }
+
+  if (input.connectionType === 'usb' && input.pnpDevice) {
+    const notPresent = input.pnpDevice.Present === false;
+    const deviceNotConnected = input.pnpDevice.Problem === 45;
+    if (notPresent || deviceNotConnected) {
+      connected = false;
+      if (!statusFlags.includes('Offline')) statusFlags.push('Offline');
+      if (!statusFlags.includes('Device Not Connected')) {
+        statusFlags.push('Device Not Connected');
+      }
+    }
+  }
+
+  return {
+    connected,
+    status: connected ? input.status : 'Offline',
+    statusFlags,
+  };
 }
 
 // ── Port → connection type ───────────────────────────────────────
@@ -470,7 +506,7 @@ export async function queryLivePrinterStatus(): Promise<{
     const json = await runPowerShell(
       `Get-CimInstance -ClassName Win32_Printer ` +
         filter +
-        `| Select-Object PrinterStatus, PrinterState ` +
+        `| Select-Object Name, PortName, PrinterStatus, PrinterState, WorkOffline ` +
         `| ConvertTo-Json -Depth 2`,
       5_000,
     );
@@ -486,12 +522,22 @@ export async function queryLivePrinterStatus(): Promise<{
     }
 
     const raw = JSON.parse(json) as {
+      Name: string;
+      PortName: string;
       PrinterStatus: number;
       PrinterState: number;
+      WorkOffline?: boolean | null;
     };
     const statusFlags = parsePrinterStateFlags(raw.PrinterState);
     const status = humanStatusFromFlags(statusFlags, raw.PrinterStatus);
-    return { connected: true, status, statusFlags };
+    const connectionType = detectConnectionType(raw.PortName ?? null);
+    const normalized = applyConnectionSignals({
+      status,
+      statusFlags,
+      connectionType,
+      workOffline: raw.WorkOffline,
+    });
+    return normalized;
   } catch {
     return { connected: false, status: 'Error', statusFlags: [] };
   }
@@ -518,13 +564,14 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
     Default?: boolean;
     PrinterStatus: number;
     PrinterState: number;
+    WorkOffline?: boolean | null;
   } | null = null;
 
   try {
     const json = await runPowerShell(
       `Get-CimInstance -ClassName Win32_Printer ` +
         queryFilter +
-        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState ` +
+        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState, WorkOffline ` +
         `| ConvertTo-Json -Depth 2`,
     );
 
@@ -560,6 +607,18 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
   const statusFlags = parsePrinterStateFlags(printerInfo.PrinterState);
   const status = humanStatusFromFlags(statusFlags, printerInfo.PrinterStatus);
   const connectionType = detectConnectionType(printerInfo.PortName);
+  let matchedPnpDevice: PnpPrinterDeviceInfo | null = null;
+  if (connectionType === 'usb') {
+    const pnpDevices = await listPnpPrinterDevices();
+    matchedPnpDevice = matchPnpDeviceToPrinter(printerInfo, pnpDevices);
+  }
+  const connectivity = applyConnectionSignals({
+    status,
+    statusFlags,
+    connectionType,
+    workOffline: printerInfo.WorkOffline,
+    pnpDevice: matchedPnpDevice,
+  });
 
   // 2) Attempt ink detection with a prioritized strategy chain
   const { ink, method } = await detectInkLevels(
@@ -572,13 +631,13 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
   );
 
   return {
-    connected: true,
+    connected: connectivity.connected,
     name: printerInfo.Name,
     driverName: printerInfo.DriverName,
     portName: printerInfo.PortName,
     connectionType,
-    status,
-    statusFlags,
+    status: connectivity.status,
+    statusFlags: connectivity.statusFlags,
     ink,
     inkDetectionMethod: method,
     targetPrinterName,
@@ -1314,7 +1373,7 @@ async function listPnpPrinterDevices(): Promise<PnpPrinterDeviceInfo[]> {
     const json = await runPowerShell(
       `$devices = Get-PnpDevice -Class Printer -ErrorAction SilentlyContinue | ForEach-Object { ` +
         `$serial = ($_ | Get-PnpDeviceProperty -KeyName 'DEVPKEY_Device_SerialNumber' -ErrorAction SilentlyContinue).Data; ` +
-        `[PSCustomObject]@{ FriendlyName = $_.FriendlyName; InstanceId = $_.InstanceId; Status = $_.Status; SerialNumber = if ($null -eq $serial -or $serial -eq '') { $null } else { [string]$serial } } ` +
+        `[PSCustomObject]@{ FriendlyName = $_.FriendlyName; InstanceId = $_.InstanceId; Status = $_.Status; Present = $_.Present; Problem = $_.Problem; SerialNumber = if ($null -eq $serial -or $serial -eq '') { $null } else { [string]$serial } } ` +
       `}; ` +
       `if ($devices) { $devices | ConvertTo-Json -Depth 4 } else { '[]' }`,
       10_000,
