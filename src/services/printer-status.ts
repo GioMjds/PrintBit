@@ -145,8 +145,13 @@ function applyConnectionSignals(input: {
   workOffline: boolean | null | undefined;
   pnpDevice?: PnpPrinterDeviceInfo | null;
 }): { connected: boolean; status: string; statusFlags: string[] } {
-  const statusFlags = [...input.statusFlags];
+  const statusFlags = Array.from(new Set(input.statusFlags));
   let connected = true;
+
+  if (input.status === 'Offline' || statusFlags.includes('Offline')) {
+    connected = false;
+    if (!statusFlags.includes('Offline')) statusFlags.push('Offline');
+  }
 
   if (input.workOffline === true) {
     connected = false;
@@ -278,6 +283,7 @@ let cached: PrinterTelemetry = {
   lastError: null,
 };
 let refreshing = false;
+let pendingRefresh: Promise<PrinterTelemetry> | null = null;
 
 function normalizeTargetPrinterName(
   value: string | null | undefined,
@@ -412,63 +418,16 @@ function updatePrinterWatchdogState(telemetry: PrinterTelemetry): void {
 }
 
 async function refresh(): Promise<void> {
-  if (refreshing) return;
-  refreshing = true;
-  try {
-    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
-    persistInkHistoryEntry(cached);
-    await db.write();
-    updatePrinterWatchdogState(cached);
-  } catch (err: unknown) {
-    cached = {
-      connected: false,
-      name: null,
-      driverName: null,
-      portName: null,
-      connectionType: 'unknown',
-      status: 'Error',
-      statusFlags: [],
-      ink: [],
-      inkDetectionMethod: 'none',
-      targetPrinterName: null,
-      targetIsDefault: false,
-      inkTelemetryAvailable: false,
-      inkTelemetryReason: 'Telemetry refresh failed',
-      lastCheckedAt: new Date().toISOString(),
-      lastError: err instanceof Error ? err.message : String(err),
-    };
-    markWatchdogHeartbeat('printer', {
-      connected: false,
-      status: cached.status,
-      telemetryLastCheckedAt: cached.lastCheckedAt,
-    });
-    setWatchdogComponentState(
-      'printer',
-      'degraded',
-      `Printer telemetry refresh failed: ${cached.lastError}`,
-      {
-        connected: false,
-        status: 'Error',
-        telemetryLastCheckedAt: cached.lastCheckedAt,
-        lastError: cached.lastError,
-      },
-    );
-  } finally {
-    refreshing = false;
+  if (pendingRefresh) {
+    await pendingRefresh;
+    return;
   }
 
-  // Notify all registered subscribers with the latest snapshot.
-  // Each callback is wrapped individually so one failing subscriber cannot
-  // prevent the others from receiving the update.
-  for (const cb of refreshCallbacks) {
-    try {
-      cb(cached);
-    } catch (err) {
-      console.warn(
-        '[PRINTER-STATUS] refresh callback threw:',
-        err instanceof Error ? err.message : err,
-      );
-    }
+  pendingRefresh = runRefreshCycle();
+  try {
+    await pendingRefresh;
+  } finally {
+    pendingRefresh = null;
   }
 }
 
@@ -492,6 +451,7 @@ export async function queryLivePrinterStatus(): Promise<{
   connected: boolean;
   status: string;
   statusFlags: string[];
+  pnpDevice: PnpPrinterDeviceInfo | null;
 }> {
   try {
     const settings = getInkMonitoringSettings();
@@ -506,7 +466,7 @@ export async function queryLivePrinterStatus(): Promise<{
     const json = await runPowerShell(
       `Get-CimInstance -ClassName Win32_Printer ` +
         filter +
-        `| Select-Object Name, PortName, PrinterStatus, PrinterState, WorkOffline ` +
+        `| Select-Object Name, DriverName, PortName, PrinterStatus, PrinterState, WorkOffline ` +
         `| ConvertTo-Json -Depth 2`,
       5_000,
     );
@@ -518,11 +478,13 @@ export async function queryLivePrinterStatus(): Promise<{
           ? 'Configured printer not found'
           : 'No default printer',
         statusFlags: [],
+        pnpDevice: null,
       };
     }
 
     const raw = JSON.parse(json) as {
       Name: string;
+      DriverName: string;
       PortName: string;
       PrinterStatus: number;
       PrinterState: number;
@@ -531,15 +493,35 @@ export async function queryLivePrinterStatus(): Promise<{
     const statusFlags = parsePrinterStateFlags(raw.PrinterState);
     const status = humanStatusFromFlags(statusFlags, raw.PrinterStatus);
     const connectionType = detectConnectionType(raw.PortName ?? null);
+    let matchedPnpDevice: PnpPrinterDeviceInfo | null = null;
+    if (connectionType === 'usb') {
+      const pnpDevices = await listPnpPrinterDevices();
+      matchedPnpDevice = matchPnpDeviceToPrinter(
+        {
+          Name: raw.Name,
+          DriverName: raw.DriverName,
+          PortName: raw.PortName,
+          Default: true,
+          PrinterStatus: raw.PrinterStatus,
+          PrinterState: raw.PrinterState,
+        },
+        pnpDevices,
+      );
+    }
+    const printerRecord = { ...raw, pnpDevice: matchedPnpDevice };
     const normalized = applyConnectionSignals({
       status,
       statusFlags,
       connectionType,
-      workOffline: raw.WorkOffline,
+      workOffline: printerRecord.WorkOffline,
+      pnpDevice: printerRecord.pnpDevice,
     });
-    return normalized;
+    return {
+      ...normalized,
+      pnpDevice: printerRecord.pnpDevice,
+    };
   } catch {
-    return { connected: false, status: 'Error', statusFlags: [] };
+    return { connected: false, status: 'Error', statusFlags: [], pnpDevice: null };
   }
 }
 
@@ -565,6 +547,7 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
     PrinterStatus: number;
     PrinterState: number;
     WorkOffline?: boolean | null;
+    pnpDevice?: PnpPrinterDeviceInfo | null;
   } | null = null;
 
   try {
@@ -612,23 +595,32 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
     const pnpDevices = await listPnpPrinterDevices();
     matchedPnpDevice = matchPnpDeviceToPrinter(printerInfo, pnpDevices);
   }
+  printerInfo.pnpDevice = matchedPnpDevice;
   const connectivity = applyConnectionSignals({
     status,
     statusFlags,
     connectionType,
     workOffline: printerInfo.WorkOffline,
-    pnpDevice: matchedPnpDevice,
+    pnpDevice: printerInfo.pnpDevice,
   });
 
-  // 2) Attempt ink detection with a prioritized strategy chain
-  const { ink, method } = await detectInkLevels(
-    printerInfo.Name,
-    printerInfo.DriverName,
-    printerInfo.PortName,
-    printerInfo.PrinterState,
-    printerInfo.PrinterStatus,
-    connectionType,
-  );
+  // 2) Attempt ink detection with a prioritized strategy chain only when
+  // connectivity indicates the printer is actually reachable.
+  const isBlocked =
+    !connectivity.connected || BLOCKED_STATUSES.has(connectivity.status);
+  const { ink, method } = isBlocked
+    ? {
+        ink: [{ name: 'Ink / Toner', level: null, status: 'unknown' }] as InkLevel[],
+        method: 'none' as const,
+      }
+    : await detectInkLevels(
+        printerInfo.Name,
+        printerInfo.DriverName,
+        printerInfo.PortName,
+        printerInfo.PrinterState,
+        printerInfo.PrinterStatus,
+        connectionType,
+      );
 
   return {
     connected: connectivity.connected,
@@ -645,6 +637,66 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
     lastCheckedAt,
     lastError: null,
   };
+}
+
+async function runRefreshCycle(): Promise<PrinterTelemetry> {
+  if (refreshing) return cached;
+  refreshing = true;
+  try {
+    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
+    persistInkHistoryEntry(cached);
+    await db.write();
+    updatePrinterWatchdogState(cached);
+  } catch (err: unknown) {
+    cached = {
+      connected: false,
+      name: null,
+      driverName: null,
+      portName: null,
+      connectionType: 'unknown',
+      status: 'Error',
+      statusFlags: [],
+      ink: [],
+      inkDetectionMethod: 'none',
+      targetPrinterName: null,
+      targetIsDefault: false,
+      inkTelemetryAvailable: false,
+      inkTelemetryReason: 'Telemetry refresh failed',
+      lastCheckedAt: new Date().toISOString(),
+      lastError: err instanceof Error ? err.message : String(err),
+    };
+    markWatchdogHeartbeat('printer', {
+      connected: false,
+      status: cached.status,
+      telemetryLastCheckedAt: cached.lastCheckedAt,
+    });
+    setWatchdogComponentState(
+      'printer',
+      'degraded',
+      `Printer telemetry refresh failed: ${cached.lastError}`,
+      {
+        connected: false,
+        status: 'Error',
+        telemetryLastCheckedAt: cached.lastCheckedAt,
+        lastError: cached.lastError,
+      },
+    );
+  } finally {
+    refreshing = false;
+  }
+
+  for (const cb of refreshCallbacks) {
+    try {
+      cb(cached);
+    } catch (err) {
+      console.warn(
+        '[PRINTER-STATUS] refresh callback threw:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  return cached;
 }
 
 function noDefaultPrinter(
@@ -1138,77 +1190,23 @@ function inkStatusFromLevel(level: number | null): InkLevel['status'] {
  * the admin panel reflects the new hardware state without waiting for the next
  * automatic refresh cycle.
  *
- * Safe to call concurrently — if a background refresh is already running it is
- * allowed to finish first (we await it via the shared `refreshing` guard),
- * then we run a fresh query on top so the caller always gets a post-action
- * snapshot, not a stale one.
+ * Safe to call concurrently — callers are coalesced onto one shared in-flight
+ * refresh Promise so only one telemetry query + callback dispatch runs at once.
  *
  * @returns The freshly-queried PrinterTelemetry object (also updates the cache
  *          so subsequent `getPrinterTelemetry()` calls see the same value).
  */
 export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
-  // If a refresh is already in flight, wait for it to settle before we
-  // fire our own so we don't race against it.
-  while (refreshing) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  if (pendingRefresh) {
+    return pendingRefresh;
   }
+  pendingRefresh = runRefreshCycle();
 
-  refreshing = true;
   try {
-    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
-    persistInkHistoryEntry(cached);
-    await db.write();
-    updatePrinterWatchdogState(cached);
-  } catch (err: unknown) {
-    cached = {
-      connected: false,
-      name: null,
-      driverName: null,
-      portName: null,
-      connectionType: 'unknown',
-      status: 'Error',
-      statusFlags: [],
-      ink: [],
-      inkDetectionMethod: 'none',
-      targetPrinterName: null,
-      targetIsDefault: false,
-      inkTelemetryAvailable: false,
-      inkTelemetryReason: 'Telemetry refresh failed',
-      lastCheckedAt: new Date().toISOString(),
-      lastError: err instanceof Error ? err.message : String(err),
-    };
-    markWatchdogHeartbeat('printer', {
-      connected: false,
-      status: cached.status,
-      telemetryLastCheckedAt: cached.lastCheckedAt,
-    });
-    setWatchdogComponentState(
-      'printer',
-      'degraded',
-      `Printer telemetry refresh failed: ${cached.lastError}`,
-      {
-        connected: false,
-        status: cached.status,
-        telemetryLastCheckedAt: cached.lastCheckedAt,
-        lastError: cached.lastError,
-      },
-    );
+    return await pendingRefresh;
   } finally {
-    refreshing = false;
+    pendingRefresh = null;
   }
-
-  for (const cb of refreshCallbacks) {
-    try {
-      cb(cached);
-    } catch (error) {
-      console.warn(
-        '[PRINTER-STATUS] refresh callback threw:',
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-
-  return cached;
 }
 
 export async function listInstalledPrinters(): Promise<InstalledPrinterInfo[]> {
