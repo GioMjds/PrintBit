@@ -495,7 +495,7 @@ export async function queryLivePrinterStatus(): Promise<{
     const connectionType = detectConnectionType(raw.PortName ?? null);
     let matchedPnpDevice: PnpPrinterDeviceInfo | null = null;
     if (connectionType === 'usb') {
-      const pnpDevices = await listPnpPrinterDevices();
+      const pnpDevices = await listPnpPrinterDevices(1_000);
       matchedPnpDevice = matchPnpDeviceToPrinter(
         {
           Name: raw.Name,
@@ -521,7 +521,12 @@ export async function queryLivePrinterStatus(): Promise<{
       pnpDevice: printerRecord.pnpDevice,
     };
   } catch {
-    return { connected: false, status: 'Error', statusFlags: [], pnpDevice: null };
+    return {
+      connected: false,
+      status: 'Error',
+      statusFlags: [],
+      pnpDevice: null,
+    };
   }
 }
 
@@ -610,7 +615,9 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
     !connectivity.connected || BLOCKED_STATUSES.has(connectivity.status);
   const { ink, method } = isBlocked
     ? {
-        ink: [{ name: 'Ink / Toner', level: null, status: 'unknown' }] as InkLevel[],
+        ink: [
+          { name: 'Ink / Toner', level: null, status: 'unknown' },
+        ] as InkLevel[],
         method: 'none' as const,
       }
     : await detectInkLevels(
@@ -643,10 +650,27 @@ async function runRefreshCycle(): Promise<PrinterTelemetry> {
   if (refreshing) return cached;
   refreshing = true;
   try {
-    cached = normalizeTelemetryAvailability(await queryPrinterTelemetry());
-    persistInkHistoryEntry(cached);
-    await db.write();
-    updatePrinterWatchdogState(cached);
+    const next = normalizeTelemetryAvailability(await queryPrinterTelemetry());
+    cached = next;
+
+    try {
+      persistInkHistoryEntry(next);
+      await db.write();
+    } catch (err) {
+      console.warn(
+        '[PRINTER-STATUS] Failed to persist telemetry history:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    try {
+      updatePrinterWatchdogState(next);
+    } catch (err) {
+      console.warn(
+        '[PRINTER-STATUS] Failed to update printer watchdog:',
+        err instanceof Error ? err.message : err,
+      );
+    }
   } catch (err: unknown) {
     cached = {
       connected: false,
@@ -1319,10 +1343,7 @@ export async function runInkTelemetryDiagnostics(): Promise<{
 
 function normalizeComparableName(value: string | null | undefined): string {
   if (!value) return '';
-  return value
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 function extractPortTokenFromInstanceId(
@@ -1358,7 +1379,7 @@ function matchPnpDeviceToPrinter(
     const friendly = normalizeComparableName(device.FriendlyName);
     if (!friendly || !normalizedDriver) return false;
     return (
-      (friendly.includes(normalizedDriver) || normalizedDriver.includes(friendly))
+      friendly.includes(normalizedDriver) || normalizedDriver.includes(friendly)
     );
   });
   if (byDriverName) return byDriverName;
@@ -1366,15 +1387,17 @@ function matchPnpDeviceToPrinter(
   return null;
 }
 
-async function listPnpPrinterDevices(): Promise<PnpPrinterDeviceInfo[]> {
+async function listPnpPrinterDevices(
+  timeoutMs = 10_000,
+): Promise<PnpPrinterDeviceInfo[]> {
   try {
     const json = await runPowerShell(
       `$devices = Get-PnpDevice -Class Printer -ErrorAction SilentlyContinue | ForEach-Object { ` +
         `$serial = ($_ | Get-PnpDeviceProperty -KeyName 'DEVPKEY_Device_SerialNumber' -ErrorAction SilentlyContinue).Data; ` +
         `[PSCustomObject]@{ FriendlyName = $_.FriendlyName; InstanceId = $_.InstanceId; Status = $_.Status; Present = $_.Present; Problem = $_.Problem; SerialNumber = if ($null -eq $serial -or $serial -eq '') { $null } else { [string]$serial } } ` +
-      `}; ` +
-      `if ($devices) { $devices | ConvertTo-Json -Depth 4 } else { '[]' }`,
-      10_000,
+        `}; ` +
+        `if ($devices) { $devices | ConvertTo-Json -Depth 4 } else { '[]' }`,
+      timeoutMs,
     );
     if (!json || json === 'null') return [];
     const parsed = JSON.parse(json) as
@@ -1384,7 +1407,8 @@ async function listPnpPrinterDevices(): Promise<PnpPrinterDeviceInfo[]> {
     return rows.filter(
       (row) =>
         row &&
-        (typeof row.InstanceId === 'string' || typeof row.FriendlyName === 'string'),
+        (typeof row.InstanceId === 'string' ||
+          typeof row.FriendlyName === 'string'),
     );
   } catch {
     return [];
