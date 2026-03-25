@@ -54,6 +54,7 @@ let serialLastError: string | null = null;
 let activeSerialPort: SerialPort | null = null;
 let socketIo: Server | null = null;
 let coinSlotLocked: boolean = false;
+let coinSlotLockOwnerId: string | null = null;
 
 let hopperCommandPending = false;
 let hopperLastError: string | null = null;
@@ -202,18 +203,31 @@ export function getHopperStatus() {
   };
 }
 
-export function lockCoinSlot(): void {
+export function lockCoinSlot(ownerId?: string): void {
   coinSlotLocked = true;
+  coinSlotLockOwnerId = ownerId ?? null;
   console.log('[SERIAL] Coin slot locked - rejecting incoming coins.');
 }
 
 export function unlockCoinSlot(): void {
   coinSlotLocked = false;
+  coinSlotLockOwnerId = null;
   console.log('[SERIAL] Coin slot unlocked - accepting incoming coins.');
 }
 
 export function isCoinSlotLocked(): boolean {
   return coinSlotLocked;
+}
+
+export function getCoinSlotLockOwnerId(): string | null {
+  return coinSlotLockOwnerId;
+}
+
+export function unlockOwnedCoinSlot(ownerId: string): boolean {
+  if (!coinSlotLocked) return false;
+  if (!coinSlotLockOwnerId || coinSlotLockOwnerId !== ownerId) return false;
+  unlockCoinSlot();
+  return true;
 }
 
 function completePendingHopperCommand(result: HopperCommandResult): boolean {

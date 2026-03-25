@@ -240,6 +240,7 @@ if (priceValue) priceValue.textContent = 'Loading...';
 function applyLockState(locked: boolean): void {
   coinSlotIsLocked = locked;
   const changeAmount = Math.max(0, currentBalance - totalPrice);
+  const coinButtons = document.querySelectorAll<HTMLButtonElement>('.coin-btn');
 
   const coinPanel = document.querySelector<HTMLElement>('.coin-panel');
   const coinIcon = document.getElementById('coinIcon');
@@ -268,6 +269,24 @@ function applyLockState(locked: boolean): void {
       ctaText.textContent = 'Insert coins into the kiosk slot to pay';
     changeReadyBadge?.setAttribute('hidden', '');
   }
+
+  coinButtons.forEach((button) => {
+    button.disabled = locked;
+  });
+  if (resetBalanceBtn) {
+    resetBalanceBtn.disabled = locked;
+  }
+}
+
+function syncCoinSlotLockState(): void {
+  const shouldLock = pricingLoaded && totalPrice > 0 && currentBalance >= totalPrice;
+  if (shouldLock === coinSlotIsLocked) return;
+
+  applyLockState(shouldLock);
+  socket?.emit(
+    shouldLock ? 'lockCoinSlot' : 'unlockCoinSlot',
+    shouldLock ? { threshold: totalPrice } : { reason: 'balance_dropped' },
+  );
 }
 
 function updateChangeDisplay(balance: number): void {
@@ -350,18 +369,7 @@ function updateBalanceUI(balance: number): void {
   currentBalance = balance;
   if (balanceValue) balanceValue.textContent = `₱ ${balance}`;
   updateChangeDisplay(balance);
-
-  if (pricingLoaded && totalPrice > 0) {
-    const shouldLock = balance >= totalPrice;
-    if (shouldLock !== coinSlotIsLocked) {
-      applyLockState(shouldLock);
-      socket?.emit(
-        shouldLock ? 'lockCoinSlot' : 'unlockCoinSlot',
-        shouldLock ? { threshold: totalPrice } : { reason: 'balance_dropped' },
-      );
-    }
-  }
-
+  syncCoinSlotLockState();
   applyConfirmGate();
 }
 
@@ -559,6 +567,9 @@ async function loadPricing(): Promise<void> {
       if (pagesValue) {
         pagesValue.textContent = `${pageRangeLabel(config.pageRange)} (${payload.quote.selectedPages} of ${payload.quote.totalPages})`;
       }
+      updateChangeDisplay(currentBalance);
+      syncCoinSlotLockState();
+      applyConfirmGate();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to load print quote.';
@@ -569,6 +580,9 @@ async function loadPricing(): Promise<void> {
       if (priceValue) priceValue.textContent = 'Unavailable';
       if (colorValue) colorValue.textContent = config.colorMode;
       if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
+      updateChangeDisplay(currentBalance);
+      syncCoinSlotLockState();
+      applyConfirmGate();
     }
     return;
   }
@@ -610,6 +624,9 @@ async function loadPricing(): Promise<void> {
   pricingLoaded = true;
   pricingError = null;
   if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
+  updateChangeDisplay(currentBalance);
+  syncCoinSlotLockState();
+  applyConfirmGate();
 }
 
 async function resetBalanceForTesting(): Promise<void> {
@@ -626,7 +643,7 @@ async function resetBalanceForTesting(): Promise<void> {
   if (!response.ok) {
     if (statusMessage)
       statusMessage.textContent = payload.error ?? 'Failed to reset balance.';
-    resetBalanceBtn.disabled = false;
+    resetBalanceBtn.disabled = coinSlotIsLocked;
     return;
   }
 
@@ -634,7 +651,7 @@ async function resetBalanceForTesting(): Promise<void> {
   if (statusMessage)
     statusMessage.textContent = 'Coin balance reset to ₱ 0.00 (testing mode).';
   setCoinEventMessage('Balance reset manually for testing.');
-  resetBalanceBtn.disabled = false;
+  resetBalanceBtn.disabled = coinSlotIsLocked;
 }
 
 const confirmModal = document.getElementById('confirmModal');
@@ -1293,7 +1310,7 @@ async function insertTestCoin(value: number): Promise<void> {
   } catch {
     setCoinEventMessage('Network error inserting test coin.');
   } finally {
-    buttons.forEach((b) => (b.disabled = false));
+    buttons.forEach((b) => (b.disabled = coinSlotIsLocked));
   }
 }
 

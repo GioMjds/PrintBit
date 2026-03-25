@@ -23,15 +23,16 @@ import {
   startPrinterMonitor,
   anomalyService,
   adminService,
-  getTrustedTimeStatus,
   startTrustedTimeMonitor,
   stopTrustedTimeMonitor,
   verifyTrustedClockSync,
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
+  isCoinSlotLocked,
+  getCoinSlotLockOwnerId,
   lockCoinSlot,
-  unlockCoinSlot,
+  unlockOwnedCoinSlot,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
 import { getLocalIPv4 } from '@/utils/network';
@@ -68,13 +69,36 @@ io.on('connection', (socket) => {
   });
 
   socket.on('lockCoinSlot', (_data: unknown) => {
-    lockCoinSlot();
-    io.emit('coinSlotLocked', { lockedAt: new Date().toISOString() });
+    const currentOwnerId = getCoinSlotLockOwnerId();
+    if (isCoinSlotLocked() && currentOwnerId && currentOwnerId !== socket.id) {
+      socket.emit('coinSlotUnlockDenied', {
+        reason: 'lock_owned_by_another_socket',
+      });
+      return;
+    }
+
+    lockCoinSlot(socket.id);
+    io.emit('coinSlotLocked', {
+      lockedAt: new Date().toISOString(),
+      ownerId: socket.id,
+    });
   });
 
   socket.on('unlockCoinSlot', (_data: unknown) => {
-    unlockCoinSlot();
+    const unlocked = unlockOwnedCoinSlot(socket.id);
+    if (!unlocked) {
+      socket.emit('coinSlotUnlockDenied', {
+        reason: 'lock_owned_by_another_socket',
+      });
+      return;
+    }
     io.emit('coinSlotUnlocked', { reason: 'client_request' });
+  });
+
+  socket.on('disconnect', () => {
+    const unlocked = unlockOwnedCoinSlot(socket.id);
+    if (!unlocked) return;
+    io.emit('coinSlotUnlocked', { reason: 'owner_disconnect' });
   });
 });
 
@@ -239,10 +263,6 @@ async function start() {
     } else {
       console.log('→ Network IP not detected');
     }
-    const trustedTime = getTrustedTimeStatus();
-    console.log(
-      `[TIME] Trusted sync=${trustedTime.synced} source=${trustedTime.source} offsetMs=${trustedTime.offsetMs ?? 'n/a'} detail="${trustedTime.detail}"`,
-    );
   });
 }
 
