@@ -31,6 +31,7 @@ import {
   stopWatchdogHealthMonitor,
   isCoinSlotLocked,
   getCoinSlotLockOwnerId,
+  getCoinSlotLockedAt,
   lockCoinSlot,
   unlockOwnedCoinSlot,
 } from '@/services';
@@ -64,6 +65,15 @@ registerAppModules(app, {
 });
 
 io.on('connection', (socket) => {
+  const locked = isCoinSlotLocked();
+  const ownerId = getCoinSlotLockOwnerId();
+  if (locked) {
+    socket.emit('coinSlotLocked', {
+      lockedAt: getCoinSlotLockedAt() ?? new Date().toISOString(),
+      ownerId,
+    });
+  }
+
   socket.on('joinSession', (sessionId: string) => {
     socket.join(`session:${sessionId}`);
   });
