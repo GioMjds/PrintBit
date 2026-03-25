@@ -23,13 +23,17 @@ import {
   startPrinterMonitor,
   anomalyService,
   adminService,
-  getTrustedTimeStatus,
   startTrustedTimeMonitor,
   stopTrustedTimeMonitor,
   verifyTrustedClockSync,
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
+  isCoinSlotLocked,
+  getCoinSlotLockOwnerId,
+  getCoinSlotLockedAt,
+  lockCoinSlot,
+  unlockOwnedCoinSlot,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
 import { getLocalIPv4 } from '@/utils/network';
@@ -61,8 +65,50 @@ registerAppModules(app, {
 });
 
 io.on('connection', (socket) => {
+  const locked = isCoinSlotLocked();
+  const ownerId = getCoinSlotLockOwnerId();
+  if (locked) {
+    socket.emit('coinSlotLocked', {
+      lockedAt: getCoinSlotLockedAt() ?? new Date().toISOString(),
+      ownerId,
+    });
+  }
+
   socket.on('joinSession', (sessionId: string) => {
     socket.join(`session:${sessionId}`);
+  });
+
+  socket.on('lockCoinSlot', (_data: unknown) => {
+    const currentOwnerId = getCoinSlotLockOwnerId();
+    if (isCoinSlotLocked() && currentOwnerId && currentOwnerId !== socket.id) {
+      socket.emit('coinSlotLockDenied', {
+        reason: 'lock_owned_by_another_socket',
+      });
+      return;
+    }
+
+    lockCoinSlot(socket.id);
+    io.emit('coinSlotLocked', {
+      lockedAt: new Date().toISOString(),
+      ownerId: socket.id,
+    });
+  });
+
+  socket.on('unlockCoinSlot', (_data: unknown) => {
+    const unlocked = unlockOwnedCoinSlot(socket.id);
+    if (!unlocked) {
+      socket.emit('coinSlotUnlockDenied', {
+        reason: 'lock_owned_by_another_socket',
+      });
+      return;
+    }
+    io.emit('coinSlotUnlocked', { reason: 'client_request' });
+  });
+
+  socket.on('disconnect', () => {
+    const unlocked = unlockOwnedCoinSlot(socket.id);
+    if (!unlocked) return;
+    io.emit('coinSlotUnlocked', { reason: 'owner_disconnect' });
   });
 });
 
@@ -227,10 +273,6 @@ async function start() {
     } else {
       console.log('→ Network IP not detected');
     }
-    const trustedTime = getTrustedTimeStatus();
-    console.log(
-      `[TIME] Trusted sync=${trustedTime.synced} source=${trustedTime.source} offsetMs=${trustedTime.offsetMs ?? 'n/a'} detail="${trustedTime.detail}"`,
-    );
   });
 }
 

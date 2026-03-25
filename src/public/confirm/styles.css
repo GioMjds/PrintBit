@@ -984,3 +984,100 @@ body {
     min-height: 280px;
   }
 }
+
+/* ── Locked coin slot state ────────────────────────────────────── */
+
+/* Swap coin CTA text color to green when locked */
+.coin-panel--locked .coin-panel__cta {
+  color: #a3e6ac;
+}
+
+/* Padlock icon entrance animation */
+#padlockIcon {
+  animation: padlock-pop 350ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes padlock-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6) rotate(-8deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* Balance ring turns green when locked */
+.coin-panel--locked .balance-ring__svg {
+  filter: drop-shadow(0 0 20px rgba(58, 158, 82, 0.5));
+}
+
+.coin-panel--locked #balanceArc {
+  stroke: #6ac47a;
+}
+
+.coin-panel--locked .balance-ring__amount {
+  color: #a3e6ac;
+}
+
+/* Coin slot locked status badge variant */
+.coin-panel--locked .status-badge {
+  background: rgba(106, 196, 122, 0.12);
+  border-color: rgba(106, 196, 122, 0.3);
+}
+
+.coin-panel--locked .status-badge__dot {
+  background: #6ac47a;
+  animation: none;
+}
+
+.coin-panel--locked .status-badge__text {
+  color: #a3e6ac;
+}
+
+/* ── Change-ready badge ─────────────────────────────────────────── */
+.change-ready-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 40px;
+  background: rgba(58, 158, 82, 0.12);
+  border: 1.5px solid rgba(106, 196, 122, 0.35);
+  color: #a3e6ac;
+  font-size: 13px;
+  font-weight: 700;
+  animation: badge-slide-up 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.change-ready-badge svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: #6ac47a;
+}
+
+@keyframes badge-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Disable test coin buttons when slot is locked */
+.coin-panel--locked .coin-btn {
+  opacity: 0.25;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.coin-panel--locked .reset-btn {
+  opacity: 0.25;
+  cursor: not-allowed;
+  pointer-events: none;
+}

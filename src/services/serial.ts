@@ -53,6 +53,9 @@ let serialPortPath: string | null = null;
 let serialLastError: string | null = null;
 let activeSerialPort: SerialPort | null = null;
 let socketIo: Server | null = null;
+let coinSlotLocked: boolean = false;
+let coinSlotLockOwnerId: string | null = null;
+let coinSlotLockedAt: string | null = null;
 
 let hopperCommandPending = false;
 let hopperLastError: string | null = null;
@@ -199,6 +202,39 @@ export function getHopperStatus() {
     lastError: hopperLastError,
     lastSuccessAt: hopperLastSuccessAt,
   };
+}
+
+export function lockCoinSlot(ownerId: string): void {
+  coinSlotLocked = true;
+  coinSlotLockOwnerId = ownerId;
+  coinSlotLockedAt = new Date().toISOString();
+  console.log('[SERIAL] Coin slot locked - rejecting incoming coins.');
+}
+
+function unlockCoinSlot(): void {
+  coinSlotLocked = false;
+  coinSlotLockOwnerId = null;
+  coinSlotLockedAt = null;
+  console.log('[SERIAL] Coin slot unlocked - accepting incoming coins.');
+}
+
+export function isCoinSlotLocked(): boolean {
+  return coinSlotLocked;
+}
+
+export function getCoinSlotLockOwnerId(): string | null {
+  return coinSlotLockOwnerId;
+}
+
+export function getCoinSlotLockedAt(): string | null {
+  return coinSlotLockedAt;
+}
+
+export function unlockOwnedCoinSlot(ownerId: string): boolean {
+  if (!coinSlotLocked) return false;
+  if (!coinSlotLockOwnerId || coinSlotLockOwnerId !== ownerId) return false;
+  unlockCoinSlot();
+  return true;
 }
 
 function completePendingHopperCommand(result: HopperCommandResult): boolean {
@@ -459,21 +495,26 @@ async function attemptSerialConnection(
         message: 'No serial ports were found during initialization.',
         fingerprint: buildAnomalyFingerprint(['serial', 'no-ports']),
       });
-      setWatchdogComponentState('serial', 'unhealthy', 'No serial ports found.', {
-        connected: false,
-        reason: 'no_ports_found',
-      });
+      setWatchdogComponentState(
+        'serial',
+        'unhealthy',
+        'No serial ports found.',
+        {
+          connected: false,
+          reason: 'no_ports_found',
+        },
+      );
       scheduleSerialReconnect(io, 'no_ports_found');
       return;
     }
 
     const selectedPort =
       SERIAL_PORT_HINT.length > 0
-        ? ports.find((portInfo) =>
+        ? (ports.find((portInfo) =>
             portInfo.path
               .toLowerCase()
               .includes(SERIAL_PORT_HINT.toLowerCase()),
-          ) ?? ports[0]
+          ) ?? ports[0])
         : ports[0];
     const portPath = selectedPort.path;
     serialPortPath = portPath;
@@ -732,6 +773,20 @@ async function attemptSerialConnection(
       };
 
       const creditResolvedCoin = async (coinValue: number, token: string) => {
+        if (coinSlotLocked) {
+          console.warn(
+            `[SERIAL] ⚠ Coin rejected — slot is locked (balance sufficient). Token: "${token}"`,
+          );
+          socketIo?.emit('coinRejected', {
+            value: coinValue,
+            reason: 'slot_locked',
+            printerStatus: null,
+            telemetryLastCheckedAt: null,
+            faultLock: null,
+          });
+          return;
+        }
+
         const { telemetry, printerBlocked, reason, faultLock } =
           getPrinterAvailability();
         if (printerBlocked) {
