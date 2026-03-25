@@ -81,7 +81,7 @@ io.on('connection', (socket) => {
   socket.on('lockCoinSlot', (_data: unknown) => {
     const currentOwnerId = getCoinSlotLockOwnerId();
     if (isCoinSlotLocked() && currentOwnerId && currentOwnerId !== socket.id) {
-      socket.emit('coinSlotUnlockDenied', {
+      socket.emit('coinSlotLockDenied', {
         reason: 'lock_owned_by_another_socket',
       });
       return;
