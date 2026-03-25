@@ -30,6 +30,8 @@ import {
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
+  lockCoinSlot,
+  unlockCoinSlot,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
 import { getLocalIPv4 } from '@/utils/network';
@@ -63,6 +65,16 @@ registerAppModules(app, {
 io.on('connection', (socket) => {
   socket.on('joinSession', (sessionId: string) => {
     socket.join(`session:${sessionId}`);
+  });
+
+  socket.on('lockCoinSlot', (_data: unknown) => {
+    lockCoinSlot();
+    io.emit('coinSlotLocked', { lockedAt: new Date().toISOString() });
+  });
+
+  socket.on('unlockCoinSlot', (_data: unknown) => {
+    unlockCoinSlot();
+    io.emit('coinSlotUnlocked', { reason: 'client_request' });
   });
 });
 

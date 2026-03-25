@@ -66,7 +66,8 @@
           <!-- Coin insert illustration + live balance -->
           <div class="coin-panel">
             <div class="coin-panel__icon" aria-hidden="true">
-              <svg viewBox="0 0 80 80" fill="none">
+              <!-- Coin icon: visible by default, hidden when slot is locked -->
+              <svg id="coinIcon" viewBox="0 0 80 80" fill="none">
                 <!-- Coin stack -->
                 <ellipse
                   cx="40"
@@ -111,6 +112,63 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"
                   opacity=".8"
+                />
+              </svg>
+
+              <!-- Padlock icon: hidden by default, shown when slot is locked -->
+              <svg
+                id="padlockIcon"
+                viewBox="0 0 80 80"
+                fill="none"
+                style="display: none"
+              >
+                <!-- Shackle (arc) -->
+                <path
+                  d="M27 36v-8a13 13 0 0126 0v8"
+                  stroke="#6ac47a"
+                  stroke-width="3.5"
+                  stroke-linecap="round"
+                  fill="none"
+                />
+                <!-- Lock body -->
+                <rect
+                  x="18"
+                  y="36"
+                  width="44"
+                  height="30"
+                  rx="6"
+                  fill="rgba(58,158,82,0.2)"
+                />
+                <rect
+                  x="18"
+                  y="36"
+                  width="44"
+                  height="30"
+                  rx="6"
+                  stroke="#6ac47a"
+                  stroke-width="2"
+                  fill="none"
+                />
+                <!-- Keyhole circle -->
+                <circle cx="40" cy="50" r="5" fill="#6ac47a" opacity=".7" />
+                <!-- Keyhole stem -->
+                <rect
+                  x="38"
+                  y="50"
+                  width="4"
+                  height="7"
+                  rx="2"
+                  fill="#6ac47a"
+                  opacity=".7"
+                />
+                <!-- Check mark inside body -->
+                <path
+                  d="M32 51l5 5 11-10"
+                  stroke="#a3e6ac"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  opacity=".9"
                 />
               </svg>
             </div>
@@ -175,6 +233,25 @@
               <span class="status-badge__text" id="statusMessage"
                 >Waiting for coins…</span
               >
+            </div>
+
+            <!-- Change-ready badge: shown when balance >= price -->
+            <div
+              class="change-ready-badge"
+              id="changeReadyBadge"
+              aria-live="polite"
+              hidden
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
+                  1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0
+                  000-.7l-2.5-2.5a.5.5 0 00-.7.7L10.3 7.5H4.5z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span id="changeReadyAmount">₱0 change will be dispensed</span>
             </div>
 
             <!-- Coin event toast -->

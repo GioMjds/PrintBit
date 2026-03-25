@@ -17,6 +17,10 @@ void initializePageIdleTimeout({
     console.log(
       '[PAGE IDLE] Confirm page timeout reached, redirecting to home',
     );
+    // Release the coin slot lock before leaving
+    if (coinSlotIsLocked) {
+      socket?.emit('unlockCoinSlot', { reason: 'timeout' });
+    }
     const sessionId = sessionStorage.getItem('printbit.sessionId');
     const sessionToken = sessionStorage.getItem('printbit.sessionToken');
     if (sessionId && sessionToken) {
@@ -39,7 +43,10 @@ void initializePageIdleTimeout({
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
+  emit: (event: string, ...args: unknown[]) => void;
 };
+
+let socket: SocketLike | null = null;
 
 type PageRangeSelection =
   | { type: 'all' }
@@ -125,6 +132,7 @@ let pricingLoaded = false;
 let pricingError: string | null = null;
 let currentBalance = 0;
 let currentPrintQuote: PrintQuote | null = null;
+let coinSlotIsLocked: boolean = false;
 // [PRINTER GUARD] Starts false — fail-safe: UI stays locked until the first
 // /api/printer/status check confirms the printer is online.
 let printerReady = false;
@@ -229,6 +237,39 @@ if (orientationValue) orientationValue.textContent = config.orientation;
 if (paperSizeValue) paperSizeValue.textContent = config.paperSize;
 if (priceValue) priceValue.textContent = 'Loading...';
 
+function applyLockState(locked: boolean): void {
+  coinSlotIsLocked = locked;
+  const changeAmount = Math.max(0, currentBalance - totalPrice);
+
+  const coinPanel = document.querySelector<HTMLElement>('.coin-panel');
+  const coinIcon = document.getElementById('coinIcon');
+  const padlockIcon = document.getElementById('padlockIcon');
+  const changeReadyBadge = document.getElementById('changeReadyBadge');
+  const changeReadyAmount = document.getElementById('changeReadyAmount');
+  const ctaText = document.querySelector<HTMLElement>('.coin-panel__cta');
+
+  if (locked) {
+    coinPanel?.classList.add('coin-panel--locked');
+    if (coinIcon) coinIcon.style.display = 'none';
+    if (padlockIcon) padlockIcon.style.display = '';
+    if (ctaText) ctaText.textContent = 'Coin slot locked — ready to confirm';
+    if (changeReadyAmount) {
+      changeReadyAmount.textContent =
+        changeAmount > 0
+          ? `₱${changeAmount} change will be dispensed`
+          : 'Exact amount — no change';
+    }
+    changeReadyBadge?.removeAttribute('hidden');
+  } else {
+    coinPanel?.classList.remove('coin-panel--locked');
+    if (coinIcon) coinIcon.style.display = '';
+    if (padlockIcon) padlockIcon.style.display = 'none';
+    if (ctaText)
+      ctaText.textContent = 'Insert coins into the kiosk slot to pay';
+    changeReadyBadge?.setAttribute('hidden', '');
+  }
+}
+
 function updateChangeDisplay(balance: number): void {
   const change = balance - totalPrice;
   const hasChange = pricingLoaded && change > 0;
@@ -309,7 +350,19 @@ function updateBalanceUI(balance: number): void {
   currentBalance = balance;
   if (balanceValue) balanceValue.textContent = `₱ ${balance}`;
   updateChangeDisplay(balance);
-  applyConfirmGate(); // [PRINTER GUARD] replaced inline enable/disable logic
+
+  if (pricingLoaded && totalPrice > 0) {
+    const shouldLock = balance >= totalPrice;
+    if (shouldLock !== coinSlotIsLocked) {
+      applyLockState(shouldLock);
+      socket?.emit(
+        shouldLock ? 'lockCoinSlot' : 'unlockCoinSlot',
+        shouldLock ? { threshold: totalPrice } : { reason: 'balance_dropped' },
+      );
+    }
+  }
+
+  applyConfirmGate();
 }
 
 function setCoinEventMessage(message: string): void {
@@ -1084,15 +1137,15 @@ modalConfirmBtn?.addEventListener('click', async () => {
         inkStatus?: string;
         inkReason?: string;
       };
-      const blockingStatus = 
+      const blockingStatus =
         payload.printerStatus ??
         payload.inkStatus ??
         (payload.inkReason ? 'Ink preflight blocked' : undefined);
       if (statusMessage)
         statusMessage.textContent = payload.inkReason
           ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
-          : payload.error ?? 'Payment confirmation failed.';
-      
+          : (payload.error ?? 'Payment confirmation failed.');
+
       isProcessingPayment = false;
       if (blockingStatus) {
         setPrinterReadyState(false, blockingStatus);
@@ -1121,7 +1174,10 @@ modalConfirmBtn?.addEventListener('click', async () => {
       setCoinEventMessage(
         `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required.`,
       );
-    } else if (awaitingSpoolerTerminal && payload.change?.state === 'dispensed') {
+    } else if (
+      awaitingSpoolerTerminal &&
+      payload.change?.state === 'dispensed'
+    ) {
       setPrintingPhase('printing');
       if (statusMessage) {
         statusMessage.textContent =
@@ -1253,7 +1309,7 @@ const ioFactory = (
 ).io;
 
 if (typeof ioFactory === 'function') {
-  const socket = ioFactory();
+  socket = ioFactory();
   socket.on('balance', (amount: unknown) => {
     if (typeof amount === 'number') {
       updateBalanceUI(amount);
@@ -1279,6 +1335,13 @@ if (typeof ioFactory === 'function') {
       typeof (payload as { reason: unknown }).reason === 'string'
         ? (payload as { reason: string }).reason
         : 'Coin rejected by machine safety checks.';
+
+    if (reason === 'slot_locked') {
+      setCoinEventMessage(
+        'Coin returned - slot is locked (balance sufficient).',
+      );
+      return;
+    }
     const printerStatus =
       'printerStatus' in payload &&
       typeof (payload as { printerStatus: unknown }).printerStatus === 'string'
@@ -1685,9 +1748,16 @@ if (typeof ioFactory === 'function') {
         : `Still processing in printer spooler${progressLabel}. Please wait for final confirmation.`;
     }
     if (printingHint) {
-      printingHint.textContent =
-        `Processing is taking longer than usual (over ${timeoutMinutes} min). Do not turn off the machine.`;
+      printingHint.textContent = `Processing is taking longer than usual (over ${timeoutMinutes} min). Do not turn off the machine.`;
     }
+  });
+
+  socket.on('coinSlotLocked', (_payload: unknown) => {
+    applyLockState(true);
+  });
+
+  socket.on('coinSlotUnlocked', (_payload: unknown) => {
+    applyLockState(false);
   });
 }
 
@@ -1721,6 +1791,14 @@ async function boot(): Promise<void> {
     fetchInitialBalance(),
   ]);
   applyConfirmGate();
+
+  // Emit unlock when the user navigates back so the coin slot re-opens
+  const backLink = document.getElementById('backLink');
+  backLink?.addEventListener('click', () => {
+    if (coinSlotIsLocked) {
+      socket?.emit('unlockCoinSlot', { reason: 'navigation' });
+    }
+  });
 }
 
 void boot();
