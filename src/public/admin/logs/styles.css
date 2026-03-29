@@ -7,6 +7,35 @@
   flex-direction: column;
 }
 
+.logs-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs-search__input {
+  min-width: 220px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: rgba(14, 13, 30, 0.9);
+  color: var(--white);
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.logs-search__input::placeholder {
+  color: var(--ink-muted);
+}
+
+.logs-lookup-result {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(105, 111, 199, 0.08);
+  font-size: 12px;
+  color: var(--lavender);
+}
+
 .logs-scroll {
   flex: 1;
   overflow-x: auto;
@@ -42,11 +71,14 @@
   border: 1.5px solid var(--border-2);
   background: var(--surface);
   color: var(--lavender);
-  font-family: "Plus Jakarta Sans", sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 130ms, border-color 130ms, color 130ms;
+  transition:
+    background 130ms,
+    border-color 130ms,
+    color 130ms;
 }
 
 .logs-pagination__btn:hover:not(:disabled) {
@@ -80,7 +112,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: color 120ms, background 120ms;
+  transition:
+    color 120ms,
+    background 120ms;
 }
 
 .log-delete-btn:hover {
@@ -142,7 +176,7 @@
 .logs-table tbody td:first-child {
   color: var(--ink-muted);
   font-size: 12px;
-  font-family: "Courier New", monospace;
+  font-family: 'Courier New', monospace;
 }
 
 /* Log type badges */

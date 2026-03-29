@@ -4,9 +4,7 @@ import path from 'node:path';
 const DEFAULT_PORT = 3000;
 const rawPort = process.env.PORT?.trim();
 const parsedPort =
-  rawPort !== undefined && /^\d+$/.test(rawPort)
-    ? Number(rawPort)
-    : Number.NaN;
+  rawPort !== undefined && /^\d+$/.test(rawPort) ? Number(rawPort) : Number.NaN;
 export const PORT =
   Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535
     ? parsedPort
@@ -89,6 +87,10 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
   {
     route: '/confirm',
     filePath: path.join(PUBLIC_DIR, 'confirm', 'index.html'),
+  },
+  {
+    route: '/receipt/:transactionId',
+    filePath: path.join(PUBLIC_DIR, 'receipt', 'index.html'),
   },
   { route: '/scan', filePath: path.join(PUBLIC_DIR, 'scan', 'index.html') },
   {

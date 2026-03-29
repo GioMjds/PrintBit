@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transaction Receipt · PrintBit</title>
+    <link rel="stylesheet" href="/globals.css" />
+    <link rel="stylesheet" href="/receipt/styles.css" />
+  </head>
+  <body>
+    <main class="receipt-shell">
+      <article class="receipt-card">
+        <h1>PrintBit Receipt</h1>
+        <p class="receipt-subtitle">
+          Reference details for support and refund follow-up.
+        </p>
+
+        <dl class="receipt-grid" id="receiptGrid" hidden>
+          <div>
+            <dt>Transaction ID</dt>
+            <dd id="rTransactionId">—</dd>
+          </div>
+          <div>
+            <dt>Mode</dt>
+            <dd id="rMode">—</dd>
+          </div>
+          <div>
+            <dt>Charged Amount</dt>
+            <dd id="rAmount">—</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd id="rStatus">—</dd>
+          </div>
+          <div>
+            <dt>Settled At</dt>
+            <dd id="rSettledAt">—</dd>
+          </div>
+          <div>
+            <dt>Printed At</dt>
+            <dd id="rPrintedAt">—</dd>
+          </div>
+          <div>
+            <dt>Refund Status</dt>
+            <dd id="rRefundStatus">—</dd>
+          </div>
+          <div>
+            <dt>Generated At</dt>
+            <dd id="rGeneratedAt">—</dd>
+          </div>
+        </dl>
+
+        <p id="receiptMessage" class="receipt-message" aria-live="polite">
+          Loading receipt…
+        </p>
+        <a class="receipt-back" href="/">Back to home</a>
+      </article>
+    </main>
+
+    <script src="/receipt/app.js"></script>
+  </body>
+</html>

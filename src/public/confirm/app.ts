@@ -289,7 +289,6 @@ function applyLockState(locked: boolean): void {
       ctaText.textContent = 'Insert coins into the kiosk slot to pay';
     changeReadyBadge?.setAttribute('hidden', '');
   }
-
 }
 
 function syncCoinSlotLockState(): void {
@@ -435,8 +434,7 @@ function setPrintingPhase(
 
   if (phase === 'manual-review') {
     if (printingSubtitle) {
-      printingSubtitle.textContent =
-        `${modePast} status requires manual review before release.`;
+      printingSubtitle.textContent = `${modePast} status requires manual review before release.`;
     }
     if (printingHint) {
       printingHint.textContent =
@@ -690,6 +688,9 @@ const jamRefundDoneBtn = document.getElementById(
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
+const transactionReference = document.getElementById(
+  'transactionReference',
+) as HTMLElement | null;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
@@ -717,7 +718,8 @@ const persistedPaymentIdempotencyKey =
     ? persistedPaymentIdempotencyKeyRaw.trim()
     : null;
 let lastSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
-let paymentSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
+let paymentSpoolerCorrelationKey: string | null =
+  persistedSpoolerCorrelationKey;
 let paymentIdempotencyKey: string | null = persistedPaymentIdempotencyKey;
 if (!persistedFingerprintMatchesCurrent) {
   sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
@@ -731,6 +733,19 @@ const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
 const COPY_JOB_POLL_INTERVAL_MS = 1_500;
 const COPY_JOB_POLL_TIMEOUT_MS = 5 * 60 * 1_000;
 let spoolerFinalizationTimer: number | null = null;
+let currentTransactionId: string | null = null;
+
+function setTransactionReference(id: string | null): void {
+  currentTransactionId = id && id.trim().length > 0 ? id.trim() : null;
+  if (!transactionReference) return;
+  if (currentTransactionId) {
+    transactionReference.textContent = `Reference ID: ${currentTransactionId}`;
+    transactionReference.removeAttribute('hidden');
+    return;
+  }
+  transactionReference.textContent = 'Reference ID: —';
+  transactionReference.setAttribute('hidden', '');
+}
 
 type SpoolerFailureEvent = {
   jobStatus: string;
@@ -957,6 +972,7 @@ function hideOverlay(el: HTMLElement | null): void {
 }
 
 function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
+  setTransactionReference(ev.transactionId);
   hideOverlay(printingOverlay);
   hideOverlay(thankYouOverlay);
 
@@ -1011,6 +1027,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
 }
 
 function clearConfirmSessionStorage(): void {
+  setTransactionReference(null);
   clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
@@ -1318,8 +1335,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           payload.printerStatus ??
           payload.inkStatus ??
           (payload.inkReason ? 'Ink preflight blocked' : undefined);
-        if (statusMessage)
-          statusMessage.textContent = actionableMessage;
+        if (statusMessage) statusMessage.textContent = actionableMessage;
 
         isProcessingPayment = false;
         if (blockingStatus) {
@@ -1331,12 +1347,18 @@ modalConfirmBtn?.addEventListener('click', async () => {
       }
 
       const payload = (await response.json()) as {
+        transactionId?: string;
         change?: {
           state?: 'none' | 'dispensed' | 'failed';
           requested?: number;
           message?: string;
         };
       };
+      setTransactionReference(
+        typeof payload.transactionId === 'string'
+          ? payload.transactionId
+          : null,
+      );
       const awaitingSpoolerTerminal =
         lastSpoolerCorrelationKey === spoolerCorrelationKey;
       if (!awaitingSpoolerTerminal) {
@@ -1755,6 +1777,7 @@ if (typeof ioFactory === 'function') {
       return;
     }
 
+    setTransactionReference(event.transactionId ?? currentTransactionId);
     clearSpoolerFinalizationTimer();
     hideOverlay(printingOverlay);
     showOverlay(thankYouOverlay);
@@ -1910,6 +1933,7 @@ if (typeof ioFactory === 'function') {
     }
     if (spoolerTimedOut) return;
 
+    setTransactionReference(event.transactionId ?? currentTransactionId);
     activeSpoolerCorrelationKey = null;
     spoolerTimedOut = true;
     setPrintingPhase('printing');

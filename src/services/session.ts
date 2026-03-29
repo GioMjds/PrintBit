@@ -119,6 +119,7 @@ const ALLOWED_TYPES = new Map<string, string>([
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB
 
 // Session limits
+const SESSION_EXPIRY_ENABLED = false;
 const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SESSION_WARNING_SECONDS = 60;
 const MAX_FILES_PER_SESSION = 10;
@@ -140,14 +141,17 @@ export class SessionStore {
   constructor(uploadDir = 'uploads') {
     this.uploadDir = uploadDir;
     fs.mkdirSync(uploadDir, { recursive: true });
-    this.cleanupTimer = setInterval(
-      () => this.cleanupExpired(),
-      CLEANUP_INTERVAL_MS,
-    );
+    if (SESSION_EXPIRY_ENABLED) {
+      this.cleanupTimer = setInterval(
+        () => this.cleanupExpired(),
+        CLEANUP_INTERVAL_MS,
+      );
+    }
   }
 
   /** Check whether a session is still within its TTL window. */
   isSessionExpired(session: Session): boolean {
+    if (!SESSION_EXPIRY_ENABLED) return false;
     return Date.now() - session.lastActivityAt.getTime() > SESSION_TTL_MS;
   }
 
@@ -427,10 +431,19 @@ export class SessionStore {
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
     const freshUrl = buildUploadUrl(publicBaseUrl, session.token);
     const freshPublicUrl = buildPublicUploadUrl(session.token);
+    const ttlMetadata = SESSION_EXPIRY_ENABLED
+      ? {
+          expiresAt: new Date(this.getExpiryTimestamp(session)),
+          remainingSeconds: this.getRemainingSeconds(session),
+          ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
+          warningThresholdSeconds: SESSION_WARNING_SECONDS,
+        }
+      : {};
     return {
       ...session,
       uploadUrl: freshUrl,
       ...(freshPublicUrl ? { publicUploadUrl: freshPublicUrl } : {}),
+      ...ttlMetadata,
       expiresAt: new Date(this.getExpiryTimestamp(session)),
       remainingSeconds: this.getRemainingSeconds(session),
       ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
@@ -565,6 +578,7 @@ export class SessionStore {
 
   /** Remove expired sessions and their uploaded files from disk. */
   private cleanupExpired(): void {
+    if (!SESSION_EXPIRY_ENABLED) return;
     for (const [id, session] of this.sessions.entries()) {
       if (this.isSessionExpired(session)) {
         void this.pruneExpiredSession(id, session);

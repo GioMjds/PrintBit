@@ -428,6 +428,12 @@ export class AdminController {
       this.handleGetLogs,
     );
     this.router.get(
+      '/transactions/:transactionId',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetTransactionById,
+    );
+    this.router.get(
       '/logs/export.csv',
       requireAdminLocalAccess,
       requireAdminPin,
@@ -596,10 +602,9 @@ export class AdminController {
       'printer_malfunction_detected',
       'printer_midjob_malfunction',
     ]);
-    const jamEvents = this.adminService.listLogsByTypes([...jamLogTypes]).filter(
-      (entry) =>
-      jamLogTypes.has(entry.type),
-    );
+    const jamEvents = this.adminService
+      .listLogsByTypes([...jamLogTypes])
+      .filter((entry) => jamLogTypes.has(entry.type));
     const nowMs = Date.now();
     const recentJamEvents = jamEvents.filter((entry) => {
       const tsMs = Date.parse(entry.timestamp);
@@ -844,11 +849,9 @@ export class AdminController {
           incoming.lowThresholdPercent < 0 ||
           incoming.lowThresholdPercent > 100
         ) {
-          return res
-            .status(400)
-            .json({
-              error: 'inkMonitoring.lowThresholdPercent must be 0..100.',
-            });
+          return res.status(400).json({
+            error: 'inkMonitoring.lowThresholdPercent must be 0..100.',
+          });
         }
         next.lowThresholdPercent = Math.floor(incoming.lowThresholdPercent);
       }
@@ -1157,7 +1160,105 @@ export class AdminController {
     const limit = Number.isFinite(rawLimit)
       ? Math.max(1, Math.min(1000, Math.floor(rawLimit)))
       : 200;
-    res.json({ logs: this.adminService.listLogs(limit) });
+    const transactionIdRaw =
+      typeof req.query.transactionId === 'string'
+        ? req.query.transactionId
+        : '';
+    const transactionId = transactionIdRaw.trim();
+    if (!transactionId) {
+      res.json({ logs: this.adminService.listLogs(limit) });
+      return;
+    }
+
+    const matchingLogs = this.adminService
+      .listAllLogs()
+      .filter((log) => {
+        const metaTransactionId = log.meta?.transactionId;
+        if (
+          typeof metaTransactionId === 'string' &&
+          metaTransactionId === transactionId
+        ) {
+          return true;
+        }
+        const messageHasId = log.message.includes(transactionId);
+        return messageHasId;
+      })
+      .slice(0, limit);
+    res.json({ logs: matchingLogs });
+  };
+
+  private handleGetTransactionById = (req: Request, res: Response) => {
+    const transactionId = String(req.params.transactionId ?? '').trim();
+    if (!transactionId) {
+      return res.status(400).json({ error: 'transactionId is required.' });
+    }
+
+    const logs = this.adminService
+      .listAllLogs()
+      .filter((log) => log.meta?.transactionId === transactionId);
+    const ledgerEntries = db.data!.financialLedger.filter(
+      (entry) => entry.referenceId === transactionId,
+    );
+    const recoverySession =
+      db.data!.recovery.sessions.find(
+        (session) => session.id === transactionId,
+      ) ?? null;
+    const pendingRefunds = db.data!.pendingRefunds.filter((entry) => {
+      const ref = entry.jobContext.transactionId;
+      return typeof ref === 'string' && ref === transactionId;
+    });
+
+    const found =
+      logs.length > 0 ||
+      ledgerEntries.length > 0 ||
+      recoverySession !== null ||
+      pendingRefunds.length > 0;
+
+    if (!found) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+
+    const chargedAmount =
+      ledgerEntries.find((entry) => entry.eventType === 'job_completed')
+        ?.amount ??
+      recoverySession?.chargedAmount ??
+      pendingRefunds[0]?.chargedAmount ??
+      null;
+    const mode =
+      (recoverySession?.mode ??
+        (typeof logs[0]?.meta?.mode === 'string' ? logs[0].meta.mode : null)) ||
+      null;
+    const settledAt =
+      recoverySession?.settledAt ??
+      logs.find((entry) => entry.type === 'payment_confirmed')?.timestamp ??
+      null;
+
+    return res.json({
+      transactionId,
+      mode,
+      chargedAmount,
+      settledAt,
+      spoolerPhase: recoverySession?.phase ?? null,
+      reconciliationAction: recoverySession?.reconciliationAction ?? null,
+      pendingRefunds: pendingRefunds.map((entry) => ({
+        id: entry.id,
+        status: entry.status,
+        chargedAmount: entry.chargedAmount,
+        reason: entry.reason,
+      })),
+      ledgerEntries: ledgerEntries.map((entry) => ({
+        id: entry.id,
+        eventType: entry.eventType,
+        amount: entry.amount,
+        timestamp: entry.timestamp,
+      })),
+      relatedLogs: logs.slice(0, 30).map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        message: entry.message,
+        timestamp: entry.timestamp,
+      })),
+    });
   };
 
   private handleExportLogs = (_req: Request, res: Response) => {

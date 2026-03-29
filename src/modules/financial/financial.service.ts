@@ -132,7 +132,10 @@ async function persistLegacyUploadWithStaging(
   await fs.promises.mkdir(uploadsDir, { recursive: true });
   await fs.promises.mkdir(LEGACY_UPLOAD_STAGING_DIR, { recursive: true });
 
-  const stagingPath = path.join(LEGACY_UPLOAD_STAGING_DIR, `${storedFilename}.part`);
+  const stagingPath = path.join(
+    LEGACY_UPLOAD_STAGING_DIR,
+    `${storedFilename}.part`,
+  );
   await fs.promises.writeFile(stagingPath, buffer, { flag: 'wx' });
 
   try {
@@ -298,6 +301,54 @@ export class FinancialService {
     });
   };
 
+  getTransactionReceipt = (req: Request, res: Response): Response => {
+    const transactionId = String(req.params.transactionId ?? '').trim();
+    if (!transactionId) {
+      return res.status(400).json({ error: 'transactionId is required.' });
+    }
+
+    const ledgerEntries = db
+      .data!.financialLedger.filter(
+        (entry) => entry.referenceId === transactionId,
+      )
+      .map((entry) => ({
+        eventType: entry.eventType,
+        amount: entry.amount,
+        timestamp: entry.timestamp,
+      }));
+    const jobCompleted = ledgerEntries.find(
+      (entry) => entry.eventType === 'job_completed',
+    );
+    const recoverySession =
+      db.data!.recovery.sessions.find(
+        (session) => session.id === transactionId,
+      ) ?? null;
+    const pendingRefund = db.data!.pendingRefunds.find((entry) => {
+      const ref = entry.jobContext.transactionId;
+      return typeof ref === 'string' && ref === transactionId;
+    });
+
+    if (!jobCompleted && !recoverySession && !pendingRefund) {
+      return res.status(404).json({ error: 'Receipt not found.' });
+    }
+
+    return res.json({
+      transactionId,
+      mode: recoverySession?.mode ?? null,
+      chargedAmount:
+        jobCompleted?.amount ??
+        recoverySession?.chargedAmount ??
+        pendingRefund?.chargedAmount ??
+        null,
+      status: recoverySession?.phase ?? null,
+      settledAt: recoverySession?.settledAt ?? null,
+      printedAt: recoverySession?.spoolerTerminalAt ?? null,
+      refundStatus: pendingRefund?.status ?? null,
+      refundReason: pendingRefund?.reason ?? null,
+      generatedAt: new Date().toISOString(),
+    });
+  };
+
   resetBalance = async (_req: Request, res: Response): Promise<void> => {
     const previousBalance = db.data!.balance;
     db.data!.balance = 0;
@@ -319,7 +370,10 @@ export class FinancialService {
     });
   };
 
-  addTestCoin = async (req: Request, res: Response): Promise<Response | void> => {
+  addTestCoin = async (
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> => {
     const { value } = req.body as { value?: unknown };
     const coinValue =
       typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -384,7 +438,10 @@ export class FinancialService {
     });
   };
 
-  uploadLegacy = async (req: Request, res: Response): Promise<Response | void> => {
+  uploadLegacy = async (
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> => {
     if (!req.file) {
       await adminService.appendAdminLog(
         'upload_failed',
@@ -422,7 +479,10 @@ export class FinancialService {
     res.status(200).json({ filename: safeFilename });
   };
 
-  printLegacy = async (req: Request, res: Response): Promise<Response | void> => {
+  printLegacy = async (
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> => {
     const { filename } = req.body as { filename?: string };
 
     if (!filename) {
@@ -498,8 +558,7 @@ export class FinancialService {
           filename,
           printerStatus: legacyTelemetry.status,
           inkCode: legacyInkPreflight.code,
-          inkReason:
-            legacyInkPreflight.reason ?? 'Unknown ink policy reason',
+          inkReason: legacyInkPreflight.reason ?? 'Unknown ink policy reason',
           telemetryAvailable: legacyInkPreflight.telemetryAvailable,
           inkDetectionMethod: legacyTelemetry.inkDetectionMethod,
         },
@@ -653,7 +712,8 @@ export class FinancialService {
       return;
     }
 
-    const { amount, mode, sessionId, documentId } = req.body as ConfirmPaymentBody;
+    const { amount, mode, sessionId, documentId } =
+      req.body as ConfirmPaymentBody;
     const spoolerCorrelationKey =
       typeof req.body?.spoolerCorrelationKey === 'string' &&
       req.body.spoolerCorrelationKey.trim()
@@ -902,7 +962,9 @@ export class FinancialService {
     }
 
     const telemetry =
-      mode === 'print' ? await refreshPrinterTelemetry() : getPrinterTelemetry();
+      mode === 'print'
+        ? await refreshPrinterTelemetry()
+        : getPrinterTelemetry();
     let jobDispatchedAt: string | null = null;
 
     if (mode === 'print' && serverFilename && printOptions) {
@@ -945,7 +1007,9 @@ export class FinancialService {
           releaseIdempotencyKey(idempotencyKey, 'POST:/api/confirm-payment');
         }
         res.status(409).json({
-          error: inkPreflight.reason ?? 'Printer ink state is not ready for printing.',
+          error:
+            inkPreflight.reason ??
+            'Printer ink state is not ready for printing.',
           printerStatus: telemetry.status,
           inkStatus: inkPreflight.code,
           inkReason: inkPreflight.reason,
@@ -1100,7 +1164,8 @@ export class FinancialService {
             },
           );
         } else {
-          const fallbackCleanup = await deleteUploadByStoredFilename(serverFilename);
+          const fallbackCleanup =
+            await deleteUploadByStoredFilename(serverFilename);
           if (fallbackCleanup.deleted) {
             cleaned = true;
             await adminService.appendAdminLog(
@@ -1180,6 +1245,7 @@ export class FinancialService {
 
     sendResponse(200, {
       ok: true,
+      transactionId,
       chargedAmount: settlement.chargedAmount,
       balance: settlement.remainingBalance,
       earnings: settlement.earnings,

@@ -9,6 +9,7 @@ const builds = [
   'esbuild src/public/upload/app.ts --bundle --outfile=src/public/upload/app.js',
   'esbuild src/public/scan/app.ts --bundle --outfile=src/public/scan/app.js',
   'esbuild src/public/feedback/app.ts --bundle --outfile=src/public/feedback/app.js',
+  'esbuild src/public/receipt/app.ts --bundle --outfile=src/public/receipt/app.js',
   'esbuild src/public/admin/dashboard/app.ts --bundle --outfile=src/public/admin/dashboard/app.js',
   'esbuild src/public/admin/earnings/app.ts --bundle --outfile=src/public/admin/earnings/app.js',
   'esbuild src/public/admin/coin-stats/app.ts --bundle --outfile=src/public/admin/coin-stats/app.js',

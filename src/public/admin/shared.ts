@@ -101,7 +101,12 @@ export type SummaryResponse = {
         level: number | null;
         status: 'ok' | 'low' | 'empty' | 'unknown';
       }>;
-      inkDetectionMethod?: 'snmp' | 'vendor-wmi' | 'printer-property' | 'error-state' | 'none';
+      inkDetectionMethod?:
+        | 'snmp'
+        | 'vendor-wmi'
+        | 'printer-property'
+        | 'error-state'
+        | 'none';
       targetPrinterName?: string | null;
       targetIsDefault?: boolean;
       inkTelemetryAvailable?: boolean;
@@ -162,6 +167,7 @@ export type LogsResponse = {
     timestamp: string;
     type: string;
     message: string;
+    meta?: Record<string, string | number | boolean | null>;
   }>;
 };
 
