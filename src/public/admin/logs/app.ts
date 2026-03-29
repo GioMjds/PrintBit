@@ -128,11 +128,17 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-async function loadData(): Promise<void> {
+async function loadData(options?: {
+  transactionId?: string;
+  requestSeq?: number;
+}): Promise<void> {
+  const requestedTransactionId =
+    options?.transactionId ?? activeTransactionIdFilter;
+  const requestSeq = options?.requestSeq;
   const params = new URLSearchParams({ limit: '1000' });
 
-  if (activeTransactionIdFilter) {
-    params.set('transactionId', activeTransactionIdFilter);
+  if (requestedTransactionId) {
+    params.set('transactionId', requestedTransactionId);
   }
   const res = await apiFetch(`/api/admin/logs?${params.toString()}`);
   if (!res.ok) {
@@ -140,6 +146,12 @@ async function loadData(): Promise<void> {
     throw new Error('Failed to load logs.');
   }
   const data = (await res.json()) as LogsResponse;
+  if (
+    typeof requestSeq === 'number' &&
+    requestSeq !== transactionSearchRequestSeq
+  ) {
+    return;
+  }
   allLogs = data.logs;
   totalLogs = allLogs.length;
   if (currentPage > totalPages()) currentPage = totalPages();
@@ -196,14 +208,14 @@ function applyTransactionSearch(): void {
   if (!activeTransactionIdFilter) {
     showLookupResult(null);
     setMessage('Showing all logs.');
-    void loadData().catch((e: unknown) =>
+    void loadData({ requestSeq }).catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Search failed.'),
     );
     return;
   }
 
   setMessage(`Searching transaction: ${searchedTransactionId}`);
-  void loadData()
+  void loadData({ transactionId: searchedTransactionId, requestSeq })
     .then(async () => {
       if (requestSeq !== transactionSearchRequestSeq) return;
       await loadTransactionSummary(searchedTransactionId);
@@ -306,12 +318,13 @@ transactionSearchInput?.addEventListener('keydown', (event: KeyboardEvent) => {
   applyTransactionSearch();
 });
 transactionSearchClearBtn?.addEventListener('click', () => {
+  transactionSearchRequestSeq++;
   if (transactionSearchInput) transactionSearchInput.value = '';
   activeTransactionIdFilter = '';
   currentPage = 1;
   showLookupResult(null);
   setMessage('Showing all logs.');
-  void loadData().catch((e: unknown) =>
+  void loadData({ requestSeq: transactionSearchRequestSeq }).catch((e: unknown) =>
     setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
   );
 });
