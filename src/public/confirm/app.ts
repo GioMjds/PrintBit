@@ -688,6 +688,8 @@ const thankYouDoneBtn = document.getElementById(
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 let lastSpoolerCorrelationKey: string | null = null;
+let paymentSpoolerCorrelationKey: string | null = null;
+let paymentIdempotencyKey: string | null = null;
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 let latestPrinterStatusLabel = 'Checking...';
 let spoolerTimedOut = false;
@@ -762,6 +764,23 @@ function createSpoolerCorrelationKey(): string {
     return crypto.randomUUID();
   }
   return `spooler_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createPaymentIdempotencyKey(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
+  }
+  return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getOrCreatePaymentIdempotencyKey(): string {
+  if (!paymentIdempotencyKey) {
+    paymentIdempotencyKey = createPaymentIdempotencyKey();
+  }
+  return paymentIdempotencyKey;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -1160,14 +1179,20 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     // Print flow: existing behavior
     if (statusMessage) statusMessage.textContent = 'Sending to printer…';
-    const spoolerCorrelationKey = createSpoolerCorrelationKey();
+    const spoolerCorrelationKey =
+      paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
+    paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+    const requestIdempotencyKey = getOrCreatePaymentIdempotencyKey();
     activeSpoolerCorrelationKey = spoolerCorrelationKey;
     lastSpoolerCorrelationKey = spoolerCorrelationKey;
 
     try {
       const response = await fetchWithTimeout('/api/confirm-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': requestIdempotencyKey,
+        },
         body: JSON.stringify({
           amount: totalPrice,
           mode: config.mode,
@@ -1187,6 +1212,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
         clearSpoolerFinalizationTimer();
         activeSpoolerCorrelationKey = null;
         lastSpoolerCorrelationKey = null;
+        paymentSpoolerCorrelationKey = null;
+        paymentIdempotencyKey = null;
         hideOverlay(printingOverlay);
         const payload = (await response.json()) as {
           error?: string;
@@ -1219,6 +1246,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           message?: string;
         };
       };
+      paymentIdempotencyKey = null;
       const awaitingSpoolerTerminal =
         lastSpoolerCorrelationKey === spoolerCorrelationKey;
 
@@ -1266,6 +1294,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (!isAbortError(error)) {
         activeSpoolerCorrelationKey = null;
         lastSpoolerCorrelationKey = null;
+        paymentSpoolerCorrelationKey = null;
+        paymentIdempotencyKey = null;
       }
     }
   }
@@ -1279,6 +1309,7 @@ async function pollCopyJob(
   jobId: string,
 ): Promise<{ state: 'succeeded' | 'failed' | 'cancelled'; reason?: string }> {
   const startedAt = Date.now();
+  let timeoutReason: string | undefined;
   while (Date.now() - startedAt < COPY_JOB_POLL_TIMEOUT_MS) {
     try {
       const res = await fetchWithTimeout(
@@ -1286,7 +1317,8 @@ async function pollCopyJob(
         { method: 'GET' },
       );
       if (!res.ok) {
-        return { state: 'failed' };
+        await wait(COPY_JOB_POLL_INTERVAL_MS);
+        continue;
       }
       const data = (await res.json()) as {
         state: string;
@@ -1325,19 +1357,20 @@ async function pollCopyJob(
         };
       }
     } catch (error) {
-      return {
-        state: 'failed',
-        reason: isAbortError(error)
-          ? 'Copy status request timed out.'
-          : undefined,
-      };
+      if (isAbortError(error)) {
+        timeoutReason = 'Copy status request timed out.';
+      }
+      await wait(COPY_JOB_POLL_INTERVAL_MS);
+      continue;
     }
     await wait(COPY_JOB_POLL_INTERVAL_MS);
   }
 
   return {
     state: 'failed',
-    reason: 'Copy job status timed out. Please check the printer and retry.',
+    reason:
+      timeoutReason ??
+      'Copy job status timed out. Please check the printer and retry.',
   };
 }
 
@@ -1673,6 +1706,8 @@ if (typeof ioFactory === 'function') {
     clearSpoolerFinalizationTimer();
     hideOverlay(printingOverlay);
     showOverlay(thankYouOverlay);
+    paymentSpoolerCorrelationKey = null;
+    paymentIdempotencyKey = null;
     activeSpoolerCorrelationKey = null;
     if (statusMessage) {
       statusMessage.textContent = event.printerName
@@ -1763,6 +1798,8 @@ if (typeof ioFactory === 'function') {
     };
 
     clearSpoolerFinalizationTimer();
+    paymentSpoolerCorrelationKey = null;
+    paymentIdempotencyKey = null;
     activeSpoolerCorrelationKey = null;
     lastSpoolerCorrelationKey = null;
     spoolerTimedOut = false;
@@ -1842,22 +1879,7 @@ if (typeof ioFactory === 'function') {
     if (printingHint) {
       printingHint.textContent = `Processing is taking longer than usual (over ${timeoutMinutes} min). Do not turn off the machine.`;
     }
-
     clearSpoolerFinalizationTimer();
-    // Invoke finalization logic immediately
-    lastSpoolerCorrelationKey = null;
-    spoolerTimedOut = false;
-    isProcessingPayment = false;
-    hideOverlay(printingOverlay);
-    setPrintingPhase('failed');
-    if (statusMessage) {
-      statusMessage.textContent =
-        'Printer confirmation timed out. Please verify output and contact staff if needed.';
-    }
-    setCoinEventMessage(
-      'Printer confirmation timed out. Transaction review may be required.',
-    );
-    applyConfirmGate();
   });
 
   socket.on('coinSlotLocked', (_payload: unknown) => {
