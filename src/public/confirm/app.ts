@@ -127,6 +127,10 @@ const DEFAULT_PRICING: PricingResponse = {
   colorSurcharge: 2,
   scanDocument: 5,
 };
+const PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY =
+  'printbit.confirmPaymentIdempotencyKey';
+const PENDING_PAYMENT_SPOOLER_STORAGE_KEY =
+  'printbit.confirmPaymentSpoolerCorrelationKey';
 let totalPrice = 0;
 let pricingLoaded = false;
 let pricingError: string | null = null;
@@ -308,7 +312,7 @@ function updateChangeDisplay(balance: number): void {
 // [PRINTER GUARD] Single source of truth for whether the user can proceed.
 // Called whenever any of the three gating conditions change:
 //   printerReady, pricingLoaded, or currentBalance.
-function applyConfirmGate(): void {
+function applyConfirmGate(statusOverride?: string): void {
   if (!confirmBtn || !statusMessage) return;
   if (isProcessingPayment) {
     confirmBtn.disabled = true;
@@ -328,7 +332,8 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent = pricingError ?? 'Loading pricing...';
+    statusMessage.textContent =
+      statusOverride ?? pricingError ?? 'Loading pricing...';
     return;
   }
 
@@ -340,7 +345,9 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent = `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
+    statusMessage.textContent =
+      statusOverride ??
+      `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
     return;
   }
 
@@ -353,7 +360,7 @@ function applyConfirmGate(): void {
       modalConfirmBtn.setAttribute('aria-disabled', 'false');
     }
     statusMessage.textContent =
-      'Sufficient balance detected. You can confirm now.';
+      statusOverride ?? 'Sufficient balance detected. You can confirm now.';
   } else {
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
@@ -362,7 +369,8 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent = `Insert more coins: ₱ ${needed} remaining.`;
+    statusMessage.textContent =
+      statusOverride ?? `Insert more coins: ₱ ${needed} remaining.`;
   }
 }
 
@@ -687,9 +695,25 @@ const thankYouDoneBtn = document.getElementById(
 ) as HTMLButtonElement;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
-let lastSpoolerCorrelationKey: string | null = null;
-let paymentSpoolerCorrelationKey: string | null = null;
-let paymentIdempotencyKey: string | null = null;
+const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
+  PENDING_PAYMENT_SPOOLER_STORAGE_KEY,
+);
+const persistedSpoolerCorrelationKey =
+  persistedSpoolerCorrelationKeyRaw &&
+  persistedSpoolerCorrelationKeyRaw.trim().length > 0
+    ? persistedSpoolerCorrelationKeyRaw.trim()
+    : null;
+const persistedPaymentIdempotencyKeyRaw = sessionStorage.getItem(
+  PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
+);
+const persistedPaymentIdempotencyKey =
+  persistedPaymentIdempotencyKeyRaw &&
+  persistedPaymentIdempotencyKeyRaw.trim().length > 0
+    ? persistedPaymentIdempotencyKeyRaw.trim()
+    : null;
+let lastSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
+let paymentSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
+let paymentIdempotencyKey: string | null = persistedPaymentIdempotencyKey;
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 let latestPrinterStatusLabel = 'Checking...';
 let spoolerTimedOut = false;
@@ -748,12 +772,16 @@ const CANONICAL_COIN_REJECTION_FAULT_REASONS = new Set([
   'printer not connected',
 ]);
 
-function setPrinterReadyState(ready: boolean, status?: string): void {
+function setPrinterReadyState(
+  ready: boolean,
+  status?: string,
+  statusMessageOverride?: string,
+): void {
   printerReady = ready;
   if (typeof status === 'string' && status.trim()) {
     latestPrinterStatusLabel = status.trim();
   }
-  applyConfirmGate();
+  applyConfirmGate(statusMessageOverride);
 }
 
 function createSpoolerCorrelationKey(): string {
@@ -779,6 +807,7 @@ function createPaymentIdempotencyKey(): string {
 function getOrCreatePaymentIdempotencyKey(): string {
   if (!paymentIdempotencyKey) {
     paymentIdempotencyKey = createPaymentIdempotencyKey();
+    syncPendingPaymentSessionState();
   }
   return paymentIdempotencyKey;
 }
@@ -799,6 +828,32 @@ function clearSpoolerFinalizationTimer(): void {
     window.clearTimeout(spoolerFinalizationTimer);
     spoolerFinalizationTimer = null;
   }
+}
+
+function syncPendingPaymentSessionState(): void {
+  if (paymentIdempotencyKey) {
+    sessionStorage.setItem(
+      PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
+      paymentIdempotencyKey,
+    );
+  } else {
+    sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+  }
+
+  if (paymentSpoolerCorrelationKey) {
+    sessionStorage.setItem(
+      PENDING_PAYMENT_SPOOLER_STORAGE_KEY,
+      paymentSpoolerCorrelationKey,
+    );
+  } else {
+    sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+  }
+}
+
+function clearPendingPaymentSessionState(): void {
+  paymentIdempotencyKey = null;
+  paymentSpoolerCorrelationKey = null;
+  syncPendingPaymentSessionState();
 }
 
 async function fetchWithTimeout(
@@ -931,6 +986,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
 }
 
 function clearConfirmSessionStorage(): void {
+  clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
   sessionStorage.removeItem('printbit.uploadedFile');
@@ -998,7 +1054,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   isProcessingPayment = true;
   clearSpoolerFinalizationTimer();
   activeSpoolerCorrelationKey = null;
-  lastSpoolerCorrelationKey = null;
+  lastSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
   spoolerTimedOut = false;
 
   showOverlay(printingOverlay);
@@ -1182,6 +1238,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
     const spoolerCorrelationKey =
       paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
     paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+    syncPendingPaymentSessionState();
     const requestIdempotencyKey = getOrCreatePaymentIdempotencyKey();
     activeSpoolerCorrelationKey = spoolerCorrelationKey;
     lastSpoolerCorrelationKey = spoolerCorrelationKey;
@@ -1212,8 +1269,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         clearSpoolerFinalizationTimer();
         activeSpoolerCorrelationKey = null;
         lastSpoolerCorrelationKey = null;
-        paymentSpoolerCorrelationKey = null;
-        paymentIdempotencyKey = null;
+        clearPendingPaymentSessionState();
         hideOverlay(printingOverlay);
         const payload = (await response.json()) as {
           error?: string;
@@ -1221,21 +1277,22 @@ modalConfirmBtn?.addEventListener('click', async () => {
           inkStatus?: string;
           inkReason?: string;
         };
+        const actionableMessage = payload.inkReason
+          ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
+          : (payload.error ?? 'Payment confirmation failed.');
         const blockingStatus =
           payload.printerStatus ??
           payload.inkStatus ??
           (payload.inkReason ? 'Ink preflight blocked' : undefined);
         if (statusMessage)
-          statusMessage.textContent = payload.inkReason
-            ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
-            : (payload.error ?? 'Payment confirmation failed.');
+          statusMessage.textContent = actionableMessage;
 
         isProcessingPayment = false;
         if (blockingStatus) {
-          setPrinterReadyState(false, blockingStatus);
+          setPrinterReadyState(false, blockingStatus, actionableMessage);
           return;
         }
-        applyConfirmGate();
+        applyConfirmGate(actionableMessage);
         return;
       }
 
@@ -1246,9 +1303,11 @@ modalConfirmBtn?.addEventListener('click', async () => {
           message?: string;
         };
       };
-      paymentIdempotencyKey = null;
       const awaitingSpoolerTerminal =
         lastSpoolerCorrelationKey === spoolerCorrelationKey;
+      if (!awaitingSpoolerTerminal) {
+        clearPendingPaymentSessionState();
+      }
 
       if (awaitingSpoolerTerminal && payload.change?.state === 'failed') {
         setPrintingPhase('failed');
@@ -1294,8 +1353,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (!isAbortError(error)) {
         activeSpoolerCorrelationKey = null;
         lastSpoolerCorrelationKey = null;
-        paymentSpoolerCorrelationKey = null;
-        paymentIdempotencyKey = null;
+        clearPendingPaymentSessionState();
       }
     }
   }
@@ -1342,14 +1400,10 @@ async function pollCopyJob(
       if (
         state === 'succeeded' ||
         state === 'failed' ||
-        state === 'cancelled' ||
-        state === 'cancel_requested'
+        state === 'cancelled'
       ) {
         return {
-          state:
-            state === 'cancel_requested'
-              ? 'cancelled'
-              : (state as 'succeeded' | 'failed' | 'cancelled'),
+          state: state as 'succeeded' | 'failed' | 'cancelled',
           reason:
             typeof failure?.message === 'string' && failure.message.trim()
               ? failure.message
@@ -1706,8 +1760,7 @@ if (typeof ioFactory === 'function') {
     clearSpoolerFinalizationTimer();
     hideOverlay(printingOverlay);
     showOverlay(thankYouOverlay);
-    paymentSpoolerCorrelationKey = null;
-    paymentIdempotencyKey = null;
+    clearPendingPaymentSessionState();
     activeSpoolerCorrelationKey = null;
     if (statusMessage) {
       statusMessage.textContent = event.printerName
@@ -1798,8 +1851,7 @@ if (typeof ioFactory === 'function') {
     };
 
     clearSpoolerFinalizationTimer();
-    paymentSpoolerCorrelationKey = null;
-    paymentIdempotencyKey = null;
+    clearPendingPaymentSessionState();
     activeSpoolerCorrelationKey = null;
     lastSpoolerCorrelationKey = null;
     spoolerTimedOut = false;
