@@ -118,8 +118,8 @@ io.on('connection', (socket) => {
 
 async function start() {
   await initDB();
-  const startupTrustedTime = await verifyTrustedClockSync();
   const startupMarker = await markRecoveryStartup('server_start');
+  const startupTrustedTime = await verifyTrustedClockSync();
   const recoverySummary = await reconcileRecoverySessionsOnStartup();
   const recoveryStatus = getRecoveryStatusSnapshot();
   if (

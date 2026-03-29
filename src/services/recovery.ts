@@ -97,6 +97,7 @@ function baseRecoveryEntry(input: {
     reconciliationAction: 'none',
     reconciliationReason: null,
     lastError: null,
+    wasPresentAtStartup: false,
     context: sanitizeLogMeta(input.context),
   };
 }
@@ -296,6 +297,13 @@ export async function reconcileRecoverySessionsOnStartup(): Promise<StartupRecov
     errors: 0,
   };
 
+  // Mark all existing sessions as present at startup
+  for (const entry of sessions) {
+    if (entry.wasPresentAtStartup === undefined) {
+      entry.wasPresentAtStartup = true;
+    }
+  }
+
   for (const entry of sessions) {
     if (entry.phase === 'reconciled') continue;
     result.processedSessions += 1;
@@ -406,6 +414,27 @@ export async function reconcileRecoverySessionsOnStartup(): Promise<StartupRecov
             spoolerJobId: entry.spoolerJobId,
             recoveryPhase: entry.phase,
             startupReconciliation: true,
+          },
+        });
+
+        // Checkpoint the refund marker immediately after creation to ensure durability
+        await checkpointRecoverySession({
+          transactionId: entry.id,
+          mode: entry.mode,
+          phase: entry.phase,
+          requiredAmount: entry.requiredAmount,
+          chargedAmount: chargedAmount,
+          sessionId: entry.sessionId,
+          documentId: entry.documentId,
+          spoolerCorrelationKey: entry.spoolerCorrelationKey,
+          spoolerJobId: entry.spoolerJobId,
+          jobDispatchedAt: entry.jobDispatchedAt,
+          settledAt: entry.settledAt,
+          spoolerTerminalAt: entry.spoolerTerminalAt,
+          context: {
+            refundId: refundOutcome.entry.id,
+            refundCreated: refundOutcome.created,
+            refundAttemptedAt: now,
           },
         });
 
@@ -524,7 +553,7 @@ export function getRecoveryStatusSnapshot(): RecoveryStatusSnapshot {
   ).length;
   const reconciled = sessions.length - inFlight;
   const startupPending = sessions.filter(
-    (entry) => entry.phase !== 'reconciled' && !entry.startupReconciled,
+    (entry) => entry.phase !== 'reconciled' && !entry.startupReconciled && entry.wasPresentAtStartup === true,
   ).length;
   const autoRefunded = sessions.filter(
     (entry) => entry.reconciliationAction === 'auto_refund',

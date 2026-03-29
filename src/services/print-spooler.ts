@@ -324,36 +324,43 @@ export async function monitorSpoolerJob(
             ? jobContext.transactionId
             : null;
         if (transactionId) {
-          await checkpointRecoverySession({
-            transactionId,
-            mode: 'print',
-            phase: 'reconciled',
-            requiredAmount: chargedAmount,
-            chargedAmount,
-            sessionId:
-              typeof jobContext.sessionId === 'string'
-                ? jobContext.sessionId
-                : null,
-            documentId:
-              typeof jobContext.documentId === 'string'
-                ? jobContext.documentId
-                : null,
-            spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-            spoolerJobId: job.id,
-            jobDispatchedAt,
-            settledAt: null,
-            spoolerTerminalAt: new Date().toISOString(),
-            reconciledAt: new Date().toISOString(),
-            startupReconciled: false,
-            reconciliationAction: 'none',
-            reconciliationReason: 'Spooler confirmed successful print.',
-            context: {
-              spoolerOutcome: 'confirmed',
-              jobStatus: job.status,
-              pagesPrinted: job.pagesPrinted,
-              totalPages: job.totalPages,
-            },
-          });
+          try {
+            await checkpointRecoverySession({
+              transactionId,
+              mode: 'print',
+              phase: 'reconciled',
+              requiredAmount: chargedAmount,
+              chargedAmount,
+              sessionId:
+                typeof jobContext.sessionId === 'string'
+                  ? jobContext.sessionId
+                  : null,
+              documentId:
+                typeof jobContext.documentId === 'string'
+                  ? jobContext.documentId
+                  : null,
+              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+              spoolerJobId: job.id,
+              jobDispatchedAt,
+              settledAt: null,
+              spoolerTerminalAt: new Date().toISOString(),
+              reconciledAt: new Date().toISOString(),
+              startupReconciled: false,
+              reconciliationAction: 'none',
+              reconciliationReason: 'Spooler confirmed successful print.',
+              context: {
+                spoolerOutcome: 'confirmed',
+                jobStatus: job.status,
+                pagesPrinted: job.pagesPrinted,
+                totalPages: job.totalPages,
+              },
+            });
+          } catch (checkpointError) {
+            console.error(
+              '[SPOOLER-MONITOR] Failed to checkpoint recovery session (confirmed)',
+              checkpointError,
+            );
+          }
         }
         return {
           detected: true,
@@ -457,35 +464,42 @@ export async function monitorSpoolerJob(
                 ? jobContext.transactionId
                 : null;
             if (transactionId) {
-              await checkpointRecoverySession({
-                transactionId,
-                mode: 'print',
-                phase: 'spooler_failed',
-                requiredAmount: chargedAmount,
-                chargedAmount,
-                sessionId:
-                  typeof jobContext.sessionId === 'string'
-                    ? jobContext.sessionId
-                    : null,
-                documentId:
-                  typeof jobContext.documentId === 'string'
-                    ? jobContext.documentId
-                    : null,
-                spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-                spoolerJobId: job.id,
-                jobDispatchedAt,
-                settledAt: null,
-                spoolerTerminalAt: new Date().toISOString(),
-                context: {
-                  spoolerOutcome: 'failed',
-                  jobStatus: job.status,
-                  pagesPrinted: job.pagesPrinted,
-                  totalPages: job.totalPages,
-                  refundDisposition: 'refund_blocked_trusted_time',
-                },
-                lastError:
-                  'Refund blocked because trusted time is unavailable.',
-              });
+              try {
+                await checkpointRecoverySession({
+                  transactionId,
+                  mode: 'print',
+                  phase: 'spooler_failed',
+                  requiredAmount: chargedAmount,
+                  chargedAmount,
+                  sessionId:
+                    typeof jobContext.sessionId === 'string'
+                      ? jobContext.sessionId
+                      : null,
+                  documentId:
+                    typeof jobContext.documentId === 'string'
+                      ? jobContext.documentId
+                      : null,
+                  spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+                  spoolerJobId: job.id,
+                  jobDispatchedAt,
+                  settledAt: null,
+                  spoolerTerminalAt: new Date().toISOString(),
+                  context: {
+                    spoolerOutcome: 'failed',
+                    jobStatus: job.status,
+                    pagesPrinted: job.pagesPrinted,
+                    totalPages: job.totalPages,
+                    refundDisposition: 'refund_blocked_trusted_time',
+                  },
+                  lastError:
+                    'Refund blocked because trusted time is unavailable.',
+                });
+              } catch (checkpointError) {
+                console.error(
+                  '[SPOOLER-MONITOR] Failed to checkpoint recovery session (trusted time blocked)',
+                  checkpointError,
+                );
+              }
             }
             return {
               detected: true,
@@ -577,44 +591,51 @@ export async function monitorSpoolerJob(
         });
 
         if (transactionId) {
-          await checkpointRecoverySession({
-            transactionId,
-            mode: 'print',
-            phase: 'reconciled',
-            requiredAmount: chargedAmount,
-            chargedAmount,
-            sessionId:
-              typeof jobContext.sessionId === 'string'
-                ? jobContext.sessionId
-                : null,
-            documentId:
-              typeof jobContext.documentId === 'string'
-                ? jobContext.documentId
-                : null,
-            spoolerCorrelationKey: correlationKey,
-            spoolerJobId: job.id,
-            jobDispatchedAt,
-            settledAt: null,
-            spoolerTerminalAt: new Date().toISOString(),
-            reconciledAt: new Date().toISOString(),
-            startupReconciled: false,
-            reconciliationAction:
-              refundDisposition === 'auto_refunded'
-                ? 'auto_refund'
-                : 'pending_admin_review',
-            reconciliationReason:
-              refundDisposition === 'auto_refunded'
-                ? 'Spooler failure auto-refunded.'
-                : 'Spooler failure queued for admin refund review.',
-            context: {
-              spoolerOutcome: 'failed',
-              jobStatus: job.status,
-              pagesPrinted: job.pagesPrinted,
-              totalPages: job.totalPages,
-              refundDisposition,
-              refundId: refundOutcome.entry.id,
-            },
-          });
+          try {
+            await checkpointRecoverySession({
+              transactionId,
+              mode: 'print',
+              phase: 'reconciled',
+              requiredAmount: chargedAmount,
+              chargedAmount,
+              sessionId:
+                typeof jobContext.sessionId === 'string'
+                  ? jobContext.sessionId
+                  : null,
+              documentId:
+                typeof jobContext.documentId === 'string'
+                  ? jobContext.documentId
+                  : null,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: job.id,
+              jobDispatchedAt,
+              settledAt: null,
+              spoolerTerminalAt: new Date().toISOString(),
+              reconciledAt: new Date().toISOString(),
+              startupReconciled: false,
+              reconciliationAction:
+                refundDisposition === 'auto_refunded'
+                  ? 'auto_refund'
+                  : 'pending_admin_review',
+              reconciliationReason:
+                refundDisposition === 'auto_refunded'
+                  ? 'Spooler failure auto-refunded.'
+                  : 'Spooler failure queued for admin refund review.',
+              context: {
+                spoolerOutcome: 'failed',
+                jobStatus: job.status,
+                pagesPrinted: job.pagesPrinted,
+                totalPages: job.totalPages,
+                refundDisposition,
+                refundId: refundOutcome.entry.id,
+              },
+            });
+          } catch (checkpointError) {
+            console.error(
+              '[SPOOLER-MONITOR] Failed to checkpoint recovery session (refunded)',
+              checkpointError,
+            );
+          }
         }
 
         return {
@@ -654,32 +675,39 @@ export async function monitorSpoolerJob(
         ? jobContext.transactionId
         : null;
     if (transactionId) {
-      await checkpointRecoverySession({
-        transactionId,
-        mode: 'print',
-        phase: 'spooler_timeout',
-        requiredAmount: chargedAmount,
-        chargedAmount,
-        sessionId:
-          typeof jobContext.sessionId === 'string'
-            ? jobContext.sessionId
-            : null,
-        documentId:
-          typeof jobContext.documentId === 'string'
-            ? jobContext.documentId
-            : null,
-        spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-        spoolerJobId: trackedJobId,
-        jobDispatchedAt,
-        settledAt: null,
-        spoolerTerminalAt: new Date().toISOString(),
-        context: {
-          lastStatus: lastStatus ?? null,
-          pagesPrinted: lastPagesPrinted,
-          totalPages: lastTotalPages,
-          timedOut: true,
-        },
-      });
+      try {
+        await checkpointRecoverySession({
+          transactionId,
+          mode: 'print',
+          phase: 'spooler_timeout',
+          requiredAmount: chargedAmount,
+          chargedAmount,
+          sessionId:
+            typeof jobContext.sessionId === 'string'
+              ? jobContext.sessionId
+              : null,
+          documentId:
+            typeof jobContext.documentId === 'string'
+              ? jobContext.documentId
+              : null,
+          spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+          spoolerJobId: trackedJobId,
+          jobDispatchedAt,
+          settledAt: null,
+          spoolerTerminalAt: new Date().toISOString(),
+          context: {
+            lastStatus: lastStatus ?? null,
+            pagesPrinted: lastPagesPrinted,
+            totalPages: lastTotalPages,
+            timedOut: true,
+          },
+        });
+      } catch (checkpointError) {
+        console.error(
+          '[SPOOLER-MONITOR] Failed to checkpoint recovery session (timeout)',
+          checkpointError,
+        );
+      }
     }
     return {
       detected: lastStatus !== null,

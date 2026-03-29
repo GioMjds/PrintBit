@@ -342,6 +342,7 @@ export interface RecoverySessionEntry {
   reconciliationAction: RecoveryReconciliationAction;
   reconciliationReason: string | null;
   lastError: string | null;
+  wasPresentAtStartup?: boolean;
   context: LogMeta;
 }
 
@@ -752,6 +753,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
                   ? entry.reconciliationReason
                   : null,
               lastError: typeof entry.lastError === 'string' ? entry.lastError : null,
+              wasPresentAtStartup:
+                typeof entry.wasPresentAtStartup === 'boolean'
+                  ? entry.wasPresentAtStartup
+                  : undefined,
               context: safeContext,
             };
           })

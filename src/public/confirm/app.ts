@@ -1254,8 +1254,6 @@ modalConfirmBtn?.addEventListener('click', async () => {
       }
     } catch (error) {
       clearSpoolerFinalizationTimer();
-      activeSpoolerCorrelationKey = null;
-      lastSpoolerCorrelationKey = null;
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
       applyConfirmGate();
@@ -1263,6 +1261,11 @@ modalConfirmBtn?.addEventListener('click', async () => {
         statusMessage.textContent = isAbortError(error)
           ? 'Printing request timed out. Please check printer status and try again.'
           : 'Network error while starting print. Please try again.';
+      }
+      // Only clear correlation keys on real failures, not on AbortErrors
+      if (!isAbortError(error)) {
+        activeSpoolerCorrelationKey = null;
+        lastSpoolerCorrelationKey = null;
       }
     }
   }
@@ -1841,8 +1844,8 @@ if (typeof ioFactory === 'function') {
     }
 
     clearSpoolerFinalizationTimer();
-    spoolerFinalizationTimer = window.setTimeout(() => {
-      if (!spoolerTimedOut || !lastSpoolerCorrelationKey) return;
+    // Invoke finalization logic immediately instead of scheduling it
+    if (spoolerTimedOut && lastSpoolerCorrelationKey) {
       activeSpoolerCorrelationKey = null;
       lastSpoolerCorrelationKey = null;
       spoolerTimedOut = false;
@@ -1857,7 +1860,7 @@ if (typeof ioFactory === 'function') {
         'Printer confirmation timed out. Transaction review may be required.',
       );
       applyConfirmGate();
-    }, SPOOLER_FINALIZATION_GRACE_MS);
+    }
   });
 
   socket.on('coinSlotLocked', (_payload: unknown) => {
