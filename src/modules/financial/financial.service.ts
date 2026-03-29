@@ -345,7 +345,7 @@ export class FinancialService {
       printedAt: recoverySession?.spoolerTerminalAt ?? null,
       refundStatus: pendingRefund?.status ?? null,
       refundReason: pendingRefund?.reason ?? null,
-      generatedAt: new Date().toISOString(),
+      generatedAt: getTrustedTimestamp().timestamp,
     });
   };
 

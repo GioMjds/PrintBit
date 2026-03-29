@@ -828,7 +828,7 @@ body {
   letter-spacing: 0.2px;
   color: var(--lavender);
   opacity: 0.95;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .modal-btn--wide {

@@ -42,7 +42,11 @@ function fmtDate(value: string | null): string {
 
 async function loadReceipt(): Promise<void> {
   const parts = window.location.pathname.split('/').filter(Boolean);
-  const transactionId = parts.length >= 2 ? decodeURIComponent(parts[1]) : '';
+  const receiptIndex = parts.indexOf('receipt');
+  const transactionId =
+    receiptIndex >= 0 && parts.length > receiptIndex + 1
+      ? decodeURIComponent(parts[receiptIndex + 1])
+      : '';
 
   if (!transactionId) {
     if (receiptMessage) receiptMessage.textContent = 'Invalid receipt URL.';

@@ -119,7 +119,7 @@ const ALLOWED_TYPES = new Map<string, string>([
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB
 
 // Session limits
-const SESSION_EXPIRY_ENABLED = false;
+const DEFAULT_SESSION_EXPIRY_ENABLED = false;
 const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SESSION_WARNING_SECONDS = 60;
 const MAX_FILES_PER_SESSION = 10;
@@ -133,15 +133,17 @@ export class SessionStore {
 
   private readonly byToken = new Map<string, string>();
   private readonly uploadDir: string;
+  private readonly expiryEnabled: boolean;
   private retryTimers = new Set<ReturnType<typeof setTimeout>>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private readonly cleanupInFlight = new Set<string>();
   private readonly cleanupAttempts = new Map<string, number>();
 
-  constructor(uploadDir = 'uploads') {
+  constructor(uploadDir = 'uploads', options?: { expiryEnabled?: boolean }) {
     this.uploadDir = uploadDir;
     fs.mkdirSync(uploadDir, { recursive: true });
-    if (SESSION_EXPIRY_ENABLED) {
+    this.expiryEnabled = options?.expiryEnabled ?? DEFAULT_SESSION_EXPIRY_ENABLED;
+    if (this.expiryEnabled) {
       this.cleanupTimer = setInterval(
         () => this.cleanupExpired(),
         CLEANUP_INTERVAL_MS,
@@ -151,7 +153,7 @@ export class SessionStore {
 
   /** Check whether a session is still within its TTL window. */
   isSessionExpired(session: Session): boolean {
-    if (!SESSION_EXPIRY_ENABLED) return false;
+    if (!DEFAULT_SESSION_EXPIRY_ENABLED) return false;
     return Date.now() - session.lastActivityAt.getTime() > SESSION_TTL_MS;
   }
 
@@ -431,7 +433,7 @@ export class SessionStore {
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
     const freshUrl = buildUploadUrl(publicBaseUrl, session.token);
     const freshPublicUrl = buildPublicUploadUrl(session.token);
-    const ttlMetadata = SESSION_EXPIRY_ENABLED
+    const ttlMetadata = DEFAULT_SESSION_EXPIRY_ENABLED
       ? {
           expiresAt: new Date(this.getExpiryTimestamp(session)),
           remainingSeconds: this.getRemainingSeconds(session),
@@ -444,10 +446,6 @@ export class SessionStore {
       uploadUrl: freshUrl,
       ...(freshPublicUrl ? { publicUploadUrl: freshPublicUrl } : {}),
       ...ttlMetadata,
-      expiresAt: new Date(this.getExpiryTimestamp(session)),
-      remainingSeconds: this.getRemainingSeconds(session),
-      ttlSeconds: Math.floor(SESSION_TTL_MS / 1000),
-      warningThresholdSeconds: SESSION_WARNING_SECONDS,
     };
   }
 
@@ -578,7 +576,7 @@ export class SessionStore {
 
   /** Remove expired sessions and their uploaded files from disk. */
   private cleanupExpired(): void {
-    if (!SESSION_EXPIRY_ENABLED) return;
+    if (!DEFAULT_SESSION_EXPIRY_ENABLED) return;
     for (const [id, session] of this.sessions.entries()) {
       if (this.isSessionExpired(session)) {
         void this.pruneExpiredSession(id, session);

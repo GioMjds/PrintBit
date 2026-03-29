@@ -190,14 +190,21 @@ function applyTransactionSearch(): void {
   const raw = transactionSearchInput?.value ?? '';
   activeTransactionIdFilter = raw.trim();
   currentPage = 1;
-  setMessage(
-    activeTransactionIdFilter
-      ? `Searching transaction: ${activeTransactionIdFilter}`
-      : 'Showing all logs.',
-  );
-  void loadData().catch((e: unknown) =>
-    setMessage(e instanceof Error ? e.message : 'Search failed.'),
-  );
+  if (!activeTransactionIdFilter) {
+    showLookupResult(null);
+    setMessage('Showing all logs.');
+    void loadData().catch((e: unknown) =>
+      setMessage(e instanceof Error ? e.message : 'Search failed.'),
+    );
+    return;
+  }
+
+  setMessage(`Searching transaction: ${activeTransactionIdFilter}`);
+  void loadData()
+    .then(() => loadTransactionSummary(activeTransactionIdFilter))
+    .catch((e: unknown) =>
+      setMessage(e instanceof Error ? e.message : 'Search failed.'),
+    );
 }
 
 async function loadSummary(): Promise<void> {
@@ -296,6 +303,7 @@ transactionSearchClearBtn?.addEventListener('click', () => {
   if (transactionSearchInput) transactionSearchInput.value = '';
   activeTransactionIdFilter = '';
   currentPage = 1;
+  showLookupResult(null);
   setMessage('Showing all logs.');
   void loadData().catch((e: unknown) =>
     setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
