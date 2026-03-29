@@ -23,6 +23,10 @@ import { buildPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
 import {
+  checkpointRecoverySession,
+  reconcileFinalizedCopySession,
+} from '@/services/recovery';
+import {
   assertTrustedTimeForFinancialOperation,
   getTrustedTimeStatus,
   getTrustedTimestamp,
@@ -706,6 +710,19 @@ export class FinancialService {
       effectiveColorMode: 'colored' | 'grayscale';
     } | null = null;
 
+    await checkpointRecoverySession({
+      transactionId,
+      mode,
+      phase: 'initiated',
+      requiredAmount: 0,
+      sessionId: sessionId ?? null,
+      documentId: documentId ?? null,
+      spoolerCorrelationKey,
+      context: {
+        endpoint: 'confirm_payment',
+      },
+    });
+
     if (mode === 'print') {
       if (!sessionId) {
         void adminService.appendAdminLog(
@@ -836,6 +853,21 @@ export class FinancialService {
       };
     }
 
+    await checkpointRecoverySession({
+      transactionId,
+      mode,
+      phase: 'preflight_passed',
+      requiredAmount,
+      sessionId: sessionId ?? null,
+      documentId: targetDocumentId ?? documentId ?? null,
+      spoolerCorrelationKey,
+      context: {
+        copies,
+        colorMode: printOptions?.colorMode ?? colorMode,
+        duplex: printOptions?.duplex ?? false,
+      },
+    });
+
     if (
       typeof amount === 'number' &&
       Number.isFinite(amount) &&
@@ -925,6 +957,21 @@ export class FinancialService {
       try {
         jobDispatchedAt = getTrustedTimestamp().timestamp;
         await printFile(serverFilename, printOptions);
+        await checkpointRecoverySession({
+          transactionId,
+          mode,
+          phase: 'job_dispatched',
+          requiredAmount,
+          chargedAmount: 0,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          spoolerCorrelationKey,
+          jobDispatchedAt,
+          context: {
+            filename: serverFilename,
+            spoolerDispatched: true,
+          },
+        });
       } catch (err) {
         void adminService.appendAdminLog(
           'print_failed',
@@ -987,6 +1034,24 @@ export class FinancialService {
       });
       return;
     }
+
+    await checkpointRecoverySession({
+      transactionId,
+      mode,
+      phase: 'settled',
+      requiredAmount,
+      chargedAmount: settlement.chargedAmount,
+      sessionId: sessionId ?? null,
+      documentId: targetDocumentId ?? null,
+      spoolerCorrelationKey,
+      jobDispatchedAt,
+      settledAt: getTrustedTimestamp().timestamp,
+      context: {
+        changeState: settlement.change.state,
+        changeRequested: settlement.change.requested,
+        changeDispensed: settlement.change.dispensed,
+      },
+    });
 
     try {
       await financialLedgerService.append({
@@ -1231,6 +1296,8 @@ export class FinancialService {
           err instanceof Error ? err.message : err,
         );
       });
+    } else {
+      await reconcileFinalizedCopySession(transactionId);
     }
   };
 }

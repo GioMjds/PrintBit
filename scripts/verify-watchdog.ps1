@@ -41,7 +41,28 @@ function Ensure-WatchdogTaskRunning {
     return $true
 }
 
+function Test-WatchdogTriggerConfiguration {
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($null -eq $task) {
+        Write-Warning "[PrintBit] Watchdog task '$TaskName' is missing."
+        return $false
+    }
+    $triggerKinds = @($task.Triggers | ForEach-Object { $_.CimClass.CimClassName })
+    $hasAtStartup = $false
+    foreach ($kind in $triggerKinds) {
+        if ($kind -eq 'MSFT_TaskBootTrigger') {
+            $hasAtStartup = $true
+            break
+        }
+    }
+    if (-not $hasAtStartup) {
+        Write-Warning "[PrintBit] Watchdog task has no AtStartup trigger. Consider reinstalling with -AtStartup."
+    }
+    return $true
+}
+
 $running = Ensure-WatchdogTaskRunning
+$triggerOk = Test-WatchdogTriggerConfiguration
 $ageMs = Read-HeartbeatAgeMs
 
 if ($ageMs -gt $MaxHeartbeatAgeMs) {
@@ -61,7 +82,7 @@ if ($ageMs -gt $MaxHeartbeatAgeMs) {
     exit 1
 }
 
-if (-not $running) {
+if (-not $running -or -not $triggerOk) {
     exit 1
 }
 

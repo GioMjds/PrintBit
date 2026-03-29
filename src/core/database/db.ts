@@ -306,6 +306,63 @@ export interface InkHistoryEntry {
   }>;
 }
 
+export type RecoverySessionPhase =
+  | 'initiated'
+  | 'preflight_passed'
+  | 'job_dispatched'
+  | 'settled'
+  | 'spooler_confirmed'
+  | 'spooler_failed'
+  | 'spooler_timeout'
+  | 'reconciled';
+
+export type RecoveryReconciliationAction =
+  | 'none'
+  | 'void'
+  | 'auto_refund'
+  | 'pending_admin_review';
+
+export interface RecoverySessionEntry {
+  id: string;
+  mode: 'print' | 'copy';
+  createdAt: string;
+  updatedAt: string;
+  phase: RecoverySessionPhase;
+  requiredAmount: number;
+  chargedAmount: number;
+  sessionId: string | null;
+  documentId: string | null;
+  spoolerCorrelationKey: string | null;
+  spoolerJobId: number | null;
+  jobDispatchedAt: string | null;
+  settledAt: string | null;
+  spoolerTerminalAt: string | null;
+  reconciledAt: string | null;
+  startupReconciled: boolean;
+  reconciliationAction: RecoveryReconciliationAction;
+  reconciliationReason: string | null;
+  lastError: string | null;
+  wasPresentAtStartup?: boolean;
+  context: LogMeta;
+}
+
+export interface RecoveryLifecycleState {
+  bootCount: number;
+  unexpectedRestartCount: number;
+  lastStartupAt: string | null;
+  lastStartupPid: number | null;
+  lastStartupReason: string | null;
+  lastShutdownAt: string | null;
+  lastShutdownPid: number | null;
+  lastShutdownSignal: string | null;
+  lastUnexpectedRestartAt: string | null;
+}
+
+export interface RecoveryState {
+  lifecycle: RecoveryLifecycleState;
+  sessions: RecoverySessionEntry[];
+}
+
 export type Schema = {
   adminLockout: AdminLockout;
   balance: number;
@@ -326,6 +383,7 @@ export type Schema = {
   anomalyIncidents: AnomalyIncidentEntry[];
   financialLedger: FinancialLedgerEntry[];
   inkHistory: InkHistoryEntry[];
+  recovery: RecoveryState;
 };
 
 const DEFAULT_DATA: Schema = {
@@ -423,6 +481,20 @@ const DEFAULT_DATA: Schema = {
   anomalyIncidents: [],
   financialLedger: [],
   inkHistory: [],
+  recovery: {
+    lifecycle: {
+      bootCount: 0,
+      unexpectedRestartCount: 0,
+      lastStartupAt: null,
+      lastStartupPid: null,
+      lastStartupReason: null,
+      lastShutdownAt: null,
+      lastShutdownPid: null,
+      lastShutdownSignal: null,
+      lastUnexpectedRestartAt: null,
+    },
+    sessions: [],
+  },
 };
 
 /**
@@ -481,15 +553,15 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         id: candidate.id,
         type: candidate.type,
         source: candidate.source,
-          category:
-            candidate.category === 'printer' ||
-            candidate.category === 'spooler' ||
-            candidate.category === 'serial' ||
-            candidate.category === 'hopper' ||
-            candidate.category === 'network' ||
-            candidate.category === 'security'
-              ? candidate.category
-              : 'printer',
+        category:
+          candidate.category === 'printer' ||
+          candidate.category === 'spooler' ||
+          candidate.category === 'serial' ||
+          candidate.category === 'hopper' ||
+          candidate.category === 'network' ||
+          candidate.category === 'security'
+            ? candidate.category
+            : 'printer',
         severity: candidate.severity === 'critical' ? 'critical' : 'warning',
         status:
           candidate.status === 'acknowledged' || candidate.status === 'resolved'
@@ -539,6 +611,166 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       });
     }
     return incidents;
+  };
+  const normalizeRecoveryState = (raw: unknown): RecoveryState => {
+    const fallback = DEFAULT_DATA.recovery;
+    if (typeof raw !== 'object' || raw === null) {
+      return structuredClone(fallback);
+    }
+
+    const candidate = raw as Partial<RecoveryState>;
+    const lifecycleCandidate =
+      typeof candidate.lifecycle === 'object' && candidate.lifecycle !== null
+        ? (candidate.lifecycle as Partial<RecoveryLifecycleState>)
+        : {};
+
+    const normalizedLifecycle: RecoveryLifecycleState = {
+      bootCount: Math.max(0, finiteOr(lifecycleCandidate.bootCount, 0)),
+      unexpectedRestartCount: Math.max(
+        0,
+        finiteOr(lifecycleCandidate.unexpectedRestartCount, 0),
+      ),
+      lastStartupAt:
+        typeof lifecycleCandidate.lastStartupAt === 'string'
+          ? lifecycleCandidate.lastStartupAt
+          : null,
+      lastStartupPid:
+        typeof lifecycleCandidate.lastStartupPid === 'number' &&
+        Number.isFinite(lifecycleCandidate.lastStartupPid)
+          ? Math.floor(lifecycleCandidate.lastStartupPid)
+          : null,
+      lastStartupReason:
+        typeof lifecycleCandidate.lastStartupReason === 'string'
+          ? lifecycleCandidate.lastStartupReason
+          : null,
+      lastShutdownAt:
+        typeof lifecycleCandidate.lastShutdownAt === 'string'
+          ? lifecycleCandidate.lastShutdownAt
+          : null,
+      lastShutdownPid:
+        typeof lifecycleCandidate.lastShutdownPid === 'number' &&
+        Number.isFinite(lifecycleCandidate.lastShutdownPid)
+          ? Math.floor(lifecycleCandidate.lastShutdownPid)
+          : null,
+      lastShutdownSignal:
+        typeof lifecycleCandidate.lastShutdownSignal === 'string'
+          ? lifecycleCandidate.lastShutdownSignal
+          : null,
+      lastUnexpectedRestartAt:
+        typeof lifecycleCandidate.lastUnexpectedRestartAt === 'string'
+          ? lifecycleCandidate.lastUnexpectedRestartAt
+          : null,
+    };
+
+    const normalizedSessions: RecoverySessionEntry[] = Array.isArray(
+      candidate.sessions,
+    )
+      ? candidate.sessions
+          .filter(
+            (entry): entry is RecoverySessionEntry =>
+              typeof entry === 'object' &&
+              entry !== null &&
+              typeof (entry as RecoverySessionEntry).id === 'string' &&
+              ((entry as RecoverySessionEntry).mode === 'print' ||
+                (entry as RecoverySessionEntry).mode === 'copy'),
+          )
+          .map((entry) => {
+            const phaseCandidate = entry.phase;
+            const phase: RecoverySessionPhase =
+              phaseCandidate === 'initiated' ||
+              phaseCandidate === 'preflight_passed' ||
+              phaseCandidate === 'job_dispatched' ||
+              phaseCandidate === 'settled' ||
+              phaseCandidate === 'spooler_confirmed' ||
+              phaseCandidate === 'spooler_failed' ||
+              phaseCandidate === 'spooler_timeout' ||
+              phaseCandidate === 'reconciled'
+                ? phaseCandidate
+                : 'initiated';
+
+            const actionCandidate = entry.reconciliationAction;
+            const reconciliationAction: RecoveryReconciliationAction =
+              actionCandidate === 'none' ||
+              actionCandidate === 'void' ||
+              actionCandidate === 'auto_refund' ||
+              actionCandidate === 'pending_admin_review'
+                ? actionCandidate
+                : 'none';
+
+            const safeContext: LogMeta = {};
+            for (const [key, value] of Object.entries(entry.context ?? {})) {
+              if (
+                typeof value === 'string' ||
+                typeof value === 'number' ||
+                typeof value === 'boolean' ||
+                value === null
+              ) {
+                safeContext[key] = value;
+              }
+            }
+
+            return {
+              id: entry.id,
+              mode: entry.mode,
+              createdAt:
+                typeof entry.createdAt === 'string'
+                  ? entry.createdAt
+                  : new Date(0).toISOString(),
+              updatedAt:
+                typeof entry.updatedAt === 'string'
+                  ? entry.updatedAt
+                  : new Date(0).toISOString(),
+              phase,
+              requiredAmount: Math.max(0, finiteOr(entry.requiredAmount, 0)),
+              chargedAmount: Math.max(0, finiteOr(entry.chargedAmount, 0)),
+              sessionId:
+                typeof entry.sessionId === 'string' ? entry.sessionId : null,
+              documentId:
+                typeof entry.documentId === 'string' ? entry.documentId : null,
+              spoolerCorrelationKey:
+                typeof entry.spoolerCorrelationKey === 'string'
+                  ? entry.spoolerCorrelationKey
+                  : null,
+              spoolerJobId:
+                typeof entry.spoolerJobId === 'number' &&
+                Number.isFinite(entry.spoolerJobId)
+                  ? Math.floor(entry.spoolerJobId)
+                  : null,
+              jobDispatchedAt:
+                typeof entry.jobDispatchedAt === 'string'
+                  ? entry.jobDispatchedAt
+                  : null,
+              settledAt:
+                typeof entry.settledAt === 'string' ? entry.settledAt : null,
+              spoolerTerminalAt:
+                typeof entry.spoolerTerminalAt === 'string'
+                  ? entry.spoolerTerminalAt
+                  : null,
+              reconciledAt:
+                typeof entry.reconciledAt === 'string'
+                  ? entry.reconciledAt
+                  : null,
+              startupReconciled: entry.startupReconciled === true,
+              reconciliationAction,
+              reconciliationReason:
+                typeof entry.reconciliationReason === 'string'
+                  ? entry.reconciliationReason
+                  : null,
+              lastError:
+                typeof entry.lastError === 'string' ? entry.lastError : null,
+              wasPresentAtStartup:
+                typeof entry.wasPresentAtStartup === 'boolean'
+                  ? entry.wasPresentAtStartup
+                  : undefined,
+              context: safeContext,
+            };
+          })
+      : [];
+
+    return {
+      lifecycle: normalizedLifecycle,
+      sessions: normalizedSessions,
+    };
   };
 
   return {
@@ -813,6 +1045,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             typeof (entry as InkHistoryEntry).timestamp === 'string',
         )
       : DEFAULT_DATA.inkHistory,
+    recovery: normalizeRecoveryState(data?.recovery),
   };
 }
 

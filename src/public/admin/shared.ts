@@ -40,6 +40,17 @@ export type SummaryResponse = {
     totalCount: number;
     openCount: number;
   };
+  recoveryStats?: {
+    bootCount: number;
+    unexpectedRestartCount: number;
+    lastStartupAt: string | null;
+    lastShutdownAt: string | null;
+    inFlightCount: number;
+    startupPendingCount: number;
+    autoRefundedCount: number;
+    pendingAdminReviewCount: number;
+    voidedCount: number;
+  };
   jamStats: {
     totalEvents: number;
     recent24h: number;

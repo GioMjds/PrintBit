@@ -34,6 +34,10 @@ import {
   getCoinSlotLockedAt,
   lockCoinSlot,
   unlockOwnedCoinSlot,
+  markRecoveryShutdown,
+  markRecoveryStartup,
+  reconcileRecoverySessionsOnStartup,
+  getRecoveryStatusSnapshot,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
 import { getLocalIPv4 } from '@/utils/network';
@@ -114,7 +118,76 @@ io.on('connection', (socket) => {
 
 async function start() {
   await initDB();
+  const startupMarker = await markRecoveryStartup('server_start');
   const startupTrustedTime = await verifyTrustedClockSync();
+  const recoverySummary = await reconcileRecoverySessionsOnStartup();
+  const recoveryStatus = getRecoveryStatusSnapshot();
+  if (
+    startupMarker.unexpectedRestart ||
+    recoverySummary.processedSessions > 0
+  ) {
+    void adminService
+      .appendAdminLog(
+        startupMarker.unexpectedRestart
+          ? 'unexpected_restart_detected'
+          : 'startup_reconciliation_completed',
+        startupMarker.unexpectedRestart
+          ? 'Unplanned restart detected during startup; recovery reconciliation executed.'
+          : 'Startup recovery reconciliation executed.',
+        {
+          unexpectedRestart: startupMarker.unexpectedRestart,
+          processedSessions: recoverySummary.processedSessions,
+          resolvedSessions: recoverySummary.resolvedSessions,
+          unresolvedSessions: recoverySummary.unresolvedSessions,
+          autoRefundedSessions: recoverySummary.autoRefundedSessions,
+          pendingAdminReviewSessions:
+            recoverySummary.pendingAdminReviewSessions,
+          trustedTimeBlockedSessions:
+            recoverySummary.trustedTimeBlockedSessions,
+          bootCount: recoveryStatus.lifecycle.bootCount,
+          unexpectedRestartCount:
+            recoveryStatus.lifecycle.unexpectedRestartCount,
+        },
+      )
+      .catch((error) => {
+        console.error(
+          '[RECOVERY] Failed to append startup recovery admin log.',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+  }
+  if (startupMarker.unexpectedRestart) {
+    void anomalyService
+      .report({
+        type: 'unexpected_restart_detected',
+        source: 'recovery',
+        category: 'security',
+        severity: 'critical',
+        message:
+          'Unplanned restart detected. Startup recovery reconciliation has been executed.',
+        fingerprint: buildAnomalyFingerprint([
+          'recovery',
+          'unexpected-restart',
+        ]),
+        context: {
+          processedSessions: recoverySummary.processedSessions,
+          unresolvedSessions: recoverySummary.unresolvedSessions,
+          autoRefundedSessions: recoverySummary.autoRefundedSessions,
+          pendingAdminReviewSessions:
+            recoverySummary.pendingAdminReviewSessions,
+        },
+      })
+      .catch((error) => {
+        console.error(
+          '[RECOVERY] Failed to report unexpected restart anomaly.',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      });
+  }
   const startupBlocked =
     startupTrustedTime.enforceForFinancial &&
     (!startupTrustedTime.synced ||
@@ -284,16 +357,25 @@ function gracefulShutdown(signal: NodeJS.Signals): void {
   console.log(`[SERVER] Received ${signal}. Shutting down gracefully...`);
   stopTrustedTimeMonitor();
   stopWatchdogHealthMonitor();
-  server.close((error) => {
-    if (error) {
-      console.error('[SERVER] Error while closing HTTP server.', {
-        error: error.message,
+  void markRecoveryShutdown(signal)
+    .catch((error) => {
+      console.error('[RECOVERY] Failed to write shutdown marker.', {
+        error: error instanceof Error ? error.message : String(error),
+        signal,
       });
-      process.exit(1);
-      return;
-    }
-    process.exit(0);
-  });
+    })
+    .finally(() => {
+      server.close((error) => {
+        if (error) {
+          console.error('[SERVER] Error while closing HTTP server.', {
+            error: error.message,
+          });
+          process.exit(1);
+          return;
+        }
+        process.exit(0);
+      });
+    });
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

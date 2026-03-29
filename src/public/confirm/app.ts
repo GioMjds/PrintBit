@@ -127,6 +127,12 @@ const DEFAULT_PRICING: PricingResponse = {
   colorSurcharge: 2,
   scanDocument: 5,
 };
+const PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY =
+  'printbit.confirmPaymentIdempotencyKey';
+const PENDING_PAYMENT_SPOOLER_STORAGE_KEY =
+  'printbit.confirmPaymentSpoolerCorrelationKey';
+const PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY =
+  'printbit.confirmPaymentFingerprint';
 let totalPrice = 0;
 let pricingLoaded = false;
 let pricingError: string | null = null;
@@ -152,6 +158,18 @@ if (typeof config.documentId !== 'string') {
   config.documentId = uploadedDocumentId;
 }
 currentPrintQuote = config.mode === 'print' ? (config.quote ?? null) : null;
+const currentPaymentFingerprint = JSON.stringify({
+  mode: config.mode,
+  sessionId: config.sessionId ?? null,
+  documentId: config.documentId ?? null,
+  copies: config.copies,
+  colorMode: config.colorMode,
+  duplex: config.duplex === true,
+  orientation: config.orientation,
+  paperSize: config.paperSize,
+  pageRange: pageRangeFingerprint(config.pageRange),
+  quotedAmount: currentPrintQuote?.requiredAmount ?? null,
+});
 
 // Update back link to return to the correct config page with the session
 const backLink = document.getElementById(
@@ -171,6 +189,12 @@ function pageRangeLabel(sel?: PageRangeSelection): string {
   if (!sel || sel.type === 'all') return 'All Pages';
   if (sel.type === 'single') return `Page ${sel.page}`;
   return sel.range ? `Pages ${sel.range}` : 'Pages (custom)';
+}
+
+function pageRangeFingerprint(sel?: PageRangeSelection): string {
+  if (!sel || sel.type === 'all') return 'all';
+  if (sel.type === 'single') return `single:${sel.page}`;
+  return `custom:${sel.range ?? ''}`;
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
@@ -279,7 +303,8 @@ function applyLockState(locked: boolean): void {
 }
 
 function syncCoinSlotLockState(): void {
-  const shouldLock = pricingLoaded && totalPrice > 0 && currentBalance >= totalPrice;
+  const shouldLock =
+    pricingLoaded && totalPrice > 0 && currentBalance >= totalPrice;
   if (shouldLock === coinSlotIsLocked) return;
 
   applyLockState(shouldLock);
@@ -307,7 +332,7 @@ function updateChangeDisplay(balance: number): void {
 // [PRINTER GUARD] Single source of truth for whether the user can proceed.
 // Called whenever any of the three gating conditions change:
 //   printerReady, pricingLoaded, or currentBalance.
-function applyConfirmGate(): void {
+function applyConfirmGate(statusOverride?: string): void {
   if (!confirmBtn || !statusMessage) return;
   if (isProcessingPayment) {
     confirmBtn.disabled = true;
@@ -327,7 +352,8 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent = pricingError ?? 'Loading pricing...';
+    statusMessage.textContent =
+      statusOverride ?? pricingError ?? 'Loading pricing...';
     return;
   }
 
@@ -339,7 +365,9 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent = `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
+    statusMessage.textContent =
+      statusOverride ??
+      `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
     return;
   }
 
@@ -352,7 +380,7 @@ function applyConfirmGate(): void {
       modalConfirmBtn.setAttribute('aria-disabled', 'false');
     }
     statusMessage.textContent =
-      'Sufficient balance detected. You can confirm now.';
+      statusOverride ?? 'Sufficient balance detected. You can confirm now.';
   } else {
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
@@ -361,7 +389,8 @@ function applyConfirmGate(): void {
       modalConfirmBtn.disabled = true;
       modalConfirmBtn.setAttribute('aria-disabled', 'true');
     }
-    statusMessage.textContent = `Insert more coins: ₱ ${needed} remaining.`;
+    statusMessage.textContent =
+      statusOverride ?? `Insert more coins: ₱ ${needed} remaining.`;
   }
 }
 
@@ -378,7 +407,7 @@ function setCoinEventMessage(message: string): void {
 }
 
 function setPrintingPhase(
-  phase: 'printing' | 'dispensing' | 'failed' | 'done',
+  phase: 'printing' | 'dispensing' | 'failed' | 'done' | 'manual-review',
 ): void {
   const modeLabel = config.mode === 'copy' ? 'Copying' : 'Printing';
   const modePast = config.mode === 'copy' ? 'Copy' : 'Print';
@@ -410,6 +439,18 @@ function setPrintingPhase(
     if (printingHint) {
       printingHint.textContent =
         'Please contact staff for manual change settlement.';
+    }
+    return;
+  }
+
+  if (phase === 'manual-review') {
+    if (printingSubtitle) {
+      printingSubtitle.textContent =
+        `${modePast} status requires manual review before release.`;
+    }
+    if (printingHint) {
+      printingHint.textContent =
+        'Please contact staff. Keep this screen open while recovery is verified.';
     }
     return;
   }
@@ -686,10 +727,45 @@ const thankYouDoneBtn = document.getElementById(
 ) as HTMLButtonElement;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
-let lastSpoolerCorrelationKey: string | null = null;
+const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
+  PENDING_PAYMENT_SPOOLER_STORAGE_KEY,
+);
+const persistedPaymentFingerprintRaw = sessionStorage.getItem(
+  PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY,
+);
+const persistedFingerprintMatchesCurrent =
+  config.mode === 'print' &&
+  persistedPaymentFingerprintRaw === currentPaymentFingerprint;
+const persistedSpoolerCorrelationKey =
+  persistedFingerprintMatchesCurrent &&
+  persistedSpoolerCorrelationKeyRaw &&
+  persistedSpoolerCorrelationKeyRaw.trim().length > 0
+    ? persistedSpoolerCorrelationKeyRaw.trim()
+    : null;
+const persistedPaymentIdempotencyKeyRaw = sessionStorage.getItem(
+  PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
+);
+const persistedPaymentIdempotencyKey =
+  persistedFingerprintMatchesCurrent &&
+  persistedPaymentIdempotencyKeyRaw &&
+  persistedPaymentIdempotencyKeyRaw.trim().length > 0
+    ? persistedPaymentIdempotencyKeyRaw.trim()
+    : null;
+let lastSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
+let paymentSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
+let paymentIdempotencyKey: string | null = persistedPaymentIdempotencyKey;
+if (!persistedFingerprintMatchesCurrent) {
+  sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+  sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+  sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
+}
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 let latestPrinterStatusLabel = 'Checking...';
 let spoolerTimedOut = false;
+const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
+const COPY_JOB_POLL_INTERVAL_MS = 1_500;
+const COPY_JOB_POLL_TIMEOUT_MS = 5 * 60 * 1_000;
+let spoolerFinalizationTimer: number | null = null;
 
 type SpoolerFailureEvent = {
   jobStatus: string;
@@ -741,12 +817,16 @@ const CANONICAL_COIN_REJECTION_FAULT_REASONS = new Set([
   'printer not connected',
 ]);
 
-function setPrinterReadyState(ready: boolean, status?: string): void {
+function setPrinterReadyState(
+  ready: boolean,
+  status?: string,
+  statusMessageOverride?: string,
+): void {
   printerReady = ready;
   if (typeof status === 'string' && status.trim()) {
     latestPrinterStatusLabel = status.trim();
   }
-  applyConfirmGate();
+  applyConfirmGate(statusMessageOverride);
 }
 
 function createSpoolerCorrelationKey(): string {
@@ -757,6 +837,97 @@ function createSpoolerCorrelationKey(): string {
     return crypto.randomUUID();
   }
   return `spooler_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createPaymentIdempotencyKey(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
+  }
+  return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getOrCreatePaymentIdempotencyKey(): string {
+  if (config.mode !== 'print') {
+    return createPaymentIdempotencyKey();
+  }
+  if (!paymentIdempotencyKey) {
+    paymentIdempotencyKey = createPaymentIdempotencyKey();
+    syncPendingPaymentSessionState();
+  }
+  return paymentIdempotencyKey;
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === 'AbortError' || error.code === DOMException.ABORT_ERR)
+  );
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function clearSpoolerFinalizationTimer(): void {
+  if (spoolerFinalizationTimer !== null) {
+    window.clearTimeout(spoolerFinalizationTimer);
+    spoolerFinalizationTimer = null;
+  }
+}
+
+function syncPendingPaymentSessionState(): void {
+  if (config.mode !== 'print') {
+    sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+    sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+    sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
+    return;
+  }
+
+  if (paymentIdempotencyKey) {
+    sessionStorage.setItem(
+      PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
+      paymentIdempotencyKey,
+    );
+  } else {
+    sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+  }
+
+  if (paymentSpoolerCorrelationKey) {
+    sessionStorage.setItem(
+      PENDING_PAYMENT_SPOOLER_STORAGE_KEY,
+      paymentSpoolerCorrelationKey,
+    );
+    sessionStorage.setItem(
+      PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY,
+      currentPaymentFingerprint,
+    );
+  } else {
+    sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+    sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
+  }
+}
+
+function clearPendingPaymentSessionState(): void {
+  paymentIdempotencyKey = null;
+  paymentSpoolerCorrelationKey = null;
+  syncPendingPaymentSessionState();
+}
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs = NETWORK_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutHandle = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutHandle);
+  }
 }
 
 if (config.mode === 'copy' || config.mode === 'scan') {
@@ -875,6 +1046,7 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
 }
 
 function clearConfirmSessionStorage(): void {
+  clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
   sessionStorage.removeItem('printbit.uploadedFile');
@@ -940,8 +1112,9 @@ modalConfirmBtn?.addEventListener('click', async () => {
   hideModal();
   confirmBtn.disabled = true;
   isProcessingPayment = true;
+  clearSpoolerFinalizationTimer();
   activeSpoolerCorrelationKey = null;
-  lastSpoolerCorrelationKey = null;
+  lastSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
   spoolerTimedOut = false;
 
   showOverlay(printingOverlay);
@@ -1122,94 +1295,135 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     // Print flow: existing behavior
     if (statusMessage) statusMessage.textContent = 'Sending to printer…';
-    const spoolerCorrelationKey = createSpoolerCorrelationKey();
-    activeSpoolerCorrelationKey = spoolerCorrelationKey;
-    lastSpoolerCorrelationKey = spoolerCorrelationKey;
-
-    const response = await fetch('/api/confirm-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount: totalPrice,
-        mode: config.mode,
-        sessionId: config.sessionId,
-        documentId: config.documentId ?? uploadedDocumentId ?? undefined,
-        copies: config.copies,
-        colorMode: getDisplayColorMode(),
-        orientation: config.orientation,
-        paperSize: config.paperSize,
-        pageRange: config.pageRange,
-        duplex: config.duplex === true,
-        spoolerCorrelationKey,
-      }),
-    });
-
-    if (!response.ok) {
+    if (config.mode !== 'print') {
+      clearPendingPaymentSessionState();
       activeSpoolerCorrelationKey = null;
       lastSpoolerCorrelationKey = null;
       hideOverlay(printingOverlay);
-      const payload = (await response.json()) as {
-        error?: string;
-        printerStatus?: string;
-        inkStatus?: string;
-        inkReason?: string;
-      };
-      const blockingStatus =
-        payload.printerStatus ??
-        payload.inkStatus ??
-        (payload.inkReason ? 'Ink preflight blocked' : undefined);
-      if (statusMessage)
-        statusMessage.textContent = payload.inkReason
-          ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
-          : (payload.error ?? 'Payment confirmation failed.');
-
       isProcessingPayment = false;
-      if (blockingStatus) {
-        setPrinterReadyState(false, blockingStatus);
-        return;
-      }
-      applyConfirmGate();
+      applyConfirmGate('Invalid print mode.');
       return;
     }
+    const spoolerCorrelationKey =
+      paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
+    paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+    syncPendingPaymentSessionState();
+    const requestIdempotencyKey = getOrCreatePaymentIdempotencyKey();
+    activeSpoolerCorrelationKey = spoolerCorrelationKey;
+    lastSpoolerCorrelationKey = spoolerCorrelationKey;
 
-    const payload = (await response.json()) as {
-      change?: {
-        state?: 'none' | 'dispensed' | 'failed';
-        requested?: number;
-        message?: string;
+    try {
+      const response = await fetchWithTimeout('/api/confirm-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': requestIdempotencyKey,
+        },
+        body: JSON.stringify({
+          amount: totalPrice,
+          mode: config.mode,
+          sessionId: config.sessionId,
+          documentId: config.documentId ?? uploadedDocumentId ?? undefined,
+          copies: config.copies,
+          colorMode: getDisplayColorMode(),
+          orientation: config.orientation,
+          paperSize: config.paperSize,
+          pageRange: config.pageRange,
+          duplex: config.duplex === true,
+          spoolerCorrelationKey,
+        }),
+      });
+
+      if (!response.ok) {
+        clearSpoolerFinalizationTimer();
+        activeSpoolerCorrelationKey = null;
+        lastSpoolerCorrelationKey = null;
+        clearPendingPaymentSessionState();
+        hideOverlay(printingOverlay);
+        const payload = (await response.json()) as {
+          error?: string;
+          printerStatus?: string;
+          inkStatus?: string;
+          inkReason?: string;
+        };
+        const actionableMessage = payload.inkReason
+          ? `${payload.error ?? 'Payment confirmation failed.'} (${payload.inkReason})`
+          : (payload.error ?? 'Payment confirmation failed.');
+        const blockingStatus =
+          payload.printerStatus ??
+          payload.inkStatus ??
+          (payload.inkReason ? 'Ink preflight blocked' : undefined);
+        if (statusMessage)
+          statusMessage.textContent = actionableMessage;
+
+        isProcessingPayment = false;
+        if (blockingStatus) {
+          setPrinterReadyState(false, blockingStatus, actionableMessage);
+          return;
+        }
+        applyConfirmGate(actionableMessage);
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        change?: {
+          state?: 'none' | 'dispensed' | 'failed';
+          requested?: number;
+          message?: string;
+        };
       };
-    };
-    const awaitingSpoolerTerminal =
-      lastSpoolerCorrelationKey === spoolerCorrelationKey;
-
-    if (awaitingSpoolerTerminal && payload.change?.state === 'failed') {
-      setPrintingPhase('failed');
-      if (statusMessage) {
-        statusMessage.textContent =
-          'Print job accepted. Change dispensing failed. Please contact staff.';
+      const awaitingSpoolerTerminal =
+        lastSpoolerCorrelationKey === spoolerCorrelationKey;
+      if (!awaitingSpoolerTerminal) {
+        clearPendingPaymentSessionState();
       }
-      setCoinEventMessage(
-        `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required.`,
-      );
-    } else if (
-      awaitingSpoolerTerminal &&
-      payload.change?.state === 'dispensed'
-    ) {
-      setPrintingPhase('printing');
-      if (statusMessage) {
-        statusMessage.textContent =
-          'Payment confirmed. Waiting for printer completion...';
+
+      if (awaitingSpoolerTerminal && payload.change?.state === 'failed') {
+        setPrintingPhase('failed');
+        if (statusMessage) {
+          statusMessage.textContent =
+            'Print job accepted. Change dispensing failed. Please contact staff.';
+        }
+        setCoinEventMessage(
+          `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required.`,
+        );
+      } else if (
+        awaitingSpoolerTerminal &&
+        payload.change?.state === 'dispensed'
+      ) {
+        setPrintingPhase('printing');
+        if (statusMessage) {
+          statusMessage.textContent =
+            'Payment confirmed. Waiting for printer completion...';
+        }
+      } else if (awaitingSpoolerTerminal && statusMessage) {
+        statusMessage.textContent = 'Payment confirmed. Sending to spooler...';
       }
-    } else if (awaitingSpoolerTerminal && statusMessage) {
-      statusMessage.textContent = 'Payment confirmed. Sending to spooler...';
-    }
 
-    // Ensure the printing overlay is visible for at least MIN_OVERLAY_MS
-    const remaining = MIN_OVERLAY_MS - (Date.now() - overlayStart);
-    if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+      // Ensure the printing overlay is visible for at least MIN_OVERLAY_MS
+      const remaining = MIN_OVERLAY_MS - (Date.now() - overlayStart);
+      if (remaining > 0) await wait(remaining);
 
-    if (awaitingSpoolerTerminal && statusMessage) {
-      statusMessage.textContent = 'Waiting for printer spooler confirmation...';
+      if (awaitingSpoolerTerminal && statusMessage) {
+        statusMessage.textContent =
+          'Waiting for printer spooler confirmation...';
+      }
+    } catch (error) {
+      clearSpoolerFinalizationTimer();
+      hideOverlay(printingOverlay);
+      isProcessingPayment = false;
+      applyConfirmGate();
+      if (statusMessage) {
+        statusMessage.textContent = isAbortError(error)
+          ? 'Printing request timed out. Please check printer status and try again.'
+          : 'Network error while starting print. Please try again.';
+      }
+      // Only clear correlation keys on real failures, not on AbortErrors
+      if (!isAbortError(error)) {
+        activeSpoolerCorrelationKey = null;
+        lastSpoolerCorrelationKey = null;
+        clearPendingPaymentSessionState();
+      }
     }
   }
   if (config.mode !== 'print' || lastSpoolerCorrelationKey === null) {
@@ -1221,52 +1435,66 @@ modalConfirmBtn?.addEventListener('click', async () => {
 async function pollCopyJob(
   jobId: string,
 ): Promise<{ state: 'succeeded' | 'failed' | 'cancelled'; reason?: string }> {
-  return new Promise((resolve) => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
-        if (!res.ok) {
-          clearInterval(interval);
-          resolve({ state: 'failed' });
-          return;
-        }
-        const data = (await res.json()) as {
-          state: string;
-          progress?: { pagesCompleted: number; pagesTotal: number | null };
-          failure?: { message?: string };
-        };
-        const { state, progress, failure } = data;
-
-        if (state === 'queued' && statusMessage) {
-          statusMessage.textContent = 'Preparing printer...';
-        } else if (state === 'running' && statusMessage) {
-          if (progress && progress.pagesTotal) {
-            statusMessage.textContent = `Printing copy ${progress.pagesCompleted} of ${progress.pagesTotal}...`;
-          } else {
-            statusMessage.textContent = 'Printing your copy... please wait.';
-          }
-        }
-
-        if (
-          state === 'succeeded' ||
-          state === 'failed' ||
-          state === 'cancelled'
-        ) {
-          clearInterval(interval);
-          resolve({
-            state: state as 'succeeded' | 'failed' | 'cancelled',
-            reason:
-              typeof failure?.message === 'string' && failure.message.trim()
-                ? failure.message
-                : undefined,
-          });
-        }
-      } catch {
-        clearInterval(interval);
-        resolve({ state: 'failed' });
+  const startedAt = Date.now();
+  let timeoutReason: string | undefined;
+  while (Date.now() - startedAt < COPY_JOB_POLL_TIMEOUT_MS) {
+    try {
+      const res = await fetchWithTimeout(
+        `/api/copy/jobs/${encodeURIComponent(jobId)}`,
+        { method: 'GET' },
+      );
+      if (!res.ok) {
+        await wait(COPY_JOB_POLL_INTERVAL_MS);
+        continue;
       }
-    }, 1500);
-  });
+      const data = (await res.json()) as {
+        state: string;
+        progress?: { pagesCompleted: number; pagesTotal: number | null };
+        failure?: { message?: string };
+      };
+      const { state, progress, failure } = data;
+
+      if (state === 'queued' && statusMessage) {
+        statusMessage.textContent = 'Preparing printer...';
+      } else if (state === 'running' && statusMessage) {
+        if (progress && progress.pagesTotal) {
+          statusMessage.textContent = `Printing copy ${progress.pagesCompleted} of ${progress.pagesTotal}...`;
+        } else {
+          statusMessage.textContent = 'Printing your copy... please wait.';
+        }
+      } else if (state === 'cancel_requested' && statusMessage) {
+        statusMessage.textContent = 'Cancelling copy job...';
+      }
+
+      if (
+        state === 'succeeded' ||
+        state === 'failed' ||
+        state === 'cancelled'
+      ) {
+        return {
+          state: state as 'succeeded' | 'failed' | 'cancelled',
+          reason:
+            typeof failure?.message === 'string' && failure.message.trim()
+              ? failure.message
+              : undefined,
+        };
+      }
+    } catch (error) {
+      if (isAbortError(error)) {
+        timeoutReason = 'Copy status request timed out.';
+      }
+      await wait(COPY_JOB_POLL_INTERVAL_MS);
+      continue;
+    }
+    await wait(COPY_JOB_POLL_INTERVAL_MS);
+  }
+
+  return {
+    state: 'failed',
+    reason:
+      timeoutReason ??
+      'Copy job status timed out. Please check the printer and retry.',
+  };
 }
 
 thankYouDoneBtn?.addEventListener('click', () => {
@@ -1547,6 +1775,7 @@ if (typeof ioFactory === 'function') {
         ? `✓ Job sent to "${printerName}". Printing...`
         : '✓ Job sent to printer. Printing...';
     }
+    clearSpoolerFinalizationTimer();
     spoolerTimedOut = false;
     activeSpoolerCorrelationKey = null;
     setPrintingPhase('printing');
@@ -1597,8 +1826,10 @@ if (typeof ioFactory === 'function') {
       return;
     }
 
+    clearSpoolerFinalizationTimer();
     hideOverlay(printingOverlay);
     showOverlay(thankYouOverlay);
+    clearPendingPaymentSessionState();
     activeSpoolerCorrelationKey = null;
     if (statusMessage) {
       statusMessage.textContent = event.printerName
@@ -1688,6 +1919,8 @@ if (typeof ioFactory === 'function') {
       spoolerCorrelationKey,
     };
 
+    clearSpoolerFinalizationTimer();
+    clearPendingPaymentSessionState();
     activeSpoolerCorrelationKey = null;
     lastSpoolerCorrelationKey = null;
     spoolerTimedOut = false;
@@ -1767,6 +2000,17 @@ if (typeof ioFactory === 'function') {
     if (printingHint) {
       printingHint.textContent = `Processing is taking longer than usual (over ${timeoutMinutes} min). Do not turn off the machine.`;
     }
+    setPrintingPhase('manual-review');
+    if (statusMessage) {
+      statusMessage.textContent = event.printerName
+        ? `Spooler monitoring timed out on "${event.printerName}". Recovery review is in progress.`
+        : 'Spooler monitoring timed out. Recovery review is in progress.';
+    }
+    if (printingHint) {
+      printingHint.textContent =
+        'Please keep this screen open and contact staff for verification.';
+    }
+    clearSpoolerFinalizationTimer();
   });
 
   socket.on('coinSlotLocked', (_payload: unknown) => {

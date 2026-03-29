@@ -28,6 +28,7 @@ import {
   getTrustedTimeStatus,
   verifyTrustedClockSync,
 } from '@/services/time-source';
+import { getRecoveryStatusSnapshot } from '@/services/recovery';
 import {
   checkLockout,
   clearLockout,
@@ -604,6 +605,7 @@ export class AdminController {
       const tsMs = Date.parse(entry.timestamp);
       return Number.isFinite(tsMs) && nowMs - tsMs <= 24 * 60 * 60 * 1000;
     });
+    const recovery = getRecoveryStatusSnapshot();
     res.json({
       balance: db.data!.balance,
       earnings: this.adminService.computeEarningsBuckets(),
@@ -624,6 +626,17 @@ export class AdminController {
       anomalyStats: {
         totalCount: db.data!.anomalyIncidents.length,
         openCount: anomalyOpenCount,
+      },
+      recoveryStats: {
+        bootCount: recovery.lifecycle.bootCount,
+        unexpectedRestartCount: recovery.lifecycle.unexpectedRestartCount,
+        lastStartupAt: recovery.lifecycle.lastStartupAt,
+        lastShutdownAt: recovery.lifecycle.lastShutdownAt,
+        inFlightCount: recovery.sessionStats.inFlight,
+        startupPendingCount: recovery.sessionStats.startupPending,
+        autoRefundedCount: recovery.sessionStats.autoRefunded,
+        pendingAdminReviewCount: recovery.sessionStats.pendingAdminReview,
+        voidedCount: recovery.sessionStats.voided,
       },
       jamStats: {
         totalEvents: jamEvents.length,

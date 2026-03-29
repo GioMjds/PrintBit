@@ -1,7 +1,8 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [switch]$AtStartup
 )
 
 Set-StrictMode -Version Latest
@@ -43,7 +44,11 @@ $watchdogAction = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
 
-$watchdogTrigger = New-ScheduledTaskTrigger -AtLogOn
+$watchdogTrigger = if ($AtStartup) {
+    New-ScheduledTaskTrigger -AtStartup
+} else {
+    New-ScheduledTaskTrigger -AtLogOn
+}
 $watchdogSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
@@ -63,7 +68,13 @@ Register-ScheduledTask `
     -Trigger $watchdogTrigger `
     -Settings $watchdogSettings `
     -Principal $principal `
-    -Description "PrintBit watchdog loop for health polling and self-healing." | Out-Null
+    -Description (
+        if ($AtStartup) {
+            "PrintBit watchdog loop for health polling and self-healing at startup."
+        } else {
+            "PrintBit watchdog loop for health polling and self-healing."
+        }
+    ) | Out-Null
 
 $verifyAction = New-ScheduledTaskAction `
     -Execute "powershell.exe" `

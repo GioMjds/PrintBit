@@ -20,7 +20,8 @@
 #>
 
 param(
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [switch]$AtStartup
 )
 
 $TaskName = "PrintBit Kiosk"
@@ -53,7 +54,11 @@ $Action = New-ScheduledTaskAction `
     -Argument ("/c `"" + $BatPath + "`"") `
     -WorkingDirectory (Split-Path $BatPath)
 
-$Trigger = New-ScheduledTaskTrigger -AtLogOn
+$Trigger = if ($AtStartup) {
+    New-ScheduledTaskTrigger -AtStartup
+} else {
+    New-ScheduledTaskTrigger -AtLogOn
+}
 
 $Settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -74,10 +79,20 @@ Register-ScheduledTask `
     -Trigger $Trigger `
     -Settings $Settings `
     -Principal $Principal `
-    -Description "Starts PrintBit server with MyPublicWiFi hotspot on login." | Out-Null
+    -Description (
+        if ($AtStartup) {
+            "Starts PrintBit kiosk launcher at machine startup."
+        } else {
+            "Starts PrintBit server with MyPublicWiFi hotspot on login."
+        }
+    ) | Out-Null
 
 Write-Host ""
 Write-Host "[PrintBit] Scheduled task '$TaskName' installed!" -ForegroundColor Green
-Write-Host "[PrintBit]   Runs at logon as $env:USERNAME with admin privileges." -ForegroundColor Cyan
+if ($AtStartup) {
+    Write-Host "[PrintBit]   Runs at machine startup with admin privileges." -ForegroundColor Cyan
+} else {
+    Write-Host "[PrintBit]   Runs at logon as $env:USERNAME with admin privileges." -ForegroundColor Cyan
+}
 Write-Host "[PrintBit]   To remove: .\scripts\install-startup.ps1 -Uninstall" -ForegroundColor DarkGray
 Write-Host ""
