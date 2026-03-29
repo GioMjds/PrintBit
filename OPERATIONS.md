@@ -14,6 +14,8 @@
 - Install watchdog scheduled tasks: `pnpm run watchdog:install`
 - Verify watchdog secondary monitor: `pnpm run watchdog:verify`
 - Uninstall watchdog scheduled tasks: `pnpm run watchdog:uninstall`
+- Install startup trigger at machine boot: `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup`
+- Install watchdog at machine boot: `powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStartup`
 
 ## Pre-flight checklist (kiosk)
 
@@ -85,6 +87,31 @@
 3. Optional one-shot smoke run: `pnpm run watchdog:run-once`
 4. Verify heartbeat file is updating:
    - `uploads/watchdog/watchdog-heartbeat.json`
+5. For power-loss resilience, prefer startup trigger installs:
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup`
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStartup`
+
+## Power loss, reboot & crash recovery (Issue #37)
+
+### Software recovery behavior
+
+- At process startup, PrintBit records startup lifecycle markers in persistent runtime state.
+- If previous startup has no corresponding clean shutdown marker, startup reports `unexpected_restart_detected` in admin/anomaly logs.
+- Startup reconciliation scans in-flight payment sessions and applies policy:
+  - pre-settlement sessions are voided;
+  - settled print sessions without final spooler outcome are auto-refunded by default;
+  - any refund blocked by trusted-time enforcement remains unresolved and visible for admin review.
+
+### Hardware & production field SOP
+
+1. Use a UPS sized for kiosk tablet/mini-PC + printer + networking to prevent abrupt power cuts.
+2. Configure BIOS/UEFI to restore power automatically after AC loss (`Restore on AC Power Loss = Power On`).
+3. Use surge protection and secure power/USB cable retention in enclosure.
+4. After any unplanned reboot:
+   - check `GET /api/admin/summary` for `recoveryStats` and refund/open counts;
+   - verify watchdog status and heartbeat freshness;
+   - run one end-to-end transaction test before returning kiosk to service.
+5. If unresolved recovery sessions remain (e.g., trusted time blocked), technician should restore time sync and re-check pending refunds from admin panel before reopening.
 
 ### Runtime behavior
 

@@ -17,7 +17,6 @@ Install these first:
 - Git
 - Microsoft Edge (latest stable)
 - `bin/SumatraPDF.exe` present in project
-- MyPublicWiFi
 - Printer driver package (production printer)
 - Scanner driver + NAPS2 (`C:\Program Files\NAPS2\NAPS2.Console.exe`)
 - Serial/USB drivers for coin acceptor / hopper controller
