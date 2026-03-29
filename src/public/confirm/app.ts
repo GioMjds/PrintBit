@@ -131,6 +131,8 @@ const PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY =
   'printbit.confirmPaymentIdempotencyKey';
 const PENDING_PAYMENT_SPOOLER_STORAGE_KEY =
   'printbit.confirmPaymentSpoolerCorrelationKey';
+const PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY =
+  'printbit.confirmPaymentFingerprint';
 let totalPrice = 0;
 let pricingLoaded = false;
 let pricingError: string | null = null;
@@ -156,6 +158,18 @@ if (typeof config.documentId !== 'string') {
   config.documentId = uploadedDocumentId;
 }
 currentPrintQuote = config.mode === 'print' ? (config.quote ?? null) : null;
+const currentPaymentFingerprint = JSON.stringify({
+  mode: config.mode,
+  sessionId: config.sessionId ?? null,
+  documentId: config.documentId ?? null,
+  copies: config.copies,
+  colorMode: config.colorMode,
+  duplex: config.duplex === true,
+  orientation: config.orientation,
+  paperSize: config.paperSize,
+  pageRange: pageRangeFingerprint(config.pageRange),
+  quotedAmount: currentPrintQuote?.requiredAmount ?? null,
+});
 
 // Update back link to return to the correct config page with the session
 const backLink = document.getElementById(
@@ -175,6 +189,12 @@ function pageRangeLabel(sel?: PageRangeSelection): string {
   if (!sel || sel.type === 'all') return 'All Pages';
   if (sel.type === 'single') return `Page ${sel.page}`;
   return sel.range ? `Pages ${sel.range}` : 'Pages (custom)';
+}
+
+function pageRangeFingerprint(sel?: PageRangeSelection): string {
+  if (!sel || sel.type === 'all') return 'all';
+  if (sel.type === 'single') return `single:${sel.page}`;
+  return `custom:${sel.range ?? ''}`;
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
@@ -387,7 +407,7 @@ function setCoinEventMessage(message: string): void {
 }
 
 function setPrintingPhase(
-  phase: 'printing' | 'dispensing' | 'failed' | 'done',
+  phase: 'printing' | 'dispensing' | 'failed' | 'done' | 'manual-review',
 ): void {
   const modeLabel = config.mode === 'copy' ? 'Copying' : 'Printing';
   const modePast = config.mode === 'copy' ? 'Copy' : 'Print';
@@ -419,6 +439,18 @@ function setPrintingPhase(
     if (printingHint) {
       printingHint.textContent =
         'Please contact staff for manual change settlement.';
+    }
+    return;
+  }
+
+  if (phase === 'manual-review') {
+    if (printingSubtitle) {
+      printingSubtitle.textContent =
+        `${modePast} status requires manual review before release.`;
+    }
+    if (printingHint) {
+      printingHint.textContent =
+        'Please contact staff. Keep this screen open while recovery is verified.';
     }
     return;
   }
@@ -698,7 +730,14 @@ let activeSpoolerCorrelationKey: string | null = null;
 const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
   PENDING_PAYMENT_SPOOLER_STORAGE_KEY,
 );
+const persistedPaymentFingerprintRaw = sessionStorage.getItem(
+  PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY,
+);
+const persistedFingerprintMatchesCurrent =
+  config.mode === 'print' &&
+  persistedPaymentFingerprintRaw === currentPaymentFingerprint;
 const persistedSpoolerCorrelationKey =
+  persistedFingerprintMatchesCurrent &&
   persistedSpoolerCorrelationKeyRaw &&
   persistedSpoolerCorrelationKeyRaw.trim().length > 0
     ? persistedSpoolerCorrelationKeyRaw.trim()
@@ -707,6 +746,7 @@ const persistedPaymentIdempotencyKeyRaw = sessionStorage.getItem(
   PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
 );
 const persistedPaymentIdempotencyKey =
+  persistedFingerprintMatchesCurrent &&
   persistedPaymentIdempotencyKeyRaw &&
   persistedPaymentIdempotencyKeyRaw.trim().length > 0
     ? persistedPaymentIdempotencyKeyRaw.trim()
@@ -714,6 +754,11 @@ const persistedPaymentIdempotencyKey =
 let lastSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
 let paymentSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
 let paymentIdempotencyKey: string | null = persistedPaymentIdempotencyKey;
+if (!persistedFingerprintMatchesCurrent) {
+  sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+  sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+  sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
+}
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 let latestPrinterStatusLabel = 'Checking...';
 let spoolerTimedOut = false;
@@ -805,6 +850,9 @@ function createPaymentIdempotencyKey(): string {
 }
 
 function getOrCreatePaymentIdempotencyKey(): string {
+  if (config.mode !== 'print') {
+    return createPaymentIdempotencyKey();
+  }
   if (!paymentIdempotencyKey) {
     paymentIdempotencyKey = createPaymentIdempotencyKey();
     syncPendingPaymentSessionState();
@@ -831,6 +879,13 @@ function clearSpoolerFinalizationTimer(): void {
 }
 
 function syncPendingPaymentSessionState(): void {
+  if (config.mode !== 'print') {
+    sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+    sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+    sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
+    return;
+  }
+
   if (paymentIdempotencyKey) {
     sessionStorage.setItem(
       PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
@@ -845,8 +900,13 @@ function syncPendingPaymentSessionState(): void {
       PENDING_PAYMENT_SPOOLER_STORAGE_KEY,
       paymentSpoolerCorrelationKey,
     );
+    sessionStorage.setItem(
+      PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY,
+      currentPaymentFingerprint,
+    );
   } else {
     sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+    sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
   }
 }
 
@@ -1235,6 +1295,15 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } else {
     // Print flow: existing behavior
     if (statusMessage) statusMessage.textContent = 'Sending to printer…';
+    if (config.mode !== 'print') {
+      clearPendingPaymentSessionState();
+      activeSpoolerCorrelationKey = null;
+      lastSpoolerCorrelationKey = null;
+      hideOverlay(printingOverlay);
+      isProcessingPayment = false;
+      applyConfirmGate('Invalid print mode.');
+      return;
+    }
     const spoolerCorrelationKey =
       paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
     paymentSpoolerCorrelationKey = spoolerCorrelationKey;
@@ -1930,6 +1999,16 @@ if (typeof ioFactory === 'function') {
     }
     if (printingHint) {
       printingHint.textContent = `Processing is taking longer than usual (over ${timeoutMinutes} min). Do not turn off the machine.`;
+    }
+    setPrintingPhase('manual-review');
+    if (statusMessage) {
+      statusMessage.textContent = event.printerName
+        ? `Spooler monitoring timed out on "${event.printerName}". Recovery review is in progress.`
+        : 'Spooler monitoring timed out. Recovery review is in progress.';
+    }
+    if (printingHint) {
+      printingHint.textContent =
+        'Please keep this screen open and contact staff for verification.';
     }
     clearSpoolerFinalizationTimer();
   });
