@@ -553,15 +553,15 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         id: candidate.id,
         type: candidate.type,
         source: candidate.source,
-          category:
-            candidate.category === 'printer' ||
-            candidate.category === 'spooler' ||
-            candidate.category === 'serial' ||
-            candidate.category === 'hopper' ||
-            candidate.category === 'network' ||
-            candidate.category === 'security'
-              ? candidate.category
-              : 'printer',
+        category:
+          candidate.category === 'printer' ||
+          candidate.category === 'spooler' ||
+          candidate.category === 'serial' ||
+          candidate.category === 'hopper' ||
+          candidate.category === 'network' ||
+          candidate.category === 'security'
+            ? candidate.category
+            : 'printer',
         severity: candidate.severity === 'critical' ? 'critical' : 'warning',
         status:
           candidate.status === 'acknowledged' || candidate.status === 'resolved'
@@ -721,9 +721,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
                   ? entry.updatedAt
                   : new Date(0).toISOString(),
               phase,
-              requiredAmount: finiteOr(entry.requiredAmount, 0),
-              chargedAmount: finiteOr(entry.chargedAmount, 0),
-              sessionId: typeof entry.sessionId === 'string' ? entry.sessionId : null,
+              requiredAmount: Math.max(0, finiteOr(entry.requiredAmount, 0)),
+              chargedAmount: Math.max(0, finiteOr(entry.chargedAmount, 0)),
+              sessionId:
+                typeof entry.sessionId === 'string' ? entry.sessionId : null,
               documentId:
                 typeof entry.documentId === 'string' ? entry.documentId : null,
               spoolerCorrelationKey:
@@ -739,20 +740,24 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
                 typeof entry.jobDispatchedAt === 'string'
                   ? entry.jobDispatchedAt
                   : null,
-              settledAt: typeof entry.settledAt === 'string' ? entry.settledAt : null,
+              settledAt:
+                typeof entry.settledAt === 'string' ? entry.settledAt : null,
               spoolerTerminalAt:
                 typeof entry.spoolerTerminalAt === 'string'
                   ? entry.spoolerTerminalAt
                   : null,
               reconciledAt:
-                typeof entry.reconciledAt === 'string' ? entry.reconciledAt : null,
+                typeof entry.reconciledAt === 'string'
+                  ? entry.reconciledAt
+                  : null,
               startupReconciled: entry.startupReconciled === true,
               reconciliationAction,
               reconciliationReason:
                 typeof entry.reconciliationReason === 'string'
                   ? entry.reconciliationReason
                   : null,
-              lastError: typeof entry.lastError === 'string' ? entry.lastError : null,
+              lastError:
+                typeof entry.lastError === 'string' ? entry.lastError : null,
               wasPresentAtStartup:
                 typeof entry.wasPresentAtStartup === 'boolean'
                   ? entry.wasPresentAtStartup

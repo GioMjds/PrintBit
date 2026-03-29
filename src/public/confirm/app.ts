@@ -279,7 +279,8 @@ function applyLockState(locked: boolean): void {
 }
 
 function syncCoinSlotLockState(): void {
-  const shouldLock = pricingLoaded && totalPrice > 0 && currentBalance >= totalPrice;
+  const shouldLock =
+    pricingLoaded && totalPrice > 0 && currentBalance >= totalPrice;
   if (shouldLock === coinSlotIsLocked) return;
 
   applyLockState(shouldLock);
@@ -693,7 +694,6 @@ let spoolerTimedOut = false;
 const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
 const COPY_JOB_POLL_INTERVAL_MS = 1_500;
 const COPY_JOB_POLL_TIMEOUT_MS = 5 * 60 * 1_000;
-const SPOOLER_FINALIZATION_GRACE_MS = 2 * 60 * 1_000;
 let spoolerFinalizationTimer: number | null = null;
 
 type SpoolerFailureEvent = {
@@ -1844,23 +1844,20 @@ if (typeof ioFactory === 'function') {
     }
 
     clearSpoolerFinalizationTimer();
-    // Invoke finalization logic immediately instead of scheduling it
-    if (spoolerTimedOut && lastSpoolerCorrelationKey) {
-      activeSpoolerCorrelationKey = null;
-      lastSpoolerCorrelationKey = null;
-      spoolerTimedOut = false;
-      isProcessingPayment = false;
-      hideOverlay(printingOverlay);
-      setPrintingPhase('failed');
-      if (statusMessage) {
-        statusMessage.textContent =
-          'Printer confirmation timed out. Please verify output and contact staff if needed.';
-      }
-      setCoinEventMessage(
-        'Printer confirmation timed out. Transaction review may be required.',
-      );
-      applyConfirmGate();
+    // Invoke finalization logic immediately
+    lastSpoolerCorrelationKey = null;
+    spoolerTimedOut = false;
+    isProcessingPayment = false;
+    hideOverlay(printingOverlay);
+    setPrintingPhase('failed');
+    if (statusMessage) {
+      statusMessage.textContent =
+        'Printer confirmation timed out. Please verify output and contact staff if needed.';
     }
+    setCoinEventMessage(
+      'Printer confirmation timed out. Transaction review may be required.',
+    );
+    applyConfirmGate();
   });
 
   socket.on('coinSlotLocked', (_payload: unknown) => {

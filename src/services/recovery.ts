@@ -108,7 +108,12 @@ function trimRecoverySessions(): void {
   sessions.sort((a, b) => {
     const aMs = parseIsoMs(a.updatedAt);
     const bMs = parseIsoMs(b.updatedAt);
-    return Number.isFinite(bMs) ? bMs - aMs : 0;
+    const aValid = Number.isFinite(aMs);
+    const bValid = Number.isFinite(bMs);
+    if (aValid && bValid) return bMs - aMs;
+    if (aValid) return -1;
+    if (bValid) return 1;
+    return 0;
   });
   db.data!.recovery.sessions = sessions.slice(0, MAX_RECOVERY_SESSIONS);
 }

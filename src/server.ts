@@ -163,7 +163,7 @@ async function start() {
       .report({
         type: 'unexpected_restart_detected',
         source: 'recovery',
-        category: 'network',
+        category: 'security',
         severity: 'critical',
         message:
           'Unplanned restart detected. Startup recovery reconciliation has been executed.',
