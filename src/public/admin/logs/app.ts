@@ -42,6 +42,7 @@ let currentPage = 1;
 let totalLogs = 0;
 let allLogs: LogsResponse['logs'] = [];
 let activeTransactionIdFilter = '';
+let transactionSearchRequestSeq = 0;
 
 type TransactionLookupResponse = {
   transactionId: string;
@@ -187,8 +188,10 @@ async function loadTransactionSummary(transactionId: string): Promise<void> {
 }
 
 function applyTransactionSearch(): void {
+  const requestSeq = ++transactionSearchRequestSeq;
   const raw = transactionSearchInput?.value ?? '';
   activeTransactionIdFilter = raw.trim();
+  const searchedTransactionId = activeTransactionIdFilter;
   currentPage = 1;
   if (!activeTransactionIdFilter) {
     showLookupResult(null);
@@ -199,9 +202,12 @@ function applyTransactionSearch(): void {
     return;
   }
 
-  setMessage(`Searching transaction: ${activeTransactionIdFilter}`);
+  setMessage(`Searching transaction: ${searchedTransactionId}`);
   void loadData()
-    .then(() => loadTransactionSummary(activeTransactionIdFilter))
+    .then(async () => {
+      if (requestSeq !== transactionSearchRequestSeq) return;
+      await loadTransactionSummary(searchedTransactionId);
+    })
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Search failed.'),
     );

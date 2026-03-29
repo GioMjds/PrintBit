@@ -153,7 +153,7 @@ export class SessionStore {
 
   /** Check whether a session is still within its TTL window. */
   isSessionExpired(session: Session): boolean {
-    if (!DEFAULT_SESSION_EXPIRY_ENABLED) return false;
+    if (!this.expiryEnabled) return false;
     return Date.now() - session.lastActivityAt.getTime() > SESSION_TTL_MS;
   }
 
@@ -433,7 +433,7 @@ export class SessionStore {
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
     const freshUrl = buildUploadUrl(publicBaseUrl, session.token);
     const freshPublicUrl = buildPublicUploadUrl(session.token);
-    const ttlMetadata = DEFAULT_SESSION_EXPIRY_ENABLED
+    const ttlMetadata = this.expiryEnabled
       ? {
           expiresAt: new Date(this.getExpiryTimestamp(session)),
           remainingSeconds: this.getRemainingSeconds(session),
@@ -576,7 +576,7 @@ export class SessionStore {
 
   /** Remove expired sessions and their uploaded files from disk. */
   private cleanupExpired(): void {
-    if (!DEFAULT_SESSION_EXPIRY_ENABLED) return;
+    if (!this.expiryEnabled) return;
     for (const [id, session] of this.sessions.entries()) {
       if (this.isSessionExpired(session)) {
         void this.pruneExpiredSession(id, session);
