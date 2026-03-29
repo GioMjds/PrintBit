@@ -3,7 +3,12 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cookieParser from 'cookie-parser';
-import { PORT, UPLOAD_DIR, CAPTIVE_PORTAL_ENABLED } from '@/config';
+import {
+  PORT,
+  UPLOAD_DIR,
+  CAPTIVE_PORTAL_ENABLED,
+  SESSION_EXPIRY_ENABLED,
+} from '@/config';
 import { createCaptivePortalMiddleware } from '@/middleware';
 import { registerAppModules } from '@/app.module';
 import {
@@ -48,7 +53,9 @@ const io = new Server(server);
 
 app.use(cookieParser());
 
-const sessionStore = new SessionStore(UPLOAD_DIR);
+const sessionStore = new SessionStore(UPLOAD_DIR, {
+  expiryEnabled: SESSION_EXPIRY_ENABLED,
+});
 
 app.use(express.json());
 

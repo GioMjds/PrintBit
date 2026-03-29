@@ -4,9 +4,7 @@ import path from 'node:path';
 const DEFAULT_PORT = 3000;
 const rawPort = process.env.PORT?.trim();
 const parsedPort =
-  rawPort !== undefined && /^\d+$/.test(rawPort)
-    ? Number(rawPort)
-    : Number.NaN;
+  rawPort !== undefined && /^\d+$/.test(rawPort) ? Number(rawPort) : Number.NaN;
 export const PORT =
   Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535
     ? parsedPort
@@ -81,6 +79,14 @@ export const MYPUBLICWIFI_PATH =
 export const PUBLIC_URL =
   process.env.PRINTBIT_PUBLIC_URL?.replace(/\/+$/, '') || undefined;
 
+const rawSessionExpiryEnabled =
+  process.env.PRINTBIT_SESSION_EXPIRY_ENABLED?.trim().toLowerCase();
+const SESSION_EXPIRY_DISABLED_TOKENS = new Set(['false', '0', 'no', 'off']);
+export const SESSION_EXPIRY_ENABLED =
+  rawSessionExpiryEnabled === undefined
+    ? true
+    : !SESSION_EXPIRY_DISABLED_TOKENS.has(rawSessionExpiryEnabled);
+
 export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
   { route: '/', filePath: path.join(PUBLIC_DIR, 'index.html') },
   { route: '/print', filePath: path.join(PUBLIC_DIR, 'print', 'index.html') },
@@ -89,6 +95,10 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
   {
     route: '/confirm',
     filePath: path.join(PUBLIC_DIR, 'confirm', 'index.html'),
+  },
+  {
+    route: '/receipt/:transactionId',
+    filePath: path.join(PUBLIC_DIR, 'receipt', 'index.html'),
   },
   { route: '/scan', filePath: path.join(PUBLIC_DIR, 'scan', 'index.html') },
   {

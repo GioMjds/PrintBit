@@ -17,6 +17,18 @@ const clearLogsBtn = document.getElementById(
 const prevPageBtn = document.getElementById('prevPageBtn') as HTMLButtonElement;
 const nextPageBtn = document.getElementById('nextPageBtn') as HTMLButtonElement;
 const pageInfo = document.getElementById('pageInfo') as HTMLElement;
+const transactionSearchInput = document.getElementById(
+  'transactionSearchInput',
+) as HTMLInputElement | null;
+const transactionSearchBtn = document.getElementById(
+  'transactionSearchBtn',
+) as HTMLButtonElement | null;
+const transactionSearchClearBtn = document.getElementById(
+  'transactionSearchClearBtn',
+) as HTMLButtonElement | null;
+const transactionLookupResult = document.getElementById(
+  'transactionLookupResult',
+) as HTMLElement | null;
 const openAlertBadge = document.getElementById(
   'openAlertBadge',
 ) as HTMLElement | null;
@@ -29,6 +41,23 @@ let refreshTimer: number | null = null;
 let currentPage = 1;
 let totalLogs = 0;
 let allLogs: LogsResponse['logs'] = [];
+let activeTransactionIdFilter = '';
+let transactionSearchRequestSeq = 0;
+
+type TransactionLookupResponse = {
+  transactionId: string;
+  mode: string | null;
+  chargedAmount: number | null;
+  settledAt: string | null;
+  spoolerPhase: string | null;
+  reconciliationAction: string | null;
+  pendingRefunds: Array<{
+    id: string;
+    status: string;
+    chargedAmount: number;
+    reason: string;
+  }>;
+};
 
 function setOpenAlertBadge(openCount: number): void {
   const value = openCount > 0 ? String(openCount) : '';
@@ -99,18 +128,101 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-async function loadData(): Promise<void> {
-  const res = await apiFetch('/api/admin/logs?limit=1000');
+async function loadData(options?: {
+  transactionId?: string;
+  requestSeq?: number;
+}): Promise<void> {
+  const requestedTransactionId =
+    options?.transactionId ?? activeTransactionIdFilter;
+  const requestSeq = options?.requestSeq;
+  const params = new URLSearchParams({ limit: '1000' });
+
+  if (requestedTransactionId) {
+    params.set('transactionId', requestedTransactionId);
+  }
+  const res = await apiFetch(`/api/admin/logs?${params.toString()}`);
   if (!res.ok) {
     if (res.status === 401) throw new Error('Invalid admin PIN.');
     throw new Error('Failed to load logs.');
   }
   const data = (await res.json()) as LogsResponse;
+  if (
+    typeof requestSeq === 'number' &&
+    requestSeq !== transactionSearchRequestSeq
+  ) {
+    return;
+  }
   allLogs = data.logs;
   totalLogs = allLogs.length;
   if (currentPage > totalPages()) currentPage = totalPages();
   renderPage();
   await loadSummary();
+}
+
+function showLookupResult(message: string | null): void {
+  if (!transactionLookupResult) return;
+  if (!message) {
+    transactionLookupResult.setAttribute('hidden', '');
+    transactionLookupResult.textContent = '';
+    return;
+  }
+  transactionLookupResult.textContent = message;
+  transactionLookupResult.removeAttribute('hidden');
+}
+
+async function loadTransactionSummary(transactionId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/admin/transactions/${encodeURIComponent(transactionId)}`,
+  );
+  if (!res.ok) {
+    showLookupResult(
+      res.status === 404
+        ? `No transaction summary found for ${transactionId}.`
+        : `Failed to load transaction summary for ${transactionId}.`,
+    );
+    return;
+  }
+  const data = (await res.json()) as TransactionLookupResponse;
+  const amountText =
+    typeof data.chargedAmount === 'number'
+      ? `₱${data.chargedAmount.toFixed(2)}`
+      : 'unknown';
+  const settledText = data.settledAt
+    ? new Date(data.settledAt).toLocaleString()
+    : 'unknown';
+  const refundState =
+    data.pendingRefunds.length > 0
+      ? `${data.pendingRefunds.length} pending/processed refund record(s)`
+      : 'no refund records';
+  showLookupResult(
+    `Transaction ${data.transactionId} • mode=${data.mode ?? 'unknown'} • amount=${amountText} • settled=${settledText} • spooler=${data.spoolerPhase ?? 'n/a'} • ${refundState}`,
+  );
+}
+
+function applyTransactionSearch(): void {
+  const requestSeq = ++transactionSearchRequestSeq;
+  const raw = transactionSearchInput?.value ?? '';
+  activeTransactionIdFilter = raw.trim();
+  const searchedTransactionId = activeTransactionIdFilter;
+  currentPage = 1;
+  if (!activeTransactionIdFilter) {
+    showLookupResult(null);
+    setMessage('Showing all logs.');
+    void loadData({ requestSeq }).catch((e: unknown) =>
+      setMessage(e instanceof Error ? e.message : 'Search failed.'),
+    );
+    return;
+  }
+
+  setMessage(`Searching transaction: ${searchedTransactionId}`);
+  void loadData({ transactionId: searchedTransactionId, requestSeq })
+    .then(async () => {
+      if (requestSeq !== transactionSearchRequestSeq) return;
+      await loadTransactionSummary(searchedTransactionId);
+    })
+    .catch((e: unknown) =>
+      setMessage(e instanceof Error ? e.message : 'Search failed.'),
+    );
 }
 
 async function loadSummary(): Promise<void> {
@@ -197,6 +309,24 @@ nextPageBtn.addEventListener('click', () => {
     currentPage++;
     renderPage();
   }
+});
+
+transactionSearchBtn?.addEventListener('click', applyTransactionSearch);
+transactionSearchInput?.addEventListener('keydown', (event: KeyboardEvent) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  applyTransactionSearch();
+});
+transactionSearchClearBtn?.addEventListener('click', () => {
+  transactionSearchRequestSeq++;
+  if (transactionSearchInput) transactionSearchInput.value = '';
+  activeTransactionIdFilter = '';
+  currentPage = 1;
+  showLookupResult(null);
+  setMessage('Showing all logs.');
+  void loadData({ requestSeq: transactionSearchRequestSeq }).catch((e: unknown) =>
+    setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
+  );
 });
 
 initAuth(async () => {

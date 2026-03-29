@@ -17,6 +17,10 @@ export class FinancialController {
   private initializeRoutes(): void {
     this.router.get('/api/balance', this.getBalance);
     this.router.get('/api/pricing', this.getPricing);
+    this.router.get(
+      '/api/transactions/:transactionId/receipt',
+      this.getTransactionReceipt,
+    );
     this.router.post('/api/print/quote', this.getPrintQuote);
     this.router.post('/api/balance/reset', this.resetBalance);
     this.router.post('/api/balance/add-test-coin', this.addTestCoin);
@@ -39,6 +43,10 @@ export class FinancialController {
     this.financialService.getPricing(req, res);
   };
 
+  private getTransactionReceipt = (req: Request, res: Response): void => {
+    this.financialService.getTransactionReceipt(req, res);
+  };
+
   private getPrintQuote = (req: Request, res: Response): void => {
     this.financialService.getPrintQuote(req, res);
   };
@@ -59,7 +67,10 @@ export class FinancialController {
     await this.financialService.printLegacy(req, res);
   };
 
-  private confirmPayment = async (req: Request, res: Response): Promise<void> => {
+  private confirmPayment = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
     await this.financialService.confirmPayment(req, res);
   };
 }

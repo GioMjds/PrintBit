@@ -821,6 +821,16 @@ body {
   margin-top: 10px;
 }
 
+.modal-subtitle--reference {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--lavender);
+  opacity: 0.95;
+  overflow-wrap: break-word;
+}
+
 .modal-btn--wide {
   width: 100%;
   margin-top: 20px;

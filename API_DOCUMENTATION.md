@@ -137,6 +137,7 @@ Response:
 ```json
 {
   "ok": true,
+  "transactionId": "uuid",
   "chargedAmount": 5,
   "balance": 0,
   "earnings": 100,
@@ -150,6 +151,11 @@ Response:
 ```
 
 The `change` object is always present. `state` is one of `"none"`, `"dispensed"`, or `"failed"`. When `state` is `"failed"`, an `owedChangeId` and `message` are included — the owed change is recorded for admin resolution.
+`transactionId` is the canonical customer/admin reference ID for support and refund follow-up.
+
+### `GET /api/transactions/:transactionId/receipt`
+
+Public/safe receipt endpoint for kiosk follow-up pages. Returns sanitized transaction details (`mode`, `chargedAmount`, status timestamps, refund status) keyed by `transactionId`.
 
 For `mode: "print"`, the server now recomputes pricing from the same quote pipeline used by `/api/print/quote`, so displayed quote amount and charged amount stay aligned.
 
@@ -355,6 +361,20 @@ Both `/api/admin/summary` and `/api/admin/status` now include:
   }
 }
 ```
+
+### `GET /api/admin/transactions/:transactionId`
+
+Returns a transaction-focused support snapshot for the given reference ID. Response includes:
+
+- `transactionId`
+- `mode`
+- `chargedAmount`
+- `settledAt`
+- `spoolerPhase`
+- `reconciliationAction`
+- `pendingRefunds[]`
+- `ledgerEntries[]`
+- `relatedLogs[]`
 
 ### `GET /api/admin/system/time-sync`
 
