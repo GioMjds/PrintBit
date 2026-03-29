@@ -722,7 +722,6 @@ function detectPreferredLocalKioskAddress(requestHost: string): string | null {
     if (requestHost.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) return requestHost;
     const detectedEsp32 = detectEsp32KioskAddress();
     if (detectedEsp32) return detectedEsp32;
-    if (ESP32_KIOSK_IP) return ESP32_KIOSK_IP;
   }
 
   if (isPrivateIpv4(requestHost)) return requestHost;
