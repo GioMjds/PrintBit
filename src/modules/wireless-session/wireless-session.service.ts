@@ -2,6 +2,7 @@ import path from 'node:path';
 import type { Request, RequestHandler } from 'express';
 import type { Server } from 'socket.io';
 import { adminService } from '@/services/admin';
+import { db, withBalanceLock } from '@/services/db';
 import type { DocumentAnalysis, SessionStore } from '@/services/session';
 import { generateHtmlPreview, supportsHtmlPreview } from '@/services/preview';
 import { detectPdfColorContent } from '@/services/color-detection';
@@ -124,13 +125,39 @@ export class WirelessSessionService {
     });
   };
 
-  createSession: RequestHandler = (req, res) => {
-    const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.createSession(publicBaseUrl);
-    void adminService.appendAdminLog('session_created', 'Wireless upload session created.', {
-      sessionId: session.sessionId,
-    });
-    res.status(201).json(session);
+  createSession: RequestHandler = async (req, res) => {
+    try {
+      const previousBalance = await withBalanceLock(async () => {
+        const currentBalance = db.data?.balance ?? 0;
+        if (currentBalance <= 0) return 0;
+        db.data!.balance = 0;
+        await db.write();
+        return currentBalance;
+      });
+
+      this.deps.io.emit('balance', 0);
+
+      const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
+      const session = this.deps.sessionStore.createSession(publicBaseUrl);
+      void adminService.appendAdminLog(
+        'session_created',
+        'Wireless upload session created.',
+        {
+          sessionId: session.sessionId,
+          previousBalance,
+          newBalance: 0,
+          balanceReset: previousBalance > 0,
+        },
+      );
+      res.status(201).json(session);
+    } catch (error) {
+      console.error('[wireless-session] Failed to create session.', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        error: 'Failed to create wireless session.',
+      });
+    }
   };
 
   getSessionByToken: RequestHandler<{ token: string }> = (req, res) => {

@@ -112,9 +112,6 @@ const modalChangeRow = document.getElementById('modalChangeRow');
 const statusMessage = document.getElementById('statusMessage');
 const coinEventMessage = document.getElementById('coinToast');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
-const resetBalanceBtn = document.getElementById(
-  'resetBalanceBtn',
-) as HTMLButtonElement;
 
 const rawConfig = sessionStorage.getItem('printbit.config');
 const uploadedFile = sessionStorage.getItem('printbit.uploadedFile');
@@ -264,7 +261,6 @@ if (priceValue) priceValue.textContent = 'Loading...';
 function applyLockState(locked: boolean): void {
   coinSlotIsLocked = locked;
   const changeAmount = Math.max(0, currentBalance - totalPrice);
-  const coinButtons = document.querySelectorAll<HTMLButtonElement>('.coin-btn');
 
   const coinPanel = document.querySelector<HTMLElement>('.coin-panel');
   const coinIcon = document.getElementById('coinIcon');
@@ -294,12 +290,6 @@ function applyLockState(locked: boolean): void {
     changeReadyBadge?.setAttribute('hidden', '');
   }
 
-  coinButtons.forEach((button) => {
-    button.disabled = locked;
-  });
-  if (resetBalanceBtn) {
-    resetBalanceBtn.disabled = locked;
-  }
 }
 
 function syncCoinSlotLockState(): void {
@@ -668,31 +658,6 @@ async function loadPricing(): Promise<void> {
   updateChangeDisplay(currentBalance);
   syncCoinSlotLockState();
   applyConfirmGate();
-}
-
-async function resetBalanceForTesting(): Promise<void> {
-  if (!resetBalanceBtn) return;
-  resetBalanceBtn.disabled = true;
-  if (statusMessage) statusMessage.textContent = 'Resetting coin balance...';
-
-  const response = await fetch('/api/balance/reset', { method: 'POST' });
-  const payload = (await response.json()) as {
-    balance?: number;
-    error?: string;
-  };
-
-  if (!response.ok) {
-    if (statusMessage)
-      statusMessage.textContent = payload.error ?? 'Failed to reset balance.';
-    resetBalanceBtn.disabled = coinSlotIsLocked;
-    return;
-  }
-
-  updateBalanceUI(payload.balance ?? 0);
-  if (statusMessage)
-    statusMessage.textContent = 'Coin balance reset to ₱ 0.00 (testing mode).';
-  setCoinEventMessage('Balance reset manually for testing.');
-  resetBalanceBtn.disabled = coinSlotIsLocked;
 }
 
 const confirmModal = document.getElementById('confirmModal');
@@ -1513,42 +1478,6 @@ const scanQrDoneBtn = document.getElementById(
 scanQrDoneBtn?.addEventListener('click', () => {
   window.location.href = '/';
 });
-resetBalanceBtn?.addEventListener('click', () => {
-  void resetBalanceForTesting();
-});
-
-async function insertTestCoin(value: number): Promise<void> {
-  const buttons = document.querySelectorAll<HTMLButtonElement>('.coin-btn');
-  buttons.forEach((b) => (b.disabled = true));
-
-  try {
-    const response = await fetch('/api/balance/add-test-coin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value }),
-    });
-
-    const payload = (await response.json()) as {
-      balance?: number;
-      error?: string;
-    };
-    if (!response.ok) {
-      setCoinEventMessage(payload.error ?? 'Failed to insert coin.');
-    }
-  } catch {
-    setCoinEventMessage('Network error inserting test coin.');
-  } finally {
-    buttons.forEach((b) => (b.disabled = coinSlotIsLocked));
-  }
-}
-
-document.querySelectorAll<HTMLButtonElement>('.coin-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const value = parseInt(btn.dataset.value ?? '0', 10);
-    if (value > 0) void insertTestCoin(value);
-  });
-});
-
 const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }
 ).io;
