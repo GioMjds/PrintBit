@@ -46,17 +46,6 @@ body {
   animation-delay: -6s;
 }
 
-.bg-circle--3 {
-  width: 300px;
-  height: 300px;
-  background: var(--lavender);
-  top: 40%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  animation-duration: 24s;
-  animation-delay: -12s;
-}
-
 @keyframes drift {
   from {
     transform: translate(0, 0) scale(1);

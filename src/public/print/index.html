@@ -120,7 +120,11 @@
                 >
                   Kiosk Wi-Fi
                 </button>
-                <button id="modeInternetBtn" type="button" class="network-mode-btn">
+                <button
+                  id="modeInternetBtn"
+                  type="button"
+                  class="network-mode-btn"
+                >
                   Internet
                 </button>
               </div>
@@ -128,7 +132,7 @@
 
             <div class="qr-actions">
               <!-- Upload page for testing only -->
-              <button
+              <!-- <button
                 id="openUploadBtn"
                 type="button"
                 class="qr-action-btn qr-action-btn--primary"
@@ -144,7 +148,7 @@
                   />
                 </svg>
                 Open upload page
-              </button>
+              </button> -->
               <button
                 id="refreshSessionBtn"
                 type="button"
@@ -228,9 +232,9 @@
             </p>
           </div>
 
-          <!-- File list (populated by JS) -->
+          <!-- File list (populated by JS) — starts hidden so files-empty centres correctly -->
           <ul
-            class="file-list"
+            class="file-list hidden"
             id="fileList"
             aria-label="Uploaded files"
             role="listbox"
