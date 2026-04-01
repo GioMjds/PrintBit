@@ -33,7 +33,10 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const { initDB, db } = require('../src/services/db');
-const { getSqliteDb, initSqliteStorage } = require('../src/core/database/sqlite-storage');
+const {
+  getSqliteDb,
+  initSqliteStorage,
+} = require('../src/core/database/sqlite-storage');
 
 // Build the next lowdb state by preserving configuration while clearing runtime/operational data.
 function buildResetState(current) {
@@ -95,7 +98,19 @@ function buildResetState(current) {
   };
 }
 
+const ALLOWED_TABLES = new Set([
+  'admin_logs',
+  'feedback_entries',
+  'feedback_sessions',
+  'report_issue_entries',
+  'report_issue_sessions',
+  'report_issue_attachments',
+]);
+
 function countRows(sqliteDb, tableName) {
+  if (!ALLOWED_TABLES.has(tableName))
+    throw new Error(`Table "${tableName}" is not allowed for counting.`);
+
   const row = sqliteDb
     .prepare(`SELECT COUNT(*) AS total FROM ${tableName}`)
     .get();
@@ -144,7 +159,9 @@ async function main() {
   const before = {
     admin_logs: countRows(sqliteDb, 'admin_logs'),
     feedback_entries: countRows(sqliteDb, 'feedback_entries'),
+    feedback_sessions: countRows(sqliteDb, 'feedback_sessions'),
     report_issue_entries: countRows(sqliteDb, 'report_issue_entries'),
+    report_issue_sessions: countRows(sqliteDb, 'report_issue_sessions'),
     report_issue_attachments: countRows(sqliteDb, 'report_issue_attachments'),
     financialLedger: db.data.financialLedger.length,
     anomalyIncidents: db.data.anomalyIncidents.length,
@@ -168,7 +185,9 @@ async function main() {
   const after = {
     admin_logs: countRows(sqliteDb, 'admin_logs'),
     feedback_entries: countRows(sqliteDb, 'feedback_entries'),
+    feedback_sessions: countRows(sqliteDb, 'feedback_sessions'),
     report_issue_entries: countRows(sqliteDb, 'report_issue_entries'),
+    report_issue_sessions: countRows(sqliteDb, 'report_issue_sessions'),
     report_issue_attachments: countRows(sqliteDb, 'report_issue_attachments'),
     financialLedger: db.data.financialLedger.length,
     anomalyIncidents: db.data.anomalyIncidents.length,
