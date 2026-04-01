@@ -6,7 +6,7 @@ import {
   requireAdminLocalAccess,
   requireAdminPin,
 } from '@/middleware/admin-auth';
-import { AdminService } from './admin.service';
+import { AdminService, type EarningsAnalyticsView } from './admin.service';
 import { db } from '@/services/db';
 import {
   PendingRefundServiceError,
@@ -78,6 +78,15 @@ function normalizeTargetPrinterName(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const sanitized = value.replace(/[\u0000-\u001F\u007F]/g, '').trim();
   return sanitized ? sanitized : null;
+}
+
+function isEarningsAnalyticsView(value: unknown): value is EarningsAnalyticsView {
+  return (
+    value === 'daily' ||
+    value === 'weekly' ||
+    value === 'monthly' ||
+    value === 'yearly'
+  );
 }
 
 function isAnomalySeverity(value: unknown): value is 'warning' | 'critical' {
@@ -318,6 +327,12 @@ export class AdminController {
       requireAdminLocalAccess,
       requireAdminPin,
       this.handleGetStatus,
+    );
+    this.router.get(
+      '/earnings/analytics',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetEarningsAnalytics,
     );
     this.router.get(
       '/system/time-sync',
@@ -684,6 +699,29 @@ export class AdminController {
       host,
       wifiActive,
     });
+  };
+
+  private handleGetEarningsAnalytics = (req: Request, res: Response) => {
+    const viewParam =
+      typeof req.query.view === 'string' ? req.query.view : undefined;
+    const view: EarningsAnalyticsView = isEarningsAnalyticsView(viewParam)
+      ? viewParam
+      : 'weekly';
+    const anchorRaw =
+      typeof req.query.anchor === 'string' ? req.query.anchor : undefined;
+    const anchor = anchorRaw ? new Date(anchorRaw) : new Date();
+    if (Number.isNaN(anchor.getTime())) {
+      return res.status(400).json({
+        error: 'Invalid anchor date. Use ISO date format (YYYY-MM-DD).',
+      });
+    }
+
+    const analytics = this.adminService.computeDetailedEarningsAnalytics({
+      view,
+      anchor,
+    });
+
+    return res.json(analytics);
   };
 
   private handleGetTimeSync = async (_req: Request, res: Response) => {

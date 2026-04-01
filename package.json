@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --ignore-watch uploads --ignore-watch printbit.sqlite --ignore-watch printbit.sqlite-shm --ignore-watch printbit.sqlite-wal -r tsconfig-paths/register src/server.ts",
     "build": "node scripts/build-client.js",
-    "db:migrate:legacy": "ts-node -r tsconfig-paths/register --swc src/scripts/migrate-dbjson-to-sqlite.ts",
+    "db:reset": "node ./scripts/reset-db.js",
     "kiosk": "node ./scripts/launch-kiosk.js",
     "start": "cmd /c ./scripts/start-kiosk.bat",
     "install-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1",
@@ -38,6 +38,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "file-type": "^21.3.2",
+    "flatpickr": "^4.6.13",
     "i18next": "^25.9.0",
     "i18next-fs-backend": "^2.6.1",
     "i18next-http-middleware": "^3.9.2",

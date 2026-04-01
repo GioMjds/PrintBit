@@ -1,3 +1,4 @@
+/* ─── Earnings cards ───────────────────────────────────────────────────────── */
 .earnings-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -60,8 +61,361 @@
   background: linear-gradient(90deg, var(--peach), #f7e0d4);
 }
 
+/* ─── Analytics panel ──────────────────────────────────────────────────────── */
+.earnings-panel {
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.earnings-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ─── View switch ──────────────────────────────────────────────────────────── */
+.view-switch {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.view-switch__btn {
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 150ms,
+    background 150ms;
+}
+
+.view-switch__btn:hover {
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.view-switch__btn--active {
+  color: var(--white);
+  background: rgba(105, 111, 199, 0.28);
+}
+
+/* ─── Anchor / date controls ───────────────────────────────────────────────── */
+.anchor-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anchor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition:
+    color 150ms,
+    background 150ms,
+    border-color 150ms;
+}
+
+.anchor-btn:hover {
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.anchor-btn--calendar {
+  width: auto;
+  padding: 0 12px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lavender);
+  border-color: rgba(105, 111, 199, 0.35);
+  background: rgba(105, 111, 199, 0.1);
+}
+
+.anchor-btn--calendar svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.anchor-btn--calendar:hover {
+  color: var(--white);
+  background: rgba(105, 111, 199, 0.22);
+  border-color: rgba(105, 111, 199, 0.55);
+}
+
+/* Hidden but Flatpickr still needs width to anchor its popup */
+.anchor-input {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  padding: 0;
+  border: 0;
+  position: absolute;
+  pointer-events: none;
+}
+
+/* ─── Period label + trend grid ────────────────────────────────────────────── */
+.earnings-period-label {
+  margin-top: 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+}
+
+.trend-cell {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 150ms;
+}
+
+.trend-cell:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.trend-cell__label {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.trend-cell__amount {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ─── Method cards ─────────────────────────────────────────────────────────── */
+.methods-row {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.method-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.method-card__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.method-card__amount {
+  margin-top: 8px;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.method-card--top .method-card__top {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--lavender);
+}
+
+/* ─── Flatpickr theme overrides ────────────────────────────────────────────── */
+.flatpickr-calendar {
+  background: #131222 !important;
+  border: 1.5px solid var(--border, rgba(255, 255, 255, 0.1)) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(105, 111, 199, 0.12) !important;
+  font-family: inherit !important;
+  overflow: hidden;
+  padding: 4px;
+}
+
+/* Arrow / caret */
+.flatpickr-calendar.arrowTop::before,
+.flatpickr-calendar.arrowTop::after {
+  border-bottom-color: #131222 !important;
+}
+
+/* Month header */
+.flatpickr-months {
+  padding: 10px 10px 4px;
+  align-items: center;
+}
+
+.flatpickr-month {
+  color: var(--white, #fff) !important;
+  fill: var(--white, #fff) !important;
+  height: 36px !important;
+}
+
+.flatpickr-current-month {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: var(--white, #fff) !important;
+  padding-top: 6px !important;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+  background: transparent !important;
+  color: var(--white, #fff) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  border: none !important;
+}
+
+.flatpickr-current-month .numInputWrapper span.arrowUp,
+.flatpickr-current-month .numInputWrapper span.arrowDown {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.flatpickr-current-month input.cur-year {
+  color: var(--white, #fff) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+}
+
+/* Prev / next month arrows */
+.flatpickr-prev-month,
+.flatpickr-next-month {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 8px !important;
+  fill: var(--ink-muted, rgba(255, 255, 255, 0.45)) !important;
+  transition:
+    background 150ms,
+    fill 150ms !important;
+  top: 12px !important;
+}
+
+.flatpickr-prev-month:hover,
+.flatpickr-next-month:hover {
+  background: rgba(105, 111, 199, 0.2) !important;
+  fill: var(--white, #fff) !important;
+}
+
+/* Weekday header row */
+.flatpickr-weekdays {
+  background: transparent !important;
+  margin-top: 6px;
+}
+
+span.flatpickr-weekday {
+  background: transparent !important;
+  color: var(--ink-muted, rgba(255, 255, 255, 0.4)) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Day cells */
+.flatpickr-days {
+  border: none !important;
+  padding: 0 4px 4px;
+}
+
+.dayContainer {
+  padding: 0 !important;
+  gap: 2px !important;
+}
+
+.flatpickr-day {
+  border-radius: 10px !important;
+  border: 1px solid transparent !important;
+  color: var(--white, #fff) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  max-width: 36px !important;
+  transition:
+    background 130ms,
+    border-color 130ms,
+    color 130ms !important;
+}
+
+.flatpickr-day:hover:not(.flatpickr-disabled):not(.selected) {
+  background: rgba(105, 111, 199, 0.18) !important;
+  border-color: rgba(105, 111, 199, 0.3) !important;
+  color: var(--white, #fff) !important;
+}
+
+/* Today */
+.flatpickr-day.today {
+  border-color: rgba(105, 111, 199, 0.5) !important;
+  color: var(--lavender, #8b8fd8) !important;
+  background: rgba(105, 111, 199, 0.08) !important;
+}
+
+.flatpickr-day.today:hover {
+  background: rgba(105, 111, 199, 0.2) !important;
+  color: var(--white, #fff) !important;
+}
+
+/* Selected day */
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+  background: var(--indigo, #696fc7) !important;
+  border-color: var(--indigo, #696fc7) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(105, 111, 199, 0.45) !important;
+}
+
+/* Disabled / other-month days */
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+  color: rgba(255, 255, 255, 0.15) !important;
+}
+
+.flatpickr-day.flatpickr-disabled:hover {
+  background: transparent !important;
+}
+
+/* ─── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .earnings-row {
     grid-template-columns: 1fr;
+  }
+
+  .methods-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .earnings-controls {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
