@@ -119,13 +119,6 @@ function applyEarnings(summary: SummaryResponse): void {
     eBarWeek.style.width = `${Math.min(100, Math.round((summary.earnings.week / maxE) * 100))}%`;
 }
 
-function toDateInputValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 function shiftAnchorDate(view: EarningsAnalyticsView, step: number): void {
   const next = new Date(anchorDate);
   if (view === 'daily') next.setDate(next.getDate() + step);
@@ -141,14 +134,17 @@ function renderTrend(analytics: EarningsAnalyticsResponse): void {
   currentView = analytics.view;
   setActiveViewButton(analytics.view);
   periodLabel.textContent = `${analytics.view.toUpperCase()} · ${analytics.period.label}`;
-  trendGrid.innerHTML = '';
+  trendGrid.replaceChildren();
   for (const bucket of analytics.buckets) {
     const cell = document.createElement('div');
     cell.className = 'trend-cell';
-    cell.innerHTML = `
-      <div class="trend-cell__label">${bucket.label}</div>
-      <div class="trend-cell__amount">${peso(bucket.amount)}</div>
-    `;
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'trend-cell__label';
+    labelDiv.textContent = bucket.label;
+    const amountDiv = document.createElement('div');
+    amountDiv.className = 'trend-cell__amount';
+    amountDiv.textContent = peso(bucket.amount);
+    cell.append(labelDiv, amountDiv);
     trendGrid.appendChild(cell);
   }
 
@@ -226,7 +222,7 @@ initAuth(async () => {
   currentView = resolveInitialView();
   setActiveViewButton(currentView);
   initCalendar();
-  anchorDateInput.value = toDateInputValue(anchorDate);
+  picker?.setDate(anchorDate, false);
   await loadData();
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(() => void loadData(), 10_000);

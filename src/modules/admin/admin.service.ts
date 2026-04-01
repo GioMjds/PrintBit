@@ -409,6 +409,13 @@ export class AdminService {
     for (const bucket of period.buckets) {
       bucketTotals.set(bucket.key, 0);
     }
+    const pendingRefundModes = new Map<string, EarningsMode>();
+    for (const refund of db.data!.pendingRefunds) {
+      const mode = refund.jobContext.mode;
+      if (mode === 'print' || mode === 'copy' || mode === 'scan') {
+        pendingRefundModes.set(refund.id, mode);
+      }
+    }
 
     let today = 0;
     let week = 0;
@@ -449,11 +456,17 @@ export class AdminService {
           bucketTotals.set(bucketKey, previous + signedAmount);
         }
 
-        if (entry.eventType === 'job_completed') {
-          const mode = entry.meta?.mode;
-          if (mode === 'print' || mode === 'copy' || mode === 'scan') {
-            methodTotals[mode] += amount;
-          }
+        const mode =
+          entry.eventType === 'refund_issued'
+            ? (entry.meta?.originalMode ??
+              entry.meta?.mode ??
+              (typeof entry.referenceId === 'string'
+                ? pendingRefundModes.get(entry.referenceId)
+                : null))
+            : entry.meta?.mode;
+
+        if (mode === 'print' || mode === 'copy' || mode === 'scan') {
+          methodTotals[mode] += signedAmount;
         }
       }
     }

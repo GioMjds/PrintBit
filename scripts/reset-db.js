@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 
+// Parse CLI flags first so we can provide usage help or run safely in dry-run mode.
 const args = new Set(process.argv.slice(2));
 const showHelp = args.has('--help') || args.has('-h');
 const dryRun = args.has('--dry-run');
@@ -34,6 +35,7 @@ require('tsconfig-paths/register');
 const { initDB, db } = require('../src/services/db');
 const { getSqliteDb, initSqliteStorage } = require('../src/core/database/sqlite-storage');
 
+// Build the next lowdb state by preserving configuration while clearing runtime/operational data.
 function buildResetState(current) {
   return {
     ...current,
@@ -100,9 +102,12 @@ function countRows(sqliteDb, tableName) {
   return Number(row?.total ?? 0);
 }
 
+// Clear only operational SQLite tables in one transaction for all-or-nothing consistency.
 function clearSqliteOperationalTables(sqliteDb) {
+  // BEGIN IMMEDIATE acquires a write lock early to prevent partial clears during concurrent access.
   sqliteDb.exec('BEGIN IMMEDIATE');
   try {
+    // These tables contain runtime/admin event data and can be safely regenerated after reset.
     sqliteDb.exec(
       `DELETE FROM admin_logs;
        DELETE FROM feedback_entries;
@@ -111,9 +116,11 @@ function clearSqliteOperationalTables(sqliteDb) {
        DELETE FROM report_issue_entries;
        DELETE FROM report_issue_sessions;`,
     );
+    // Commit once all deletes succeed.
     sqliteDb.exec('COMMIT');
   } catch (error) {
     try {
+      // Roll back any partial deletes to keep SQLite tables consistent on failure.
       sqliteDb.exec('ROLLBACK');
     } catch (_rollbackError) {
       // no-op
@@ -123,14 +130,17 @@ function clearSqliteOperationalTables(sqliteDb) {
 }
 
 async function main() {
+  // Initialize lowdb state before taking any reset snapshots.
   await initDB();
   if (!db.data) {
     throw new Error('Database state is not initialized.');
   }
 
+  // Initialize SQLite storage and get the shared connection used by runtime stores.
   initSqliteStorage();
   const sqliteDb = getSqliteDb();
 
+  // Capture a before snapshot so operators can confirm what will be reset.
   const before = {
     admin_logs: countRows(sqliteDb, 'admin_logs'),
     feedback_entries: countRows(sqliteDb, 'feedback_entries'),
@@ -143,15 +153,18 @@ async function main() {
 
   console.log('[reset-db] Current data snapshot:', before);
 
+  // Dry run reports impact only and exits without mutating lowdb or SQLite.
   if (dryRun) {
     console.log('[reset-db] Dry run complete. No data was changed.');
     return;
   }
 
+  // Apply reset: clear SQLite operational tables, replace lowdb runtime state, then persist.
   clearSqliteOperationalTables(sqliteDb);
   db.data = buildResetState(db.data);
   await db.write();
 
+  // Capture an after snapshot to verify reset effects immediately.
   const after = {
     admin_logs: countRows(sqliteDb, 'admin_logs'),
     feedback_entries: countRows(sqliteDb, 'feedback_entries'),

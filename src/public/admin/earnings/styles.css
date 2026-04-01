@@ -97,12 +97,18 @@
   cursor: pointer;
   transition:
     color 150ms,
-    background 150ms;
+    background 150ms,
+    box-shadow 150ms;
 }
 
 .view-switch__btn:hover {
   color: var(--white);
   background: rgba(255, 255, 255, 0.06);
+}
+
+.view-switch__btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(139, 143, 216, 0.95);
 }
 
 .view-switch__btn--active {
@@ -131,13 +137,19 @@
   transition:
     color 150ms,
     background 150ms,
-    border-color 150ms;
+    border-color 150ms,
+    box-shadow 150ms;
 }
 
 .anchor-btn:hover {
   color: var(--white);
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.15);
+}
+
+.anchor-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(139, 143, 216, 0.95);
 }
 
 .anchor-btn--calendar {
@@ -366,7 +378,7 @@ span.flatpickr-weekday {
     color 130ms !important;
 }
 
-.flatpickr-day:hover:not(.flatpickr-disabled):not(.selected) {
+.flatpickr-day:hover:not(.flatpickr-disabled, .selected) {
   background: rgba(105, 111, 199, 0.18) !important;
   border-color: rgba(105, 111, 199, 0.3) !important;
   color: var(--white, #fff) !important;
