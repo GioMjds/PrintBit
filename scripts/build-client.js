@@ -1,4 +1,25 @@
 const { execSync } = require('child_process');
+const fs = require('node:fs');
+const path = require('node:path');
+
+function copyFlatpickrCss() {
+  const sourcePath = path.resolve(
+    'node_modules',
+    'flatpickr',
+    'dist',
+    'flatpickr.min.css',
+  );
+  const targetPath = path.resolve(
+    'src',
+    'public',
+    'vendor',
+    'flatpickr',
+    'flatpickr.min.css',
+  );
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.copyFileSync(sourcePath, targetPath);
+  console.log(`Copied: ${sourcePath} -> ${targetPath}`);
+}
 
 const builds = [
   'esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js',
@@ -12,7 +33,6 @@ const builds = [
   'esbuild src/public/receipt/app.ts --bundle --outfile=src/public/receipt/app.js',
   'esbuild src/public/admin/dashboard/app.ts --bundle --outfile=src/public/admin/dashboard/app.js',
   'esbuild src/public/admin/earnings/app.ts --bundle --outfile=src/public/admin/earnings/app.js',
-  'esbuild src/public/admin/coin-stats/app.ts --bundle --outfile=src/public/admin/coin-stats/app.js',
   'esbuild src/public/admin/system/app.ts --bundle --outfile=src/public/admin/system/app.js',
   'esbuild src/public/admin/settings/app.ts --bundle --outfile=src/public/admin/settings/app.js',
   'esbuild src/public/admin/logs/app.ts --bundle --outfile=src/public/admin/logs/app.js',
@@ -23,6 +43,7 @@ const builds = [
 ];
 
 try {
+  copyFlatpickrCss();
   for (const cmd of builds) {
     console.log(`Running: ${cmd}`);
     execSync(cmd, { stdio: 'inherit' });

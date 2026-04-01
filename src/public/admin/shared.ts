@@ -171,6 +171,40 @@ export type LogsResponse = {
   }>;
 };
 
+export type EarningsAnalyticsView = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export type EarningsAnalyticsResponse = {
+  view: EarningsAnalyticsView;
+  anchorDate: string;
+  period: {
+    start: string;
+    end: string;
+    label: string;
+  };
+  totals: {
+    today: number;
+    week: number;
+    month: number;
+    year: number;
+    allTime: number;
+    period: number;
+  };
+  buckets: Array<{
+    key: string;
+    label: string;
+    start: string;
+    end: string;
+    amount: number;
+  }>;
+  methods: {
+    print: number;
+    copy: number;
+    scan: number;
+    total: number;
+    topMode: 'print' | 'copy' | 'scan' | null;
+  };
+};
+
 // ── PIN state via sessionStorage ─────────────────────────────────
 
 const PIN_KEY = 'printbit.adminPin';

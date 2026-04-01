@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/earnings/styles.css" />
+    <link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css" />
   </head>
   <body>
     <div id="adminAuthView" class="auth-gate">
@@ -175,18 +176,6 @@
               /></svg
             ><span>Earnings</span></a
           >
-          <a href="/admin/coins" class="nav-btn"
-            ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zm1.567.267v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582s-.07.34-.433.582a2.305 2.305 0 01-.567.267z"
-              />
-              <path
-                fill-rule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
-                clip-rule="evenodd"
-              /></svg
-            ><span>Coin Stats</span></a
-          >
           <a href="/admin/system" class="nav-btn"
             ><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
@@ -327,6 +316,115 @@
                     style="width: 100%"
                   ></div>
                 </div>
+              </div>
+            </div>
+
+            <div class="earnings-panel">
+              <div class="earnings-controls">
+                <div class="view-switch" id="viewSwitch">
+                  <button
+                    class="view-switch__btn view-switch__btn--active"
+                    data-view="daily"
+                  >
+                    Daily
+                  </button>
+                  <button class="view-switch__btn" data-view="weekly">
+                    Weekly
+                  </button>
+                  <button class="view-switch__btn" data-view="monthly">
+                    Monthly
+                  </button>
+                  <button class="view-switch__btn" data-view="yearly">
+                    Yearly
+                  </button>
+                </div>
+                <div class="anchor-controls">
+                  <button
+                    id="prevAnchorBtn"
+                    class="anchor-btn"
+                    aria-label="Previous period"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"
+                      />
+                    </svg>
+                  </button>
+
+                  <!-- Hidden input Flatpickr attaches to -->
+                  <input
+                    id="anchorDateInput"
+                    class="anchor-input"
+                    type="text"
+                    readonly
+                    placeholder="Pick date"
+                    aria-label="Select anchor date"
+                  />
+
+                  <!-- Visible calendar icon trigger -->
+                  <button
+                    id="calendarToggleBtn"
+                    class="anchor-btn anchor-btn--calendar"
+                    aria-label="Open calendar"
+                  >
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </button>
+
+                  <button
+                    id="nextAnchorBtn"
+                    class="anchor-btn"
+                    aria-label="Next period"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <p class="earnings-period-label" id="periodLabel">
+                Current Period
+              </p>
+              <div class="trend-grid" id="trendGrid"></div>
+            </div>
+
+            <div class="methods-row">
+              <div class="method-card">
+                <div class="method-card__label">Print</div>
+                <div class="method-card__amount" id="methodPrint">₱ 0.00</div>
+              </div>
+              <div class="method-card">
+                <div class="method-card__label">Copy</div>
+                <div class="method-card__amount" id="methodCopy">₱ 0.00</div>
+              </div>
+              <div class="method-card">
+                <div class="method-card__label">Scan</div>
+                <div class="method-card__amount" id="methodScan">₱ 0.00</div>
+              </div>
+              <div class="method-card method-card--top">
+                <div class="method-card__label">Top Earner</div>
+                <div class="method-card__top" id="topMethod">—</div>
               </div>
             </div>
           </section>

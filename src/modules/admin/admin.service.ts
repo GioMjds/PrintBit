@@ -12,8 +12,60 @@ import { db } from '@/services/db';
 import { getTrustedTimestamp } from '@/services/time-source';
 import { adminLogStore } from '@/core/database/sqlite-storage';
 
+export type EarningsAnalyticsView = 'daily' | 'weekly' | 'monthly' | 'yearly';
+type EarningsMode = 'print' | 'copy' | 'scan';
+
+export interface EarningsAnalyticsBucket {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  amount: number;
+}
+
+export interface EarningsAnalyticsResult {
+  view: EarningsAnalyticsView;
+  anchorDate: string;
+  period: {
+    start: string;
+    end: string;
+    label: string;
+  };
+  totals: {
+    today: number;
+    week: number;
+    month: number;
+    year: number;
+    allTime: number;
+    period: number;
+  };
+  buckets: EarningsAnalyticsBucket[];
+  methods: {
+    print: number;
+    copy: number;
+    scan: number;
+    total: number;
+    topMode: EarningsMode | null;
+  };
+}
+
 export class AdminService {
   private readonly MAX_LOGS = 3000;
+
+  private readonly dateShortFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  private readonly monthFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+  });
+
+  private readonly monthYearFormatter = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
 
   getPricingSettings(): PricingSettings {
     return db.data!.settings.pricing;
@@ -103,7 +155,9 @@ export class AdminService {
 
   listLogsByTypes(types: ReadonlyArray<string>): AdminLogEntry[] {
     const normalized = Array.from(
-      new Set(types.map((value) => value.trim()).filter((value) => value.length > 0)),
+      new Set(
+        types.map((value) => value.trim()).filter((value) => value.length > 0),
+      ),
     );
     if (normalized.length === 0) return [];
     return adminLogStore.listByTypes(normalized);
@@ -182,6 +236,286 @@ export class AdminService {
       today: Number(today.toFixed(2)),
       week: Number(week.toFixed(2)),
       allTime: Number(allTime.toFixed(2)),
+    };
+  }
+
+  private normalizeMoney(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Number(value.toFixed(2));
+  }
+
+  private startOfDay(input: Date): Date {
+    const value = new Date(input);
+    value.setHours(0, 0, 0, 0);
+    return value;
+  }
+
+  private addDays(input: Date, days: number): Date {
+    const value = new Date(input);
+    value.setDate(value.getDate() + days);
+    return value;
+  }
+
+  private toDateKey(input: Date): string {
+    const year = input.getFullYear();
+    const month = String(input.getMonth() + 1).padStart(2, '0');
+    const day = String(input.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private resolveBucketKey(
+    view: EarningsAnalyticsView,
+    timestamp: Date,
+  ): string {
+    if (view === 'daily') {
+      return String(timestamp.getHours());
+    }
+    if (view === 'yearly') {
+      return String(timestamp.getMonth());
+    }
+    return this.toDateKey(this.startOfDay(timestamp));
+  }
+
+  private buildAnalyticsPeriod(
+    view: EarningsAnalyticsView,
+    anchorInput: Date,
+  ): {
+    start: Date;
+    end: Date;
+    label: string;
+    buckets: EarningsAnalyticsBucket[];
+  } {
+    const anchor = this.startOfDay(anchorInput);
+
+    if (view === 'daily') {
+      const start = new Date(anchor);
+      const end = this.addDays(start, 1);
+      const buckets: EarningsAnalyticsBucket[] = [];
+      for (let hour = 0; hour < 24; hour += 1) {
+        const bucketStart = new Date(start);
+        bucketStart.setHours(hour, 0, 0, 0);
+        const bucketEnd = new Date(bucketStart);
+        bucketEnd.setHours(hour + 1, 0, 0, 0);
+        buckets.push({
+          key: String(hour),
+          label: `${String(hour).padStart(2, '0')}:00`,
+          start: bucketStart.toISOString(),
+          end: bucketEnd.toISOString(),
+          amount: 0,
+        });
+      }
+      return {
+        start,
+        end,
+        label: this.dateShortFormatter.format(anchor),
+        buckets,
+      };
+    }
+
+    if (view === 'weekly') {
+      const start = this.addDays(anchor, -6);
+      const end = this.addDays(anchor, 1);
+      const buckets: EarningsAnalyticsBucket[] = [];
+      for (let day = 0; day < 7; day += 1) {
+        const bucketStart = this.addDays(start, day);
+        const bucketEnd = this.addDays(start, day + 1);
+        buckets.push({
+          key: this.toDateKey(bucketStart),
+          label: `${new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(bucketStart)} ${bucketStart.getDate()}`,
+          start: bucketStart.toISOString(),
+          end: bucketEnd.toISOString(),
+          amount: 0,
+        });
+      }
+      return {
+        start,
+        end,
+        label: `${this.dateShortFormatter.format(start)} - ${this.dateShortFormatter.format(this.addDays(end, -1))}`,
+        buckets,
+      };
+    }
+
+    if (view === 'monthly') {
+      const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+      const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1);
+      const buckets: EarningsAnalyticsBucket[] = [];
+      const daysInMonth = new Date(
+        start.getFullYear(),
+        start.getMonth() + 1,
+        0,
+      ).getDate();
+      for (let day = 1; day <= daysInMonth; day += 1) {
+        const bucketStart = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          day,
+        );
+        const bucketEnd = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          day + 1,
+        );
+        buckets.push({
+          key: this.toDateKey(bucketStart),
+          label: String(day),
+          start: bucketStart.toISOString(),
+          end: bucketEnd.toISOString(),
+          amount: 0,
+        });
+      }
+      return {
+        start,
+        end,
+        label: this.monthYearFormatter.format(start),
+        buckets,
+      };
+    }
+
+    const start = new Date(anchor.getFullYear(), 0, 1);
+    const end = new Date(anchor.getFullYear() + 1, 0, 1);
+    const buckets: EarningsAnalyticsBucket[] = [];
+    for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+      const bucketStart = new Date(start.getFullYear(), monthIndex, 1);
+      const bucketEnd = new Date(start.getFullYear(), monthIndex + 1, 1);
+      buckets.push({
+        key: String(monthIndex),
+        label: this.monthFormatter.format(bucketStart),
+        start: bucketStart.toISOString(),
+        end: bucketEnd.toISOString(),
+        amount: 0,
+      });
+    }
+    return {
+      start,
+      end,
+      label: String(start.getFullYear()),
+      buckets,
+    };
+  }
+
+  computeDetailedEarningsAnalytics(input: {
+    view: EarningsAnalyticsView;
+    anchor: Date;
+    now?: Date;
+  }): EarningsAnalyticsResult {
+    const now = input.now ?? new Date();
+    const startOfToday = this.startOfDay(now);
+    const startOfWeek = this.addDays(startOfToday, -6);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+    const period = this.buildAnalyticsPeriod(input.view, input.anchor);
+    const bucketTotals = new Map<string, number>();
+    for (const bucket of period.buckets) {
+      bucketTotals.set(bucket.key, 0);
+    }
+    const pendingRefundModes = new Map<string, EarningsMode>();
+    for (const refund of db.data!.pendingRefunds) {
+      const mode = refund.jobContext.mode;
+      if (mode === 'print' || mode === 'copy' || mode === 'scan') {
+        pendingRefundModes.set(refund.id, mode);
+      }
+    }
+
+    let today = 0;
+    let week = 0;
+    let month = 0;
+    let year = 0;
+    const methodTotals: Record<EarningsMode, number> = {
+      print: 0,
+      copy: 0,
+      scan: 0,
+    };
+
+    for (const entry of db.data!.financialLedger) {
+      if (
+        entry.eventType !== 'job_completed' &&
+        entry.eventType !== 'refund_issued'
+      ) {
+        continue;
+      }
+
+      const amount = Number(entry.amount);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+
+      const timestamp = new Date(entry.timestamp);
+      if (Number.isNaN(timestamp.getTime())) continue;
+
+      const signedAmount =
+        entry.eventType === 'refund_issued' ? -amount : amount;
+
+      if (timestamp >= startOfToday) today += signedAmount;
+      if (timestamp >= startOfWeek) week += signedAmount;
+      if (timestamp >= startOfMonth) month += signedAmount;
+      if (timestamp >= startOfYear) year += signedAmount;
+
+      if (timestamp >= period.start && timestamp < period.end) {
+        const bucketKey = this.resolveBucketKey(input.view, timestamp);
+        const previous = bucketTotals.get(bucketKey);
+        if (previous !== undefined) {
+          bucketTotals.set(bucketKey, previous + signedAmount);
+        }
+
+        const mode =
+          entry.eventType === 'refund_issued'
+            ? (entry.meta?.originalMode ??
+              entry.meta?.mode ??
+              (typeof entry.referenceId === 'string'
+                ? pendingRefundModes.get(entry.referenceId)
+                : null))
+            : entry.meta?.mode;
+
+        if (mode === 'print' || mode === 'copy' || mode === 'scan') {
+          methodTotals[mode] += signedAmount;
+        }
+      }
+    }
+
+    const buckets = period.buckets.map((bucket) => ({
+      ...bucket,
+      amount: this.normalizeMoney(bucketTotals.get(bucket.key) ?? 0),
+    }));
+    const periodTotal = buckets.reduce((sum, bucket) => sum + bucket.amount, 0);
+
+    const normalizedMethods = {
+      print: this.normalizeMoney(methodTotals.print),
+      copy: this.normalizeMoney(methodTotals.copy),
+      scan: this.normalizeMoney(methodTotals.scan),
+    };
+    const methodTotal = this.normalizeMoney(
+      normalizedMethods.print + normalizedMethods.copy + normalizedMethods.scan,
+    );
+    const topMode: EarningsMode | null =
+      methodTotal <= 0
+        ? null
+        : (Object.entries(normalizedMethods).sort(
+            (a, b) => b[1] - a[1],
+          )[0][0] as EarningsMode);
+
+    return {
+      view: input.view,
+      anchorDate: this.toDateKey(this.startOfDay(input.anchor)),
+      period: {
+        start: period.start.toISOString(),
+        end: period.end.toISOString(),
+        label: period.label,
+      },
+      totals: {
+        today: this.normalizeMoney(today),
+        week: this.normalizeMoney(week),
+        month: this.normalizeMoney(month),
+        year: this.normalizeMoney(year),
+        allTime: this.normalizeMoney(db.data!.earnings),
+        period: this.normalizeMoney(periodTotal),
+      },
+      buckets,
+      methods: {
+        print: normalizedMethods.print,
+        copy: normalizedMethods.copy,
+        scan: normalizedMethods.scan,
+        total: methodTotal,
+        topMode,
+      },
     };
   }
 

@@ -1,7 +1,7 @@
 /* ── KPI row ─────────────────────────────────────────────── */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
 }
 
@@ -78,18 +78,6 @@
 }
 
 /* ── KPI colour theming ──────────────────────────────────── */
-.kpi--balance .kpi__icon-wrap {
-  background: rgba(105, 111, 199, 0.15);
-  color: var(--indigo);
-}
-
-.kpi--balance .kpi__glow {
-  background: radial-gradient(circle at 20% 50%, rgba(105, 111, 199, 0.12) 0%, transparent 70%);
-}
-
-.kpi--balance .kpi__value {
-  color: var(--lavender);
-}
 
 .kpi--today .kpi__icon-wrap {
   background: rgba(74, 222, 128, 0.12);

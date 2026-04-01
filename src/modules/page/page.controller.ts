@@ -68,6 +68,11 @@ export class PageController {
       requireAdminLocalAccess,
       this.handleAdminRedirect.bind(this),
     );
+    this.router.get(
+      ['/admin/coins', '/admin/coins/', '/admin/coin-stats', '/admin/coin-stats/'],
+      requireAdminLocalAccess,
+      this.handleCoinStatsRedirect.bind(this),
+    );
 
     // Register public page routes (static HTML files)
     for (const page of this.deps.publicPageRoutes) {
@@ -106,6 +111,10 @@ export class PageController {
   }
 
   private handleAdminRedirect(_req: Request, res: Response): void {
+    res.redirect('/admin/dashboard');
+  }
+
+  private handleCoinStatsRedirect(_req: Request, res: Response): void {
     res.redirect('/admin/dashboard');
   }
 }

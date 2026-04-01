@@ -7,7 +7,6 @@ import {
   formatBytes,
 } from '../shared';
 
-const metricBalance = document.getElementById('metricBalance') as HTMLElement;
 const earningsToday = document.getElementById('earningsToday') as HTMLElement;
 const jobsTotal = document.getElementById('jobsTotal') as HTMLElement;
 const jobsPrint = document.getElementById('jobsPrint') as HTMLElement;
@@ -36,7 +35,6 @@ const openAlertBadgeMob = document.getElementById(
 let refreshTimer: number | null = null;
 
 function applySummary(summary: SummaryResponse): void {
-  metricBalance.textContent = peso(summary.balance);
   earningsToday.textContent = peso(summary.earnings.today);
   jobsTotal.textContent = String(summary.jobStats.total);
   jobsPrint.textContent = String(summary.jobStats.print);
