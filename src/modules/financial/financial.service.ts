@@ -349,7 +349,7 @@ export class FinancialService {
         null,
       status: lifecycleRecord?.currentState ?? recoverySession?.phase ?? null,
       settledAt: recoverySession?.settledAt ?? null,
-      printedAt:
+      terminalAt:
         lifecycleRecord?.printedAt ??
         lifecycleRecord?.failedAt ??
         recoverySession?.spoolerTerminalAt ??
