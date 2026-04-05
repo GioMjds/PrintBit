@@ -659,7 +659,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const normalizeSpoolerLifecycleRecords = (
     raw: unknown,
   ): SpoolerLifecycleRecord[] => {
-    if (!Array.isArray(raw)) return DEFAULT_DATA.spoolerLifecycle;
+    if (!Array.isArray(raw)) return [];
     const records: SpoolerLifecycleRecord[] = [];
     const normalizeMeta = (input: unknown): LogMeta => {
       if (typeof input !== 'object' || input === null || Array.isArray(input)) {

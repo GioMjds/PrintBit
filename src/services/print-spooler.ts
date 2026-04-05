@@ -554,7 +554,6 @@ export async function monitorSpoolerJob(
           spoolerCorrelationKey: correlationKey,
           spoolerJobId: trackedJobId,
           jobDispatchedAt,
-          settledAt: null,
           spoolerTerminalAt: new Date().toISOString(),
           context: {
             lastStatus: lastStatus ?? null,

@@ -1031,22 +1031,6 @@ export class FinancialService {
 
       try {
         jobDispatchedAt = getTrustedTimestamp().timestamp;
-        await persistAndEmitPrintLifecycleState(
-          this.deps.io,
-          {
-            mode: 'print',
-            state: 'queued',
-            printerName: telemetry.name ?? null,
-            transactionId,
-            spoolerCorrelationKey,
-            jobDispatchedAt,
-          },
-          {
-            requiredAmount,
-            sessionId: sessionId ?? null,
-            documentId: targetDocumentId ?? null,
-          },
-        );
         await printFile(serverFilename, printOptions);
         await checkpointRecoverySession({
           transactionId,
