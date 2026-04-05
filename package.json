@@ -42,7 +42,7 @@
     "i18next": "^25.9.0",
     "i18next-fs-backend": "^2.6.1",
     "i18next-http-middleware": "^3.9.2",
-    "multer": "^2.0.2",
+    "multer": "^2.1.1",
     "nodemon": "^3.1.14",
     "pdfjs": "^2.5.4",
     "pdfjs-dist": "^5.4.624",
