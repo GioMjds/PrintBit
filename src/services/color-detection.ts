@@ -120,6 +120,11 @@ function isPdfImageObject(value: unknown): value is PdfImageObject {
   );
 }
 
+function isPendingPdfObjectLookupError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /isn't resolved yet/i.test(error.message);
+}
+
 async function resolveImageObject(
   page: PdfPageProxy,
   imageName: string,
@@ -127,7 +132,31 @@ async function resolveImageObject(
   const objs = page.objs;
   if (!objs || typeof objs.get !== 'function') return null;
 
-  const immediate = objs.get(imageName);
+  let immediate: unknown = null;
+  let immediateLookupError: unknown = null;
+  try {
+    immediate = objs.get(imageName);
+  } catch (error) {
+    immediateLookupError = error;
+  }
+
+  if (
+    immediateLookupError &&
+    !isPendingPdfObjectLookupError(immediateLookupError)
+  ) {
+    console.warn(
+      '[colorDetection] Unexpected image lookup error, skipping image object.',
+      {
+        imageName,
+        error:
+          immediateLookupError instanceof Error
+            ? immediateLookupError.message
+            : String(immediateLookupError),
+      },
+    );
+    return null;
+  }
+
   if (isPdfImageObject(immediate)) {
     return immediate;
   }
@@ -184,7 +213,10 @@ function getImageColorStats(image: PdfImageObject): ImageColorStats {
     };
   }
 
-  const stride = Math.max(1, Math.floor(totalPixels / IMAGE_SAMPLE_PIXEL_TARGET));
+  const stride = Math.max(
+    1,
+    Math.floor(totalPixels / IMAGE_SAMPLE_PIXEL_TARGET),
+  );
   let sampledPixels = 0;
   let colorPixels = 0;
 
@@ -229,12 +261,13 @@ export async function detectPdfColorContent(
   }
 
   try {
-    const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
-      OPS: PdfOps;
-      getDocument(src: { data: Uint8Array; verbosity: number }): {
-        promise: Promise<PdfDocumentProxy>;
+    const pdfjs =
+      (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
+        OPS: PdfOps;
+        getDocument(src: { data: Uint8Array; verbosity: number }): {
+          promise: Promise<PdfDocumentProxy>;
+        };
       };
-    };
     const OPS = pdfjs.OPS;
 
     const data = new Uint8Array(fs.readFileSync(pdfPath));

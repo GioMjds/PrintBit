@@ -64,6 +64,7 @@ type ConfirmConfig = {
   scanReleaseToken?: string | null;
   copyPreviewPath?: string | null;
   copyPreviewReleaseToken?: string | null;
+  detectedColorMode?: 'colored' | 'grayscale' | null;
   colorMode: 'colored' | 'grayscale';
   duplex?: boolean;
   copies: number;
@@ -158,6 +159,12 @@ const config = JSON.parse(rawConfig ?? '{}') as ConfirmConfig;
 config.duplex = config.duplex === true;
 if (typeof config.documentId !== 'string') {
   config.documentId = uploadedDocumentId;
+}
+if (
+  config.detectedColorMode !== 'colored' &&
+  config.detectedColorMode !== 'grayscale'
+) {
+  config.detectedColorMode = null;
 }
 currentPrintQuote = config.mode === 'print' ? (config.quote ?? null) : null;
 const currentPaymentFingerprint = JSON.stringify({
@@ -259,6 +266,22 @@ function getDisplayColorMode(): 'colored' | 'grayscale' {
   return config.colorMode;
 }
 
+function formatColorMode(mode: 'colored' | 'grayscale'): string {
+  return mode === 'colored' ? 'Colored' : 'Grayscale';
+}
+
+function getColorModeSummaryLabel(): string {
+  if (
+    config.mode === 'print' &&
+    config.detectedColorMode &&
+    config.detectedColorMode !== config.colorMode
+  ) {
+    return `Detected: ${formatColorMode(config.detectedColorMode)} | Selected: ${formatColorMode(config.colorMode)}`;
+  }
+
+  return formatColorMode(getDisplayColorMode());
+}
+
 function calculateLegacyTotalPrice(pricing: PricingResponse): number {
   if (config.mode === 'scan') {
     return pricing.scanDocument ?? DEFAULT_PRICING.scanDocument;
@@ -309,7 +332,7 @@ if (fileValue)
       : config.mode === 'copy'
         ? 'Physical document copy'
         : (config.scanFilename ?? 'Scanned document');
-if (colorValue) colorValue.textContent = getDisplayColorMode();
+if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
 if (orientationValue) orientationValue.textContent = config.orientation;
@@ -650,7 +673,7 @@ async function loadPricing(): Promise<void> {
       pricingLoaded = true;
       pricingError = null;
       if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
-      if (colorValue) colorValue.textContent = getDisplayColorMode();
+      if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
       if (pagesValue) {
         pagesValue.textContent = `${pageRangeLabel(config.pageRange)} (${payload.quote.selectedPages} of ${payload.quote.totalPages})`;
       }
@@ -665,7 +688,7 @@ async function loadPricing(): Promise<void> {
       pricingLoaded = false;
       pricingError = message;
       if (priceValue) priceValue.textContent = 'Unavailable';
-      if (colorValue) colorValue.textContent = config.colorMode;
+      if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
       if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
       updateChangeDisplay(currentBalance);
       syncCoinSlotLockState();
@@ -983,7 +1006,7 @@ function showModal(): void {
         ? (uploadedFile ?? 'No file')
         : 'Physical document copy';
   if (modalMode) modalMode.textContent = config.mode.toUpperCase();
-  if (modalColor) modalColor.textContent = getDisplayColorMode();
+  if (modalColor) modalColor.textContent = getColorModeSummaryLabel();
   if (modalCopies) modalCopies.textContent = String(config.copies);
   if (modalPages) {
     const baseLabel = pageRangeLabel(config.pageRange);
