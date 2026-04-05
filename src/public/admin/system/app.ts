@@ -108,6 +108,16 @@ interface PrinterTelemetryExt {
 }
 
 type PrinterTelemetryPatch = Partial<PrinterTelemetryExt>;
+type PrintLifecycleMode = 'print' | 'copy';
+type PrintLifecycleState = 'queued' | 'processing' | 'printed' | 'failed';
+
+interface PrintLifecyclePayload {
+  mode: PrintLifecycleMode;
+  state: PrintLifecycleState;
+  transactionId: string | null;
+  printerName: string | null;
+  reason: string | null;
+}
 
 let lastPrinterSnapshot: PrinterTelemetryExt | null = null;
 const BLOCKED_PRINTER_STATUSES = new Set([
@@ -127,6 +137,33 @@ const BLOCKED_PRINTER_STATUSES = new Set([
 function isPrinterReadyForJobs(p: PrinterTelemetryExt): boolean {
   if (!p.connected) return false;
   return !BLOCKED_PRINTER_STATUSES.has(p.status.trim().toLowerCase());
+}
+
+function parsePrintLifecyclePayload(
+  payload: unknown,
+): PrintLifecyclePayload | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+
+  const mode =
+    record.mode === 'print' || record.mode === 'copy' ? record.mode : null;
+  const state =
+    record.state === 'queued' ||
+    record.state === 'processing' ||
+    record.state === 'printed' ||
+    record.state === 'failed'
+      ? record.state
+      : null;
+  if (!mode || !state) return null;
+
+  return {
+    mode,
+    state,
+    transactionId:
+      typeof record.transactionId === 'string' ? record.transactionId : null,
+    printerName: typeof record.printerName === 'string' ? record.printerName : null,
+    reason: typeof record.reason === 'string' ? record.reason : null,
+  };
 }
 
 function mergePrinterSnapshot(
@@ -468,6 +505,24 @@ function connectSocket(): void {
     if (next.name !== undefined) printerNameEl.textContent = next.name ?? '—';
     applyPrinterExt(next);
     setMessage(`Printer: ${next.status} (${printerReady ? 'ready' : 'not ready'})`);
+  });
+
+  socket.on('printLifecycleState', (payload: unknown) => {
+    const event = parsePrintLifecyclePayload(payload);
+    if (!event) return;
+
+    const reference = event.transactionId ? event.transactionId.slice(0, 8) : 'n/a';
+    const printerLabel = event.printerName ?? 'printer';
+    const modeLabel = event.mode === 'copy' ? 'Copy' : 'Print';
+    if (event.state === 'failed' && spoolerAlertMsg) {
+      spoolerAlertMsg.textContent = event.reason
+        ? `${modeLabel} lifecycle marked failed on ${printerLabel} (ref ${reference}): ${event.reason}`
+        : `${modeLabel} lifecycle marked failed on ${printerLabel} (ref ${reference}).`;
+      spoolerAlert?.classList.remove('hidden');
+    }
+    setMessage(
+      `${modeLabel} lifecycle: ${event.state} (${printerLabel}, ref ${reference})`,
+    );
   });
 
   // Spooler failure banner (emitted by Phase 3 spooler monitor)

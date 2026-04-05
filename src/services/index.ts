@@ -11,6 +11,7 @@ export * from './job-store';
 export * from './pending-refund';
 export * from './preview';
 export * from './print-quote';
+export * from './print-lifecycle-state';
 export * from './print-spooler';
 export * from './printer-monitor';
 export * from './printer-fault-lock';

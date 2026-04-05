@@ -13,6 +13,7 @@ import { adminService } from '@/services/admin';
 import {
   evaluateInkPreflight,
   getPrinterTelemetry,
+  persistAndEmitPrintLifecycleState,
   refreshPrinterTelemetry,
   settlementService,
   watchJobForMalfunction,
@@ -260,6 +261,19 @@ export class CopyService {
       orientation: normalized.orientation,
       paperSize: normalized.paperSize,
     });
+    await persistAndEmitPrintLifecycleState(
+      this.deps.io,
+      {
+        mode: 'copy',
+        state: 'queued',
+        transactionId: job.id,
+        spoolerCorrelationKey: null,
+        printerName: null,
+      },
+      {
+        requiredAmount,
+      },
+    );
     this.runCopyJob(job.id, normalized, previewFilename, requiredAmount);
 
     const responseBody = JSON.parse(JSON.stringify(job)) as typeof job;
@@ -344,7 +358,20 @@ export class CopyService {
     requiredAmount: number,
   ): void {
     void (async () => {
-      jobStore.updateJobState(jobId, 'running');
+      jobStore.updateJobState(jobId, 'processing');
+      await persistAndEmitPrintLifecycleState(
+        this.deps.io,
+        {
+          mode: 'copy',
+          state: 'processing',
+          transactionId: jobId,
+          spoolerCorrelationKey: null,
+          printerName: null,
+        },
+        {
+          requiredAmount,
+        },
+      );
       try {
         const telemetry = await refreshPrinterTelemetry();
         if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -365,6 +392,21 @@ export class CopyService {
               stage: 'precheck',
             },
           });
+          await persistAndEmitPrintLifecycleState(
+            this.deps.io,
+            {
+              mode: 'copy',
+              state: 'failed',
+              transactionId: jobId,
+              spoolerCorrelationKey: null,
+              printerName: telemetry.name ?? null,
+              reason: `Printer is not ready: ${telemetry.status}`,
+            },
+            {
+              requiredAmount,
+              meta: { stage: 'precheck' },
+            },
+          );
           return;
         }
         const inkPreflight = evaluateInkPreflight(telemetry);
@@ -391,6 +433,23 @@ export class CopyService {
               stage: 'precheck',
             },
           });
+          await persistAndEmitPrintLifecycleState(
+            this.deps.io,
+            {
+              mode: 'copy',
+              state: 'failed',
+              transactionId: jobId,
+              spoolerCorrelationKey: null,
+              printerName: telemetry.name ?? null,
+              reason:
+                inkPreflight.reason ??
+                'Ink telemetry indicates printing should be blocked.',
+            },
+            {
+              requiredAmount,
+              meta: { stage: 'precheck' },
+            },
+          );
           return;
         }
 
@@ -418,7 +477,7 @@ export class CopyService {
           jobId,
           onFailure: (failedJobId, fault) => {
             const activeJob = jobStore.getJob(failedJobId);
-            if (!activeJob || activeJob.state !== 'running') {
+            if (!activeJob || activeJob.state !== 'processing') {
               return;
             }
 
@@ -430,6 +489,21 @@ export class CopyService {
                 stage: 'running',
               },
             });
+            void persistAndEmitPrintLifecycleState(
+              this.deps.io,
+              {
+                mode: 'copy',
+                state: 'failed',
+                transactionId: failedJobId,
+                spoolerCorrelationKey: null,
+                printerName: null,
+                reason: `Printer fault detected during copy job: ${fault.reason}`,
+              },
+              {
+                requiredAmount,
+                meta: { stage: 'running' },
+              },
+            );
 
             void adminService.appendAdminLog(
               'copy_job_failed_printer_malfunction',
@@ -463,7 +537,20 @@ export class CopyService {
               remainingBalance: settlement.remainingBalance,
             };
           }
-          jobStore.updateJobState(jobId, 'succeeded');
+          jobStore.updateJobState(jobId, 'printed');
+          await persistAndEmitPrintLifecycleState(
+            this.deps.io,
+            {
+              mode: 'copy',
+              state: 'printed',
+              transactionId: jobId,
+              spoolerCorrelationKey: null,
+              printerName: telemetry.name ?? null,
+            },
+            {
+              requiredAmount,
+            },
+          );
           await financialLedgerService.append({
             eventType: 'job_completed',
             amount: settlement.chargedAmount,
@@ -503,6 +590,23 @@ export class CopyService {
               stage: 'running',
             },
           });
+          await persistAndEmitPrintLifecycleState(
+            this.deps.io,
+            {
+              mode: 'copy',
+              state: 'failed',
+              transactionId: jobId,
+              spoolerCorrelationKey: null,
+              printerName: telemetry.name ?? null,
+              reason:
+                settlement.error ??
+                'Balance drained before charge could complete.',
+            },
+            {
+              requiredAmount,
+              meta: { stage: 'running' },
+            },
+          );
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -514,6 +618,21 @@ export class CopyService {
             stage: 'running',
           },
         });
+        await persistAndEmitPrintLifecycleState(
+          this.deps.io,
+          {
+            mode: 'copy',
+            state: 'failed',
+            transactionId: jobId,
+            spoolerCorrelationKey: null,
+            printerName: null,
+            reason: message,
+          },
+          {
+            requiredAmount,
+            meta: { stage: 'running' },
+          },
+        );
         void adminService.appendAdminLog(
           'copy_job_failed',
           'Copy job failed — balance NOT charged.',

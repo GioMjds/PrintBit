@@ -306,6 +306,48 @@ export interface InkHistoryEntry {
   }>;
 }
 
+export type SpoolerLifecycleState =
+  | 'queued'
+  | 'processing'
+  | 'printed'
+  | 'failed';
+
+export interface SpoolerLifecycleTransitionEntry {
+  state: SpoolerLifecycleState;
+  timestamp: string;
+  reason: string | null;
+  printerName: string | null;
+  spoolerCorrelationKey: string | null;
+  spoolerJobId: number | null;
+  jobStatus: string | null;
+  pagesPrinted: number | null;
+  totalPages: number | null;
+  meta: LogMeta;
+}
+
+export interface SpoolerLifecycleRecord {
+  transactionId: string;
+  mode: 'print' | 'copy';
+  createdAt: string;
+  updatedAt: string;
+  currentState: SpoolerLifecycleState | null;
+  queuedAt: string | null;
+  processingAt: string | null;
+  printedAt: string | null;
+  failedAt: string | null;
+  sessionId: string | null;
+  documentId: string | null;
+  requiredAmount: number;
+  spoolerCorrelationKey: string | null;
+  spoolerJobId: number | null;
+  printerName: string | null;
+  reason: string | null;
+  jobStatus: string | null;
+  pagesPrinted: number | null;
+  totalPages: number | null;
+  transitions: SpoolerLifecycleTransitionEntry[];
+}
+
 export type RecoverySessionPhase =
   | 'initiated'
   | 'preflight_passed'
@@ -383,6 +425,7 @@ export type Schema = {
   anomalyIncidents: AnomalyIncidentEntry[];
   financialLedger: FinancialLedgerEntry[];
   inkHistory: InkHistoryEntry[];
+  spoolerLifecycle: SpoolerLifecycleRecord[];
   recovery: RecoveryState;
 };
 
@@ -481,6 +524,7 @@ const DEFAULT_DATA: Schema = {
   anomalyIncidents: [],
   financialLedger: [],
   inkHistory: [],
+  spoolerLifecycle: [],
   recovery: {
     lifecycle: {
       bootCount: 0,
@@ -611,6 +655,150 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       });
     }
     return incidents;
+  };
+  const normalizeSpoolerLifecycleRecords = (
+    raw: unknown,
+  ): SpoolerLifecycleRecord[] => {
+    if (!Array.isArray(raw)) return [];
+    const records: SpoolerLifecycleRecord[] = [];
+    const normalizeMeta = (input: unknown): LogMeta => {
+      if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        return {};
+      }
+      const output: LogMeta = {};
+      for (const [key, value] of Object.entries(input)) {
+        if (
+          typeof value === 'string' ||
+          typeof value === 'number' ||
+          typeof value === 'boolean' ||
+          value === null
+        ) {
+          output[key] = value;
+        }
+      }
+      return output;
+    };
+
+    for (const row of raw) {
+      if (
+        typeof row !== 'object' ||
+        row === null ||
+        !('transactionId' in row) ||
+        typeof (row as { transactionId: unknown }).transactionId !== 'string'
+      ) {
+        continue;
+      }
+      const transactionId = (row as { transactionId: string }).transactionId;
+      const candidate = row as Partial<SpoolerLifecycleRecord>;
+      const currentStateCandidate = candidate.currentState;
+      const currentState: SpoolerLifecycleState | null =
+        currentStateCandidate === 'queued' ||
+        currentStateCandidate === 'processing' ||
+        currentStateCandidate === 'printed' ||
+        currentStateCandidate === 'failed'
+          ? currentStateCandidate
+          : null;
+      const transitions = Array.isArray(candidate.transitions)
+        ? candidate.transitions
+            .filter(
+              (entry): entry is SpoolerLifecycleTransitionEntry =>
+                typeof entry === 'object' &&
+                entry !== null &&
+                ((entry as SpoolerLifecycleTransitionEntry).state === 'queued' ||
+                  (entry as SpoolerLifecycleTransitionEntry).state ===
+                    'processing' ||
+                  (entry as SpoolerLifecycleTransitionEntry).state ===
+                    'printed' ||
+                  (entry as SpoolerLifecycleTransitionEntry).state ===
+                    'failed') &&
+                typeof (entry as SpoolerLifecycleTransitionEntry).timestamp ===
+                  'string',
+            )
+            .map((entry) => ({
+              state: entry.state,
+              timestamp: entry.timestamp,
+              reason: typeof entry.reason === 'string' ? entry.reason : null,
+              printerName:
+                typeof entry.printerName === 'string' ? entry.printerName : null,
+              spoolerCorrelationKey:
+                typeof entry.spoolerCorrelationKey === 'string'
+                  ? entry.spoolerCorrelationKey
+                  : null,
+              spoolerJobId:
+                typeof entry.spoolerJobId === 'number' &&
+                Number.isFinite(entry.spoolerJobId)
+                  ? Math.floor(entry.spoolerJobId)
+                  : null,
+              jobStatus:
+                typeof entry.jobStatus === 'string' ? entry.jobStatus : null,
+              pagesPrinted:
+                typeof entry.pagesPrinted === 'number' &&
+                Number.isFinite(entry.pagesPrinted)
+                  ? entry.pagesPrinted
+                  : null,
+              totalPages:
+                typeof entry.totalPages === 'number' &&
+                Number.isFinite(entry.totalPages)
+                  ? entry.totalPages
+                  : null,
+              meta: normalizeMeta(entry.meta),
+            }))
+        : [];
+
+      records.push({
+        transactionId,
+        mode: candidate.mode === 'copy' ? 'copy' : 'print',
+        createdAt:
+          typeof candidate.createdAt === 'string'
+            ? candidate.createdAt
+            : new Date(0).toISOString(),
+        updatedAt:
+          typeof candidate.updatedAt === 'string'
+            ? candidate.updatedAt
+            : new Date(0).toISOString(),
+        currentState,
+        queuedAt: typeof candidate.queuedAt === 'string' ? candidate.queuedAt : null,
+        processingAt:
+          typeof candidate.processingAt === 'string'
+            ? candidate.processingAt
+            : null,
+        printedAt:
+          typeof candidate.printedAt === 'string' ? candidate.printedAt : null,
+        failedAt: typeof candidate.failedAt === 'string' ? candidate.failedAt : null,
+        sessionId:
+          typeof candidate.sessionId === 'string' ? candidate.sessionId : null,
+        documentId:
+          typeof candidate.documentId === 'string' ? candidate.documentId : null,
+        requiredAmount: Math.max(0, finiteOr(candidate.requiredAmount, 0)),
+        spoolerCorrelationKey:
+          typeof candidate.spoolerCorrelationKey === 'string'
+            ? candidate.spoolerCorrelationKey
+            : null,
+        spoolerJobId:
+          typeof candidate.spoolerJobId === 'number' &&
+          Number.isFinite(candidate.spoolerJobId)
+            ? Math.floor(candidate.spoolerJobId)
+            : null,
+        printerName:
+          typeof candidate.printerName === 'string' ? candidate.printerName : null,
+        reason: typeof candidate.reason === 'string' ? candidate.reason : null,
+        jobStatus:
+          typeof candidate.jobStatus === 'string' ? candidate.jobStatus : null,
+        pagesPrinted:
+          typeof candidate.pagesPrinted === 'number' &&
+          Number.isFinite(candidate.pagesPrinted)
+            ? candidate.pagesPrinted
+            : null,
+        totalPages:
+          typeof candidate.totalPages === 'number' &&
+          Number.isFinite(candidate.totalPages)
+            ? candidate.totalPages
+            : null,
+        transitions,
+      });
+    }
+
+    return records;
   };
   const normalizeRecoveryState = (raw: unknown): RecoveryState => {
     const fallback = DEFAULT_DATA.recovery;
@@ -1045,6 +1233,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             typeof (entry as InkHistoryEntry).timestamp === 'string',
         )
       : DEFAULT_DATA.inkHistory,
+    spoolerLifecycle: normalizeSpoolerLifecycleRecords(data?.spoolerLifecycle),
     recovery: normalizeRecoveryState(data?.recovery),
   };
 }

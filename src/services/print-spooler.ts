@@ -1,15 +1,17 @@
 import { spawn } from 'node:child_process';
 import type { Server } from 'socket.io';
-import { db } from './db';
+import { db, type LogMeta } from './db';
 import { adminService } from './admin';
 import {
   PendingRefundServiceError,
   upsertSpoolerFailureRefund,
 } from './pending-refund';
 import { checkpointRecoverySession } from './recovery';
+import { persistAndEmitPrintLifecycleState } from './print-lifecycle-state';
 import { setPrinterFaultLock } from './printer-fault-lock';
 import { anomalyService, buildAnomalyFingerprint } from './anomaly';
 
+/** Polling interval for checking spooler status */
 const POLL_INTERVAL_MS = 1_500;
 /** Total window to watch the spooler before giving up */
 const MONITOR_WINDOW_MS = 3 * 60 * 1_000; // 3 minutes
@@ -17,6 +19,10 @@ const MONITOR_WINDOW_MS = 3 * 60 * 1_000; // 3 minutes
 const JOB_LOOKBACK_MINUTES = 3;
 /** Allowed clock skew between app dispatch time and spooler submitted time */
 const JOB_SUBMITTED_TIME_SKEW_MS = 5_000;
+/** Timeout per individual PowerShell query */
+const SPOOLER_QUERY_TIMEOUT_MS = 10_000;
+/** Stop monitoring when spooler queries repeatedly fail */
+const MAX_CONSECUTIVE_QUERY_FAILURES = 3;
 
 // Windows JobStatus enum values (comma-separated string from PowerShell)
 
@@ -56,6 +62,7 @@ export interface SpoolerMonitorResult {
   pagesPrinted: number;
   failed: boolean;
   timedOut?: boolean;
+  reason?: string;
   /** ID of the created PendingRefundEntry when failed === true */
   refundId?: string;
 }
@@ -66,6 +73,19 @@ interface SpoolerJobRow {
   totalPages: number;
   pagesPrinted: number;
   submittedTime: string | null;
+}
+
+type SpoolerQueryErrorCode =
+  | 'powershell_timeout'
+  | 'query_failed'
+  | 'invalid_response'
+  | 'invalid_json';
+
+interface SpoolerQueryResult {
+  jobs: SpoolerJobRow[];
+  elapsedMs: number;
+  errorCode: SpoolerQueryErrorCode | null;
+  errorDetail: string | null;
 }
 
 // Persistent PowerShell
@@ -145,41 +165,116 @@ function createPersistentPS(): PersistentPS {
 
 // ── PowerShell helper ───────────────────────────────────────────────────────
 
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function classifyQueryErrorCode(message: string): SpoolerQueryErrorCode {
+  if (message.toLowerCase().includes('timed out')) return 'powershell_timeout';
+  return 'query_failed';
+}
+
+function normalizeSpoolerRows(raw: unknown): SpoolerJobRow[] {
+  const items = Array.isArray(raw) ? raw : [];
+  return items
+    .filter(
+      (item): item is Record<string, unknown> =>
+        !!item && typeof item === 'object',
+    )
+    .map((item) => ({
+      id: Number(item.Id ?? 0),
+      status: String(item.Status ?? 'Unknown').trim(),
+      totalPages: Number(item.TotalPages ?? 0),
+      pagesPrinted: Number(item.PagesPrinted ?? 0),
+      submittedTime:
+        typeof item.SubmittedTime === 'string' ? item.SubmittedTime : null,
+    }));
+}
+
 async function queryRecentPrintJobs(
   printerName: string,
   ps: PersistentPS,
-): Promise<SpoolerJobRow[]> {
+): Promise<SpoolerQueryResult> {
+  const queryStartedAt = Date.now();
   try {
     const escaped = printerName.replace(/'/g, "''").replace(/`/g, '``');
     const script =
       `$cutoff = (Get-Date).AddMinutes(-${JOB_LOOKBACK_MINUTES}); ` +
-      `Get-PrintJob -PrinterName '${escaped}' -ErrorAction SilentlyContinue ` +
-      `| Where-Object { $_.SubmittedTime -ge $cutoff } ` +
-      `| Select-Object Id, @{N='Status';E={$_.JobStatus.ToString()}}, TotalPages, PagesPrinted, @{N='SubmittedTime';E={$_.SubmittedTime.ToUniversalTime().ToString('o')}} ` +
-      `| ConvertTo-Json -Depth 2 -Compress`;
+      `try { ` +
+      `  $jobs = @(Get-PrintJob -PrinterName '${escaped}' -ErrorAction Stop | Where-Object { $_.SubmittedTime -ge $cutoff } | Select-Object Id, @{N='Status';E={$_.JobStatus.ToString()}}, TotalPages, PagesPrinted, @{N='SubmittedTime';E={$_.SubmittedTime.ToUniversalTime().ToString('o')}}); ` +
+      `  [PSCustomObject]@{ Ok = $true; Jobs = $jobs } | ConvertTo-Json -Depth 4 -Compress ` +
+      `} catch { ` +
+      `  [PSCustomObject]@{ Ok = $false; Error = $_.Exception.Message; Category = $_.CategoryInfo.Reason } | ConvertTo-Json -Depth 4 -Compress ` +
+      `}`;
 
-    const json = await ps.run(script, 10_000);
-    if (!json || json === 'null' || json === '[]') return [];
+    const json = await ps.run(script, SPOOLER_QUERY_TIMEOUT_MS);
+    const elapsedMs = Date.now() - queryStartedAt;
 
-    const raw: unknown = JSON.parse(json);
-    const items = Array.isArray(raw) ? raw : [raw];
+    if (!json || json === 'null') {
+      return {
+        jobs: [],
+        elapsedMs,
+        errorCode: null,
+        errorDetail: null,
+      };
+    }
 
-    return items
-      .filter(
-        (item): item is Record<string, unknown> =>
-          !!item && typeof item === 'object',
-      )
-      .map((item) => ({
-        id: Number(item.Id ?? 0),
-        status: String(item.Status ?? 'Unknown').trim(),
-        totalPages: Number(item.TotalPages ?? 0),
-        pagesPrinted: Number(item.PagesPrinted ?? 0),
-        submittedTime:
-          typeof item.SubmittedTime === 'string' ? item.SubmittedTime : null,
-      }));
-  } catch {
-    console.warn('[SPOOLER-MONITOR] Failed to query print jobs');
-    return [];
+    let envelope: unknown;
+    try {
+      envelope = JSON.parse(json);
+    } catch (error) {
+      return {
+        jobs: [],
+        elapsedMs,
+        errorCode: 'invalid_json',
+        errorDetail: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    if (!envelope || typeof envelope !== 'object') {
+      return {
+        jobs: [],
+        elapsedMs,
+        errorCode: 'invalid_response',
+        errorDetail: 'Unexpected non-object response from spooler query.',
+      };
+    }
+
+    const record = envelope as Record<string, unknown>;
+    const ok = record.Ok === true;
+    if (!ok) {
+      const errorMessage =
+        typeof record.Error === 'string' && record.Error.trim().length > 0
+          ? record.Error.trim()
+          : 'Unknown Get-PrintJob failure';
+      const category =
+        typeof record.Category === 'string' && record.Category.trim().length > 0
+          ? record.Category.trim()
+          : null;
+      return {
+        jobs: [],
+        elapsedMs,
+        errorCode: 'query_failed',
+        errorDetail: category ? `${errorMessage} (${category})` : errorMessage,
+      };
+    }
+
+    return {
+      jobs: normalizeSpoolerRows(record.Jobs),
+      elapsedMs,
+      errorCode: null,
+      errorDetail: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      jobs: [],
+      elapsedMs: Date.now() - queryStartedAt,
+      errorCode: classifyQueryErrorCode(message),
+      errorDetail: message,
+    };
   }
 }
 
@@ -192,7 +287,8 @@ function matchesStatusSet(status: string, set: Set<string>): boolean {
  * Fire-and-forget: call this AFTER settlement has completed.
  * It polls the Windows print spooler in the background.
  * It emits lifecycle events over Socket.IO for kiosk UI synchronization:
- *   - `printJobDispatched` (job accepted by app and monitor started)
+ *   - `printLifecycleState` (`queued` -> `processing` -> `printed|failed`)
+ *   - `printJobDispatched` (monitor latched to a concrete spooler job id)
  *   - `printerSpoolerConfirmed` (terminal success)
  *   - `printerSpoolerFailure` (terminal failure)
  *   - `printerSpoolerTimeout` (monitor window expired before terminal status)
@@ -214,43 +310,370 @@ export async function monitorSpoolerJob(
     onConfirmed,
   } = options;
 
-  console.log(
-    `[SPOOLER-MONITOR] Starting — printer="${printerName}" chargedAmount=${chargedAmount}`,
-  );
-
-  io.emit('printJobDispatched', {
-    printerName,
-    jobDispatchedAt,
-    spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-  });
-
-  if (!printerName) {
-    return { detected: false, jobStatus: null, pagesPrinted: 0, failed: false };
-  }
-
-  const deadline = Date.now() + MONITOR_WINDOW_MS;
-  let lastStatus: string | null = null;
-  let lastPagesPrinted = 0;
-  let lastTotalPages = 0;
-  let trackedJobId: number | null = null;
+  const startedAtMs = Date.now();
+  const startedAtIso = new Date(startedAtMs).toISOString();
+  const transactionId = normalizeOptionalString(jobContext.transactionId);
+  const sessionId = normalizeOptionalString(jobContext.sessionId);
+  const documentId = normalizeOptionalString(jobContext.documentId);
+  const normalizedPrinterName = normalizeOptionalString(printerName);
+  const correlationKey = normalizeOptionalString(spoolerCorrelationKey);
   const dispatchedAtMs = Date.parse(jobDispatchedAt);
   const submittedTimeCutoffMs = Number.isFinite(dispatchedAtMs)
     ? dispatchedAtMs - JOB_SUBMITTED_TIME_SKEW_MS
     : null;
+  let pollCount = 0;
+  let queryFailureCount = 0;
+  let consecutiveQueryFailures = 0;
+  let lastQueryErrorCode: SpoolerQueryErrorCode | null = null;
+  let lastQueryErrorDetail: string | null = null;
+  let lastQueryElapsedMs = 0;
+  let handoffLatencyMs: number | null = null;
+
+  const buildLifecycleMeta = (extra: LogMeta = {}): LogMeta => {
+    const baseMeta: LogMeta = {
+      monitorStartedAt: startedAtIso,
+      monitorElapsedMs: Date.now() - startedAtMs,
+      monitorWindowMs: MONITOR_WINDOW_MS,
+      monitorPollCount: pollCount,
+      spoolerQueryFailureCount: queryFailureCount,
+      spoolerConsecutiveQueryFailures: consecutiveQueryFailures,
+      spoolerLastQueryElapsedMs: lastQueryElapsedMs,
+    };
+    if (handoffLatencyMs !== null) {
+      baseMeta.spoolerHandoffLatencyMs = handoffLatencyMs;
+    }
+    if (lastQueryErrorCode) {
+      baseMeta.spoolerLastQueryErrorCode = lastQueryErrorCode;
+    }
+    if (lastQueryErrorDetail) {
+      baseMeta.spoolerLastQueryError = lastQueryErrorDetail;
+    }
+    return {
+      ...baseMeta,
+      ...extra,
+    };
+  };
+
+  console.log('[SPOOLER-MONITOR] Starting spooler monitor.', {
+    printerName: normalizedPrinterName,
+    chargedAmount,
+    transactionId,
+    spoolerCorrelationKey: correlationKey,
+    jobDispatchedAt,
+    monitorStartedAt: startedAtIso,
+  });
+  await persistAndEmitPrintLifecycleState(
+    io,
+    {
+      mode: 'print',
+      state: 'queued',
+      printerName: normalizedPrinterName,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      jobDispatchedAt,
+    },
+    {
+      requiredAmount: chargedAmount,
+      sessionId,
+      documentId,
+      meta: buildLifecycleMeta({
+        marker: 'queued',
+      }),
+    },
+  );
+
+  if (!normalizedPrinterName) {
+    const reason = 'Spooler monitoring unavailable: printer name is missing.';
+    await persistAndEmitPrintLifecycleState(
+      io,
+      {
+        mode: 'print',
+        state: 'failed',
+        printerName: null,
+        transactionId,
+        spoolerCorrelationKey: correlationKey,
+        jobStatus: null,
+        pagesPrinted: 0,
+        totalPages: 0,
+        reason,
+        timedOut: true,
+      },
+      {
+        requiredAmount: chargedAmount,
+        sessionId,
+        documentId,
+        meta: buildLifecycleMeta({
+          marker: 'monitor_unavailable',
+        }),
+      },
+    );
+    io.emit('printerSpoolerTimeout', {
+      jobStatus: null,
+      pagesPrinted: 0,
+      totalPages: 0,
+      printerName: null,
+      spoolerJobId: null,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      jobDispatchedAt,
+      monitorStartedAt: startedAtIso,
+      monitorElapsedMs: Date.now() - startedAtMs,
+      monitorWindowMs: MONITOR_WINDOW_MS,
+      queryFailureCount,
+      reason,
+    });
+    try {
+      await adminService.appendAdminLog(
+        'print_spooler_monitor_unavailable',
+        reason,
+        {
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          chargedAmount,
+        },
+      );
+    } catch (error) {
+      console.error('[SPOOLER-MONITOR] Failed to append monitor-unavailable log.', {
+        error: error instanceof Error ? error.message : String(error),
+        transactionId,
+        spoolerCorrelationKey: correlationKey,
+      });
+    }
+    return {
+      detected: false,
+      jobStatus: null,
+      pagesPrinted: 0,
+      failed: true,
+      timedOut: true,
+      reason,
+    };
+  }
+
+  const deadline = startedAtMs + MONITOR_WINDOW_MS;
+  let lastStatus: string | null = null;
+  let lastPagesPrinted = 0;
+  let lastTotalPages = 0;
+  let trackedJobId: number | null = null;
   let warnedSubmittedTimeFallback = false;
 
   const ps = createPersistentPS();
 
+  const settleMonitorAmbiguity = async (
+    reason: string,
+    marker: string,
+  ): Promise<SpoolerMonitorResult> => {
+    const monitorElapsedMs = Date.now() - startedAtMs;
+    console.warn('[SPOOLER-MONITOR] Monitor ambiguity detected.', {
+      reason,
+      marker,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      spoolerJobId: trackedJobId,
+      monitorElapsedMs,
+      monitorWindowMs: MONITOR_WINDOW_MS,
+      pollCount,
+      queryFailureCount,
+      lastQueryErrorCode,
+      lastQueryErrorDetail,
+    });
+    await persistAndEmitPrintLifecycleState(
+      io,
+      {
+        mode: 'print',
+        state: 'failed',
+        printerName: normalizedPrinterName,
+        transactionId,
+        spoolerCorrelationKey: correlationKey,
+        spoolerJobId: trackedJobId,
+        jobStatus: lastStatus,
+        pagesPrinted: lastPagesPrinted,
+        totalPages: lastTotalPages,
+        reason,
+        timedOut: true,
+      },
+      {
+        requiredAmount: chargedAmount,
+        sessionId,
+        documentId,
+        meta: buildLifecycleMeta({
+          marker,
+        }),
+      },
+    );
+    io.emit('printerSpoolerTimeout', {
+      jobStatus: lastStatus,
+      pagesPrinted: lastPagesPrinted,
+      totalPages: lastTotalPages,
+      printerName: normalizedPrinterName,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      spoolerJobId: trackedJobId,
+      jobDispatchedAt,
+      monitorStartedAt: startedAtIso,
+      monitorElapsedMs,
+      monitorWindowMs: MONITOR_WINDOW_MS,
+      pollCount,
+      queryFailureCount,
+      lastQueryErrorCode,
+      lastQueryErrorDetail,
+      reason,
+    });
+    try {
+      await adminService.appendAdminLog(
+        'print_spooler_monitor_timeout',
+        reason,
+        {
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: trackedJobId,
+          chargedAmount,
+          monitorElapsedMs,
+          pollCount,
+          queryFailureCount,
+          lastQueryErrorCode,
+          lastQueryErrorDetail,
+        },
+      );
+    } catch (error) {
+      console.error('[SPOOLER-MONITOR] Failed to append timeout admin log.', {
+        error: error instanceof Error ? error.message : String(error),
+        transactionId,
+        spoolerCorrelationKey: correlationKey,
+      });
+    }
+    if (transactionId) {
+      try {
+        await checkpointRecoverySession({
+          transactionId,
+          mode: 'print',
+          phase: 'spooler_timeout',
+          requiredAmount: chargedAmount,
+          chargedAmount,
+          sessionId,
+          documentId,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: trackedJobId,
+          jobDispatchedAt,
+          spoolerTerminalAt: new Date().toISOString(),
+          context: {
+            lastStatus: lastStatus ?? null,
+            pagesPrinted: lastPagesPrinted,
+            totalPages: lastTotalPages,
+            timedOut: true,
+            monitorElapsedMs,
+            pollCount,
+            queryFailureCount,
+            lastQueryErrorCode,
+            lastQueryErrorDetail,
+            reason,
+          },
+          lastError: reason,
+        });
+      } catch (checkpointError) {
+        console.error(
+          '[SPOOLER-MONITOR] Failed to checkpoint recovery session (timeout)',
+          checkpointError,
+        );
+      }
+    }
+    return {
+      detected: trackedJobId !== null || lastStatus !== null,
+      jobStatus: lastStatus,
+      pagesPrinted: lastPagesPrinted,
+      failed: true,
+      timedOut: true,
+      reason,
+    };
+  };
+
   try {
     // Step 1: first query fires immediately — no upfront 4 s sleep
-    let jobs = await queryRecentPrintJobs(printerName, ps);
+    let queryResult = await queryRecentPrintJobs(normalizedPrinterName, ps);
+    pollCount += 1;
+    lastQueryElapsedMs = queryResult.elapsedMs;
 
     while (Date.now() < deadline) {
+      if (queryResult.errorCode) {
+        queryFailureCount += 1;
+        consecutiveQueryFailures += 1;
+        lastQueryErrorCode = queryResult.errorCode;
+        lastQueryErrorDetail = queryResult.errorDetail;
+        console.error('[SPOOLER-MONITOR] Failed to query spooler snapshot.', {
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          printerName: normalizedPrinterName,
+          pollCount,
+          elapsedMs: queryResult.elapsedMs,
+          queryFailureCount,
+          consecutiveQueryFailures,
+          errorCode: queryResult.errorCode,
+          errorDetail: queryResult.errorDetail,
+        });
+        if (consecutiveQueryFailures >= MAX_CONSECUTIVE_QUERY_FAILURES) {
+          const reason =
+            'Spooler monitoring aborted due to repeated spooler query failures.';
+          try {
+            await adminService.appendAdminLog(
+              'print_spooler_monitor_query_failed',
+              reason,
+              {
+                transactionId,
+                spoolerCorrelationKey: correlationKey,
+                spoolerJobId: trackedJobId,
+                chargedAmount,
+                pollCount,
+                queryFailureCount,
+                consecutiveQueryFailures,
+                lastQueryErrorCode,
+                lastQueryErrorDetail,
+              },
+            );
+          } catch (error) {
+            console.error(
+              '[SPOOLER-MONITOR] Failed to append query failure admin log.',
+              {
+                error: error instanceof Error ? error.message : String(error),
+                transactionId,
+                spoolerCorrelationKey: correlationKey,
+              },
+            );
+          }
+          await anomalyService.report({
+            type: 'print_spooler_monitor_query_failed',
+            source: 'print-spooler',
+            category: 'spooler',
+            severity: 'warning',
+            message: reason,
+            fingerprint: buildAnomalyFingerprint([
+              'spooler',
+              normalizedPrinterName,
+              correlationKey ?? transactionId ?? 'uncorrelated',
+              'query_failed',
+            ]),
+            context: {
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: trackedJobId,
+              queryFailureCount,
+              consecutiveQueryFailures,
+              lastQueryErrorCode,
+              lastQueryErrorDetail,
+            },
+          });
+          return settleMonitorAmbiguity(reason, 'query_failure_threshold');
+        }
+      } else {
+        consecutiveQueryFailures = 0;
+      }
+
+      const jobs = queryResult.jobs;
       if (jobs.length === 0) {
         await new Promise<void>((resolve) =>
           setTimeout(resolve, POLL_INTERVAL_MS),
         );
-        jobs = await queryRecentPrintJobs(printerName, ps);
+        queryResult = await queryRecentPrintJobs(normalizedPrinterName, ps);
+        pollCount += 1;
+        lastQueryElapsedMs = queryResult.elapsedMs;
         continue;
       }
 
@@ -270,7 +693,12 @@ export async function monitorSpoolerJob(
 
               if (recentJobs.length === 0 && !warnedSubmittedTimeFallback) {
                 console.warn(
-                  '[SPOOLER-MONITOR] No spooler jobs met submitted-time cutoff; falling back to ID-based selection',
+                  '[SPOOLER-MONITOR] No jobs met submitted-time cutoff; using ID fallback.',
+                  {
+                    transactionId,
+                    spoolerCorrelationKey: correlationKey,
+                    cutoffMs: submittedTimeCutoffMs,
+                  },
                 );
                 warnedSubmittedTimeFallback = true;
               }
@@ -287,19 +715,68 @@ export async function monitorSpoolerJob(
 
       if (job === null) {
         console.warn(
-          `[SPOOLER-MONITOR] Tracked job #${trackedJobId} not found in current spooler snapshot; skipping this tick`,
+          '[SPOOLER-MONITOR] Tracked job missing in current spooler snapshot.',
+          {
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+            trackedJobId,
+          },
         );
         await new Promise<void>((resolve) =>
           setTimeout(resolve, POLL_INTERVAL_MS),
         );
-        jobs = await queryRecentPrintJobs(printerName, ps);
+        queryResult = await queryRecentPrintJobs(normalizedPrinterName, ps);
+        pollCount += 1;
+        lastQueryElapsedMs = queryResult.elapsedMs;
         continue;
       }
 
       if (trackedJobId === null) {
         trackedJobId = job.id;
+        if (Number.isFinite(dispatchedAtMs)) {
+          handoffLatencyMs = Math.max(0, Date.now() - dispatchedAtMs);
+        }
         console.log(
           `[SPOOLER-MONITOR] Latched onto spooler job #${trackedJobId}`,
+          {
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+            handoffLatencyMs,
+            monitorElapsedMs: Date.now() - startedAtMs,
+          },
+        );
+        io.emit('printJobDispatched', {
+          printerName: normalizedPrinterName,
+          jobDispatchedAt,
+          spoolerCorrelationKey: correlationKey,
+          transactionId,
+          spoolerJobId: trackedJobId,
+          monitorStartedAt: startedAtIso,
+          monitorElapsedMs: Date.now() - startedAtMs,
+          handoffLatencyMs,
+          pollCount,
+        });
+        await persistAndEmitPrintLifecycleState(
+          io,
+          {
+            mode: 'print',
+            state: 'processing',
+            printerName: normalizedPrinterName,
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+            spoolerJobId: trackedJobId,
+            jobStatus: job.status,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+          },
+          {
+            requiredAmount: chargedAmount,
+            sessionId,
+            documentId,
+            meta: buildLifecycleMeta({
+              marker: 'processing',
+            }),
+          },
         );
       }
 
@@ -315,21 +792,43 @@ export async function monitorSpoolerJob(
         console.log(
           `[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`,
         );
+        await persistAndEmitPrintLifecycleState(
+          io,
+          {
+            mode: 'print',
+            state: 'printed',
+            printerName: normalizedPrinterName,
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+            spoolerJobId: job.id,
+            jobStatus: job.status,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+          },
+          {
+            requiredAmount: chargedAmount,
+            sessionId,
+            documentId,
+            meta: buildLifecycleMeta({
+              marker: 'printed',
+            }),
+          },
+        );
         io.emit('printerSpoolerConfirmed', {
           jobStatus: job.status,
           pagesPrinted: job.pagesPrinted,
           totalPages: job.totalPages,
-          printerName,
-          transactionId:
-            typeof jobContext.transactionId === 'string'
-              ? jobContext.transactionId
-              : null,
-          spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+          printerName: normalizedPrinterName,
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: job.id,
+          jobDispatchedAt,
+          monitorStartedAt: startedAtIso,
+          monitorElapsedMs: Date.now() - startedAtMs,
+          handoffLatencyMs,
+          pollCount,
+          queryFailureCount,
         });
-        const transactionId =
-          typeof jobContext.transactionId === 'string'
-            ? jobContext.transactionId
-            : null;
         if (transactionId) {
           try {
             await checkpointRecoverySession({
@@ -338,15 +837,9 @@ export async function monitorSpoolerJob(
               phase: 'reconciled',
               requiredAmount: chargedAmount,
               chargedAmount,
-              sessionId:
-                typeof jobContext.sessionId === 'string'
-                  ? jobContext.sessionId
-                  : null,
-              documentId:
-                typeof jobContext.documentId === 'string'
-                  ? jobContext.documentId
-                  : null,
-              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+              sessionId,
+              documentId,
+              spoolerCorrelationKey: correlationKey,
               spoolerJobId: job.id,
               jobDispatchedAt,
               settledAt: null,
@@ -360,6 +853,10 @@ export async function monitorSpoolerJob(
                 jobStatus: job.status,
                 pagesPrinted: job.pagesPrinted,
                 totalPages: job.totalPages,
+                monitorElapsedMs: Date.now() - startedAtMs,
+                handoffLatencyMs,
+                pollCount,
+                queryFailureCount,
               },
             });
           } catch (checkpointError) {
@@ -438,7 +935,7 @@ export async function monitorSpoolerJob(
             pagesPrinted: job.pagesPrinted,
             totalPages: job.totalPages,
             chargedAmount,
-            printerName,
+            printerName: normalizedPrinterName,
           },
         });
 
@@ -459,8 +956,8 @@ export async function monitorSpoolerJob(
               pagesPrinted: job.pagesPrinted,
               totalPages: job.totalPages,
               jobDispatchedAt,
-              printerName,
-              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+              printerName: normalizedPrinterName,
+              spoolerCorrelationKey: correlationKey,
             },
           });
         } catch (error) {
@@ -481,10 +978,8 @@ export async function monitorSpoolerJob(
                   chargedAmount,
                   spoolerJobId: job.id,
                   spoolerStatus: job.status,
-                  transactionId:
-                    typeof jobContext.transactionId === 'string'
-                      ? jobContext.transactionId
-                      : null,
+                  transactionId,
+                  spoolerCorrelationKey: correlationKey,
                   trustedTime:
                     trustedDetail != null
                       ? JSON.stringify(trustedDetail)
@@ -497,26 +992,50 @@ export async function monitorSpoolerJob(
                 logError,
               );
             }
+            await persistAndEmitPrintLifecycleState(
+              io,
+              {
+                mode: 'print',
+                state: 'failed',
+                printerName: normalizedPrinterName,
+                transactionId,
+                spoolerCorrelationKey: correlationKey,
+                spoolerJobId: job.id,
+                jobStatus: job.status,
+                pagesPrinted: job.pagesPrinted,
+                totalPages: job.totalPages,
+                reason,
+                refundDisposition: 'refund_blocked_trusted_time',
+              },
+              {
+                requiredAmount: chargedAmount,
+                sessionId,
+                documentId,
+                meta: buildLifecycleMeta({
+                  marker: 'failed_trusted_time',
+                }),
+              },
+            );
             io.emit('printerSpoolerFailure', {
               jobStatus: job.status,
               chargedAmount,
               refundId: null,
               pagesPrinted: job.pagesPrinted,
               totalPages: job.totalPages,
-              printerName,
+              printerName: normalizedPrinterName,
+              spoolerJobId: job.id,
               reason,
               refundDisposition: 'refund_blocked_trusted_time',
               restoredBalanceAmount: 0,
-              transactionId:
-                typeof jobContext.transactionId === 'string'
-                  ? jobContext.transactionId
-                  : null,
-              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              jobDispatchedAt,
+              monitorStartedAt: startedAtIso,
+              monitorElapsedMs: Date.now() - startedAtMs,
+              handoffLatencyMs,
+              pollCount,
+              queryFailureCount,
             });
-            const transactionId =
-              typeof jobContext.transactionId === 'string'
-                ? jobContext.transactionId
-                : null;
             if (transactionId) {
               try {
                 await checkpointRecoverySession({
@@ -525,15 +1044,9 @@ export async function monitorSpoolerJob(
                   phase: 'spooler_failed',
                   requiredAmount: chargedAmount,
                   chargedAmount,
-                  sessionId:
-                    typeof jobContext.sessionId === 'string'
-                      ? jobContext.sessionId
-                      : null,
-                  documentId:
-                    typeof jobContext.documentId === 'string'
-                      ? jobContext.documentId
-                      : null,
-                  spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+                  sessionId,
+                  documentId,
+                  spoolerCorrelationKey: correlationKey,
                   spoolerJobId: job.id,
                   jobDispatchedAt,
                   settledAt: null,
@@ -544,6 +1057,10 @@ export async function monitorSpoolerJob(
                     pagesPrinted: job.pagesPrinted,
                     totalPages: job.totalPages,
                     refundDisposition: 'refund_blocked_trusted_time',
+                    monitorElapsedMs: Date.now() - startedAtMs,
+                    handoffLatencyMs,
+                    pollCount,
+                    queryFailureCount,
                   },
                   lastError:
                     'Refund blocked because trusted time is unavailable.',
@@ -575,11 +1092,6 @@ export async function monitorSpoolerJob(
           io.emit('balance', db.data!.balance);
         }
 
-        const transactionId =
-          typeof jobContext.transactionId === 'string'
-            ? jobContext.transactionId
-            : null;
-        const correlationKey = spoolerCorrelationKey ?? null;
         const refundDisposition = refundOutcome.autoRefunded
           ? 'auto_refunded'
           : 'pending_admin_review';
@@ -600,26 +1112,61 @@ export async function monitorSpoolerJob(
             refundCreated: refundOutcome.created,
             restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
             pagesPrinted: job.pagesPrinted,
-            printerName,
+            printerName: normalizedPrinterName,
             transactionId,
             spoolerCorrelationKey: correlationKey,
+            monitorElapsedMs: Date.now() - startedAtMs,
+            handoffLatencyMs,
+            pollCount,
+            queryFailureCount,
           });
         } catch (error) {
           console.error('[SPOOLER-MONITOR] Failed to append admin log', error);
         }
 
+        await persistAndEmitPrintLifecycleState(
+          io,
+          {
+            mode: 'print',
+            state: 'failed',
+            printerName: normalizedPrinterName,
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+            spoolerJobId: job.id,
+            jobStatus: job.status,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+            reason,
+            refundDisposition,
+          },
+          {
+            requiredAmount: chargedAmount,
+            sessionId,
+            documentId,
+            meta: buildLifecycleMeta({
+              marker: 'failed',
+            }),
+          },
+        );
         io.emit('printerSpoolerFailure', {
           jobStatus: job.status,
           chargedAmount,
           refundId: refundOutcome.entry.id,
           pagesPrinted: job.pagesPrinted,
           totalPages: job.totalPages,
-          printerName,
+          printerName: normalizedPrinterName,
+          spoolerJobId: job.id,
           reason,
           refundDisposition,
           restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
           transactionId,
           spoolerCorrelationKey: correlationKey,
+          jobDispatchedAt,
+          monitorStartedAt: startedAtIso,
+          monitorElapsedMs: Date.now() - startedAtMs,
+          handoffLatencyMs,
+          pollCount,
+          queryFailureCount,
         });
 
         await anomalyService.report({
@@ -630,7 +1177,7 @@ export async function monitorSpoolerJob(
           message: `Print spooler reported failure: ${job.status}`,
           fingerprint: buildAnomalyFingerprint([
             'spooler',
-            printerName,
+            normalizedPrinterName,
             job.status,
           ]),
           context: {
@@ -641,6 +1188,11 @@ export async function monitorSpoolerJob(
             chargedAmount,
             refundDisposition,
             transactionId,
+            spoolerCorrelationKey: correlationKey,
+            monitorElapsedMs: Date.now() - startedAtMs,
+            handoffLatencyMs,
+            pollCount,
+            queryFailureCount,
           },
         });
 
@@ -652,14 +1204,8 @@ export async function monitorSpoolerJob(
               phase: 'reconciled',
               requiredAmount: chargedAmount,
               chargedAmount,
-              sessionId:
-                typeof jobContext.sessionId === 'string'
-                  ? jobContext.sessionId
-                  : null,
-              documentId:
-                typeof jobContext.documentId === 'string'
-                  ? jobContext.documentId
-                  : null,
+              sessionId,
+              documentId,
               spoolerCorrelationKey: correlationKey,
               spoolerJobId: job.id,
               jobDispatchedAt,
@@ -682,6 +1228,10 @@ export async function monitorSpoolerJob(
                 totalPages: job.totalPages,
                 refundDisposition,
                 refundId: refundOutcome.entry.id,
+                monitorElapsedMs: Date.now() - startedAtMs,
+                handoffLatencyMs,
+                pollCount,
+                queryFailureCount,
               },
             });
           } catch (checkpointError) {
@@ -705,71 +1255,15 @@ export async function monitorSpoolerJob(
       await new Promise<void>((resolve) =>
         setTimeout(resolve, POLL_INTERVAL_MS),
       );
-      jobs = await queryRecentPrintJobs(printerName, ps);
+      queryResult = await queryRecentPrintJobs(normalizedPrinterName, ps);
+      pollCount += 1;
+      lastQueryElapsedMs = queryResult.elapsedMs;
     }
 
-    // Monitor window expired
-    console.log(
-      `[SPOOLER-MONITOR] Window expired. Last known status: "${lastStatus ?? 'none'}"`,
+    return settleMonitorAmbiguity(
+      'Spooler monitoring timed out before terminal status.',
+      'monitor_window_expired',
     );
-    io.emit('printerSpoolerTimeout', {
-      jobStatus: lastStatus,
-      pagesPrinted: lastPagesPrinted,
-      totalPages: lastTotalPages,
-      printerName,
-      transactionId:
-        typeof jobContext.transactionId === 'string'
-          ? jobContext.transactionId
-          : null,
-      spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-      monitorWindowMs: MONITOR_WINDOW_MS,
-    });
-    const transactionId =
-      typeof jobContext.transactionId === 'string'
-        ? jobContext.transactionId
-        : null;
-    if (transactionId) {
-      try {
-        await checkpointRecoverySession({
-          transactionId,
-          mode: 'print',
-          phase: 'spooler_timeout',
-          requiredAmount: chargedAmount,
-          chargedAmount,
-          sessionId:
-            typeof jobContext.sessionId === 'string'
-              ? jobContext.sessionId
-              : null,
-          documentId:
-            typeof jobContext.documentId === 'string'
-              ? jobContext.documentId
-              : null,
-          spoolerCorrelationKey: spoolerCorrelationKey ?? null,
-          spoolerJobId: trackedJobId,
-          jobDispatchedAt,
-          settledAt: null,
-          spoolerTerminalAt: new Date().toISOString(),
-          context: {
-            lastStatus: lastStatus ?? null,
-            pagesPrinted: lastPagesPrinted,
-            totalPages: lastTotalPages,
-            timedOut: true,
-          },
-        });
-      } catch (checkpointError) {
-        console.error(
-          '[SPOOLER-MONITOR] Failed to checkpoint recovery session (timeout)',
-          checkpointError,
-        );
-      }
-    }
-    return {
-      detected: lastStatus !== null,
-      jobStatus: lastStatus,
-      pagesPrinted: lastPagesPrinted,
-      failed: false,
-      timedOut: true,
-    };
   } finally {
     // Always clean up the PS process — whether we returned early, timed out,
     // or an unexpected error was thrown. Without this the process leaks.

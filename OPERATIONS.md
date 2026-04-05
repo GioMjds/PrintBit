@@ -69,6 +69,47 @@
    - `pnpm run updates:verify` (after re-applying policy if returning to managed mode)
 4. Validate full transaction flow before returning kiosk to production.
 
+## Definition of Done (mandatory): Epson L5290 spooler handoff reliability
+
+All sections below must pass before closing spooler handoff reliability work.
+
+### 1) Queue identity and USB port mapping verification
+
+1. Run `GET /api/admin/printer/list`.
+2. Confirm the active queue is the production Epson L5290 queue, `isDefault=true`, and `portName` matches the expected USB port (typically `USB001`).
+3. Record `name`, `driverName`, `portName`, and `pnpInstanceId` in the ticket/change log.
+4. If mapping is wrong or missing, run `POST /api/admin/printer/re-detect`, then re-verify before proceeding.
+
+### 2) Windows spooler health and queue observation
+
+1. Verify spooler is healthy: `Get-Service Spooler` must be `Running`.
+2. Clear stale/paused Epson queue jobs.
+3. Run `POST /api/admin/printer/test-print`, then run one real kiosk print transaction.
+4. Observe queue progression (`Get-PrintJob -PrinterName "<EPSON L5290 queue name>"`) until jobs leave queue and printer output is produced.
+5. If jobs stall/fail, capture timestamp + queue state and treat checklist as failed.
+
+### 3) Physical printer checks (on-device)
+
+1. Confirm printer panel has no active errors (jam, cover open, out of paper/ink).
+2. Confirm paper path and tray are loaded/aligned for expected media size.
+3. Run nozzle check; if gaps/streaks appear, run head cleaning and repeat nozzle check.
+4. Print maintenance/test pattern and confirm readable, streak-free output.
+
+### 4) USB cable and driver stability across reconnect/restart
+
+1. Inspect and secure USB cable at both printer and host ends.
+2. Perform one controlled USB reconnect (unplug/replug) and verify Epson queue returns online with same port mapping.
+3. Reboot host once; verify spooler is running, Epson queue still default, and test print succeeds.
+4. Confirm no Device Manager warning state for Epson/USB print devices after reconnect/restart.
+
+### 5) Transaction/reference ID correlation to physical output
+
+1. Run at least 2 test print transactions.
+2. Capture each `transactionId` (reference ID) from kiosk/admin flow.
+3. For each ID, query `GET /api/admin/transactions/:transactionId` and confirm expected settlement fields with terminal `spoolerPhase`.
+4. Mark each physical printout with its `transactionId` + timestamp (or attach photo evidence) for audit trace.
+5. Do not mark spooler handoff work done unless every sampled `transactionId` has matching successful spooler/admin evidence and physical output.
+
 ## Frequent issues
 
 ## Watchdog & self-healing (Issue #40)

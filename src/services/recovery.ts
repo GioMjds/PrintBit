@@ -5,6 +5,9 @@ import {
   type RecoveryReconciliationAction,
   type RecoverySessionEntry,
   type RecoverySessionPhase,
+  type SpoolerLifecycleRecord,
+  type SpoolerLifecycleState,
+  type SpoolerLifecycleTransitionEntry,
 } from './db';
 import {
   PendingRefundServiceError,
@@ -13,6 +16,8 @@ import {
 import { getTrustedTimestamp } from './time-source';
 
 const MAX_RECOVERY_SESSIONS = 1000;
+const MAX_SPOOLER_LIFECYCLE_RECORDS = 2000;
+const MAX_SPOOLER_LIFECYCLE_TRANSITIONS = 32;
 
 function nowIso(): string {
   return getTrustedTimestamp().timestamp;
@@ -37,6 +42,15 @@ function ensureRecoveryState(): void {
       },
       sessions: [],
     };
+  }
+}
+
+function ensureSpoolerLifecycleState(): void {
+  if (!db.data) {
+    throw new Error('Database is not initialized.');
+  }
+  if (!Array.isArray(db.data.spoolerLifecycle)) {
+    db.data.spoolerLifecycle = [];
   }
 }
 
@@ -215,6 +229,158 @@ export async function checkpointRecoverySession(
   trimRecoverySessions();
   await db.write();
   return entry;
+}
+
+export interface RecordSpoolerLifecycleTransitionInput {
+  transactionId: string;
+  mode: 'print' | 'copy';
+  state: SpoolerLifecycleState;
+  requiredAmount?: number;
+  sessionId?: string | null;
+  documentId?: string | null;
+  spoolerCorrelationKey?: string | null;
+  spoolerJobId?: number | null;
+  printerName?: string | null;
+  reason?: string | null;
+  jobStatus?: string | null;
+  pagesPrinted?: number | null;
+  totalPages?: number | null;
+  timestamp?: string;
+  meta?: LogMeta;
+}
+
+function mergeSpoolerTransition(
+  transitions: SpoolerLifecycleTransitionEntry[],
+  next: SpoolerLifecycleTransitionEntry,
+): SpoolerLifecycleTransitionEntry[] {
+  if (transitions.length === 0) {
+    return [next];
+  }
+  const previous = transitions[transitions.length - 1];
+  if (previous.state !== next.state) {
+    const updated = [...transitions, next];
+    return updated.length > MAX_SPOOLER_LIFECYCLE_TRANSITIONS
+      ? updated.slice(updated.length - MAX_SPOOLER_LIFECYCLE_TRANSITIONS)
+      : updated;
+  }
+  const merged = [...transitions];
+  merged[merged.length - 1] = next;
+  return merged;
+}
+
+export async function recordSpoolerLifecycleTransition(
+  input: RecordSpoolerLifecycleTransitionInput,
+): Promise<SpoolerLifecycleRecord> {
+  ensureSpoolerLifecycleState();
+  const lifecycle = db.data!.spoolerLifecycle;
+  const existing = lifecycle.find(
+    (entry) =>
+      entry.transactionId === input.transactionId && entry.mode === input.mode,
+  );
+  const entry =
+    existing ??
+    baseSpoolerLifecycleRecord({
+      transactionId: input.transactionId,
+      mode: input.mode,
+      requiredAmount: input.requiredAmount,
+      sessionId: input.sessionId,
+      documentId: input.documentId,
+      spoolerCorrelationKey: input.spoolerCorrelationKey,
+    });
+
+  const timestamp = input.timestamp ?? nowIso();
+  const requiredAmount = coerceFiniteNumber(input.requiredAmount);
+  const spoolerJobId = coerceFiniteInteger(input.spoolerJobId);
+  const pagesPrinted = coerceFiniteNumber(input.pagesPrinted);
+  const totalPages = coerceFiniteNumber(input.totalPages);
+  const transition: SpoolerLifecycleTransitionEntry = {
+    state: input.state,
+    timestamp,
+    reason: typeof input.reason === 'string' ? input.reason : null,
+    printerName: typeof input.printerName === 'string' ? input.printerName : null,
+    spoolerCorrelationKey:
+      typeof input.spoolerCorrelationKey === 'string'
+        ? input.spoolerCorrelationKey
+        : null,
+    spoolerJobId,
+    jobStatus: typeof input.jobStatus === 'string' ? input.jobStatus : null,
+    pagesPrinted,
+    totalPages,
+    meta: sanitizeLogMeta(input.meta),
+  };
+
+  entry.mode = input.mode;
+  entry.updatedAt = timestamp;
+  if (requiredAmount !== null) {
+    entry.requiredAmount = Math.max(0, requiredAmount);
+  }
+  if (input.sessionId !== undefined) {
+    entry.sessionId = typeof input.sessionId === 'string' ? input.sessionId : null;
+  }
+  if (input.documentId !== undefined) {
+    entry.documentId =
+      typeof input.documentId === 'string' ? input.documentId : null;
+  }
+  if (input.spoolerCorrelationKey !== undefined) {
+    entry.spoolerCorrelationKey =
+      typeof input.spoolerCorrelationKey === 'string'
+        ? input.spoolerCorrelationKey
+        : null;
+  }
+  if (input.spoolerJobId !== undefined) {
+    entry.spoolerJobId = spoolerJobId;
+  }
+  if (input.printerName !== undefined) {
+    entry.printerName =
+      typeof input.printerName === 'string' ? input.printerName : null;
+  }
+  if (input.reason !== undefined) {
+    entry.reason = typeof input.reason === 'string' ? input.reason : null;
+  }
+  if (input.jobStatus !== undefined) {
+    entry.jobStatus = typeof input.jobStatus === 'string' ? input.jobStatus : null;
+  }
+  if (input.pagesPrinted !== undefined) {
+    entry.pagesPrinted = pagesPrinted;
+  }
+  if (input.totalPages !== undefined) {
+    entry.totalPages = totalPages;
+  }
+
+  entry.currentState = input.state;
+  if (input.state === 'queued' && entry.queuedAt === null) {
+    entry.queuedAt = timestamp;
+  }
+  if (input.state === 'processing' && entry.processingAt === null) {
+    entry.processingAt = timestamp;
+  }
+  if (input.state === 'printed' && entry.printedAt === null) {
+    entry.printedAt = timestamp;
+  }
+  if (input.state === 'failed' && entry.failedAt === null) {
+    entry.failedAt = timestamp;
+  }
+
+  entry.transitions = mergeSpoolerTransition(entry.transitions, transition);
+
+  if (!existing) {
+    lifecycle.unshift(entry);
+  }
+  trimSpoolerLifecycleRecords();
+  await db.write();
+  return entry;
+}
+
+export function getSpoolerLifecycleRecord(
+  transactionId: string,
+  mode?: 'print' | 'copy',
+): SpoolerLifecycleRecord | null {
+  ensureSpoolerLifecycleState();
+  const match = db.data!.spoolerLifecycle.find(
+    (entry) =>
+      entry.transactionId === transactionId && (mode ? entry.mode === mode : true),
+  );
+  return match ? structuredClone(match) : null;
 }
 
 export interface RecoveryLifecycleStartupResult {
@@ -611,4 +777,66 @@ export async function reconcileFinalizedCopySession(
       finalizedWithoutSpooler: true,
     },
   });
+}
+
+function coerceFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function coerceFiniteInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.floor(value)
+    : null;
+}
+
+function baseSpoolerLifecycleRecord(input: {
+  transactionId: string;
+  mode: 'print' | 'copy';
+  requiredAmount?: number;
+  sessionId?: string | null;
+  documentId?: string | null;
+  spoolerCorrelationKey?: string | null;
+}): SpoolerLifecycleRecord {
+  const timestamp = nowIso();
+  return {
+    transactionId: input.transactionId,
+    mode: input.mode,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    currentState: null,
+    queuedAt: null,
+    processingAt: null,
+    printedAt: null,
+    failedAt: null,
+    sessionId: input.sessionId ?? null,
+    documentId: input.documentId ?? null,
+    requiredAmount:
+      typeof input.requiredAmount === 'number' && Number.isFinite(input.requiredAmount)
+        ? Number(input.requiredAmount)
+        : 0,
+    spoolerCorrelationKey: input.spoolerCorrelationKey ?? null,
+    spoolerJobId: null,
+    printerName: null,
+    reason: null,
+    jobStatus: null,
+    pagesPrinted: null,
+    totalPages: null,
+    transitions: [],
+  };
+}
+
+function trimSpoolerLifecycleRecords(): void {
+  const records = db.data!.spoolerLifecycle;
+  if (records.length <= MAX_SPOOLER_LIFECYCLE_RECORDS) return;
+  records.sort((a, b) => {
+    const aMs = parseIsoMs(a.updatedAt);
+    const bMs = parseIsoMs(b.updatedAt);
+    const aValid = Number.isFinite(aMs);
+    const bValid = Number.isFinite(bMs);
+    if (aValid && bValid) return bMs - aMs;
+    if (aValid) return -1;
+    if (bValid) return 1;
+    return 0;
+  });
+  db.data!.spoolerLifecycle = records.slice(0, MAX_SPOOLER_LIFECYCLE_RECORDS);
 }
