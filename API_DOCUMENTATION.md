@@ -232,7 +232,7 @@ Downloads completed scan output.
 
 ### `POST /api/scan/preview`
 
-Runs quick preview scan for copy flow.
+Runs quick preview scan for copy flow and returns `previewPath` plus a short-lived `releaseToken` used for authorized cleanup.
 
 ### `GET /api/scan/preview/:filename`
 
@@ -248,7 +248,7 @@ Returns scanner readiness for scan UI compatibility, including preferred device 
 
 ### `POST /api/scanner/scan`
 
-Runs an interactive scan for the `/scan` page and returns preview page URLs + filename.
+Runs an interactive scan for the `/scan` page and returns preview page URLs, filename, and a short-lived `releaseToken` used for authorized cleanup.
 
 **Body parameters:**
 
@@ -283,12 +283,13 @@ Creates a temporary tokenized download link for a scanned file.
 ### `POST /api/scanner/release`
 
 Explicitly releases (deletes) a transient file from `uploads/scans` in an idempotent way.
+Requires a valid short-lived `releaseToken` issued by scan/preview APIs.
 
 Request:
 
 ```json
 {
-  "filename": "scan-1234567890.pdf",
+  "releaseToken": "d2c41f0c-5f8e-4515-b2f4-14f4053704f0",
   "reason": "scan_qr_done"
 }
 ```
@@ -299,8 +300,7 @@ Response:
 {
   "ok": true,
   "deleted": true,
-  "alreadyMissing": false,
-  "filePath": "C:\\...\\uploads\\scans\\scan-1234567890.pdf"
+  "alreadyMissing": false
 }
 ```
 

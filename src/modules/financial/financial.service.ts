@@ -32,6 +32,10 @@ import {
   getTrustedTimestamp,
   isTrustedTimeError,
 } from '@/services/time-source';
+import {
+  PendingRefundServiceError,
+  upsertSpoolerFailureRefund,
+} from '@/services/pending-refund';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1236,42 +1240,68 @@ export class FinancialService {
       }
     })();
 
-    if (mode === 'print' && jobDispatchedAt && telemetry.name) {
-      void monitorSpoolerJob({
-        printerName: telemetry.name,
-        chargedAmount: settledAmount,
-        jobDispatchedAt,
-        spoolerCorrelationKey,
-        io: this.deps.io,
-        jobContext: {
+    if (mode === 'print' && jobDispatchedAt) {
+      if (telemetry.name) {
+        void monitorSpoolerJob({
+          printerName: telemetry.name,
+          chargedAmount: settledAmount,
+          jobDispatchedAt,
+          spoolerCorrelationKey,
+          io: this.deps.io,
+          jobContext: {
+            transactionId,
+            mode,
+            copies,
+            colorMode: printOptions?.colorMode ?? colorMode,
+            duplex: printOptions?.duplex ?? false,
+            spoolerCorrelationKey,
+            sessionId: sessionId ?? null,
+            documentId: targetDocumentId ?? null,
+            filename: serverFilename ?? null,
+            pageRange: printOptions?.pageRange ?? null,
+          },
+          onConfirmed: async () => {
+            if (!serverFilename) return;
+            await this.cleanupPrintUploadAfterSpoolerSuccess({
+              transactionId,
+              sessionId: sessionId ?? null,
+              documentId: targetDocumentId ?? null,
+              filename: serverFilename,
+            });
+          },
+        }).catch((err) => {
+          console.error(
+            '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
+            err instanceof Error ? err.message : err,
+          );
+        });
+      } else {
+        void this.handleMissingSpoolerTelemetry({
           transactionId,
-          mode,
-          copies,
-          colorMode: printOptions?.colorMode ?? colorMode,
-          duplex: printOptions?.duplex ?? false,
+          chargedAmount: settledAmount,
           spoolerCorrelationKey,
           sessionId: sessionId ?? null,
           documentId: targetDocumentId ?? null,
           filename: serverFilename ?? null,
+          copies,
+          colorMode: printOptions?.colorMode ?? colorMode,
+          duplex: printOptions?.duplex ?? false,
           pageRange: printOptions?.pageRange ?? null,
-        },
-        onConfirmed: async () => {
-          if (!serverFilename) return;
-          await this.cleanupPrintUploadAfterSpoolerSuccess({
-            transactionId,
-            sessionId: sessionId ?? null,
-            documentId: targetDocumentId ?? null,
-            filename: serverFilename,
-          });
-        },
-      }).catch((err) => {
+          jobDispatchedAt,
+        }).catch((error) => {
+          console.error(
+            '[CONFIRM-PAYMENT] Missing telemetry fallback failed:',
+            error instanceof Error ? error.message : error,
+          );
+        });
+      }
+    } else if (mode === 'copy') {
+      void reconcileFinalizedCopySession(transactionId).catch((error) => {
         console.error(
-          '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
-          err instanceof Error ? err.message : err,
+          '[CONFIRM-PAYMENT] Failed to reconcile finalized copy session:',
+          error instanceof Error ? error.message : error,
         );
       });
-    } else if (mode === 'copy') {
-      await reconcileFinalizedCopySession(transactionId);
     }
   };
 
@@ -1374,6 +1404,242 @@ export class FinancialService {
       throw new Error(
         'Uploaded file cleanup failed after spooler-confirmed print completion.',
       );
+    }
+  }
+
+  private async handleMissingSpoolerTelemetry(input: {
+    transactionId: string;
+    chargedAmount: number;
+    spoolerCorrelationKey: string;
+    sessionId: string | null;
+    documentId: string | null;
+    filename: string | null;
+    copies: number;
+    colorMode: 'colored' | 'grayscale';
+    duplex: boolean;
+    pageRange: string | null;
+    jobDispatchedAt: string;
+  }): Promise<void> {
+    const {
+      transactionId,
+      chargedAmount,
+      spoolerCorrelationKey,
+      sessionId,
+      documentId,
+      filename,
+      copies,
+      colorMode,
+      duplex,
+      pageRange,
+      jobDispatchedAt,
+    } = input;
+
+    const reason =
+      'Print spooler monitoring unavailable because printer telemetry name is missing.';
+    await adminService
+      .appendAdminLog(
+        'print_spooler_monitor_unavailable',
+        'Unable to monitor spooler job because printer telemetry is missing.',
+        {
+          transactionId,
+          spoolerCorrelationKey,
+          sessionId,
+          documentId,
+          filename,
+        },
+      )
+      .catch((logError) => {
+        console.error(
+          '[CONFIRM-PAYMENT] Failed to append monitor-unavailable admin log:',
+          logError instanceof Error ? logError.message : logError,
+        );
+      });
+
+    try {
+      const refundOutcome = await upsertSpoolerFailureRefund({
+        chargedAmount,
+        reason,
+        autoRefund: false,
+        jobContext: {
+          transactionId,
+          mode: 'print',
+          copies,
+          colorMode,
+          duplex,
+          pageRange,
+          spoolerCorrelationKey,
+          sessionId,
+          documentId,
+          filename,
+          spoolerStatus: 'monitor_unavailable',
+          jobDispatchedAt,
+        },
+      });
+      const refundDisposition = refundOutcome.autoRefunded
+        ? 'auto_refunded'
+        : 'pending_admin_review';
+
+      if (
+        refundOutcome.autoRefunded &&
+        refundOutcome.restoredBalanceAmount > 0
+      ) {
+        this.deps.io.emit('balance', db.data!.balance);
+      }
+
+      await adminService
+        .appendAdminLog(
+          refundOutcome.autoRefunded
+            ? 'print_spooler_auto_refund'
+            : 'print_spooler_job_failed',
+          refundOutcome.autoRefunded
+            ? `Print monitor fallback auto-refunded ₱${chargedAmount}.`
+            : `Print monitor fallback queued pending refund ₱${chargedAmount}.`,
+          {
+            transactionId,
+            spoolerCorrelationKey,
+            refundId: refundOutcome.entry.id,
+            refundDisposition,
+            restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
+            reason,
+          },
+        )
+        .catch((logError) => {
+          console.error(
+            '[CONFIRM-PAYMENT] Failed to append fallback refund admin log:',
+            logError instanceof Error ? logError.message : logError,
+          );
+        });
+
+      this.deps.io.emit('printerSpoolerFailure', {
+        jobStatus: 'monitor_unavailable',
+        chargedAmount,
+        refundId: refundOutcome.entry.id,
+        pagesPrinted: 0,
+        totalPages: 0,
+        printerName: null,
+        reason,
+        refundDisposition,
+        restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
+        transactionId,
+        spoolerCorrelationKey,
+      });
+
+      await checkpointRecoverySession({
+        transactionId,
+        mode: 'print',
+        phase: 'reconciled',
+        requiredAmount: chargedAmount,
+        chargedAmount,
+        sessionId,
+        documentId,
+        spoolerCorrelationKey,
+        spoolerJobId: null,
+        jobDispatchedAt,
+        settledAt: null,
+        spoolerTerminalAt: new Date().toISOString(),
+        reconciledAt: new Date().toISOString(),
+        startupReconciled: false,
+        reconciliationAction:
+          refundDisposition === 'auto_refunded'
+            ? 'auto_refund'
+            : 'pending_admin_review',
+        reconciliationReason:
+          refundDisposition === 'auto_refunded'
+            ? 'Spooler monitor unavailable; auto-refunded.'
+            : 'Spooler monitor unavailable; pending admin refund review.',
+        context: {
+          spoolerOutcome: 'monitor_unavailable',
+          refundDisposition,
+          refundId: refundOutcome.entry.id,
+        },
+      });
+      if (filename) {
+        await this.cleanupPrintUploadAfterSpoolerSuccess({
+          transactionId,
+          sessionId,
+          documentId,
+          filename,
+        }).catch((cleanupError) => {
+          console.error(
+            '[CONFIRM-PAYMENT] Fallback print upload cleanup failed:',
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : cleanupError,
+          );
+        });
+      }
+    } catch (error) {
+      if (
+        error instanceof PendingRefundServiceError &&
+        error.code === 'TRUSTED_TIME_UNAVAILABLE'
+      ) {
+        await adminService
+          .appendAdminLog(
+            'trusted_time_unsynced',
+            'Print fallback refund blocked because trusted time is unavailable.',
+            {
+              transactionId,
+              spoolerCorrelationKey,
+              detail: error.message,
+            },
+          )
+          .catch((logError) => {
+            console.error(
+              '[CONFIRM-PAYMENT] Failed to append trusted-time fallback admin log:',
+              logError instanceof Error ? logError.message : logError,
+            );
+          });
+        this.deps.io.emit('printerSpoolerFailure', {
+          jobStatus: 'monitor_unavailable',
+          chargedAmount,
+          refundId: null,
+          pagesPrinted: 0,
+          totalPages: 0,
+          printerName: null,
+          reason: 'Refund blocked because trusted time is unavailable.',
+          refundDisposition: 'pending_admin_review',
+          restoredBalanceAmount: 0,
+          transactionId,
+          spoolerCorrelationKey,
+        });
+        await checkpointRecoverySession({
+          transactionId,
+          mode: 'print',
+          phase: 'spooler_failed',
+          requiredAmount: chargedAmount,
+          chargedAmount,
+          sessionId,
+          documentId,
+          spoolerCorrelationKey,
+          spoolerJobId: null,
+          jobDispatchedAt,
+          settledAt: null,
+          spoolerTerminalAt: new Date().toISOString(),
+          lastError: 'Refund blocked because trusted time is unavailable.',
+          context: {
+            spoolerOutcome: 'monitor_unavailable',
+            refundDisposition: 'pending_admin_review',
+            trustedTimeBlocked: true,
+          },
+        });
+        if (filename) {
+          await this.cleanupPrintUploadAfterSpoolerSuccess({
+            transactionId,
+            sessionId,
+            documentId,
+            filename,
+          }).catch((cleanupError) => {
+            console.error(
+              '[CONFIRM-PAYMENT] Fallback print upload cleanup failed:',
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : cleanupError,
+            );
+          });
+        }
+        return;
+      }
+      throw error;
     }
   }
 }

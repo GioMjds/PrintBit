@@ -32,6 +32,7 @@ void initializePageIdleTimeout({
     sessionStorage.removeItem('printbit.uploadedDocumentId');
     sessionStorage.removeItem('printbit.uploadedFiles');
     sessionStorage.removeItem('printbit.copyPreviewPath');
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     window.location.replace('/');
   },
 });
@@ -50,6 +51,7 @@ interface PrintConfig {
   documentId: string | null;
   filename: string | null;
   copyPreviewPath?: string | null;
+  copyPreviewReleaseToken?: string | null;
   colorMode: ColorMode;
   duplex: boolean;
   copies: number;
@@ -619,6 +621,9 @@ const selectedDocumentId =
   params.get('documentId') ??
   sessionStorage.getItem('printbit.uploadedDocumentId');
 const copyPreviewPath = sessionStorage.getItem('printbit.copyPreviewPath');
+const copyPreviewReleaseToken = sessionStorage.getItem(
+  'printbit.copyPreviewReleaseToken',
+);
 
 const backLink = document.getElementById(
   'backLink',
@@ -1349,6 +1354,7 @@ continueBtn?.addEventListener('click', () => {
     documentId: mode === 'print' ? selectedDocumentId : null,
     filename: selectedFile,
     copyPreviewPath: mode === 'copy' ? copyPreviewPath : null,
+    copyPreviewReleaseToken: mode === 'copy' ? copyPreviewReleaseToken : null,
     colorMode: cfg.colorMode,
     duplex: false,
     copies: getCopies(),

@@ -37,15 +37,18 @@ function isTransientPrintUpload(filename: string): boolean {
   return TRANSIENT_PRINT_EXTENSIONS.has(ext);
 }
 
-async function listDirectoryEntries(
-  dirPath: string,
-): Promise<fs.Dirent[]> {
+async function listDirectoryEntries(dirPath: string): Promise<fs.Dirent[]> {
   try {
     return await fs.promises.readdir(dirPath, { withFileTypes: true });
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === 'ENOENT') return [];
-    throw error;
+    console.error('[STARTUP-CLEANUP] Failed to read transient cleanup directory.', {
+      dirPath,
+      code: err.code ?? 'UNKNOWN',
+      error: err.message,
+    });
+    return [];
   }
 }
 
@@ -117,12 +120,14 @@ async function sweepDirectory(
   return stats;
 }
 
-export async function cleanupTransientFilesOnStartup(): Promise<void> {
-  const uploadsRoot = path.resolve('uploads');
-  const scansRoot = path.resolve('uploads', 'scans');
+export async function cleanupTransientFilesOnStartup(
+  dir: string,
+): Promise<void> {
+  const uploadsRoot = path.resolve(dir);
+  const scansRoot = path.resolve(dir, 'scans');
   const printStats = await sweepDirectory(uploadsRoot, isTransientPrintUpload);
   const scanStats = await sweepDirectory(scansRoot, () => true);
-  const totalDeleted = printStats.deleted + scanStats.deleted;
+  // const totalDeleted = printStats.deleted + scanStats.deleted;
   const totalMissing = printStats.alreadyMissing + scanStats.alreadyMissing;
   const totalFailed = printStats.failed + scanStats.failed;
 

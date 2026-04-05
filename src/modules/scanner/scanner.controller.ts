@@ -26,7 +26,7 @@ type ScanJobBody = {
 };
 
 type ReleaseScanBody = {
-  filename?: string;
+  releaseToken?: string;
   reason?: string;
 };
 
@@ -245,9 +245,10 @@ export class ScannerController {
 
   private releaseScanFile = async (req: Request, res: Response): Promise<void> => {
     const body = req.body as ReleaseScanBody;
-    const safeFilename = this.scannerService.toSafeScanFilename(body?.filename);
-    if (!safeFilename) {
-      res.status(400).json({ error: 'Invalid filename.' });
+    const releaseToken =
+      typeof body?.releaseToken === 'string' ? body.releaseToken.trim() : '';
+    if (!releaseToken) {
+      res.status(400).json({ error: 'Invalid release token.' });
       return;
     }
 
@@ -257,30 +258,39 @@ export class ScannerController {
         : null;
 
     try {
-      const released = await this.scannerService.releaseScanFile(safeFilename);
+      const released = await this.scannerService.releaseScanFileByToken(
+        releaseToken,
+      );
       void adminService.appendAdminLog(
         'scan_file_released',
         'Transient scan file released.',
         {
-          filename: safeFilename,
+          filename: released.fileName,
           reason,
           alreadyMissing: released.alreadyMissing,
-          filePath: released.filePath,
         },
       );
-      res.json({ ok: true, ...released });
+      res.json({
+        ok: true,
+        deleted: released.deleted,
+        alreadyMissing: released.alreadyMissing,
+      });
     } catch (error) {
       const message = this.getErrorMessage(error, 'Failed to release scan file.');
+      const invalidToken = message === 'Invalid release token.';
+      const logCode = invalidToken ? 'scan_file_release_rejected' : 'scan_file_release_failed';
+      const logMessage = invalidToken
+        ? 'Rejected transient scan file release request.'
+        : 'Failed to release transient scan file.';
       void adminService.appendAdminLog(
-        'scan_file_release_failed',
-        'Failed to release transient scan file.',
+        logCode,
+        logMessage,
         {
-          filename: safeFilename,
           reason,
           error: message,
         },
       );
-      res.status(500).json({ error: message });
+      res.status(invalidToken ? 403 : 500).json({ error: message });
     }
   };
 

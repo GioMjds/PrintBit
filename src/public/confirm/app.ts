@@ -36,6 +36,8 @@ void initializePageIdleTimeout({
     }
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
+    sessionStorage.removeItem('printbit.copyPreviewPath');
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.sessionToken');
     window.location.replace('/');
@@ -59,7 +61,9 @@ type ConfirmConfig = {
   sessionId: string | null;
   documentId?: string | null;
   scanFilename?: string;
+  scanReleaseToken?: string | null;
   copyPreviewPath?: string | null;
+  copyPreviewReleaseToken?: string | null;
   colorMode: 'colored' | 'grayscale';
   duplex?: boolean;
   copies: number;
@@ -195,22 +199,28 @@ function pageRangeFingerprint(sel?: PageRangeSelection): string {
   return `custom:${sel.range ?? ''}`;
 }
 
+const RELEASE_REQUEST_TIMEOUT_MS = 1_500;
+
 async function releaseTransientScanFile(
-  filename: string,
+  releaseToken: string,
   reason: string,
 ): Promise<void> {
-  const safeFilename = filename.trim();
-  if (!safeFilename) return;
+  const safeReleaseToken = releaseToken.trim();
+  if (!safeReleaseToken) return;
 
   try {
-    const response = await fetch('/api/scanner/release', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filename: safeFilename,
-        reason,
-      }),
-    });
+    const response = await fetchWithTimeout(
+      '/api/scanner/release',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          releaseToken: safeReleaseToken,
+          reason,
+        }),
+      },
+      RELEASE_REQUEST_TIMEOUT_MS,
+    );
     if (!response.ok) {
       let detail = `HTTP ${response.status}`;
       try {
@@ -224,21 +234,21 @@ async function releaseTransientScanFile(
       throw new Error(detail);
     }
   } catch (error) {
-    console.error('[CONFIRM] Failed to release transient scan file.', {
-      filename: safeFilename,
-      reason,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    if (isAbortError(error)) {
+      return;
+    }
   }
 }
 
-async function releaseTransientFilesForCurrentMode(reason: string): Promise<void> {
-  if (config.mode === 'scan' && config.scanFilename) {
-    await releaseTransientScanFile(config.scanFilename, reason);
+async function releaseTransientFilesForCurrentMode(
+  reason: string,
+): Promise<void> {
+  if (config.mode === 'scan' && config.scanReleaseToken) {
+    await releaseTransientScanFile(config.scanReleaseToken, reason);
     return;
   }
-  if (config.mode === 'copy' && config.copyPreviewPath) {
-    await releaseTransientScanFile(config.copyPreviewPath, reason);
+  if (config.mode === 'copy' && config.copyPreviewReleaseToken) {
+    await releaseTransientScanFile(config.copyPreviewReleaseToken, reason);
   }
 }
 
@@ -1079,6 +1089,7 @@ function clearConfirmSessionStorage(): void {
   clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
   sessionStorage.removeItem('printbit.uploadedFile');
   sessionStorage.removeItem('printbit.uploadedDocumentId');
   sessionStorage.removeItem('printbit.sessionId');
@@ -1263,7 +1274,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       statusMessage.textContent = 'Sending checked document to printer...';
 
     try {
-      const createRes = await fetch('/api/copy/jobs', {
+      const createRes = await fetchWithTimeout('/api/copy/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1274,7 +1285,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           amount: totalPrice,
           previewPath: config.copyPreviewPath,
         }),
-      });
+      }, 5_000);
 
       if (!createRes.ok) {
         const payload = (await createRes.json()) as { error?: string };
@@ -1312,9 +1323,9 @@ modalConfirmBtn?.addEventListener('click', async () => {
         applyConfirmGate();
       } else {
         if (statusMessage) statusMessage.textContent = 'Copy was cancelled.';
-        if (config.copyPreviewPath) {
+        if (config.copyPreviewReleaseToken) {
           await releaseTransientScanFile(
-            config.copyPreviewPath,
+            config.copyPreviewReleaseToken,
             'copy_job_cancelled',
           );
         }
@@ -1368,7 +1379,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           duplex: config.duplex === true,
           spoolerCorrelationKey,
         }),
-      });
+      }, NETWORK_REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         clearSpoolerFinalizationTimer();
@@ -1554,8 +1565,8 @@ const scanQrDoneBtn = document.getElementById(
 scanQrDoneBtn?.addEventListener('click', () => {
   scanQrDoneBtn.disabled = true;
   void (async () => {
-    if (config.mode === 'scan' && config.scanFilename) {
-      await releaseTransientScanFile(config.scanFilename, 'scan_qr_done');
+    if (config.mode === 'scan' && config.scanReleaseToken) {
+      await releaseTransientScanFile(config.scanReleaseToken, 'scan_qr_done');
     }
     clearConfirmSessionStorage();
     window.location.href = '/';

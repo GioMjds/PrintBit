@@ -23,6 +23,7 @@ import {
   assertTrustedTimeForFinancialOperation,
   isTrustedTimeError,
 } from '@/services/time-source';
+import { deleteTransientScanFile } from '@/services/transient-scan-file';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -529,59 +530,46 @@ export class CopyService {
     previewFilename: string,
     context: { jobId: string; trigger: string },
   ): Promise<void> {
-    const previewPath = path.resolve('uploads', 'scans', previewFilename);
-    let alreadyMissing = false;
-
     try {
-      await fs.promises.unlink(previewPath);
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === 'ENOENT') {
-        alreadyMissing = true;
-      } else {
-        const message = err.message ?? 'Unknown error';
-        try {
-          await adminService.appendAdminLog(
-            'copy_preview_release_failed',
-            'Failed to release transient copy preview file.',
-            {
-              jobId: context.jobId,
-              trigger: context.trigger,
-              filename: previewFilename,
-              filePath: previewPath,
-              error: message,
-            },
-          );
-        } catch (logError) {
-          console.error('[COPY] Failed to append cleanup failure admin log.', {
-            error:
-              logError instanceof Error ? logError.message : String(logError),
+      const releaseResult = await deleteTransientScanFile(previewFilename);
+      try {
+        await adminService.appendAdminLog(
+          'copy_preview_released',
+          'Transient copy preview file released.',
+          {
             jobId: context.jobId,
-            previewFilename,
-          });
-        }
-        return;
-      }
-    }
-
-    try {
-      await adminService.appendAdminLog(
-        'copy_preview_released',
-        'Transient copy preview file released.',
-        {
+            trigger: context.trigger,
+            filename: releaseResult.fileName,
+            alreadyMissing: releaseResult.alreadyMissing,
+          },
+        );
+      } catch (logError) {
+        console.error('[COPY] Failed to append cleanup success admin log.', {
+          error: logError instanceof Error ? logError.message : String(logError),
           jobId: context.jobId,
-          trigger: context.trigger,
-          filename: previewFilename,
-          filePath: previewPath,
-          alreadyMissing,
-        },
-      );
-    } catch (logError) {
-      console.error('[COPY] Failed to append cleanup success admin log.', {
-        error: logError instanceof Error ? logError.message : String(logError),
-        jobId: context.jobId,
-        previewFilename,
-      });
+          previewFilename,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      try {
+        await adminService.appendAdminLog(
+          'copy_preview_release_failed',
+          'Failed to release transient copy preview file.',
+          {
+            jobId: context.jobId,
+            trigger: context.trigger,
+            filename: previewFilename,
+            error: message,
+          },
+        );
+      } catch (logError) {
+        console.error('[COPY] Failed to append cleanup failure admin log.', {
+          error: logError instanceof Error ? logError.message : String(logError),
+          jobId: context.jobId,
+          previewFilename,
+        });
+      }
     }
   }
 }

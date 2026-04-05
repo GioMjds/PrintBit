@@ -14,14 +14,16 @@ void initKioskLocalization();
 void setupPageIdleWarningButton();
 void initializePageIdleTimeout({
   showWarningModal: true,
-  onTimeout: async () => {
+  onTimeout: () => {
     console.log('[PAGE IDLE] Copy page timeout reached, redirecting to home');
-    if (previewPath) {
-      await releaseCopyPreviewFile(previewPath, 'copy_idle_timeout');
+    if (previewReleaseToken) {
+      void releaseCopyPreviewFile(previewReleaseToken, 'copy_idle_timeout');
+      previewReleaseToken = null;
     }
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
     sessionStorage.removeItem('printbit.sessionId');
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     window.location.replace('/');
   },
 });
@@ -89,21 +91,26 @@ const previewStatusText = document.getElementById(
 ) as HTMLElement | null;
 
 let previewPath: string | null = null;
+let previewReleaseToken: string | null = null;
 let previewObjectUrl: string | null = null;
+const RELEASE_TIMEOUT_MS = 1_500;
 
 async function releaseCopyPreviewFile(
-  filename: string,
+  releaseToken: string,
   reason: string,
 ): Promise<void> {
-  const safeFilename = filename.trim();
-  if (!safeFilename) return;
+  const safeReleaseToken = releaseToken.trim();
+  if (!safeReleaseToken) return;
 
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), RELEASE_TIMEOUT_MS);
   try {
     const response = await fetch('/api/scanner/release', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
-        filename: safeFilename,
+        releaseToken: safeReleaseToken,
         reason,
       }),
     });
@@ -119,12 +126,10 @@ async function releaseCopyPreviewFile(
       }
       throw new Error(detail);
     }
-  } catch (error) {
-    console.error('[COPY] Failed to release transient preview file.', {
-      filename: safeFilename,
-      reason,
-      error: error instanceof Error ? error.message : String(error),
-    });
+  } catch {
+    // Best-effort cleanup.
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }
 
@@ -300,16 +305,18 @@ async function checkForDocument(): Promise<void> {
     const data = (await res.json()) as {
       detected: boolean;
       previewPath?: string;
+      releaseToken?: string;
       error?: string;
     };
 
     showOverlay(false);
 
-    if (data.detected && data.previewPath) {
-      if (previewPath && previewPath !== data.previewPath) {
-        await releaseCopyPreviewFile(previewPath, 'copy_preview_replaced');
+    if (data.detected && data.previewPath && data.releaseToken) {
+      if (previewReleaseToken && previewReleaseToken !== data.releaseToken) {
+        void releaseCopyPreviewFile(previewReleaseToken, 'copy_preview_replaced');
       }
       previewPath = data.previewPath;
+      previewReleaseToken = data.releaseToken;
       await showPreview(data.previewPath);
     } else {
       showError(
@@ -334,6 +341,11 @@ continueBtn?.addEventListener('click', () => {
   sessionStorage.removeItem('printbit.uploadedFile');
   if (previewPath) {
     sessionStorage.setItem('printbit.copyPreviewPath', previewPath);
+  }
+  if (previewReleaseToken) {
+    sessionStorage.setItem('printbit.copyPreviewReleaseToken', previewReleaseToken);
+  } else {
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
   }
   window.location.href = '/config?mode=copy';
 });
