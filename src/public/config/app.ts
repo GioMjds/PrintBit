@@ -513,10 +513,10 @@ class PrintPreview {
 
   private showFrame(on: boolean): void {
     this.iframe.style.display = on ? 'block' : 'none';
+    this.placeholder.classList.toggle('hidden', !on);
     if (on) {
       this.canvas.style.display = 'none';
       this.imgStage.style.display = 'none';
-      this.placeholder.classList.add('hidden');
     }
   }
 
@@ -526,10 +526,10 @@ class PrintPreview {
 
   private showCanvas(on: boolean): void {
     this.canvas.style.display = on ? 'block' : 'none';
+    this.placeholder.classList.toggle('hidden', !on);
     if (on) {
       this.iframe.style.display = 'none';
       this.imgStage.style.display = 'none';
-      this.placeholder.classList.add('hidden');
     }
   }
 
