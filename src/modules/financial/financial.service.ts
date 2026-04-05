@@ -1024,6 +1024,14 @@ export class FinancialService {
 
       try {
         jobDispatchedAt = getTrustedTimestamp().timestamp;
+        this.deps.io.emit('printLifecycleState', {
+          mode: 'print',
+          state: 'queued',
+          printerName: telemetry.name ?? null,
+          transactionId,
+          spoolerCorrelationKey,
+          jobDispatchedAt,
+        });
         await printFile(serverFilename, printOptions);
         await checkpointRecoverySession({
           transactionId,
@@ -1041,6 +1049,14 @@ export class FinancialService {
           },
         });
       } catch (err) {
+        this.deps.io.emit('printLifecycleState', {
+          mode: 'print',
+          state: 'failed',
+          printerName: telemetry.name ?? null,
+          transactionId,
+          spoolerCorrelationKey,
+          reason: err instanceof Error ? err.message : 'Unknown error',
+        });
         void adminService.appendAdminLog(
           'print_failed',
           'Print failed: printer error.',

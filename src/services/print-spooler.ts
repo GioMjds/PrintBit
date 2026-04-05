@@ -10,6 +10,7 @@ import { checkpointRecoverySession } from './recovery';
 import { setPrinterFaultLock } from './printer-fault-lock';
 import { anomalyService, buildAnomalyFingerprint } from './anomaly';
 
+/** Polling interval for checking spooler status */
 const POLL_INTERVAL_MS = 1_500;
 /** Total window to watch the spooler before giving up */
 const MONITOR_WINDOW_MS = 3 * 60 * 1_000; // 3 minutes
@@ -177,8 +178,11 @@ async function queryRecentPrintJobs(
         submittedTime:
           typeof item.SubmittedTime === 'string' ? item.SubmittedTime : null,
       }));
-  } catch {
-    console.warn('[SPOOLER-MONITOR] Failed to query print jobs');
+  } catch (error) {
+    console.warn(
+      '[SPOOLER-MONITOR] Failed to query print jobs',
+      error instanceof Error ? error.message : String(error),
+    );
     return [];
   }
 }
@@ -192,7 +196,8 @@ function matchesStatusSet(status: string, set: Set<string>): boolean {
  * Fire-and-forget: call this AFTER settlement has completed.
  * It polls the Windows print spooler in the background.
  * It emits lifecycle events over Socket.IO for kiosk UI synchronization:
- *   - `printJobDispatched` (job accepted by app and monitor started)
+ *   - `printLifecycleState` (`queued` -> `processing` -> `printed|failed`)
+ *   - `printJobDispatched` (monitor latched to a concrete spooler job id)
  *   - `printerSpoolerConfirmed` (terminal success)
  *   - `printerSpoolerFailure` (terminal failure)
  *   - `printerSpoolerTimeout` (monitor window expired before terminal status)
@@ -217,11 +222,18 @@ export async function monitorSpoolerJob(
   console.log(
     `[SPOOLER-MONITOR] Starting — printer="${printerName}" chargedAmount=${chargedAmount}`,
   );
-
-  io.emit('printJobDispatched', {
+  const transactionId =
+    typeof jobContext.transactionId === 'string'
+      ? jobContext.transactionId
+      : null;
+  const correlationKey = spoolerCorrelationKey ?? null;
+  io.emit('printLifecycleState', {
+    mode: 'print',
+    state: 'queued',
     printerName,
+    transactionId,
+    spoolerCorrelationKey: correlationKey,
     jobDispatchedAt,
-    spoolerCorrelationKey: spoolerCorrelationKey ?? null,
   });
 
   if (!printerName) {
@@ -301,6 +313,23 @@ export async function monitorSpoolerJob(
         console.log(
           `[SPOOLER-MONITOR] Latched onto spooler job #${trackedJobId}`,
         );
+        io.emit('printJobDispatched', {
+          printerName,
+          jobDispatchedAt,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: trackedJobId,
+        });
+        io.emit('printLifecycleState', {
+          mode: 'print',
+          state: 'processing',
+          printerName,
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: trackedJobId,
+          jobStatus: job.status,
+          pagesPrinted: job.pagesPrinted,
+          totalPages: job.totalPages,
+        });
       }
 
       lastStatus = job.status;
@@ -315,21 +344,25 @@ export async function monitorSpoolerJob(
         console.log(
           `[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`,
         );
+        io.emit('printLifecycleState', {
+          mode: 'print',
+          state: 'printed',
+          printerName,
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: job.id,
+          jobStatus: job.status,
+          pagesPrinted: job.pagesPrinted,
+          totalPages: job.totalPages,
+        });
         io.emit('printerSpoolerConfirmed', {
           jobStatus: job.status,
           pagesPrinted: job.pagesPrinted,
           totalPages: job.totalPages,
           printerName,
-          transactionId:
-            typeof jobContext.transactionId === 'string'
-              ? jobContext.transactionId
-              : null,
-          spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
         });
-        const transactionId =
-          typeof jobContext.transactionId === 'string'
-            ? jobContext.transactionId
-            : null;
         if (transactionId) {
           try {
             await checkpointRecoverySession({
@@ -497,6 +530,19 @@ export async function monitorSpoolerJob(
                 logError,
               );
             }
+            io.emit('printLifecycleState', {
+              mode: 'print',
+              state: 'failed',
+              printerName,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: job.id,
+              jobStatus: job.status,
+              pagesPrinted: job.pagesPrinted,
+              totalPages: job.totalPages,
+              reason,
+              refundDisposition: 'refund_blocked_trusted_time',
+            });
             io.emit('printerSpoolerFailure', {
               jobStatus: job.status,
               chargedAmount,
@@ -507,16 +553,9 @@ export async function monitorSpoolerJob(
               reason,
               refundDisposition: 'refund_blocked_trusted_time',
               restoredBalanceAmount: 0,
-              transactionId:
-                typeof jobContext.transactionId === 'string'
-                  ? jobContext.transactionId
-                  : null,
-              spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
             });
-            const transactionId =
-              typeof jobContext.transactionId === 'string'
-                ? jobContext.transactionId
-                : null;
             if (transactionId) {
               try {
                 await checkpointRecoverySession({
@@ -533,7 +572,7 @@ export async function monitorSpoolerJob(
                     typeof jobContext.documentId === 'string'
                       ? jobContext.documentId
                       : null,
-                  spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+                  spoolerCorrelationKey: correlationKey,
                   spoolerJobId: job.id,
                   jobDispatchedAt,
                   settledAt: null,
@@ -575,11 +614,6 @@ export async function monitorSpoolerJob(
           io.emit('balance', db.data!.balance);
         }
 
-        const transactionId =
-          typeof jobContext.transactionId === 'string'
-            ? jobContext.transactionId
-            : null;
-        const correlationKey = spoolerCorrelationKey ?? null;
         const refundDisposition = refundOutcome.autoRefunded
           ? 'auto_refunded'
           : 'pending_admin_review';
@@ -608,6 +642,19 @@ export async function monitorSpoolerJob(
           console.error('[SPOOLER-MONITOR] Failed to append admin log', error);
         }
 
+        io.emit('printLifecycleState', {
+          mode: 'print',
+          state: 'failed',
+          printerName,
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: job.id,
+          jobStatus: job.status,
+          pagesPrinted: job.pagesPrinted,
+          totalPages: job.totalPages,
+          reason,
+          refundDisposition,
+        });
         io.emit('printerSpoolerFailure', {
           jobStatus: job.status,
           chargedAmount,
@@ -712,22 +759,28 @@ export async function monitorSpoolerJob(
     console.log(
       `[SPOOLER-MONITOR] Window expired. Last known status: "${lastStatus ?? 'none'}"`,
     );
+    io.emit('printLifecycleState', {
+      mode: 'print',
+      state: 'failed',
+      printerName,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      spoolerJobId: trackedJobId,
+      jobStatus: lastStatus,
+      pagesPrinted: lastPagesPrinted,
+      totalPages: lastTotalPages,
+      reason: 'Spooler monitoring timed out before terminal status.',
+      timedOut: true,
+    });
     io.emit('printerSpoolerTimeout', {
       jobStatus: lastStatus,
       pagesPrinted: lastPagesPrinted,
       totalPages: lastTotalPages,
       printerName,
-      transactionId:
-        typeof jobContext.transactionId === 'string'
-          ? jobContext.transactionId
-          : null,
-      spoolerCorrelationKey: spoolerCorrelationKey ?? null,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
       monitorWindowMs: MONITOR_WINDOW_MS,
     });
-    const transactionId =
-      typeof jobContext.transactionId === 'string'
-        ? jobContext.transactionId
-        : null;
     if (transactionId) {
       try {
         await checkpointRecoverySession({

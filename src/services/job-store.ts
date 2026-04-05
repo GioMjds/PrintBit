@@ -1,16 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
 // Types
 export type JobState =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancel_requested"
-  | "cancelled";
-export type JobType = "copy" | "scan";
-export type ScanFormat = "pdf" | "jpg" | "png";
-export type PageSource = "adf" | "flatbed";
+  | 'queued'
+  | 'processing'
+  | 'printed'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancel_requested'
+  | 'cancelled';
+export type JobType = 'copy' | 'scan';
+export type ScanFormat = 'pdf' | 'jpg' | 'png';
+export type PageSource = 'adf' | 'flatbed';
 
 export interface JobProgress {
   pagesCompleted: number;
@@ -21,23 +23,23 @@ export interface JobFailure {
   code: string;
   message: string;
   retryable: boolean;
-  stage: "precheck" | "running" | "postprocess";
+  stage: 'precheck' | 'running' | 'postprocess';
 }
 
 export interface CopyJobSettings {
   copies: number;
-  colorMode: "colored" | "grayscale";
-  orientation: "portrait" | "landscape";
-  paperSize: "A4" | "Letter" | "Legal";
+  colorMode: 'colored' | 'grayscale';
+  orientation: 'portrait' | 'landscape';
+  paperSize: 'A4' | 'Letter' | 'Legal';
 }
 
 export interface ScanJobSettings {
   source: PageSource;
   dpi: number;
-  colorMode: "colored" | "grayscale";
+  colorMode: 'colored' | 'grayscale';
   duplex: boolean;
   format: ScanFormat;
-  paperSize?: "A4" | "Letter" | "Legal";
+  paperSize?: 'A4' | 'Letter' | 'Legal';
 }
 
 export interface BaseJob {
@@ -51,13 +53,13 @@ export interface BaseJob {
 }
 
 export interface CopyJob extends BaseJob {
-  type: "copy";
+  type: 'copy';
   settings: CopyJobSettings;
   payment: { chargedAmount: number; remainingBalance: number } | null;
 }
 
 export interface ScanJob extends BaseJob {
-  type: "scan";
+  type: 'scan';
   settings: ScanJobSettings;
   resultPath: string | null;
 }
@@ -75,13 +77,13 @@ class JobStore {
 
   createCopyJob(
     settings: CopyJobSettings,
-    payment: CopyJob["payment"],
+    payment: CopyJob['payment'],
   ): CopyJob {
     const now = new Date().toISOString();
     const job: CopyJob = {
       id: randomUUID(),
-      type: "copy",
-      state: "queued",
+      type: 'copy',
+      state: 'queued',
       progress: null,
       failure: null,
       createdAt: now,
@@ -97,8 +99,8 @@ class JobStore {
     const now = new Date().toISOString();
     const job: ScanJob = {
       id: randomUUID(),
-      type: "scan",
-      state: "queued",
+      type: 'scan',
+      state: 'queued',
       progress: null,
       failure: null,
       createdAt: now,
@@ -127,17 +129,22 @@ class JobStore {
     if (extra?.failure !== undefined) {
       job.failure = extra.failure;
     }
-    if (extra?.resultPath !== undefined && job.type === "scan") {
+    if (extra?.resultPath !== undefined && job.type === 'scan') {
       job.resultPath = extra.resultPath;
     }
   }
 
   requestCancel(id: string): boolean {
     const job = this.jobs.get(id);
-    if (!job || (job.state !== "queued" && job.state !== "running")) {
+    if (
+      !job ||
+      (job.state !== 'queued' &&
+        job.state !== 'running' &&
+        job.state !== 'processing')
+    ) {
       return false;
     }
-    job.state = "cancel_requested";
+    job.state = 'cancel_requested';
     job.updatedAt = new Date().toISOString();
     return true;
   }

@@ -1350,7 +1350,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
       hideOverlay(printingOverlay);
 
-      if (pollResult.state === 'succeeded') {
+      if (pollResult.state === 'printed') {
         showOverlay(thankYouOverlay);
         if (statusMessage) statusMessage.textContent = 'Your copies are ready!';
         clearConfirmSessionStorage();
@@ -1470,13 +1470,13 @@ modalConfirmBtn?.addEventListener('click', async () => {
       }
 
       if (awaitingSpoolerTerminal && payload.change?.state === 'failed') {
-        setPrintingPhase('failed');
+        setPrintingPhase('printing');
         if (statusMessage) {
           statusMessage.textContent =
-            'Print job accepted. Change dispensing failed. Please contact staff.';
+            'Print job accepted. Change dispensing failed. Waiting for printer confirmation and staff review.';
         }
         setCoinEventMessage(
-          `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required.`,
+          `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required after print verification.`,
         );
       } else if (
         awaitingSpoolerTerminal &&
@@ -1525,7 +1525,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
 async function pollCopyJob(
   jobId: string,
-): Promise<{ state: 'succeeded' | 'failed' | 'cancelled'; reason?: string }> {
+): Promise<{ state: 'printed' | 'failed' | 'cancelled'; reason?: string }> {
   const startedAt = Date.now();
   let timeoutReason: string | undefined;
   while (Date.now() - startedAt < COPY_JOB_POLL_TIMEOUT_MS) {
@@ -1547,7 +1547,7 @@ async function pollCopyJob(
 
       if (state === 'queued' && statusMessage) {
         statusMessage.textContent = 'Preparing printer...';
-      } else if (state === 'running' && statusMessage) {
+      } else if ((state === 'processing' || state === 'running') && statusMessage) {
         if (progress && progress.pagesTotal) {
           statusMessage.textContent = `Printing copy ${progress.pagesCompleted} of ${progress.pagesTotal}...`;
         } else {
@@ -1558,12 +1558,17 @@ async function pollCopyJob(
       }
 
       if (
+        state === 'printed' ||
         state === 'succeeded' ||
         state === 'failed' ||
         state === 'cancelled'
       ) {
+        const normalizedState =
+          state === 'succeeded'
+            ? 'printed'
+            : (state as 'printed' | 'failed' | 'cancelled');
         return {
-          state: state as 'succeeded' | 'failed' | 'cancelled',
+          state: normalizedState,
           reason:
             typeof failure?.message === 'string' && failure.message.trim()
               ? failure.message
@@ -1740,18 +1745,38 @@ if (typeof ioFactory === 'function') {
     }
 
     if (state === 'dispensed') {
-      setPrintingPhase('done');
-      if (statusMessage) {
-        statusMessage.textContent = `Change dispensed: ₱ ${amount}.`;
+      const awaitingPrintTerminal =
+        config.mode === 'print' && lastSpoolerCorrelationKey !== null;
+      if (awaitingPrintTerminal) {
+        setPrintingPhase('printing');
+        if (statusMessage) {
+          statusMessage.textContent =
+            'Change dispensed. Waiting for final printer confirmation...';
+        }
+      } else {
+        setPrintingPhase('done');
+        if (statusMessage) {
+          statusMessage.textContent = `Change dispensed: ₱ ${amount}.`;
+        }
       }
       return;
     }
 
     if (state === 'failed') {
-      setPrintingPhase('failed');
-      if (statusMessage) {
-        statusMessage.textContent =
-          'Change dispensing failed. Please contact staff for settlement.';
+      const awaitingPrintTerminal =
+        config.mode === 'print' && lastSpoolerCorrelationKey !== null;
+      if (awaitingPrintTerminal) {
+        setPrintingPhase('printing');
+        if (statusMessage) {
+          statusMessage.textContent =
+            'Change dispensing failed. Print confirmation is still pending; please contact staff.';
+        }
+      } else {
+        setPrintingPhase('failed');
+        if (statusMessage) {
+          statusMessage.textContent =
+            'Change dispensing failed. Please contact staff for settlement.';
+        }
       }
     }
   });
@@ -1834,8 +1859,8 @@ if (typeof ioFactory === 'function') {
 
     if (statusMessage) {
       statusMessage.textContent = printerName
-        ? `✓ Job sent to "${printerName}". Printing...`
-        : '✓ Job sent to printer. Printing...';
+        ? `Print job handoff detected on "${printerName}". Waiting for terminal confirmation...`
+        : 'Print job handoff detected. Waiting for terminal confirmation...';
     }
     clearSpoolerFinalizationTimer();
     spoolerTimedOut = false;

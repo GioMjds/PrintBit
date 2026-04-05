@@ -470,6 +470,55 @@ function connectSocket(): void {
     setMessage(`Printer: ${next.status} (${printerReady ? 'ready' : 'not ready'})`);
   });
 
+  socket.on('printLifecycleState', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const mode =
+      'mode' in payload && typeof (payload as { mode: unknown }).mode === 'string'
+        ? (payload as { mode: string }).mode
+        : null;
+    const state =
+      'state' in payload &&
+      typeof (payload as { state: unknown }).state === 'string'
+        ? (payload as { state: string }).state
+        : null;
+    if (
+      (mode !== 'print' && mode !== 'copy') ||
+      !state ||
+      (state !== 'queued' &&
+        state !== 'processing' &&
+        state !== 'printed' &&
+        state !== 'failed')
+    ) {
+      return;
+    }
+    const transactionId =
+      'transactionId' in payload &&
+      typeof (payload as { transactionId: unknown }).transactionId === 'string'
+        ? (payload as { transactionId: string }).transactionId
+        : null;
+    const printerName =
+      'printerName' in payload &&
+      typeof (payload as { printerName: unknown }).printerName === 'string'
+        ? (payload as { printerName: string }).printerName
+        : null;
+    const reason =
+      'reason' in payload && typeof (payload as { reason: unknown }).reason === 'string'
+        ? (payload as { reason: string }).reason
+        : null;
+    const reference = transactionId ? transactionId.slice(0, 8) : 'n/a';
+    const printerLabel = printerName ?? 'printer';
+    const modeLabel = mode === 'copy' ? 'Copy' : 'Print';
+    if (state === 'failed' && spoolerAlertMsg) {
+      spoolerAlertMsg.textContent = reason
+        ? `${modeLabel} lifecycle marked failed on ${printerLabel} (ref ${reference}): ${reason}`
+        : `${modeLabel} lifecycle marked failed on ${printerLabel} (ref ${reference}).`;
+      spoolerAlert?.classList.remove('hidden');
+    }
+    setMessage(
+      `${modeLabel} lifecycle: ${state} (${printerLabel}, ref ${reference})`,
+    );
+  });
+
   // Spooler failure banner (emitted by Phase 3 spooler monitor)
   socket.on('printerSpoolerFailure', (payload: unknown) => {
     const ev = payload as {
