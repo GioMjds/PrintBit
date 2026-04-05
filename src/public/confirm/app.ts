@@ -17,6 +17,7 @@ void initializePageIdleTimeout({
     console.log(
       '[PAGE IDLE] Confirm page timeout reached, redirecting to home',
     );
+    await releaseTransientFilesForCurrentMode('confirm_idle_timeout');
     // Release the coin slot lock before leaving
     if (coinSlotIsLocked) {
       socket?.emit('unlockCoinSlot', { reason: 'timeout' });
@@ -35,6 +36,8 @@ void initializePageIdleTimeout({
     }
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
+    sessionStorage.removeItem('printbit.copyPreviewPath');
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.sessionToken');
     window.location.replace('/');
@@ -58,7 +61,9 @@ type ConfirmConfig = {
   sessionId: string | null;
   documentId?: string | null;
   scanFilename?: string;
+  scanReleaseToken?: string | null;
   copyPreviewPath?: string | null;
+  copyPreviewReleaseToken?: string | null;
   colorMode: 'colored' | 'grayscale';
   duplex?: boolean;
   copies: number;
@@ -192,6 +197,59 @@ function pageRangeFingerprint(sel?: PageRangeSelection): string {
   if (!sel || sel.type === 'all') return 'all';
   if (sel.type === 'single') return `single:${sel.page}`;
   return `custom:${sel.range ?? ''}`;
+}
+
+const RELEASE_REQUEST_TIMEOUT_MS = 1_500;
+
+async function releaseTransientScanFile(
+  releaseToken: string,
+  reason: string,
+): Promise<void> {
+  const safeReleaseToken = releaseToken.trim();
+  if (!safeReleaseToken) return;
+
+  try {
+    const response = await fetchWithTimeout(
+      '/api/scanner/release',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          releaseToken: safeReleaseToken,
+          reason,
+        }),
+      },
+      RELEASE_REQUEST_TIMEOUT_MS,
+    );
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error && payload.error.trim()) {
+          detail = payload.error.trim();
+        }
+      } catch {
+        // Non-JSON response; keep status detail.
+      }
+      throw new Error(detail);
+    }
+  } catch (error) {
+    if (isAbortError(error)) {
+      return;
+    }
+  }
+}
+
+async function releaseTransientFilesForCurrentMode(
+  reason: string,
+): Promise<void> {
+  if (config.mode === 'scan' && config.scanReleaseToken) {
+    await releaseTransientScanFile(config.scanReleaseToken, reason);
+    return;
+  }
+  if (config.mode === 'copy' && config.copyPreviewReleaseToken) {
+    await releaseTransientScanFile(config.copyPreviewReleaseToken, reason);
+  }
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
@@ -755,7 +813,10 @@ type SpoolerFailureEvent = {
   totalPages: number;
   printerName: string | null;
   reason: string;
-  refundDisposition: 'auto_refunded' | 'pending_admin_review';
+  refundDisposition:
+    | 'auto_refunded'
+    | 'pending_admin_review'
+    | 'refund_blocked_trusted_time';
   restoredBalanceAmount: number;
   transactionId: string | null;
   spoolerCorrelationKey: string | null;
@@ -975,6 +1036,9 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
   setTransactionReference(ev.transactionId);
   hideOverlay(printingOverlay);
   hideOverlay(thankYouOverlay);
+  const isAutoRefund = ev.refundDisposition === 'auto_refunded';
+  const isTrustedTimeBlocked =
+    ev.refundDisposition === 'refund_blocked_trusted_time';
 
   const refundReference = ev.refundId || 'unknown';
   const pagesMessage =
@@ -984,36 +1048,46 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
 
   if (jamRefundTitle) {
     jamRefundTitle.textContent =
-      ev.refundDisposition === 'auto_refunded'
+      isAutoRefund
         ? 'Print Failed — Refund Applied'
-        : 'Print Failed — Refund Pending Review';
+        : isTrustedTimeBlocked
+          ? 'Print Failed — Refund Blocked (Time Sync)'
+          : 'Print Failed — Refund Pending Review';
   }
 
   if (jamRefundMessage) {
     jamRefundMessage.textContent =
-      ev.refundDisposition === 'auto_refunded'
+      isAutoRefund
         ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} ₱${ev.chargedAmount.toFixed(2)} was returned to your machine balance.`
-        : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${refundReference}).`;
+        : isTrustedTimeBlocked
+          ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} Refund creation is blocked until trusted time synchronization recovers.`
+          : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${refundReference}).`;
   }
 
   if (jamRefundHint) {
     jamRefundHint.textContent =
-      ev.refundDisposition === 'auto_refunded'
+      isAutoRefund
         ? 'You may retry once the printer recovers. If the issue persists, contact staff.'
-        : 'Please contact staff and provide the refund ID shown above for manual refund handling.';
+        : isTrustedTimeBlocked
+          ? 'Please wait for trusted time sync recovery, then contact staff with this reference if refund is still needed.'
+          : 'Please contact staff and provide the refund ID shown above for manual refund handling.';
   }
 
   if (statusMessage) {
     statusMessage.textContent =
-      ev.refundDisposition === 'auto_refunded'
+      isAutoRefund
         ? `Printer issue detected. ₱ ${ev.restoredBalanceAmount.toFixed(2)} returned to balance.`
-        : 'Printer issue detected. Staff review is required for refund processing.';
+        : isTrustedTimeBlocked
+          ? 'Printer issue detected. Refund is blocked until trusted time synchronizes.'
+          : 'Printer issue detected. Staff review is required for refund processing.';
   }
 
   setCoinEventMessage(
-    ev.refundDisposition === 'auto_refunded'
+    isAutoRefund
       ? `Auto-refund applied: ₱ ${ev.restoredBalanceAmount.toFixed(2)}`
-      : `Pending refund recorded (ID: ${refundReference}).`,
+      : isTrustedTimeBlocked
+        ? 'Refund blocked: trusted time is not synchronized.'
+        : `Pending refund recorded (ID: ${refundReference}).`,
   );
 
   setPrintingPhase('failed');
@@ -1031,6 +1105,7 @@ function clearConfirmSessionStorage(): void {
   clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
   sessionStorage.removeItem('printbit.uploadedFile');
   sessionStorage.removeItem('printbit.uploadedDocumentId');
   sessionStorage.removeItem('printbit.sessionId');
@@ -1215,7 +1290,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       statusMessage.textContent = 'Sending checked document to printer...';
 
     try {
-      const createRes = await fetch('/api/copy/jobs', {
+      const createRes = await fetchWithTimeout('/api/copy/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1226,7 +1301,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           amount: totalPrice,
           previewPath: config.copyPreviewPath,
         }),
-      });
+      }, 5_000);
 
       if (!createRes.ok) {
         const payload = (await createRes.json()) as { error?: string };
@@ -1264,6 +1339,12 @@ modalConfirmBtn?.addEventListener('click', async () => {
         applyConfirmGate();
       } else {
         if (statusMessage) statusMessage.textContent = 'Copy was cancelled.';
+        if (config.copyPreviewReleaseToken) {
+          await releaseTransientScanFile(
+            config.copyPreviewReleaseToken,
+            'copy_job_cancelled',
+          );
+        }
         isProcessingPayment = false;
         applyConfirmGate();
       }
@@ -1314,7 +1395,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           duplex: config.duplex === true,
           spoolerCorrelationKey,
         }),
-      });
+      }, NETWORK_REQUEST_TIMEOUT_MS);
 
       if (!response.ok) {
         clearSpoolerFinalizationTimer();
@@ -1498,7 +1579,14 @@ const scanQrDoneBtn = document.getElementById(
   'scanQrDoneBtn',
 ) as HTMLButtonElement | null;
 scanQrDoneBtn?.addEventListener('click', () => {
-  window.location.href = '/';
+  scanQrDoneBtn.disabled = true;
+  void (async () => {
+    if (config.mode === 'scan' && config.scanReleaseToken) {
+      await releaseTransientScanFile(config.scanReleaseToken, 'scan_qr_done');
+    }
+    clearConfirmSessionStorage();
+    window.location.href = '/';
+  })();
 });
 const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }
@@ -1855,7 +1943,11 @@ if (typeof ioFactory === 'function') {
         (payload as { refundDisposition: unknown }).refundDisposition ===
           'pending_admin_review'
           ? 'pending_admin_review'
-          : 'auto_refunded',
+          : 'refundDisposition' in payload &&
+              (payload as { refundDisposition: unknown }).refundDisposition ===
+                'refund_blocked_trusted_time'
+            ? 'refund_blocked_trusted_time'
+            : 'auto_refunded',
       restoredBalanceAmount:
         'restoredBalanceAmount' in payload &&
         typeof (payload as { restoredBalanceAmount: unknown })

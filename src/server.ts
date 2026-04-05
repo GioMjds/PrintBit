@@ -16,6 +16,7 @@ import {
   detectDefaultPrinter,
   detectScanner,
   startScanStorageCleanup,
+  cleanupTransientFilesOnStartup,
   convertToPdfPreview,
   getHopperStatus,
   getSerialStatus,
@@ -250,6 +251,12 @@ async function start() {
   }
   await detectDefaultPrinter();
   await detectScanner();
+  await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
+    console.error('[STARTUP] Failed to clean up transient files on startup.', {
+      uploadDir: UPLOAD_DIR,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
   startScanStorageCleanup();
   await initSerial(io);
   await runHopperSelfTest();

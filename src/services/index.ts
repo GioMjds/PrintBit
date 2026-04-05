@@ -27,5 +27,7 @@ export * from './session';
 export * from './settlement';
 export * from './financial-ledger';
 export * from './time-source';
+export * from './transient-file-cleanup';
+export * from './transient-scan-file';
 export * from './usb-drives';
 export * from './watchdog-health';

@@ -25,6 +25,11 @@ type ScanJobBody = {
   format?: string;
 };
 
+type ReleaseScanBody = {
+  releaseToken?: string;
+  reason?: string;
+};
+
 export class ScannerController {
   public readonly router: Router;
 
@@ -43,6 +48,7 @@ export class ScannerController {
     this.router.get('/api/scanner/wired/drives', this.listDrives);
     this.router.post('/api/scanner/wired/export', this.exportToUsb);
     this.router.post('/api/scanner/wireless-link', this.createWirelessLink);
+    this.router.post('/api/scanner/release', this.releaseScanFile);
     this.router.get('/scan/download/:token', this.downloadByToken);
 
     this.router.post('/api/scan/jobs', this.createScanJob);
@@ -234,6 +240,57 @@ export class ScannerController {
         return;
       }
       res.status(500).json({ error: message });
+    }
+  };
+
+  private releaseScanFile = async (req: Request, res: Response): Promise<void> => {
+    const body = req.body as ReleaseScanBody;
+    const releaseToken =
+      typeof body?.releaseToken === 'string' ? body.releaseToken.trim() : '';
+    if (!releaseToken) {
+      res.status(400).json({ error: 'Invalid release token.' });
+      return;
+    }
+
+    const reason =
+      typeof body?.reason === 'string' && body.reason.trim().length > 0
+        ? body.reason.trim()
+        : null;
+
+    try {
+      const released = await this.scannerService.releaseScanFileByToken(
+        releaseToken,
+      );
+      void adminService.appendAdminLog(
+        'scan_file_released',
+        'Transient scan file released.',
+        {
+          filename: released.fileName,
+          reason,
+          alreadyMissing: released.alreadyMissing,
+        },
+      );
+      res.json({
+        ok: true,
+        deleted: released.deleted,
+        alreadyMissing: released.alreadyMissing,
+      });
+    } catch (error) {
+      const message = this.getErrorMessage(error, 'Failed to release scan file.');
+      const invalidToken = message === 'Invalid release token.';
+      const logCode = invalidToken ? 'scan_file_release_rejected' : 'scan_file_release_failed';
+      const logMessage = invalidToken
+        ? 'Rejected transient scan file release request.'
+        : 'Failed to release transient scan file.';
+      void adminService.appendAdminLog(
+        logCode,
+        logMessage,
+        {
+          reason,
+          error: message,
+        },
+      );
+      res.status(invalidToken ? 403 : 500).json({ error: message });
     }
   };
 

@@ -23,6 +23,7 @@ import {
   assertTrustedTimeForFinancialOperation,
   isTrustedTimeError,
 } from '@/services/time-source';
+import { deleteTransientScanFile } from '@/services/transient-scan-file';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -475,6 +476,10 @@ export class CopyService {
             },
           });
           await adminService.incrementJobStats('copy');
+          await this.cleanupPreviewFile(previewFilename, {
+            jobId,
+            trigger: 'copy_job_succeeded',
+          });
           void adminService.appendAdminLog(
             'copy_job_completed',
             'Copy job completed and charged.',
@@ -519,5 +524,52 @@ export class CopyService {
         );
       }
     })();
+  }
+
+  private async cleanupPreviewFile(
+    previewFilename: string,
+    context: { jobId: string; trigger: string },
+  ): Promise<void> {
+    try {
+      const releaseResult = await deleteTransientScanFile(previewFilename);
+      try {
+        await adminService.appendAdminLog(
+          'copy_preview_released',
+          'Transient copy preview file released.',
+          {
+            jobId: context.jobId,
+            trigger: context.trigger,
+            filename: releaseResult.fileName,
+            alreadyMissing: releaseResult.alreadyMissing,
+          },
+        );
+      } catch (logError) {
+        console.error('[COPY] Failed to append cleanup success admin log.', {
+          error: logError instanceof Error ? logError.message : String(logError),
+          jobId: context.jobId,
+          previewFilename,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      try {
+        await adminService.appendAdminLog(
+          'copy_preview_release_failed',
+          'Failed to release transient copy preview file.',
+          {
+            jobId: context.jobId,
+            trigger: context.trigger,
+            filename: previewFilename,
+            error: message,
+          },
+        );
+      } catch (logError) {
+        console.error('[COPY] Failed to append cleanup failure admin log.', {
+          error: logError instanceof Error ? logError.message : String(logError),
+          jobId: context.jobId,
+          previewFilename,
+        });
+      }
+    }
   }
 }

@@ -14,11 +14,16 @@ void initKioskLocalization();
 void setupPageIdleWarningButton();
 void initializePageIdleTimeout({
   showWarningModal: true,
-  onTimeout: async () => {
+  onTimeout: () => {
     console.log('[PAGE IDLE] Copy page timeout reached, redirecting to home');
+    if (previewReleaseToken) {
+      void releaseCopyPreviewFile(previewReleaseToken, 'copy_idle_timeout');
+      previewReleaseToken = null;
+    }
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
     sessionStorage.removeItem('printbit.sessionId');
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     window.location.replace('/');
   },
 });
@@ -86,7 +91,47 @@ const previewStatusText = document.getElementById(
 ) as HTMLElement | null;
 
 let previewPath: string | null = null;
+let previewReleaseToken: string | null = null;
 let previewObjectUrl: string | null = null;
+const RELEASE_TIMEOUT_MS = 1_500;
+
+async function releaseCopyPreviewFile(
+  releaseToken: string,
+  reason: string,
+): Promise<void> {
+  const safeReleaseToken = releaseToken.trim();
+  if (!safeReleaseToken) return;
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), RELEASE_TIMEOUT_MS);
+  try {
+    const response = await fetch('/api/scanner/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        releaseToken: safeReleaseToken,
+        reason,
+      }),
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error && payload.error.trim()) {
+          detail = payload.error.trim();
+        }
+      } catch {
+        // Non-JSON response; keep status detail.
+      }
+      throw new Error(detail);
+    }
+  } catch {
+    // Best-effort cleanup.
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 function clearPreviewImageUrl(): void {
   if (!previewObjectUrl) return;
@@ -260,13 +305,18 @@ async function checkForDocument(): Promise<void> {
     const data = (await res.json()) as {
       detected: boolean;
       previewPath?: string;
+      releaseToken?: string;
       error?: string;
     };
 
     showOverlay(false);
 
-    if (data.detected && data.previewPath) {
+    if (data.detected && data.previewPath && data.releaseToken) {
+      if (previewReleaseToken && previewReleaseToken !== data.releaseToken) {
+        void releaseCopyPreviewFile(previewReleaseToken, 'copy_preview_replaced');
+      }
       previewPath = data.previewPath;
+      previewReleaseToken = data.releaseToken;
       await showPreview(data.previewPath);
     } else {
       showError(
@@ -291,6 +341,11 @@ continueBtn?.addEventListener('click', () => {
   sessionStorage.removeItem('printbit.uploadedFile');
   if (previewPath) {
     sessionStorage.setItem('printbit.copyPreviewPath', previewPath);
+  }
+  if (previewReleaseToken) {
+    sessionStorage.setItem('printbit.copyPreviewReleaseToken', previewReleaseToken);
+  } else {
+    sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
   }
   window.location.href = '/config?mode=copy';
 });

@@ -27,6 +27,10 @@ import {
   assertTrustedTimeForFinancialOperation,
   isTrustedTimeError,
 } from '@/services/time-source';
+import {
+  deleteTransientScanFile,
+  toSafeTransientScanFileName,
+} from '@/services/transient-scan-file';
 import type { Server as SocketIOServer } from 'socket.io';
 
 const VALID_SOURCES = new Set(['adf', 'flatbed']);
@@ -42,6 +46,7 @@ const FORMAT_CONTENT_TYPES: Record<string, string> = {
 };
 
 const CHARGED_SCAN_TTL_MS = 30 * 60 * 1000;
+const SCAN_RELEASE_TOKEN_TTL_MS = 45 * 60 * 1000;
 
 type ScannerPageSource = 'feeder' | 'glass';
 type ScannerPageColor = 'color' | 'grayscale';
@@ -69,6 +74,7 @@ export interface InteractiveScanResult {
   pages: string[];
   filename: string;
   pageCount: number;
+  releaseToken: string;
 }
 
 export interface SoftCopyChargeInput {
@@ -110,15 +116,23 @@ export interface ColorAnalysisResult {
   sampledPages: number;
 }
 
+export interface ScanFileReleaseResult {
+  deleted: boolean;
+  alreadyMissing: boolean;
+  fileName: string;
+}
+
+interface ScanReleaseTokenRecord {
+  filename: string;
+  expiresAt: number;
+}
+
 export class ScannerService {
   private readonly chargedScanFiles = new Map<string, number>();
+  private readonly releaseTokens = new Map<string, ScanReleaseTokenRecord>();
 
   toSafeScanFilename(raw: unknown): string | null {
-    if (typeof raw !== 'string') return null;
-    const trimmed = raw.trim();
-    if (!trimmed) return null;
-    const safe = path.basename(trimmed);
-    return safe === trimmed ? safe : null;
+    return toSafeTransientScanFileName(raw);
   }
 
   getContentType(ext: string): string {
@@ -139,6 +153,42 @@ export class ScannerService {
 
   clearSoftCopyPaid(filename: string): void {
     this.chargedScanFiles.delete(filename);
+  }
+
+  private purgeExpiredReleaseTokens(now = Date.now()): void {
+    for (const [token, record] of this.releaseTokens.entries()) {
+      if (record.expiresAt <= now) {
+        this.releaseTokens.delete(token);
+      }
+    }
+  }
+
+  private registerReleaseToken(filename: string): string {
+    this.purgeExpiredReleaseTokens();
+    const token = randomUUID();
+    this.releaseTokens.set(token, {
+      filename,
+      expiresAt: Date.now() + SCAN_RELEASE_TOKEN_TTL_MS,
+    });
+    return token;
+  }
+
+  private consumeReleaseToken(releaseToken: string): ScanReleaseTokenRecord | null {
+    this.purgeExpiredReleaseTokens();
+    const record = this.releaseTokens.get(releaseToken);
+    if (!record) {
+      return null;
+    }
+    this.releaseTokens.delete(releaseToken);
+    return record;
+  }
+
+  private invalidateReleaseTokensForFilename(filename: string): void {
+    for (const [token, record] of this.releaseTokens.entries()) {
+      if (record.filename === filename) {
+        this.releaseTokens.delete(token);
+      }
+    }
   }
 
   private isSoftCopyPaid(filename: string): boolean {
@@ -260,6 +310,7 @@ export class ScannerService {
       pages: [`/api/scan/preview/${encodeURIComponent(filename)}`],
       filename,
       pageCount: result.pageCount,
+      releaseToken: this.registerReleaseToken(filename),
     };
   }
 
@@ -542,6 +593,7 @@ export class ScannerService {
   async previewScan(): Promise<{
     detected: boolean;
     previewPath?: string;
+    releaseToken?: string;
     pageCount?: number;
     error?: string;
   }> {
@@ -570,6 +622,7 @@ export class ScannerService {
       return {
         detected: true,
         previewPath: filename,
+        releaseToken: this.registerReleaseToken(filename),
         pageCount: result.pageCount,
       };
     } catch (err) {
@@ -592,6 +645,23 @@ export class ScannerService {
     const absPath = path.resolve('uploads', 'scans', filename);
     if (!fs.existsSync(absPath)) return null;
     return absPath;
+  }
+
+  async releaseScanFileByToken(releaseToken: string): Promise<ScanFileReleaseResult> {
+    const token = typeof releaseToken === 'string' ? releaseToken.trim() : '';
+    if (!token) {
+      throw new Error('Invalid release token.');
+    }
+
+    const record = this.consumeReleaseToken(token);
+    if (!record) {
+      throw new Error('Invalid release token.');
+    }
+
+    const released = await deleteTransientScanFile(record.filename);
+    this.clearSoftCopyPaid(record.filename);
+    this.invalidateReleaseTokensForFilename(record.filename);
+    return released;
   }
 
   async analyzeColor(filename: string): Promise<ColorAnalysisResult> {

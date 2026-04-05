@@ -152,6 +152,7 @@ Response:
 
 The `change` object is always present. `state` is one of `"none"`, `"dispensed"`, or `"failed"`. When `state` is `"failed"`, an `owedChangeId` and `message` are included — the owed change is recorded for admin resolution.
 `transactionId` is the canonical customer/admin reference ID for support and refund follow-up.
+For `mode: "print"` in the modern flow, uploaded file deletion is finalized after spooler terminal success (not immediately at settlement).
 
 ### `GET /api/transactions/:transactionId/receipt`
 
@@ -231,7 +232,7 @@ Downloads completed scan output.
 
 ### `POST /api/scan/preview`
 
-Runs quick preview scan for copy flow.
+Runs quick preview scan for copy flow and returns `previewPath` plus a short-lived `releaseToken` used for authorized cleanup.
 
 ### `GET /api/scan/preview/:filename`
 
@@ -247,7 +248,7 @@ Returns scanner readiness for scan UI compatibility, including preferred device 
 
 ### `POST /api/scanner/scan`
 
-Runs an interactive scan for the `/scan` page and returns preview page URLs + filename.
+Runs an interactive scan for the `/scan` page and returns preview page URLs, filename, and a short-lived `releaseToken` used for authorized cleanup.
 
 **Body parameters:**
 
@@ -278,6 +279,30 @@ When USB export is disabled by lockdown config, this endpoint returns the same `
 ### `POST /api/scanner/wireless-link`
 
 Creates a temporary tokenized download link for a scanned file.
+
+### `POST /api/scanner/release`
+
+Explicitly releases (deletes) a transient file from `uploads/scans` in an idempotent way.
+Requires a valid short-lived `releaseToken` issued by scan/preview APIs.
+
+Request:
+
+```json
+{
+  "releaseToken": "d2c41f0c-5f8e-4515-b2f4-14f4053704f0",
+  "reason": "scan_qr_done"
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "deleted": true,
+  "alreadyMissing": false
+}
+```
 
 ### `GET /scan/download/:token`
 

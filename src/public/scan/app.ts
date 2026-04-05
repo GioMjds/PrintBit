@@ -9,20 +9,20 @@ void initKioskLocalization();
 
 void initializePageIdleTimeout({
   showWarningModal: true,
-  onTimeout: async () => {
+  onTimeout: () => {
     console.log('[PAGE IDLE] Scan page timeout reached, redirecting to home');
+    if (scanReleaseToken) {
+      void releaseScanFile(scanReleaseToken, 'scan_idle_timeout');
+      scanReleaseToken = null;
+    }
     // Cancel server-side session if exists
     const sessionId = sessionStorage.getItem('printbit.sessionId');
     const sessionToken = sessionStorage.getItem('printbit.sessionToken');
     if (sessionId && sessionToken) {
-      try {
-        await fetch(
-          `/api/wireless/sessions/${encodeURIComponent(sessionId)}/cancel?token=${encodeURIComponent(sessionToken)}`,
-          { method: 'DELETE' },
-        );
-      } catch {
-        // Best-effort cleanup
-      }
+      void fetch(
+        `/api/wireless/sessions/${encodeURIComponent(sessionId)}/cancel?token=${encodeURIComponent(sessionToken)}`,
+        { method: 'DELETE' },
+      ).catch(() => {});
     }
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
@@ -39,6 +39,7 @@ type ScanDpi = '150' | '300' | '600';
 interface ScanResponse {
   pages: string[];
   filename?: string;
+  releaseToken?: string;
 }
 
 interface PricingResponse {
@@ -93,11 +94,49 @@ const PREVIEW_STATES: Record<
 let scannedPages: string[] = [];
 let currentPage = 0;
 let scanFilename: string | null = null;
+let scanReleaseToken: string | null = null;
 let scanDocumentPrice = 5;
 
 const SCAN_SOURCE: ScanSource = 'feeder';
 const SCAN_COLOR: ScanColor = 'color';
 const SCAN_DPI: ScanDpi = '600';
+
+const RELEASE_TIMEOUT_MS = 1_500;
+
+async function releaseScanFile(releaseToken: string, reason: string): Promise<void> {
+  const safeReleaseToken = releaseToken.trim();
+  if (!safeReleaseToken) return;
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), RELEASE_TIMEOUT_MS);
+  try {
+    const response = await fetch('/api/scanner/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        releaseToken: safeReleaseToken,
+        reason,
+      }),
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error && payload.error.trim()) {
+          detail = payload.error.trim();
+        }
+      } catch {
+        // Non-JSON response; keep status detail.
+      }
+      throw new Error(detail);
+    }
+  } catch {
+    // Best-effort cleanup.
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 function showPreview(
   name: 'idle' | 'scanning' | 'result' | 'error',
@@ -159,6 +198,10 @@ async function loadPricing(): Promise<void> {
 }
 
 async function startScan(): Promise<void> {
+  if (scanReleaseToken) {
+    void releaseScanFile(scanReleaseToken, 'scan_replaced_by_new_scan');
+    scanReleaseToken = null;
+  }
   showPreview('scanning', 'Scanning your document…');
   scanBtn.disabled = true;
   scanBtn.setAttribute('aria-disabled', 'true');
@@ -196,12 +239,18 @@ async function startScan(): Promise<void> {
       throw new Error(data.error ?? 'Scan failed');
     }
 
-    if (!data.pages || data.pages.length === 0 || !data.filename) {
+    if (
+      !data.pages ||
+      data.pages.length === 0 ||
+      !data.filename ||
+      !data.releaseToken
+    ) {
       throw new Error('No pages returned from scanner');
     }
 
     scannedPages = data.pages;
     scanFilename = data.filename;
+    scanReleaseToken = data.releaseToken;
     currentPage = 0;
 
     showPreview('result', `Page 1 of ${data.pages.length}`);
@@ -225,6 +274,10 @@ async function startScan(): Promise<void> {
 }
 
 function resetToIdle(): void {
+  if (scanReleaseToken) {
+    void releaseScanFile(scanReleaseToken, 'scan_reset_to_idle');
+    scanReleaseToken = null;
+  }
   scannedPages = [];
   scanFilename = null;
   currentPage = 0;
@@ -258,6 +311,7 @@ proceedBtn.addEventListener('click', () => {
     JSON.stringify({
       mode: 'scan',
       scanFilename,
+      scanReleaseToken,
       sessionId: null,
       colorMode: 'colored',
       copies: 1,
