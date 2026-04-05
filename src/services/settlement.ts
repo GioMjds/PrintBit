@@ -35,6 +35,15 @@ class SettlementService {
   async settle(input: SettlementInput): Promise<SettlementResult> {
     const { requiredAmount, io, jobContext } = input;
     assertTrustedTimeForFinancialOperation(`settlement:${jobContext.mode}`);
+    const transactionId =
+      typeof jobContext.transactionId === 'string'
+        ? jobContext.transactionId
+        : null;
+    const spoolerCorrelationKey =
+      typeof jobContext.spoolerCorrelationKey === 'string' &&
+      jobContext.spoolerCorrelationKey.trim().length > 0
+        ? jobContext.spoolerCorrelationKey.trim()
+        : null;
 
     return withBalanceLock(async () => {
       const currentBalance = db.data?.balance ?? 0;
@@ -82,6 +91,9 @@ class SettlementService {
       io.emit('changeDispenseStatus', {
         state: 'dispensing',
         amount: changeAmount,
+        mode: jobContext.mode,
+        transactionId,
+        spoolerCorrelationKey,
       });
 
       const dispenseResult: HopperDispenseResult =
@@ -92,6 +104,9 @@ class SettlementService {
           state: 'dispensed',
           amount: changeAmount,
           attempts: dispenseResult.attempts,
+          mode: jobContext.mode,
+          transactionId,
+          spoolerCorrelationKey,
         });
         return {
           ok: true,
@@ -114,6 +129,9 @@ class SettlementService {
         attempts: dispenseResult.attempts,
         owedChangeId: dispenseResult.owedChangeId ?? null,
         message: dispenseResult.message,
+        mode: jobContext.mode,
+        transactionId,
+        spoolerCorrelationKey,
       });
       return {
         ok: true,

@@ -18,12 +18,14 @@ import { adminService } from '@/services/admin';
 import { settlementService } from '@/services/settlement';
 import { printFile, type PrintJobOptions } from '@/services/printer';
 import { monitorSpoolerJob } from '@/services/print-spooler';
+import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
 import { buildPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
 import {
   checkpointRecoverySession,
+  getSpoolerLifecycleRecord,
   reconcileFinalizedCopySession,
 } from '@/services/recovery';
 import {
@@ -327,6 +329,7 @@ export class FinancialService {
       db.data!.recovery.sessions.find(
         (session) => session.id === transactionId,
       ) ?? null;
+    const lifecycleRecord = getSpoolerLifecycleRecord(transactionId);
     const pendingRefund = db.data!.pendingRefunds.find((entry) => {
       const ref = entry.jobContext.transactionId;
       return typeof ref === 'string' && ref === transactionId;
@@ -338,15 +341,19 @@ export class FinancialService {
 
     return res.json({
       transactionId,
-      mode: recoverySession?.mode ?? null,
+      mode: lifecycleRecord?.mode ?? recoverySession?.mode ?? null,
       chargedAmount:
         jobCompleted?.amount ??
         recoverySession?.chargedAmount ??
         pendingRefund?.chargedAmount ??
         null,
-      status: recoverySession?.phase ?? null,
+      status: lifecycleRecord?.currentState ?? recoverySession?.phase ?? null,
       settledAt: recoverySession?.settledAt ?? null,
-      printedAt: recoverySession?.spoolerTerminalAt ?? null,
+      printedAt:
+        lifecycleRecord?.printedAt ??
+        lifecycleRecord?.failedAt ??
+        recoverySession?.spoolerTerminalAt ??
+        null,
       refundStatus: pendingRefund?.status ?? null,
       refundReason: pendingRefund?.reason ?? null,
       generatedAt: getTrustedTimestamp().timestamp,
@@ -1024,14 +1031,22 @@ export class FinancialService {
 
       try {
         jobDispatchedAt = getTrustedTimestamp().timestamp;
-        this.deps.io.emit('printLifecycleState', {
-          mode: 'print',
-          state: 'queued',
-          printerName: telemetry.name ?? null,
-          transactionId,
-          spoolerCorrelationKey,
-          jobDispatchedAt,
-        });
+        await persistAndEmitPrintLifecycleState(
+          this.deps.io,
+          {
+            mode: 'print',
+            state: 'queued',
+            printerName: telemetry.name ?? null,
+            transactionId,
+            spoolerCorrelationKey,
+            jobDispatchedAt,
+          },
+          {
+            requiredAmount,
+            sessionId: sessionId ?? null,
+            documentId: targetDocumentId ?? null,
+          },
+        );
         await printFile(serverFilename, printOptions);
         await checkpointRecoverySession({
           transactionId,
@@ -1049,14 +1064,25 @@ export class FinancialService {
           },
         });
       } catch (err) {
-        this.deps.io.emit('printLifecycleState', {
-          mode: 'print',
-          state: 'failed',
-          printerName: telemetry.name ?? null,
-          transactionId,
-          spoolerCorrelationKey,
-          reason: err instanceof Error ? err.message : 'Unknown error',
-        });
+        await persistAndEmitPrintLifecycleState(
+          this.deps.io,
+          {
+            mode: 'print',
+            state: 'failed',
+            printerName: telemetry.name ?? null,
+            transactionId,
+            spoolerCorrelationKey,
+            reason: err instanceof Error ? err.message : 'Unknown error',
+          },
+          {
+            requiredAmount,
+            sessionId: sessionId ?? null,
+            documentId: targetDocumentId ?? null,
+            meta: {
+              stage: 'dispatch',
+            },
+          },
+        );
         void adminService.appendAdminLog(
           'print_failed',
           'Print failed: printer error.',
@@ -1100,10 +1126,12 @@ export class FinancialService {
       requiredAmount,
       io: this.deps.io,
       jobContext: {
+        transactionId,
         mode,
         copies,
         colorMode: printOptions?.colorMode ?? colorMode,
         duplex: printOptions?.duplex ?? false,
+        spoolerCorrelationKey,
         sessionId: sessionId ?? null,
         documentId: targetDocumentId ?? null,
         filename: serverFilename ?? null,
@@ -1169,6 +1197,14 @@ export class FinancialService {
       balance: settlement.remainingBalance,
       earnings: settlement.earnings,
       change: settlement.change,
+      print:
+        mode === 'print'
+          ? {
+              state: 'awaiting_spooler_terminal',
+              spoolerCorrelationKey,
+              jobDispatchedAt,
+            }
+          : undefined,
     });
 
     const settledAmount = settlement.chargedAmount;

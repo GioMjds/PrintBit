@@ -28,7 +28,10 @@ import {
   getTrustedTimeStatus,
   verifyTrustedClockSync,
 } from '@/services/time-source';
-import { getRecoveryStatusSnapshot } from '@/services/recovery';
+import {
+  getRecoveryStatusSnapshot,
+  getSpoolerLifecycleRecord,
+} from '@/services/recovery';
 import {
   checkLockout,
   clearLockout,
@@ -1241,6 +1244,7 @@ export class AdminController {
       db.data!.recovery.sessions.find(
         (session) => session.id === transactionId,
       ) ?? null;
+    const lifecycleRecord = getSpoolerLifecycleRecord(transactionId);
     const pendingRefunds = db.data!.pendingRefunds.filter((entry) => {
       const ref = entry.jobContext.transactionId;
       return typeof ref === 'string' && ref === transactionId;
@@ -1250,6 +1254,7 @@ export class AdminController {
       logs.length > 0 ||
       ledgerEntries.length > 0 ||
       recoverySession !== null ||
+      lifecycleRecord !== null ||
       pendingRefunds.length > 0;
 
     if (!found) {
@@ -1263,7 +1268,8 @@ export class AdminController {
       pendingRefunds[0]?.chargedAmount ??
       null;
     const mode =
-      (recoverySession?.mode ??
+      (lifecycleRecord?.mode ??
+        recoverySession?.mode ??
         (typeof logs[0]?.meta?.mode === 'string' ? logs[0].meta.mode : null)) ||
       null;
     const settledAt =
@@ -1276,8 +1282,18 @@ export class AdminController {
       mode,
       chargedAmount,
       settledAt,
-      spoolerPhase: recoverySession?.phase ?? null,
+      spoolerPhase: lifecycleRecord?.currentState ?? recoverySession?.phase ?? null,
       reconciliationAction: recoverySession?.reconciliationAction ?? null,
+      spoolerLifecycle: lifecycleRecord
+        ? {
+            currentState: lifecycleRecord.currentState,
+            queuedAt: lifecycleRecord.queuedAt,
+            processingAt: lifecycleRecord.processingAt,
+            printedAt: lifecycleRecord.printedAt,
+            failedAt: lifecycleRecord.failedAt,
+            transitions: lifecycleRecord.transitions,
+          }
+        : null,
       pendingRefunds: pendingRefunds.map((entry) => ({
         id: entry.id,
         status: entry.status,
