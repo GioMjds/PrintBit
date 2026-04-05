@@ -110,6 +110,12 @@ export interface ColorAnalysisResult {
   sampledPages: number;
 }
 
+export interface ScanFileReleaseResult {
+  deleted: boolean;
+  alreadyMissing: boolean;
+  filePath: string;
+}
+
 export class ScannerService {
   private readonly chargedScanFiles = new Map<string, number>();
 
@@ -592,6 +598,35 @@ export class ScannerService {
     const absPath = path.resolve('uploads', 'scans', filename);
     if (!fs.existsSync(absPath)) return null;
     return absPath;
+  }
+
+  async releaseScanFile(filename: string): Promise<ScanFileReleaseResult> {
+    const safeFilename = this.toSafeScanFilename(filename);
+    if (!safeFilename) {
+      throw new Error('Invalid filename.');
+    }
+
+    const filePath = path.resolve('uploads', 'scans', safeFilename);
+    try {
+      await fs.promises.unlink(filePath);
+      return {
+        deleted: true,
+        alreadyMissing: false,
+        filePath,
+      };
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'ENOENT') {
+        return {
+          deleted: true,
+          alreadyMissing: true,
+          filePath,
+        };
+      }
+      throw new Error(
+        `Failed to release scan file: ${err.message ?? 'Unknown error'}`,
+      );
+    }
   }
 
   async analyzeColor(filename: string): Promise<ColorAnalysisResult> {

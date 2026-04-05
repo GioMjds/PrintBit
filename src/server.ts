@@ -16,6 +16,7 @@ import {
   detectDefaultPrinter,
   detectScanner,
   startScanStorageCleanup,
+  cleanupTransientFilesOnStartup,
   convertToPdfPreview,
   getHopperStatus,
   getSerialStatus,
@@ -250,6 +251,7 @@ async function start() {
   }
   await detectDefaultPrinter();
   await detectScanner();
+  await cleanupTransientFilesOnStartup();
   startScanStorageCleanup();
   await initSerial(io);
   await runHopperSelfTest();

@@ -185,7 +185,10 @@
   - `uploads/`
   - `printbit.sqlite`
 - Legacy `db.json` import is idempotent and marker-guarded; use the force command only during controlled migration recovery.
-- Scanned files in `uploads/scans` are auto-cleaned based on `PRINTBIT_SCAN_FILE_RETENTION_MS` (default 24 hours).
+- Transient print uploads are deleted after successful completion (`/print` legacy success or spooler-confirmed modern print success) and on wireless session cancel/timeout.
+- Transient scan/copy files under `uploads/scans` are released on scan QR **Done**, copy success, and timeout/cancel flows.
+- Startup crash-recovery cleanup purges stale transient upload + scan files older than `PRINTBIT_TRANSIENT_FILE_STARTUP_RETENTION_MS` (default 30 minutes).
+- Periodic scan retention cleanup still runs using `PRINTBIT_SCAN_FILE_RETENTION_MS` (default 24 hours) as a fallback safety net.
 - Back up `printbit.sqlite` before maintenance.
 - Use admin endpoints to clear storage instead of manual destructive deletes when possible.
 

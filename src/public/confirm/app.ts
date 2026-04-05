@@ -17,6 +17,7 @@ void initializePageIdleTimeout({
     console.log(
       '[PAGE IDLE] Confirm page timeout reached, redirecting to home',
     );
+    await releaseTransientFilesForCurrentMode('confirm_idle_timeout');
     // Release the coin slot lock before leaving
     if (coinSlotIsLocked) {
       socket?.emit('unlockCoinSlot', { reason: 'timeout' });
@@ -192,6 +193,53 @@ function pageRangeFingerprint(sel?: PageRangeSelection): string {
   if (!sel || sel.type === 'all') return 'all';
   if (sel.type === 'single') return `single:${sel.page}`;
   return `custom:${sel.range ?? ''}`;
+}
+
+async function releaseTransientScanFile(
+  filename: string,
+  reason: string,
+): Promise<void> {
+  const safeFilename = filename.trim();
+  if (!safeFilename) return;
+
+  try {
+    const response = await fetch('/api/scanner/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: safeFilename,
+        reason,
+      }),
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error && payload.error.trim()) {
+          detail = payload.error.trim();
+        }
+      } catch {
+        // Non-JSON response; keep status detail.
+      }
+      throw new Error(detail);
+    }
+  } catch (error) {
+    console.error('[CONFIRM] Failed to release transient scan file.', {
+      filename: safeFilename,
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function releaseTransientFilesForCurrentMode(reason: string): Promise<void> {
+  if (config.mode === 'scan' && config.scanFilename) {
+    await releaseTransientScanFile(config.scanFilename, reason);
+    return;
+  }
+  if (config.mode === 'copy' && config.copyPreviewPath) {
+    await releaseTransientScanFile(config.copyPreviewPath, reason);
+  }
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
@@ -1264,6 +1312,12 @@ modalConfirmBtn?.addEventListener('click', async () => {
         applyConfirmGate();
       } else {
         if (statusMessage) statusMessage.textContent = 'Copy was cancelled.';
+        if (config.copyPreviewPath) {
+          await releaseTransientScanFile(
+            config.copyPreviewPath,
+            'copy_job_cancelled',
+          );
+        }
         isProcessingPayment = false;
         applyConfirmGate();
       }
@@ -1498,7 +1552,14 @@ const scanQrDoneBtn = document.getElementById(
   'scanQrDoneBtn',
 ) as HTMLButtonElement | null;
 scanQrDoneBtn?.addEventListener('click', () => {
-  window.location.href = '/';
+  scanQrDoneBtn.disabled = true;
+  void (async () => {
+    if (config.mode === 'scan' && config.scanFilename) {
+      await releaseTransientScanFile(config.scanFilename, 'scan_qr_done');
+    }
+    clearConfirmSessionStorage();
+    window.location.href = '/';
+  })();
 });
 const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }

@@ -1142,107 +1142,6 @@ export class FinancialService {
       return;
     }
 
-    if (mode === 'print' && serverFilename) {
-      let cleaned = false;
-      if (sessionId && targetDocumentId) {
-        const removedDocument = await this.deps.sessionStore.removeDocument(
-          sessionId,
-          targetDocumentId,
-        );
-        if (removedDocument.success && removedDocument.deletedFile) {
-          cleaned = true;
-          await adminService.appendAdminLog(
-            'upload_deleted_after_print',
-            'Uploaded file deleted after print payment confirmation.',
-            {
-              transactionId,
-              sessionId,
-              documentId: targetDocumentId,
-              filename: serverFilename,
-              source: 'session-store',
-              alreadyMissing: false,
-            },
-          );
-        } else {
-          const fallbackCleanup =
-            await deleteUploadByStoredFilename(serverFilename);
-          if (fallbackCleanup.deleted) {
-            cleaned = true;
-            await adminService.appendAdminLog(
-              'upload_deleted_after_print',
-              'Uploaded file deleted after print payment confirmation.',
-              {
-                transactionId,
-                sessionId,
-                documentId: targetDocumentId,
-                filename: serverFilename,
-                source: 'fallback-unlink',
-                alreadyMissing: fallbackCleanup.alreadyMissing,
-                sessionRemoveErrorCode: removedDocument.errorCode ?? null,
-              },
-            );
-          } else {
-            await adminService.appendAdminLog(
-              'upload_delete_after_print_failed',
-              'Failed to delete uploaded file after print payment confirmation.',
-              {
-                transactionId,
-                sessionId,
-                documentId: targetDocumentId,
-                filename: serverFilename,
-                source: 'confirm-payment',
-                sessionRemoveErrorCode: removedDocument.errorCode ?? null,
-                sessionDeletedFile: removedDocument.deletedFile,
-                error: fallbackCleanup.error ?? 'Unknown error',
-              },
-            );
-          }
-        }
-      } else {
-        const cleanup = await deleteUploadByStoredFilename(serverFilename);
-        cleaned = cleanup.deleted;
-        if (cleanup.deleted) {
-          await adminService.appendAdminLog(
-            'upload_deleted_after_print',
-            'Uploaded file deleted after print payment confirmation.',
-            {
-              transactionId,
-              sessionId: sessionId ?? null,
-              documentId: targetDocumentId ?? null,
-              filename: serverFilename,
-              source: 'confirm-payment',
-              alreadyMissing: cleanup.alreadyMissing,
-            },
-          );
-        } else {
-          await adminService.appendAdminLog(
-            'upload_delete_after_print_failed',
-            'Failed to delete uploaded file after print payment confirmation.',
-            {
-              transactionId,
-              sessionId: sessionId ?? null,
-              documentId: targetDocumentId ?? null,
-              filename: serverFilename,
-              source: 'confirm-payment',
-              error: cleanup.error ?? 'Unknown error',
-            },
-          );
-        }
-      }
-
-      if (!cleaned) {
-        console.error(
-          '[CONFIRM-PAYMENT] Uploaded file cleanup failed after successful settlement.',
-          {
-            transactionId,
-            sessionId: sessionId ?? null,
-            documentId: targetDocumentId ?? null,
-            filename: serverFilename,
-          },
-        );
-      }
-    }
-
     sendResponse(200, {
       ok: true,
       transactionId,
@@ -1356,14 +1255,125 @@ export class FinancialService {
           filename: serverFilename ?? null,
           pageRange: printOptions?.pageRange ?? null,
         },
+        onConfirmed: async () => {
+          if (!serverFilename) return;
+          await this.cleanupPrintUploadAfterSpoolerSuccess({
+            transactionId,
+            sessionId: sessionId ?? null,
+            documentId: targetDocumentId ?? null,
+            filename: serverFilename,
+          });
+        },
       }).catch((err) => {
         console.error(
           '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
           err instanceof Error ? err.message : err,
         );
       });
-    } else {
+    } else if (mode === 'copy') {
       await reconcileFinalizedCopySession(transactionId);
     }
   };
+
+  private async cleanupPrintUploadAfterSpoolerSuccess(input: {
+    transactionId: string;
+    sessionId: string | null;
+    documentId: string | null;
+    filename: string;
+  }): Promise<void> {
+    const { transactionId, sessionId, documentId, filename } = input;
+
+    let cleaned = false;
+    if (sessionId && documentId) {
+      const removedDocument = await this.deps.sessionStore.removeDocument(
+        sessionId,
+        documentId,
+      );
+      if (removedDocument.success && removedDocument.deletedFile) {
+        cleaned = true;
+        await adminService.appendAdminLog(
+          'upload_deleted_after_print',
+          'Uploaded file deleted after spooler-confirmed print completion.',
+          {
+            transactionId,
+            sessionId,
+            documentId,
+            filename,
+            source: 'session-store-spooler-confirmed',
+            alreadyMissing: false,
+          },
+        );
+      } else {
+        const fallbackCleanup = await deleteUploadByStoredFilename(filename);
+        if (fallbackCleanup.deleted) {
+          cleaned = true;
+          await adminService.appendAdminLog(
+            'upload_deleted_after_print',
+            'Uploaded file deleted after spooler-confirmed print completion.',
+            {
+              transactionId,
+              sessionId,
+              documentId,
+              filename,
+              source: 'fallback-unlink-spooler-confirmed',
+              alreadyMissing: fallbackCleanup.alreadyMissing,
+              sessionRemoveErrorCode: removedDocument.errorCode ?? null,
+              sessionDeletedFile: removedDocument.deletedFile,
+            },
+          );
+        } else {
+          await adminService.appendAdminLog(
+            'upload_delete_after_print_failed',
+            'Failed to delete uploaded file after spooler-confirmed print completion.',
+            {
+              transactionId,
+              sessionId,
+              documentId,
+              filename,
+              source: 'spooler-confirmed',
+              sessionRemoveErrorCode: removedDocument.errorCode ?? null,
+              sessionDeletedFile: removedDocument.deletedFile,
+              error: fallbackCleanup.error ?? 'Unknown error',
+            },
+          );
+        }
+      }
+    } else {
+      const cleanup = await deleteUploadByStoredFilename(filename);
+      cleaned = cleanup.deleted;
+      if (cleanup.deleted) {
+        await adminService.appendAdminLog(
+          'upload_deleted_after_print',
+          'Uploaded file deleted after spooler-confirmed print completion.',
+          {
+            transactionId,
+            sessionId,
+            documentId,
+            filename,
+            source: 'spooler-confirmed',
+            alreadyMissing: cleanup.alreadyMissing,
+          },
+        );
+      } else {
+        await adminService.appendAdminLog(
+          'upload_delete_after_print_failed',
+          'Failed to delete uploaded file after spooler-confirmed print completion.',
+          {
+            transactionId,
+            sessionId,
+            documentId,
+            filename,
+            source: 'spooler-confirmed',
+            error: cleanup.error ?? 'Unknown error',
+          },
+        );
+      }
+    }
+
+    if (!cleaned) {
+      throw new Error(
+        'Uploaded file cleanup failed after spooler-confirmed print completion.',
+      );
+    }
+  }
 }

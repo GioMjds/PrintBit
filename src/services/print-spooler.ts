@@ -42,6 +42,12 @@ export interface SpoolerMonitorOptions {
   spoolerCorrelationKey?: string | null;
   io: Server;
   jobContext: Record<string, string | number | boolean | null | undefined>;
+  onConfirmed?: (context: {
+    spoolerJobId: number;
+    status: string;
+    pagesPrinted: number;
+    totalPages: number;
+  }) => Promise<void>;
 }
 
 export interface SpoolerMonitorResult {
@@ -205,6 +211,7 @@ export async function monitorSpoolerJob(
     spoolerCorrelationKey,
     io,
     jobContext,
+    onConfirmed,
   } = options;
 
   console.log(
@@ -360,6 +367,53 @@ export async function monitorSpoolerJob(
               '[SPOOLER-MONITOR] Failed to checkpoint recovery session (confirmed)',
               checkpointError,
             );
+          }
+        }
+        if (onConfirmed) {
+          try {
+            await onConfirmed({
+              spoolerJobId: job.id,
+              status: job.status,
+              pagesPrinted: job.pagesPrinted,
+              totalPages: job.totalPages,
+            });
+          } catch (cleanupError) {
+            const message =
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : String(cleanupError);
+            console.error(
+              '[SPOOLER-MONITOR] Post-confirmed cleanup callback failed.',
+              {
+                transactionId,
+                spoolerJobId: job.id,
+                error: message,
+              },
+            );
+            try {
+              await adminService.appendAdminLog(
+                'print_spooler_success_cleanup_failed',
+                'Spooler-confirmed print cleanup callback failed.',
+                {
+                  transactionId,
+                  spoolerJobId: job.id,
+                  spoolerStatus: job.status,
+                  error: message,
+                },
+              );
+            } catch (adminLogError) {
+              console.error(
+                '[SPOOLER-MONITOR] Failed to append cleanup callback failure log.',
+                {
+                  error:
+                    adminLogError instanceof Error
+                      ? adminLogError.message
+                      : String(adminLogError),
+                  transactionId,
+                  spoolerJobId: job.id,
+                },
+              );
+            }
           }
         }
         return {

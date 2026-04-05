@@ -152,6 +152,7 @@ Response:
 
 The `change` object is always present. `state` is one of `"none"`, `"dispensed"`, or `"failed"`. When `state` is `"failed"`, an `owedChangeId` and `message` are included — the owed change is recorded for admin resolution.
 `transactionId` is the canonical customer/admin reference ID for support and refund follow-up.
+For `mode: "print"` in the modern flow, uploaded file deletion is finalized after spooler terminal success (not immediately at settlement).
 
 ### `GET /api/transactions/:transactionId/receipt`
 
@@ -278,6 +279,30 @@ When USB export is disabled by lockdown config, this endpoint returns the same `
 ### `POST /api/scanner/wireless-link`
 
 Creates a temporary tokenized download link for a scanned file.
+
+### `POST /api/scanner/release`
+
+Explicitly releases (deletes) a transient file from `uploads/scans` in an idempotent way.
+
+Request:
+
+```json
+{
+  "filename": "scan-1234567890.pdf",
+  "reason": "scan_qr_done"
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "deleted": true,
+  "alreadyMissing": false,
+  "filePath": "C:\\...\\uploads\\scans\\scan-1234567890.pdf"
+}
+```
 
 ### `GET /scan/download/:token`
 

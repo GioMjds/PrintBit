@@ -16,6 +16,9 @@ void initializePageIdleTimeout({
   showWarningModal: true,
   onTimeout: async () => {
     console.log('[PAGE IDLE] Copy page timeout reached, redirecting to home');
+    if (previewPath) {
+      await releaseCopyPreviewFile(previewPath, 'copy_idle_timeout');
+    }
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
     sessionStorage.removeItem('printbit.sessionId');
@@ -87,6 +90,43 @@ const previewStatusText = document.getElementById(
 
 let previewPath: string | null = null;
 let previewObjectUrl: string | null = null;
+
+async function releaseCopyPreviewFile(
+  filename: string,
+  reason: string,
+): Promise<void> {
+  const safeFilename = filename.trim();
+  if (!safeFilename) return;
+
+  try {
+    const response = await fetch('/api/scanner/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: safeFilename,
+        reason,
+      }),
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error && payload.error.trim()) {
+          detail = payload.error.trim();
+        }
+      } catch {
+        // Non-JSON response; keep status detail.
+      }
+      throw new Error(detail);
+    }
+  } catch (error) {
+    console.error('[COPY] Failed to release transient preview file.', {
+      filename: safeFilename,
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 function clearPreviewImageUrl(): void {
   if (!previewObjectUrl) return;
@@ -266,6 +306,9 @@ async function checkForDocument(): Promise<void> {
     showOverlay(false);
 
     if (data.detected && data.previewPath) {
+      if (previewPath && previewPath !== data.previewPath) {
+        await releaseCopyPreviewFile(previewPath, 'copy_preview_replaced');
+      }
       previewPath = data.previewPath;
       await showPreview(data.previewPath);
     } else {

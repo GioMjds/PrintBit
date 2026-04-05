@@ -11,6 +11,9 @@ void initializePageIdleTimeout({
   showWarningModal: true,
   onTimeout: async () => {
     console.log('[PAGE IDLE] Scan page timeout reached, redirecting to home');
+    if (scanFilename) {
+      await releaseScanFile(scanFilename, 'scan_idle_timeout');
+    }
     // Cancel server-side session if exists
     const sessionId = sessionStorage.getItem('printbit.sessionId');
     const sessionToken = sessionStorage.getItem('printbit.sessionToken');
@@ -99,6 +102,40 @@ const SCAN_SOURCE: ScanSource = 'feeder';
 const SCAN_COLOR: ScanColor = 'color';
 const SCAN_DPI: ScanDpi = '600';
 
+async function releaseScanFile(filename: string, reason: string): Promise<void> {
+  const safeFilename = filename.trim();
+  if (!safeFilename) return;
+
+  try {
+    const response = await fetch('/api/scanner/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: safeFilename,
+        reason,
+      }),
+    });
+    if (!response.ok) {
+      let detail = `HTTP ${response.status}`;
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (payload.error && payload.error.trim()) {
+          detail = payload.error.trim();
+        }
+      } catch {
+        // Non-JSON response; keep status detail.
+      }
+      throw new Error(detail);
+    }
+  } catch (error) {
+    console.error('[SCAN] Failed to release transient scan file.', {
+      filename: safeFilename,
+      reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function showPreview(
   name: 'idle' | 'scanning' | 'result' | 'error',
   hint?: string,
@@ -159,6 +196,9 @@ async function loadPricing(): Promise<void> {
 }
 
 async function startScan(): Promise<void> {
+  if (scanFilename) {
+    await releaseScanFile(scanFilename, 'scan_replaced_by_new_scan');
+  }
   showPreview('scanning', 'Scanning your document…');
   scanBtn.disabled = true;
   scanBtn.setAttribute('aria-disabled', 'true');
@@ -225,6 +265,9 @@ async function startScan(): Promise<void> {
 }
 
 function resetToIdle(): void {
+  if (scanFilename) {
+    void releaseScanFile(scanFilename, 'scan_reset_to_idle');
+  }
   scannedPages = [];
   scanFilename = null;
   currentPage = 0;

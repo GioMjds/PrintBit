@@ -25,6 +25,11 @@ type ScanJobBody = {
   format?: string;
 };
 
+type ReleaseScanBody = {
+  filename?: string;
+  reason?: string;
+};
+
 export class ScannerController {
   public readonly router: Router;
 
@@ -43,6 +48,7 @@ export class ScannerController {
     this.router.get('/api/scanner/wired/drives', this.listDrives);
     this.router.post('/api/scanner/wired/export', this.exportToUsb);
     this.router.post('/api/scanner/wireless-link', this.createWirelessLink);
+    this.router.post('/api/scanner/release', this.releaseScanFile);
     this.router.get('/scan/download/:token', this.downloadByToken);
 
     this.router.post('/api/scan/jobs', this.createScanJob);
@@ -233,6 +239,47 @@ export class ScannerController {
         res.status(404).json({ error: message });
         return;
       }
+      res.status(500).json({ error: message });
+    }
+  };
+
+  private releaseScanFile = async (req: Request, res: Response): Promise<void> => {
+    const body = req.body as ReleaseScanBody;
+    const safeFilename = this.scannerService.toSafeScanFilename(body?.filename);
+    if (!safeFilename) {
+      res.status(400).json({ error: 'Invalid filename.' });
+      return;
+    }
+
+    const reason =
+      typeof body?.reason === 'string' && body.reason.trim().length > 0
+        ? body.reason.trim()
+        : null;
+
+    try {
+      const released = await this.scannerService.releaseScanFile(safeFilename);
+      void adminService.appendAdminLog(
+        'scan_file_released',
+        'Transient scan file released.',
+        {
+          filename: safeFilename,
+          reason,
+          alreadyMissing: released.alreadyMissing,
+          filePath: released.filePath,
+        },
+      );
+      res.json({ ok: true, ...released });
+    } catch (error) {
+      const message = this.getErrorMessage(error, 'Failed to release scan file.');
+      void adminService.appendAdminLog(
+        'scan_file_release_failed',
+        'Failed to release transient scan file.',
+        {
+          filename: safeFilename,
+          reason,
+          error: message,
+        },
+      );
       res.status(500).json({ error: message });
     }
   };

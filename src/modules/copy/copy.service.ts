@@ -475,6 +475,10 @@ export class CopyService {
             },
           });
           await adminService.incrementJobStats('copy');
+          await this.cleanupPreviewFile(previewFilename, {
+            jobId,
+            trigger: 'copy_job_succeeded',
+          });
           void adminService.appendAdminLog(
             'copy_job_completed',
             'Copy job completed and charged.',
@@ -519,5 +523,65 @@ export class CopyService {
         );
       }
     })();
+  }
+
+  private async cleanupPreviewFile(
+    previewFilename: string,
+    context: { jobId: string; trigger: string },
+  ): Promise<void> {
+    const previewPath = path.resolve('uploads', 'scans', previewFilename);
+    let alreadyMissing = false;
+
+    try {
+      await fs.promises.unlink(previewPath);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'ENOENT') {
+        alreadyMissing = true;
+      } else {
+        const message = err.message ?? 'Unknown error';
+        try {
+          await adminService.appendAdminLog(
+            'copy_preview_release_failed',
+            'Failed to release transient copy preview file.',
+            {
+              jobId: context.jobId,
+              trigger: context.trigger,
+              filename: previewFilename,
+              filePath: previewPath,
+              error: message,
+            },
+          );
+        } catch (logError) {
+          console.error('[COPY] Failed to append cleanup failure admin log.', {
+            error:
+              logError instanceof Error ? logError.message : String(logError),
+            jobId: context.jobId,
+            previewFilename,
+          });
+        }
+        return;
+      }
+    }
+
+    try {
+      await adminService.appendAdminLog(
+        'copy_preview_released',
+        'Transient copy preview file released.',
+        {
+          jobId: context.jobId,
+          trigger: context.trigger,
+          filename: previewFilename,
+          filePath: previewPath,
+          alreadyMissing,
+        },
+      );
+    } catch (logError) {
+      console.error('[COPY] Failed to append cleanup success admin log.', {
+        error: logError instanceof Error ? logError.message : String(logError),
+        jobId: context.jobId,
+        previewFilename,
+      });
+    }
   }
 }
