@@ -443,8 +443,6 @@ class PrintPreview {
         this.currentPage = 1;
         this.updatePager();
         this.showImg(true);
-        this.showCanvas(false);
-        this.showFrame(false);
         this.showLoading(false);
         this.setHint('Image preview');
         // Revoke blob URL after image loads to free memory
@@ -515,7 +513,11 @@ class PrintPreview {
 
   private showFrame(on: boolean): void {
     this.iframe.style.display = on ? 'block' : 'none';
-    this.placeholder.classList.toggle('hidden', on);
+    if (on) {
+      this.canvas.style.display = 'none';
+      this.imgStage.style.display = 'none';
+      this.placeholder.classList.add('hidden');
+    }
   }
 
   private showLoading(on: boolean): void {
@@ -524,8 +526,11 @@ class PrintPreview {
 
   private showCanvas(on: boolean): void {
     this.canvas.style.display = on ? 'block' : 'none';
-    if (on) this.iframe.style.display = 'none';
-    this.placeholder.classList.toggle('hidden', on);
+    if (on) {
+      this.iframe.style.display = 'none';
+      this.imgStage.style.display = 'none';
+      this.placeholder.classList.add('hidden');
+    }
   }
 
   private showImg(on: boolean): void {
@@ -1287,7 +1292,10 @@ async function applyColorAnalysis(
 
   let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/color-analysis`;
   if (filename) url += `?filename=${encodeURIComponent(filename)}`;
-  previewLog('applyColorAnalysis() start', { sessionId, filename: filename ?? null });
+  previewLog('applyColorAnalysis() start', {
+    sessionId,
+    filename: filename ?? null,
+  });
 
   try {
     const resp = await fetchWithTimeout(url, 10_000);
