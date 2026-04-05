@@ -23,6 +23,11 @@ const IMAGE_TYPES: Record<string, string> = {
 
 const PDF_CONVERT_EXTENSIONS = new Set(['.doc', '.docx', '.ppt', '.pptx']);
 const POWERPOINT_EXTENSIONS = new Set(['.ppt', '.pptx']);
+const BEARER_SCHEME = 'bearer';
+
+function isWhitespaceCharacter(value: string): boolean {
+  return value.trim().length === 0;
+}
 
 export class WirelessSessionService {
   constructor(private readonly deps: WirelessSessionServiceDeps) {}
@@ -33,7 +38,8 @@ export class WirelessSessionService {
       return queryToken;
     }
 
-    const headerToken = req.header('x-session-token') ?? req.header('x-upload-token');
+    const headerToken =
+      req.header('x-session-token') ?? req.header('x-upload-token');
     if (headerToken && headerToken.trim().length > 0) {
       return headerToken;
     }
@@ -41,8 +47,24 @@ export class WirelessSessionService {
     const authorizationHeader = req.header('authorization');
     if (!authorizationHeader) return '';
 
-    const bearerMatch = authorizationHeader.match(/^Bearer\s+(.+)$/i);
-    return bearerMatch?.[1]?.trim() ?? '';
+    if (authorizationHeader.length <= BEARER_SCHEME.length) return '';
+    if (
+      authorizationHeader.slice(0, BEARER_SCHEME.length).toLowerCase() !==
+      BEARER_SCHEME
+    ) {
+      return '';
+    }
+
+    let tokenStartIndex = BEARER_SCHEME.length;
+    if (!isWhitespaceCharacter(authorizationHeader[tokenStartIndex])) return '';
+    while (
+      tokenStartIndex < authorizationHeader.length &&
+      isWhitespaceCharacter(authorizationHeader[tokenStartIndex])
+    ) {
+      tokenStartIndex += 1;
+    }
+
+    return authorizationHeader.slice(tokenStartIndex).trim();
   }
 
   extractUploadClientId(req: Request): string {
@@ -51,7 +73,8 @@ export class WirelessSessionService {
       return queryClient.trim();
     }
 
-    const headerClientId = req.header('x-upload-client-id') ?? req.header('x-session-client-id');
+    const headerClientId =
+      req.header('x-upload-client-id') ?? req.header('x-session-client-id');
     if (headerClientId && headerClientId.trim().length > 0) {
       return headerClientId.trim();
     }
@@ -59,7 +82,11 @@ export class WirelessSessionService {
     return '';
   }
 
-  verifyUploadTarget: RequestHandler<{ sessionId: string }> = (req, res, next) => {
+  verifyUploadTarget: RequestHandler<{ sessionId: string }> = (
+    req,
+    res,
+    next,
+  ) => {
     const { sessionId } = req.params;
     const token = this.extractUploadToken(req);
 
@@ -82,7 +109,10 @@ export class WirelessSessionService {
     }
 
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
     if (!session) {
       res.status(410).json({
         code: 'SESSION_EXPIRED',
@@ -99,7 +129,11 @@ export class WirelessSessionService {
     next();
   };
 
-  verifyOwnedUploadTarget: RequestHandler<{ sessionId: string }> = (req, res, next) => {
+  verifyOwnedUploadTarget: RequestHandler<{ sessionId: string }> = (
+    req,
+    res,
+    next,
+  ) => {
     this.verifyUploadTarget(req, res, () => {
       const { sessionId } = req.params;
       const token = this.extractUploadToken(req);
@@ -112,7 +146,11 @@ export class WirelessSessionService {
         return;
       }
 
-      const claim = this.deps.sessionStore.claimOwner(sessionId, token, clientId);
+      const claim = this.deps.sessionStore.claimOwner(
+        sessionId,
+        token,
+        clientId,
+      );
       if (!claim.ok && claim.errorCode) {
         res.status(this.statusForClaimError(claim.errorCode)).json({
           code: claim.errorCode,
@@ -194,7 +232,10 @@ export class WirelessSessionService {
     }
 
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSessionByToken(token, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSessionByToken(
+      token,
+      publicBaseUrl,
+    );
 
     if (!session) {
       res.status(410).json({
@@ -207,10 +248,16 @@ export class WirelessSessionService {
     res.json(session);
   };
 
-  getSessionPreview: RequestHandler<{ sessionId: string }> = async (req, res) => {
+  getSessionPreview: RequestHandler<{ sessionId: string }> = async (
+    req,
+    res,
+  ) => {
     const { sessionId } = req.params;
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
 
     const requestedFilename = req.query.filename as string;
     const allDocs =
@@ -286,7 +333,8 @@ export class WirelessSessionService {
       }
 
       if (PDF_CONVERT_EXTENSIONS.has(extension)) {
-        const pdfPreviewPath = await this.deps.convertToPdfPreview(absolutePath);
+        const pdfPreviewPath =
+          await this.deps.convertToPdfPreview(absolutePath);
         res.setHeader('Content-Type', 'application/pdf');
         console.log('[preview] serving converted pdf', {
           sourcePath: absolutePath,
@@ -308,7 +356,8 @@ export class WirelessSessionService {
       });
     } catch (error) {
       console.error('[preview] route error:', error);
-      const reason = error instanceof Error ? error.message : 'Unknown preview error';
+      const reason =
+        error instanceof Error ? error.message : 'Unknown preview error';
       res.status(500).json({
         error:
           'Preview conversion failed. Ensure Microsoft Word or LibreOffice is installed and available.',
@@ -318,10 +367,16 @@ export class WirelessSessionService {
     }
   };
 
-  getSessionColorAnalysis: RequestHandler<{ sessionId: string }> = async (req, res) => {
+  getSessionColorAnalysis: RequestHandler<{ sessionId: string }> = async (
+    req,
+    res,
+  ) => {
     const { sessionId } = req.params;
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
 
     if (!session) {
       res.status(404).json({ error: 'Session not found.' });
@@ -384,7 +439,10 @@ export class WirelessSessionService {
         sampledPages: result.sampledPages,
       });
     } catch (err) {
-      console.warn('[color-analysis] Detection failed, defaulting to color:', err);
+      console.warn(
+        '[color-analysis] Detection failed, defaulting to color:',
+        err,
+      );
       res.json({
         hasColor: true,
         isGrayscale: false,
@@ -409,7 +467,10 @@ export class WirelessSessionService {
     }
 
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
     if (!session) {
       res.status(410).json({
         code: 'SESSION_EXPIRED',
@@ -427,28 +488,46 @@ export class WirelessSessionService {
     const file = req.file;
 
     if (!file) {
-      void adminService.appendAdminLog('upload_failed', 'Wireless upload failed: no file provided.', {
-        sessionId,
-      });
+      void adminService.appendAdminLog(
+        'upload_failed',
+        'Wireless upload failed: no file provided.',
+        {
+          sessionId,
+        },
+      );
       res.status(400).json({ code: 'no_file', error: 'No file provided.' });
       return;
     }
 
-    this.deps.io.to(`session:${sessionId}`).emit('UploadStarted', file.originalname);
-    void adminService.appendAdminLog('upload_started', 'Wireless upload started.', {
-      sessionId,
-      filename: file.originalname,
-      sizeBytes: file.size,
-    });
-
-    const result = await this.deps.sessionStore.storeUpload(sessionId, token, file);
-    if (!result.isSuccess || !result.document) {
-      this.deps.io.to(`session:${sessionId}`).emit('UploadFailed');
-      await adminService.appendAdminLog('upload_failed', 'Wireless upload failed.', {
+    this.deps.io
+      .to(`session:${sessionId}`)
+      .emit('UploadStarted', file.originalname);
+    void adminService.appendAdminLog(
+      'upload_started',
+      'Wireless upload started.',
+      {
         sessionId,
         filename: file.originalname,
-        errorCode: result.errorCode ?? null,
-      });
+        sizeBytes: file.size,
+      },
+    );
+
+    const result = await this.deps.sessionStore.storeUpload(
+      sessionId,
+      token,
+      file,
+    );
+    if (!result.isSuccess || !result.document) {
+      this.deps.io.to(`session:${sessionId}`).emit('UploadFailed');
+      await adminService.appendAdminLog(
+        'upload_failed',
+        'Wireless upload failed.',
+        {
+          sessionId,
+          filename: file.originalname,
+          errorCode: result.errorCode ?? null,
+        },
+      );
       res.status(400).json({
         code: result.errorCode ?? 'UPLOAD_FAILED',
         error: result.errorMsg ?? 'Upload failed.',
@@ -458,12 +537,16 @@ export class WirelessSessionService {
 
     const doc = result.document;
     this.deps.io.to(`session:${sessionId}`).emit('UploadCompleted', doc);
-    await adminService.appendAdminLog('upload_completed', 'Wireless upload completed.', {
-      sessionId,
-      filename: doc.filename,
-      documentId: doc.documentId,
-      sizeBytes: doc.sizeBytes,
-    });
+    await adminService.appendAdminLog(
+      'upload_completed',
+      'Wireless upload completed.',
+      {
+        sessionId,
+        filename: doc.filename,
+        documentId: doc.documentId,
+        sizeBytes: doc.sizeBytes,
+      },
+    );
 
     res.status(200).json({
       documentId: doc.documentId,
@@ -480,7 +563,11 @@ export class WirelessSessionService {
     });
 
     try {
-      const analyzed = await this.analyzeAndStoreDocument(req, sessionId, doc.documentId);
+      const analyzed = await this.analyzeAndStoreDocument(
+        req,
+        sessionId,
+        doc.documentId,
+      );
       if ('analysis' in analyzed) {
         this.deps.io.to(`session:${sessionId}`).emit('AnalysisCompleted', {
           documentId: doc.documentId,
@@ -493,7 +580,10 @@ export class WirelessSessionService {
           filename: doc.filename,
           error: analyzed.error,
         });
-        console.warn(`[analyze-document] Analysis failed for ${doc.filename}:`, analyzed.error);
+        console.warn(
+          `[analyze-document] Analysis failed for ${doc.filename}:`,
+          analyzed.error,
+        );
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown error';
@@ -502,16 +592,22 @@ export class WirelessSessionService {
         filename: doc.filename,
         error: reason,
       });
-      console.warn('[analyze-document] Failed to analyze uploaded file:', error);
+      console.warn(
+        '[analyze-document] Failed to analyze uploaded file:',
+        error,
+      );
     }
   };
 
-  removeSessionDocument: RequestHandler<{ sessionId: string; documentId: string }> = async (
-    req,
-    res,
-  ) => {
+  removeSessionDocument: RequestHandler<{
+    sessionId: string;
+    documentId: string;
+  }> = async (req, res) => {
     const { sessionId, documentId } = req.params;
-    const result = await this.deps.sessionStore.removeDocument(sessionId, documentId);
+    const result = await this.deps.sessionStore.removeDocument(
+      sessionId,
+      documentId,
+    );
     if (!result.success) {
       const status =
         result.errorCode === 'DOCUMENT_NOT_FOUND'
@@ -599,12 +695,19 @@ export class WirelessSessionService {
     });
   };
 
-  analyzeSessionDocument: RequestHandler<{ sessionId: string }> = async (req, res) => {
+  analyzeSessionDocument: RequestHandler<{ sessionId: string }> = async (
+    req,
+    res,
+  ) => {
     const { sessionId } = req.params;
     const { documentId } = (req.body ?? {}) as { documentId?: string };
 
     try {
-      const analyzed = await this.analyzeAndStoreDocument(req, sessionId, documentId);
+      const analyzed = await this.analyzeAndStoreDocument(
+        req,
+        sessionId,
+        documentId,
+      );
       if (!('analysis' in analyzed)) {
         res.status(analyzed.status).json({ error: analyzed.error });
         return;
@@ -642,7 +745,7 @@ export class WirelessSessionService {
     documentId?: string,
   ): Promise<
     | { error: string; status: 404 | 422 | 500 }
-      | {
+    | {
         status: 200;
         analysis: DocumentAnalysis;
         documentId: string;
@@ -650,7 +753,10 @@ export class WirelessSessionService {
       }
   > {
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
     if (!session) {
       return { error: 'Session not found.', status: 404 };
     }
@@ -682,9 +788,12 @@ export class WirelessSessionService {
       POWERPOINT_EXTENSIONS.has(targetExtension)
     ) {
       try {
-        analysisFilePath = await this.deps.convertToPdfPreview(path.resolve(target.filePath));
+        analysisFilePath = await this.deps.convertToPdfPreview(
+          path.resolve(target.filePath),
+        );
       } catch (error) {
-        const reason = error instanceof Error ? error.message : 'Unknown conversion error';
+        const reason =
+          error instanceof Error ? error.message : 'Unknown conversion error';
         return {
           error: `PowerPoint conversion failed before analysis: ${reason}`,
           status: 422,

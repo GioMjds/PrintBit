@@ -5,6 +5,8 @@ import {
   requireAdminLocalAccess,
   requireAdminPin,
 } from '@/middleware/admin-auth';
+import { createRateLimit } from '@/middleware/rate-limit';
+import { serializeForInlineScript } from '@/utils/helpers';
 import { FeedbackService } from './feedback.service';
 import type { FeedbackStatus } from './feedback.schema';
 
@@ -30,10 +32,18 @@ const FEEDBACK_PORTAL_TEMPLATE = fs.readFileSync(
   'utf-8',
 );
 
+const feedbackPortalAssetRateLimit = createRateLimit({
+  keyPrefix: 'feedback-portal-asset',
+  windowMs: 60_000,
+  max: 120,
+  message: 'Too many requests. Please try again later.',
+});
+
 function renderFeedbackPortal(token: string): string {
+  const safeTokenForScript = serializeForInlineScript(token);
   return FEEDBACK_PORTAL_TEMPLATE.replace(
     '</head>',
-    `<base href="/feedback/${encodeURIComponent(token)}/"><script>window.feedbackToken="${token}";</script></head>`,
+    `<base href="/feedback/${encodeURIComponent(token)}/"><script>window.feedbackToken=${safeTokenForScript};</script></head>`,
   );
 }
 
@@ -62,7 +72,7 @@ export class FeedbackController {
 
     // Portal routes (mounted at /feedback)
     this.portalRouter.get('/:token', this.serveFeedbackPortal);
-    this.portalRouter.get('/:token/:asset', this.serveFeedbackAsset);
+    this.portalRouter.get('/:token/:asset', feedbackPortalAssetRateLimit, this.serveFeedbackAsset);
   }
 
   // Public API routes

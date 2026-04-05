@@ -6,6 +6,7 @@ import {
   requireAdminLocalAccess,
   requireAdminPin,
 } from '@/middleware/admin-auth';
+import { createRateLimit } from '@/middleware/rate-limit';
 import { AdminService, type EarningsAnalyticsView } from './admin.service';
 import { db } from '@/services/db';
 import {
@@ -290,6 +291,30 @@ function toSafeAlertSettings(alerts: AlertSettings): {
   };
 }
 
+const adminAuthRateLimit = createRateLimit({
+  keyPrefix: 'admin-auth',
+  windowMs: 60_000,
+  max: 5,
+});
+
+const adminTimeSyncRateLimit = createRateLimit({
+  keyPrefix: 'admin-system-time-sync',
+  windowMs: 60_000,
+  max: 30,
+});
+
+const adminTestPrintRateLimit = createRateLimit({
+  keyPrefix: 'admin-printer-test-print',
+  windowMs: 60_000,
+  max: 5,
+});
+
+const adminStorageClearRateLimit = createRateLimit({
+  keyPrefix: 'admin-storage-clear',
+  windowMs: 10 * 60_000,
+  max: 3,
+});
+
 export class AdminController {
   public readonly router: Router;
   private readonly adminService: AdminService;
@@ -304,7 +329,7 @@ export class AdminController {
 
   private initializeRoutes(): void {
     // ── Authentication routes ──────────────────────────────────────────────────
-    this.router.post('/auth', requireAdminLocalAccess, this.handleAuth);
+    this.router.post('/auth', requireAdminLocalAccess, adminAuthRateLimit, this.handleAuth);
     this.router.post(
       '/logout',
       requireAdminLocalAccess,
@@ -341,6 +366,7 @@ export class AdminController {
       '/system/time-sync',
       requireAdminLocalAccess,
       requireAdminPin,
+      adminTimeSyncRateLimit,
       this.handleGetTimeSync,
     );
 
@@ -415,6 +441,7 @@ export class AdminController {
       '/printer/test-print',
       requireAdminLocalAccess,
       requireAdminPin,
+      adminTestPrintRateLimit,
       this.handleTestPrint,
     );
 
@@ -475,6 +502,7 @@ export class AdminController {
       '/storage/clear',
       requireAdminLocalAccess,
       requireAdminPin,
+      adminStorageClearRateLimit,
       this.handleClearStorage,
     );
 

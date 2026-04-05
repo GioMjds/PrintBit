@@ -4,7 +4,20 @@ import {
   handleMulterError,
   validateMagicBytes,
 } from '@/middleware/file-validation';
+import { createRateLimit } from '@/middleware/rate-limit';
 import { WirelessSessionService } from './wireless-session.service';
+
+const wirelessPreviewRateLimit = createRateLimit({
+  keyPrefix: 'wireless-session-preview',
+  windowMs: 60_000,
+  max: 30,
+});
+
+const wirelessUploadRateLimit = createRateLimit({
+  keyPrefix: 'wireless-session-upload',
+  windowMs: 60_000,
+  max: 10,
+});
 
 export class WirelessSessionController {
   public readonly router: Router;
@@ -22,6 +35,7 @@ export class WirelessSessionController {
     );
     this.router.get(
       '/api/wireless/sessions/:sessionId/preview',
+      wirelessPreviewRateLimit,
       this.wirelessSessionService.getSessionPreview,
     );
     this.router.get(
@@ -31,6 +45,7 @@ export class WirelessSessionController {
     this.router.get('/api/wireless/sessions/:sessionId', this.wirelessSessionService.getSessionById);
     this.router.post(
       '/api/wireless/sessions/:sessionId/upload',
+      wirelessUploadRateLimit,
       this.wirelessSessionService.verifyOwnedUploadTarget,
       uploadMiddleware.single('file'),
       validateMagicBytes,

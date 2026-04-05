@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { Router, type Request, type Response } from 'express';
 import type { Server as SocketIOServer } from 'socket.io';
 import { USB_EXPORT_ENABLED } from '@/config';
+import { createRateLimit } from '@/middleware/rate-limit';
 import { adminService } from '@/services/admin';
 import { ScannerService } from './scanner.service';
 
@@ -30,6 +31,24 @@ type ReleaseScanBody = {
   reason?: string;
 };
 
+const scanDownloadRateLimit = createRateLimit({
+  keyPrefix: 'scan-download',
+  windowMs: 60_000,
+  max: 20,
+});
+
+const scanJobResultRateLimit = createRateLimit({
+  keyPrefix: 'scan-job-result',
+  windowMs: 60_000,
+  max: 120,
+});
+
+const scanPreviewFileRateLimit = createRateLimit({
+  keyPrefix: 'scan-preview-file',
+  windowMs: 60_000,
+  max: 40,
+});
+
 export class ScannerController {
   public readonly router: Router;
 
@@ -49,13 +68,13 @@ export class ScannerController {
     this.router.post('/api/scanner/wired/export', this.exportToUsb);
     this.router.post('/api/scanner/wireless-link', this.createWirelessLink);
     this.router.post('/api/scanner/release', this.releaseScanFile);
-    this.router.get('/scan/download/:token', this.downloadByToken);
+    this.router.get('/scan/download/:token', scanDownloadRateLimit, this.downloadByToken);
 
     this.router.post('/api/scan/jobs', this.createScanJob);
     this.router.get('/api/scan/jobs/:id', this.getScanJob);
-    this.router.get('/api/scan/jobs/:id/result', this.getScanJobResult);
+    this.router.get('/api/scan/jobs/:id/result', scanJobResultRateLimit, this.getScanJobResult);
     this.router.post('/api/scan/preview', this.previewScan);
-    this.router.get('/api/scan/preview/:filename', this.getPreviewFile);
+    this.router.get('/api/scan/preview/:filename', scanPreviewFileRateLimit, this.getPreviewFile);
     this.router.get('/api/scan/color-analysis/:filename', this.getColorAnalysis);
     this.router.post('/api/scan/jobs/:id/cancel', this.cancelScanJob);
   }

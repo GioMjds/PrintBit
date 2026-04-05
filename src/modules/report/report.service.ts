@@ -8,6 +8,7 @@ import {
   type ReportIssueSessionEntry,
   type ReportIssueStatus,
 } from '@/services';
+import { serializeForInlineScript } from '@/utils/helpers';
 
 const REPORT_PORTAL_DIR = path.resolve('src/public/report');
 const REPORT_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
@@ -173,9 +174,10 @@ export class ReportService {
   }
 
   renderReportPortal(token: string): string {
+    const safeTokenForScript = serializeForInlineScript(token);
     return REPORT_PORTAL_TEMPLATE.replace(
       '</head>',
-      `<base href="/report/${encodeURIComponent(token)}/"><script>window.reportIssueToken=${JSON.stringify(token)};</script></head>`,
+      `<base href="/report/${encodeURIComponent(token)}/"><script>window.reportIssueToken=${safeTokenForScript};</script></head>`,
     );
   }
 

@@ -9,7 +9,7 @@ import {
   CAPTIVE_PORTAL_ENABLED,
   SESSION_EXPIRY_ENABLED,
 } from '@/config';
-import { createCaptivePortalMiddleware } from '@/middleware';
+import { createCaptivePortalMiddleware, createCsrfProtectionMiddleware } from '@/middleware';
 import { registerAppModules } from '@/app.module';
 import {
   initDB,
@@ -59,6 +59,7 @@ const sessionStore = new SessionStore(UPLOAD_DIR, {
 });
 
 app.use(express.json());
+app.use(createCsrfProtectionMiddleware());
 
 // Captive-portal middleware — fallback for direct captive probes on port 3000
 if (CAPTIVE_PORTAL_ENABLED) {

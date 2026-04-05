@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { createRateLimit } from '@/middleware/rate-limit';
 import { UploadPortalService } from './upload-portal.service';
 
 const EXPIRED_HTML = `<!DOCTYPE html>
@@ -15,6 +16,20 @@ p{color:#666;font-size:.9rem;line-height:1.5;margin-bottom:.25rem}</style></head
 <p>Please go back to the kiosk and start a new print session to get a fresh QR code.</p>
 </div></body></html>`;
 
+const uploadPortalPageRateLimit = createRateLimit({
+  keyPrefix: 'upload-portal-page',
+  windowMs: 60_000,
+  max: 60,
+  message: 'Too many requests. Please try again later.',
+});
+
+const uploadPortalAssetRateLimit = createRateLimit({
+  keyPrefix: 'upload-portal-asset',
+  windowMs: 60_000,
+  max: 120,
+  message: 'Too many requests. Please try again later.',
+});
+
 export class UploadPortalController {
   public readonly router: Router;
 
@@ -25,8 +40,8 @@ export class UploadPortalController {
 
   private initializeRoutes(): void {
     // Portal routes (mounted at /upload)
-    this.router.get('/:token', this.serveUploadPortal);
-    this.router.get('/:token/:asset', this.serveUploadAsset);
+    this.router.get('/:token', uploadPortalPageRateLimit, this.serveUploadPortal);
+    this.router.get('/:token/:asset', uploadPortalAssetRateLimit, this.serveUploadAsset);
   }
 
   /**

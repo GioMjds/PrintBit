@@ -14,6 +14,7 @@ import {
   validateReportIssueAttachmentMagicBytes,
   handleMulterError,
 } from '@/middleware/file-validation';
+import { createRateLimit } from '@/middleware/rate-limit';
 import { ReportService } from './report.service';
 import type { ReportIssueCategory, ReportIssueStatus } from './report.schema';
 
@@ -27,6 +28,19 @@ type ReportBody = {
   category?: unknown;
   attachmentIds?: unknown;
 };
+
+const reportPortalAssetRateLimit = createRateLimit({
+  keyPrefix: 'report-portal-asset',
+  windowMs: 60_000,
+  max: 120,
+  message: 'Too many requests. Please try again later.',
+});
+
+const adminReportAttachmentRateLimit = createRateLimit({
+  keyPrefix: 'admin-report-attachment-file',
+  windowMs: 60_000,
+  max: 60,
+});
 
 export class ReportController {
   public readonly router: Router;
@@ -69,7 +83,7 @@ export class ReportController {
     );
 
     this.router.get('/report/:token', this.serveReportPortal.bind(this));
-    this.router.get('/report/:token/:asset', this.serveReportAsset.bind(this));
+    this.router.get('/report/:token/:asset', reportPortalAssetRateLimit, this.serveReportAsset.bind(this));
 
     this.router.get(
       '/api/admin/report-issues',
@@ -99,6 +113,7 @@ export class ReportController {
       '/api/admin/report-issues/attachments/:attachmentId/file',
       requireAdminLocalAccess,
       requireAdminPin,
+      adminReportAttachmentRateLimit,
       this.getAdminAttachmentFile.bind(this),
     );
   }
