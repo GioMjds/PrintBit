@@ -178,9 +178,15 @@ class PrintPreview {
   private pdfDoc: PDFDocumentProxy | null = null;
   private currentPage = 1;
   private totalPages = 1;
+  private latestImageInfo: { naturalWidth: number; naturalHeight: number } | null =
+    null;
 
   get pageCount(): number {
     return this.totalPages;
+  }
+
+  get imageInfo(): { naturalWidth: number; naturalHeight: number } | null {
+    return this.latestImageInfo;
   }
 
   private renderTask: Promise<void> | null = null;
@@ -270,6 +276,7 @@ class PrintPreview {
     this.showImg(false);
     this.showFrame(false);
     this.setHint('Loading preview…');
+    this.latestImageInfo = null;
 
     let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/preview`;
     if (filename) url += `?filename=${encodeURIComponent(filename)}`;
@@ -328,15 +335,18 @@ class PrintPreview {
       });
       await this.loadImage(blobUrl, true);
     } else if (contentType.includes('application/pdf')) {
+      this.latestImageInfo = null;
       const buf = await response.arrayBuffer();
       previewLog('pdf buffer loaded', { bytes: buf.byteLength });
       await this.loadPdf(buf);
     } else if (contentType.includes('text/html')) {
+      this.latestImageInfo = null;
       const html = await response.text();
       previewLog('html preview loaded', { chars: html.length });
       this.loadHtml(html);
     } else {
       previewLog('unsupported preview content type', { contentType });
+      this.latestImageInfo = null;
       this.showError('Unsupported preview format.');
     }
   }
@@ -428,6 +438,7 @@ class PrintPreview {
     return new Promise((resolve) => {
       const timeoutId = window.setTimeout(() => {
         previewLog('loadImage() timeout');
+        this.latestImageInfo = null;
         this.showError('Image preview timed out. Please retry.');
         if (isBlobUrl) URL.revokeObjectURL(url);
         resolve();
@@ -435,6 +446,10 @@ class PrintPreview {
 
       this.img.onload = () => {
         window.clearTimeout(timeoutId);
+        this.latestImageInfo = {
+          naturalWidth: this.img.naturalWidth,
+          naturalHeight: this.img.naturalHeight,
+        };
         previewLog('loadImage() onload', {
           naturalWidth: this.img.naturalWidth,
           naturalHeight: this.img.naturalHeight,
@@ -443,8 +458,6 @@ class PrintPreview {
         this.currentPage = 1;
         this.updatePager();
         this.showImg(true);
-        this.showCanvas(false);
-        this.showFrame(false);
         this.showLoading(false);
         this.setHint('Image preview');
         // Revoke blob URL after image loads to free memory
@@ -453,6 +466,7 @@ class PrintPreview {
       };
       this.img.onerror = () => {
         window.clearTimeout(timeoutId);
+        this.latestImageInfo = null;
         previewLog('loadImage() onerror');
         this.showError('Could not load image.');
         if (isBlobUrl) URL.revokeObjectURL(url);
@@ -516,6 +530,10 @@ class PrintPreview {
   private showFrame(on: boolean): void {
     this.iframe.style.display = on ? 'block' : 'none';
     this.placeholder.classList.toggle('hidden', on);
+    if (on) {
+      this.canvas.style.display = 'none';
+      this.imgStage.style.display = 'none';
+    }
   }
 
   private showLoading(on: boolean): void {
@@ -524,8 +542,11 @@ class PrintPreview {
 
   private showCanvas(on: boolean): void {
     this.canvas.style.display = on ? 'block' : 'none';
-    if (on) this.iframe.style.display = 'none';
     this.placeholder.classList.toggle('hidden', on);
+    if (on) {
+      this.iframe.style.display = 'none';
+      this.imgStage.style.display = 'none';
+    }
   }
 
   private showImg(on: boolean): void {
@@ -540,6 +561,7 @@ class PrintPreview {
 
   private showError(msg: string): void {
     previewLog('showError()', { message: msg });
+    this.latestImageInfo = null;
     this.showLoading(false);
     this.showCanvas(false);
     this.showImg(false);
@@ -723,6 +745,11 @@ if (mode === 'copy' && continueBtn) {
 
 let currentPrintQuote: PrintQuote | null = null;
 let detectedColorMode: ColorMode | null = null;
+let detectedOrientation: Orientation | null = null;
+let currentOrientationDetectionKey: string | null = null;
+const orientationAutoAppliedKeys = new Set<string>();
+const orientationManuallyAdjustedKeys = new Set<string>();
+let suppressOrientationChangeTracking = false;
 let quoteError: string | null = null;
 let quoteLoading = false;
 let quoteRequestVersion = 0;
@@ -954,6 +981,98 @@ function getCopies(): number {
   );
 }
 
+function orientationDetectionKey(): string | null {
+  if (mode !== 'print' || !sessionId) return null;
+  const id = selectedDocumentId ?? selectedFile;
+  if (!id) return null;
+  return `${sessionId}:${id}`;
+}
+
+function clearOrientationNotice(): void {
+  document.querySelector('.orientation-detect-notice')?.remove();
+}
+
+function syncOrientationDetectionContext(): string | null {
+  const key = orientationDetectionKey();
+  if (key !== currentOrientationDetectionKey) {
+    currentOrientationDetectionKey = key;
+    detectedOrientation = null;
+    clearOrientationNotice();
+  }
+  return key;
+}
+
+function showOrientationNotice(detected: Orientation): void {
+  const orientationGroup = document.querySelector<HTMLElement>(
+    '.option-group:has(input[name="orientation"])',
+  );
+  if (!orientationGroup) return;
+
+  let notice = orientationGroup.querySelector<HTMLElement>(
+    '.orientation-detect-notice',
+  );
+  if (!notice) {
+    notice = document.createElement('p');
+    notice.className = 'orientation-detect-notice';
+    orientationGroup.appendChild(notice);
+  }
+
+  const detectedLabel = detected === 'landscape' ? 'landscape' : 'portrait';
+  const oppositeLabel = detected === 'landscape' ? 'Portrait' : 'Landscape';
+  notice.textContent = `Auto-detected ${detectedLabel} orientation. Switch to ${oppositeLabel} if this looks wrong.`;
+}
+
+function applyImageOrientationDetection(): void {
+  if (mode !== 'print') {
+    detectedOrientation = null;
+    clearOrientationNotice();
+    return;
+  }
+
+  const key = syncOrientationDetectionContext();
+  if (!key) {
+    detectedOrientation = null;
+    clearOrientationNotice();
+    return;
+  }
+
+  const imageInfo = preview.imageInfo;
+  if (!imageInfo || imageInfo.naturalWidth <= 0 || imageInfo.naturalHeight <= 0) {
+    detectedOrientation = null;
+    clearOrientationNotice();
+    return;
+  }
+
+  detectedOrientation =
+    imageInfo.naturalWidth > imageInfo.naturalHeight ? 'landscape' : 'portrait';
+  showOrientationNotice(detectedOrientation);
+
+  if (
+    orientationManuallyAdjustedKeys.has(key) ||
+    orientationAutoAppliedKeys.has(key)
+  ) {
+    return;
+  }
+
+  const selected = (getRadio('orientation') as Orientation) || 'portrait';
+  if (selected !== detectedOrientation) {
+    const target = document.querySelector<HTMLInputElement>(
+      `input[name="orientation"][value="${detectedOrientation}"]`,
+    );
+    if (target) {
+      suppressOrientationChangeTracking = true;
+      try {
+        target.checked = true;
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+      } finally {
+        suppressOrientationChangeTracking = false;
+      }
+    }
+  }
+
+  orientationAutoAppliedKeys.add(key);
+}
+
 function currentPreviewConfig(): PreviewConfig {
   return {
     colorMode: (getRadio('colorMode') as ColorMode) || 'colored',
@@ -1139,6 +1258,17 @@ document
     });
   });
 
+document
+  .querySelectorAll<HTMLInputElement>('input[name="orientation"]')
+  .forEach((el) => {
+    el.addEventListener('change', () => {
+      if (suppressOrientationChangeTracking) return;
+      const key = orientationDetectionKey();
+      if (!key) return;
+      orientationManuallyAdjustedKeys.add(key);
+    });
+  });
+
 copiesDec?.addEventListener('click', () => {
   const v = getCopies();
   if (v > 1 && copiesInput) {
@@ -1177,6 +1307,8 @@ async function loadPreview(): Promise<void> {
     selectedDocumentId: selectedDocumentId ?? null,
   });
   if (mode === 'copy') {
+    clearOrientationNotice();
+    detectedOrientation = null;
     const copyPreview = copyPreviewPath;
     if (!copyPreview) return;
 
@@ -1214,7 +1346,11 @@ async function loadPreview(): Promise<void> {
     return;
   }
 
-  if (mode !== 'print') return;
+  if (mode !== 'print') {
+    clearOrientationNotice();
+    detectedOrientation = null;
+    return;
+  }
 
   if (!sessionId) {
     // Show error state in the paper placeholder
@@ -1224,8 +1360,11 @@ async function loadPreview(): Promise<void> {
     return;
   }
 
+  syncOrientationDetectionContext();
   await preview.load(sessionId, selectedFile ?? undefined);
   previewLog('preview.load() complete');
+  applyImageOrientationDetection();
+  previewLog('applyImageOrientationDetection() complete');
   if (sessionId) await applyColorAnalysis(sessionId, selectedFile);
   previewLog('applyColorAnalysis() complete');
   syncPageRangeAvailability();
@@ -1287,7 +1426,10 @@ async function applyColorAnalysis(
 
   let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/color-analysis`;
   if (filename) url += `?filename=${encodeURIComponent(filename)}`;
-  previewLog('applyColorAnalysis() start', { sessionId, filename: filename ?? null });
+  previewLog('applyColorAnalysis() start', {
+    sessionId,
+    filename: filename ?? null,
+  });
 
   try {
     const resp = await fetchWithTimeout(url, 10_000);
