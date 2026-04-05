@@ -52,6 +52,7 @@ interface PrintConfig {
   filename: string | null;
   copyPreviewPath?: string | null;
   copyPreviewReleaseToken?: string | null;
+  detectedColorMode?: ColorMode | null;
   colorMode: ColorMode;
   duplex: boolean;
   copies: number;
@@ -721,6 +722,7 @@ if (mode === 'copy' && continueBtn) {
 }
 
 let currentPrintQuote: PrintQuote | null = null;
+let detectedColorMode: ColorMode | null = null;
 let quoteError: string | null = null;
 let quoteLoading = false;
 let quoteRequestVersion = 0;
@@ -1281,6 +1283,7 @@ async function applyColorAnalysis(
   filename?: string | null,
 ): Promise<void> {
   resetColorLock();
+  detectedColorMode = null;
 
   let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/color-analysis`;
   if (filename) url += `?filename=${encodeURIComponent(filename)}`;
@@ -1295,6 +1298,7 @@ async function applyColorAnalysis(
     if (!resp.ok) return;
 
     const { isGrayscale } = (await resp.json()) as { isGrayscale: boolean };
+    detectedColorMode = isGrayscale ? 'grayscale' : 'colored';
     if (!isGrayscale) return;
 
     const grayRadio = document.querySelector<HTMLInputElement>(
@@ -1305,17 +1309,7 @@ async function applyColorAnalysis(
       grayRadio.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // 2. Disable both color mode cards
-    document
-      .querySelectorAll<HTMLInputElement>('input[name="colorMode"]')
-      .forEach((radio) => {
-        radio.disabled = true;
-        radio
-          .closest<HTMLElement>('.option-card')
-          ?.setAttribute('data-locked', 'true');
-      });
-
-    // 3. Show explanatory notice
+    // Show advisory notice while keeping color controls user-editable.
     const colorGroup = document.querySelector<HTMLElement>(
       '.option-group:has(input[name="colorMode"])',
     );
@@ -1323,10 +1317,11 @@ async function applyColorAnalysis(
       const notice = document.createElement('p');
       notice.className = 'color-lock-notice';
       notice.textContent =
-        'Color printing is unavailable — this document contains only black & white content.';
+        'Auto-detected grayscale. Switch to Colored if your file has color.';
       colorGroup.appendChild(notice);
     }
   } catch (error) {
+    detectedColorMode = null;
     previewLog('applyColorAnalysis() failed', error);
     // Detection failed - leave UI unlocked
   }
@@ -1355,6 +1350,7 @@ continueBtn?.addEventListener('click', () => {
     filename: selectedFile,
     copyPreviewPath: mode === 'copy' ? copyPreviewPath : null,
     copyPreviewReleaseToken: mode === 'copy' ? copyPreviewReleaseToken : null,
+    detectedColorMode: mode === 'print' ? detectedColorMode : null,
     colorMode: cfg.colorMode,
     duplex: false,
     copies: getCopies(),
