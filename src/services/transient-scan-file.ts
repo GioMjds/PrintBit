@@ -54,7 +54,7 @@ export async function deleteTransientScanFile(
     const err = error as NodeJS.ErrnoException;
     if (err.code === 'ENOENT') {
       return {
-        deleted: true,
+        deleted: false,
         alreadyMissing: true,
         fileName: safeFileName,
       };

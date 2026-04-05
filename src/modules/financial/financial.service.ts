@@ -1410,14 +1410,14 @@ export class FinancialService {
   private async handleMissingSpoolerTelemetry(input: {
     transactionId: string;
     chargedAmount: number;
-    spoolerCorrelationKey: string;
+    spoolerCorrelationKey: string | null;
     sessionId: string | null;
     documentId: string | null;
     filename: string | null;
     copies: number;
     colorMode: 'colored' | 'grayscale';
     duplex: boolean;
-    pageRange: string | null;
+    pageRange: string | null | undefined;
     jobDispatchedAt: string;
   }): Promise<void> {
     const {
@@ -1597,7 +1597,7 @@ export class FinancialService {
           totalPages: 0,
           printerName: null,
           reason: 'Refund blocked because trusted time is unavailable.',
-          refundDisposition: 'pending_admin_review',
+          refundDisposition: 'refund_blocked_trusted_time',
           restoredBalanceAmount: 0,
           transactionId,
           spoolerCorrelationKey,
@@ -1618,7 +1618,7 @@ export class FinancialService {
           lastError: 'Refund blocked because trusted time is unavailable.',
           context: {
             spoolerOutcome: 'monitor_unavailable',
-            refundDisposition: 'pending_admin_review',
+            refundDisposition: 'refund_blocked_trusted_time',
             trustedTimeBlocked: true,
           },
         });
