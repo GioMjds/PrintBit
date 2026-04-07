@@ -119,7 +119,7 @@ ESP32 compatibility route for captive-portal firmware coin forwarding.
 - Valid values: `1`, `5`, `10`, `20`
 - Required dedupe key: `eventId` query or `x-coin-event-id` header
 - Required source: `source=esp32` query or `x-coin-source: esp32`
-- Required auth: `apiKey=<configured-key>` query or `x-coin-api-key` header
+- Required auth: `x-coin-api-key: <configured-key>` header only (`apiKey` query is rejected)
 - Duplicate `eventId` requests are idempotent and return `200` without double-crediting
 - Rejected values return `400`
 - Slot/printer gate rejections return non-2xx (`409`) with `{ retryable: true }` so firmware can retry

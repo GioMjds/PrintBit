@@ -181,6 +181,8 @@ PRINTBIT_ESP32_COIN_SOURCE=esp32
 PRINTBIT_ESP32_COIN_API_KEY=printbit-coin-bridge-key
 ```
 
+Security note: `printbit-coin-bridge-key` is a predictable example value. Before deployment, generate a unique secret for `PRINTBIT_ESP32_COIN_API_KEY`, set it in the kiosk environment, and use the same value in ESP32 firmware (`coinBridgeApiKey` in `esp32-captive-portal.ino`). Do not reuse the default key in production.
+
 Recommended `.ino` alignment for ESP32 mode:
 
 - AP SSID: `PrintBit`

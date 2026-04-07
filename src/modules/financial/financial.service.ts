@@ -6,6 +6,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Server } from 'socket.io';
 import {
   db,
+  type Schema,
   type FinancialLedgerEntry,
   acquireIdempotencyKey,
   storeIdempotencyKey,
@@ -24,7 +25,11 @@ import {
   ESP32_COIN_BRIDGE_API_KEY,
   ESP32_COIN_BRIDGE_SOURCE,
 } from '@/config/http.config';
-import { getSqliteDb } from '@/core/database/sqlite-storage';
+import {
+  getSqliteDb,
+  readRuntimeState,
+  writeRuntimeState,
+} from '@/core/database/sqlite-storage';
 import { adminService } from '@/services/admin';
 import { financialLedgerService } from '@/services/financial-ledger';
 import { settlementService } from '@/services/settlement';
@@ -263,19 +268,19 @@ async function deleteUploadByStoredFilename(
 export class FinancialService {
   constructor(private readonly deps: FinancialServiceDeps) {}
 
-  private incrementCoinStatsInMemory(coinValue: number): void {
+  private incrementCoinStats(state: Schema, coinValue: number): void {
     switch (coinValue) {
       case 1:
-        db.data!.coinStats.one += 1;
+        state.coinStats.one += 1;
         break;
       case 5:
-        db.data!.coinStats.five += 1;
+        state.coinStats.five += 1;
         break;
       case 10:
-        db.data!.coinStats.ten += 1;
+        state.coinStats.ten += 1;
         break;
       case 20:
-        db.data!.coinStats.twenty += 1;
+        state.coinStats.twenty += 1;
         break;
       default:
         break;
@@ -283,17 +288,18 @@ export class FinancialService {
   }
 
   private buildCoinLedgerEntry(
+    state: Schema,
     coinValue: number,
     source: CoinSource,
   ): FinancialLedgerEntry {
     const trusted = getTrustedTimestamp();
     const id = randomUUID();
-    const previous = db.data!.financialLedger[0] ?? null;
+    const previous = state.financialLedger[0] ?? null;
     const previousHash = previous?.hash ?? null;
     const amount = Number.isFinite(coinValue) ? Number(coinValue.toFixed(2)) : 0;
     const meta = {
       source,
-      balance: db.data!.balance,
+      balance: state.balance,
     };
     const hashPayload = serializeLedgerHashPayload({
       id,
@@ -471,6 +477,7 @@ export class FinancialService {
     }
 
     let balanceAfterCredit = db.data!.balance;
+    let nextRuntimeState: Schema | null = null;
     sqliteDb.exec('BEGIN IMMEDIATE');
     try {
       if (shouldPersistBridgeEvent) {
@@ -485,12 +492,21 @@ export class FinancialService {
         }
       }
 
-      this.incrementCoinStatsInMemory(coinValue);
-      db.data!.balance += coinValue;
-      balanceAfterCredit = db.data!.balance;
-      const ledgerEntry = this.buildCoinLedgerEntry(coinValue, source);
-      db.data!.financialLedger.unshift(ledgerEntry);
-      await db.write();
+      const runtimeState = readRuntimeState<Schema>() ?? db.data;
+      if (!runtimeState) {
+        throw new Error('Runtime state unavailable while crediting coin.');
+      }
+      nextRuntimeState = structuredClone(runtimeState);
+      this.incrementCoinStats(nextRuntimeState, coinValue);
+      nextRuntimeState.balance += coinValue;
+      balanceAfterCredit = nextRuntimeState.balance;
+      const ledgerEntry = this.buildCoinLedgerEntry(
+        nextRuntimeState,
+        coinValue,
+        source,
+      );
+      nextRuntimeState.financialLedger.unshift(ledgerEntry);
+      writeRuntimeState(nextRuntimeState);
 
       if (shouldPersistBridgeEvent) {
         sqliteDb
@@ -510,6 +526,9 @@ export class FinancialService {
     } catch (error) {
       sqliteDb.exec('ROLLBACK');
       throw error;
+    }
+    if (nextRuntimeState) {
+      db.data = nextRuntimeState;
     }
 
     await adminService.appendAdminLog(
@@ -610,10 +629,22 @@ export class FinancialService {
       return res.status(403).json({ error: 'Invalid coin source' });
     }
 
-    const queryApiKeyRaw = Array.isArray(queryApiKey)
-      ? queryApiKey[0]
-      : queryApiKey;
-    const apiKey = (req.get('x-coin-api-key') ?? queryApiKeyRaw ?? '').trim();
+    if (queryApiKey !== undefined) {
+      await adminService.appendAdminLog(
+        'coin_rejected_api_key_in_query',
+        'ESP32 /coin rejected because API key was sent in query string.',
+        {
+          source,
+          coinValue,
+          eventId,
+        },
+      );
+      return res.status(400).json({
+        error: 'API key must be sent via x-coin-api-key header',
+      });
+    }
+
+    const apiKey = (req.get('x-coin-api-key') ?? '').trim();
     if (!apiKey || apiKey !== ESP32_COIN_BRIDGE_API_KEY) {
       await adminService.appendAdminLog(
         'coin_rejected_auth_failed',
