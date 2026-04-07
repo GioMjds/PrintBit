@@ -107,6 +107,7 @@ let hotspotConfig: HotspotConfig | null = null;
 let localUploadUrl = '';
 let publicUploadUrl = '';
 let activeUploadMode: 'local' | 'internet' = 'local';
+let uploadModeManuallySelected = false;
 let sessionWarningThresholdSeconds = 60;
 const SESSION_COUNTDOWN_TICK_MS = 1000;
 let sessionCountdownBaselineSeconds: number | null = null;
@@ -451,6 +452,23 @@ function normalizeLocalUploadUrl(uploadUrl: string): string {
   try {
     const parsed = new URL(uploadUrl);
     if (!parsed.pathname.startsWith('/upload/')) return uploadUrl;
+
+    const isLoopbackHost = (host: string): boolean => {
+      const normalized = host.trim().toLowerCase();
+      return (
+        normalized === '' ||
+        normalized === 'localhost' ||
+        normalized === '127.0.0.1' ||
+        normalized === '::1'
+      );
+    };
+
+    // Keep backend-provided LAN/IP host when available. Rewriting to kiosk
+    // origin can break phone uploads when kiosk UI is opened on localhost.
+    if (!isLoopbackHost(parsed.hostname)) return parsed.toString();
+
+    const currentHost = window.location.hostname;
+    if (isLoopbackHost(currentHost)) return parsed.toString();
     const pathWithQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     return new URL(pathWithQuery, window.location.origin).toString();
   } catch {
@@ -458,7 +476,36 @@ function normalizeLocalUploadUrl(uploadUrl: string): string {
   }
 }
 
-function setUploadMode(mode: 'local' | 'internet'): void {
+function deriveInternetUploadUrl(localUrl: string, providedInternetUrl?: string): string {
+  if (providedInternetUrl && providedInternetUrl.trim().length > 0) {
+    return providedInternetUrl;
+  }
+  try {
+    const localParsed = new URL(localUrl);
+    if (!localParsed.pathname.startsWith('/upload/')) return '';
+
+    const currentOrigin = window.location.origin;
+    const currentHost = window.location.hostname.trim().toLowerCase();
+    const isLoopbackCurrent =
+      currentHost === '' ||
+      currentHost === 'localhost' ||
+      currentHost === '127.0.0.1' ||
+      currentHost === '::1';
+    if (isLoopbackCurrent) return '';
+    if (currentOrigin === localParsed.origin) return '';
+
+    const pathWithQuery = `${localParsed.pathname}${localParsed.search}${localParsed.hash}`;
+    return new URL(pathWithQuery, currentOrigin).toString();
+  } catch {
+    return providedInternetUrl ?? '';
+  }
+}
+
+function setUploadMode(
+  mode: 'local' | 'internet',
+  manualSelection = false,
+): void {
+  if (manualSelection) uploadModeManuallySelected = true;
   const hasInternetOption = publicUploadUrl.length > 0;
   if (mode === 'internet' && !hasInternetOption) mode = 'local';
   activeUploadMode = mode;
@@ -522,10 +569,13 @@ function setUploadMode(mode: 'local' | 'internet'): void {
 
 function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
   localUploadUrl = normalizeLocalUploadUrl(uploadUrl);
-  publicUploadUrl = internetUploadUrl ?? '';
+  publicUploadUrl = deriveInternetUploadUrl(localUploadUrl, internetUploadUrl);
 
   if (publicUploadUrl) {
-    setUploadMode(activeUploadMode);
+    const preferredMode = uploadModeManuallySelected
+      ? activeUploadMode
+      : 'internet';
+    setUploadMode(preferredMode);
     return;
   }
   setUploadMode('local');
@@ -539,6 +589,8 @@ async function createSession(): Promise<void> {
   resetSessionCountdown();
   activeSessionId = '';
   activeSessionToken = '';
+  activeUploadMode = 'local';
+  uploadModeManuallySelected = false;
 
   if (!hotspotConfig) {
     try {
@@ -842,11 +894,11 @@ refreshSessionBtn?.addEventListener('click', () => {
 });
 
 modeLocalBtn?.addEventListener('click', () => {
-  setUploadMode('local');
+  setUploadMode('local', true);
 });
 
 modeInternetBtn?.addEventListener('click', () => {
-  setUploadMode('internet');
+  setUploadMode('internet', true);
 });
 
 continueBtn?.addEventListener('click', () => {

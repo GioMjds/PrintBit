@@ -170,7 +170,8 @@ PRINTBIT_NETWORK_PROVIDER=esp32
 PRINTBIT_HOTSPOT_SSID=PrintBit
 PRINTBIT_HOTSPOT_PASSWORD=printbit123
 PRINTBIT_HOTSPOT_AUTH_TYPE=WPA
-PRINTBIT_ESP32_KIOSK_IP=192.168.4.2
+# Leave empty for dynamic kiosk IP registration (recommended)
+PRINTBIT_ESP32_KIOSK_IP=
 PRINTBIT_ESP32_AP_BASE_URL=http://192.168.4.1
 ```
 
@@ -184,7 +185,7 @@ Troubleshooting mobile captive onboarding:
 
 - If captive page does not auto-open after joining kiosk Wi-Fi, open the fallback upload link shown on Print screen.
 - If session is expired/owned by another device, generate a new kiosk print session and scan again.
-- If logs show `no adapter IP matches 192.168.4.x`, set `PRINTBIT_ESP32_KIOSK_IP` to the kiosk's expected IP on the ESP32 network (e.g., `192.168.4.2`).
+- If logs show `no adapter IP matches 192.168.4.x`, set `PRINTBIT_ESP32_KIOSK_IP` to the kiosk's current IP on the ESP32 network (for example `192.168.4.3`).
 
 ## Important notes
 

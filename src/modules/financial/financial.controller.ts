@@ -15,6 +15,7 @@ export class FinancialController {
   }
 
   private initializeRoutes(): void {
+    this.router.get('/coin', this.addCoinCompatibility);
     this.router.get('/api/balance', this.getBalance);
     this.router.get('/api/pricing', this.getPricing);
     this.router.get(
@@ -37,6 +38,13 @@ export class FinancialController {
 
   private getBalance = (req: Request, res: Response): void => {
     this.financialService.getBalance(req, res);
+  };
+
+  private addCoinCompatibility = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    await this.financialService.addCoinCompatibility(req, res);
   };
 
   private getPricing = (req: Request, res: Response): void => {

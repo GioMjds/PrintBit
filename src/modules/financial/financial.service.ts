@@ -67,7 +67,8 @@ interface ConfirmPaymentBody {
 }
 
 const LEGACY_UPLOAD_STAGING_DIR = path.resolve('uploads/staging/legacy');
-const ACCEPTED_TEST_COINS = new Set([1, 5, 10, 20]);
+const ACCEPTED_COIN_VALUES = new Set([1, 5, 10, 20]);
+type CoinSource = 'test-ui' | 'esp32-http';
 
 function buildTrustedTimeBlockedResponse(error: unknown): {
   code: 'TRUSTED_TIME_UNAVAILABLE';
@@ -213,6 +214,61 @@ async function deleteUploadByStoredFilename(
 export class FinancialService {
   constructor(private readonly deps: FinancialServiceDeps) {}
 
+  private async creditCoinBalance(
+    coinValue: number,
+    source: CoinSource,
+  ): Promise<number> {
+    const trustedTime = getTrustedTimeStatus();
+    if (
+      trustedTime.enforceForFinancial &&
+      (!trustedTime.synced ||
+        trustedTime.offsetMs === null ||
+        trustedTime.driftExceeded)
+    ) {
+      void adminService.appendAdminLog(
+        'coin_accepted_trusted_time_unsynced',
+        `${source === 'esp32-http' ? 'ESP32' : 'Test'} coin accepted while trusted time is unsynchronized.`,
+        {
+          source,
+          coinValue,
+          detail: trustedTime.detail,
+          offsetMs: trustedTime.offsetMs,
+          driftExceeded: trustedTime.driftExceeded,
+          checkedAt: trustedTime.checkedAt,
+        },
+      );
+    }
+
+    db.data!.balance += coinValue;
+    await db.write();
+
+    await adminService.appendAdminLog(
+      'coin_accepted',
+      `${source === 'esp32-http' ? 'ESP32 bridge' : 'Test'} coin inserted: ${coinValue}`,
+      {
+        coinValue,
+        balance: db.data!.balance,
+        source,
+      },
+    );
+    await financialLedgerService.append({
+      eventType: 'coin_inserted',
+      amount: coinValue,
+      meta: {
+        source,
+        balance: db.data!.balance,
+      },
+    });
+
+    this.deps.io.emit('balance', db.data!.balance);
+    this.deps.io.emit('coinAccepted', {
+      value: coinValue,
+      balance: db.data!.balance,
+    });
+
+    return db.data!.balance;
+  }
+
   getBalance = (_req: Request, res: Response): void => {
     res.json({
       balance: db.data?.balance ?? 0,
@@ -222,6 +278,36 @@ export class FinancialService {
 
   getPricing = (_req: Request, res: Response): void => {
     res.json(adminService.getPricingSettings());
+  };
+
+  addCoinCompatibility = async (
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> => {
+    const { value } = req.query as { value?: string | string[] };
+    const rawValue = Array.isArray(value) ? value[0] : value;
+    const coinValue = rawValue !== undefined ? Number(rawValue) : Number.NaN;
+
+    if (!Number.isInteger(coinValue) || !ACCEPTED_COIN_VALUES.has(coinValue)) {
+      await adminService.appendAdminLog(
+        'coin_rejected_invalid_value',
+        'ESP32 /coin rejected due to invalid value.',
+        {
+          source: 'esp32-http',
+          value: rawValue ?? null,
+        },
+      );
+      return res
+        .status(400)
+        .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
+    }
+
+    const balance = await this.creditCoinBalance(coinValue, 'esp32-http');
+    res.status(200).json({
+      ok: true,
+      coinValue,
+      balance,
+    });
   };
 
   getPrintQuote = (req: Request, res: Response): Response => {
@@ -389,63 +475,17 @@ export class FinancialService {
     const coinValue =
       typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-    if (coinValue === null || !ACCEPTED_TEST_COINS.has(coinValue)) {
+    if (coinValue === null || !ACCEPTED_COIN_VALUES.has(coinValue)) {
       return res
         .status(400)
         .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
     }
-    const trustedTime = getTrustedTimeStatus();
-    if (
-      trustedTime.enforceForFinancial &&
-      (!trustedTime.synced ||
-        trustedTime.offsetMs === null ||
-        trustedTime.driftExceeded)
-    ) {
-      void adminService.appendAdminLog(
-        'coin_accepted_trusted_time_unsynced',
-        'Test coin accepted while trusted time is unsynchronized.',
-        {
-          source: 'test-ui',
-          coinValue,
-          detail: trustedTime.detail,
-          offsetMs: trustedTime.offsetMs,
-          driftExceeded: trustedTime.driftExceeded,
-          checkedAt: trustedTime.checkedAt,
-        },
-      );
-    }
-
-    db.data!.balance += coinValue;
-    await db.write();
-
-    await adminService.appendAdminLog(
-      'coin_accepted',
-      `Test coin inserted: ${coinValue}`,
-      {
-        coinValue,
-        balance: db.data!.balance,
-        source: 'test-ui',
-      },
-    );
-    await financialLedgerService.append({
-      eventType: 'coin_inserted',
-      amount: coinValue,
-      meta: {
-        source: 'test-ui',
-        balance: db.data!.balance,
-      },
-    });
-
-    this.deps.io.emit('balance', db.data!.balance);
-    this.deps.io.emit('coinAccepted', {
-      value: coinValue,
-      balance: db.data!.balance,
-    });
+    const balance = await this.creditCoinBalance(coinValue, 'test-ui');
 
     res.json({
       ok: true,
       coinValue,
-      balance: db.data!.balance,
+      balance,
     });
   };
 

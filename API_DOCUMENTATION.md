@@ -111,6 +111,15 @@ Request:
 { "value": 5 }
 ```
 
+### `GET /coin?value=<1|5|10|20>`
+
+ESP32 compatibility route for captive-portal firmware coin forwarding.
+
+- Intended caller: ESP32 AP firmware (`esp32-captive-portal.ino`)
+- Valid values: `1`, `5`, `10`, `20`
+- Rejected values return `400`
+- Accepted values emit the same balance/coin Socket.IO updates used by kiosk flows
+
 ### `POST /api/confirm-payment`
 
 Primary confirmation endpoint for print/copy charging.

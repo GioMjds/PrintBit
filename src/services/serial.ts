@@ -22,6 +22,7 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
+import { NETWORK_PROVIDER } from '@/config/http.config';
 import { getTrustedTimeStatus } from './time-source';
 import {
   markWatchdogHeartbeat,
@@ -47,10 +48,13 @@ const SERIAL_RECONNECT_MAX_ATTEMPTS = readNonNegativeIntEnv(
   0,
 );
 const SERIAL_PORT_HINT = process.env.PRINTBIT_SERIAL_PORT?.trim() || '';
+const SERIAL_IP_LABEL_PATTERN = /^(AP_IP|KIOSK_IP):(\d{1,3}(?:\.\d{1,3}){3})$/;
 
 let serialConnected = false;
 let serialPortPath: string | null = null;
 let serialLastError: string | null = null;
+let serialApIp: string | null = null;
+let serialKioskIp: string | null = null;
 let activeSerialPort: SerialPort | null = null;
 let socketIo: Server | null = null;
 let coinSlotLocked: boolean = false;
@@ -94,6 +98,28 @@ function readNonNegativeIntEnv(name: string, fallback: number): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return Math.floor(parsed);
+}
+
+function isValidIpv4(ip: string): boolean {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return false;
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return false;
+    const value = Number(part);
+    if (!Number.isInteger(value) || value < 0 || value > 255) return false;
+  }
+  return true;
+}
+
+function parseSerialIpLabel(
+  token: string,
+): { label: 'AP_IP' | 'KIOSK_IP'; ip: string } | null {
+  const match = token.match(SERIAL_IP_LABEL_PATTERN);
+  if (!match) return null;
+  const [, label, ip] = match;
+  if (!isValidIpv4(ip)) return null;
+  if (label !== 'AP_IP' && label !== 'KIOSK_IP') return null;
+  return { label, ip };
 }
 
 function clearSerialReconnectTimer(): void {
@@ -191,6 +217,8 @@ export function getSerialStatus() {
     connected: serialConnected,
     portPath: serialPortPath,
     lastError: serialLastError,
+    apIp: serialApIp,
+    kioskIp: serialKioskIp,
   };
 }
 
@@ -938,6 +966,18 @@ async function attemptSerialConnection(
         const token = rawLine.trim();
         if (token.length === 0) return;
 
+        const ipLabel = parseSerialIpLabel(token);
+        if (ipLabel) {
+          if (ipLabel.label === 'AP_IP') {
+            serialApIp = ipLabel.ip;
+            console.log(`[SERIAL] ESP32 AP IP detected: ${serialApIp}`);
+          } else {
+            serialKioskIp = ipLabel.ip;
+            console.log(`[SERIAL] ESP32 kiosk IP detected: ${serialKioskIp}`);
+          }
+          return;
+        }
+
         if (token.startsWith('[')) {
           console.log(`[SERIAL] Device message: "${token}"`);
           return;
@@ -946,6 +986,12 @@ async function attemptSerialConnection(
         if (tryHandleHopperResponse(rawLine)) return;
 
         console.log(`[SERIAL] Raw data: "${rawLine}"`);
+        if (NETWORK_PROVIDER === 'esp32' && /^\d+$/.test(token)) {
+          console.log(
+            `[SERIAL] Ignoring numeric serial token in ESP32 mode: "${token}"`,
+          );
+          return;
+        }
         if (!/^\d+$/.test(token)) return;
         void processToken(token);
       });
