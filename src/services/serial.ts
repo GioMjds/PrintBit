@@ -512,6 +512,8 @@ async function attemptSerialConnection(
       serialConnected = false;
       serialPortPath = null;
       serialLastError = 'No serial ports found.';
+      serialApIp = null;
+      serialKioskIp = null;
       console.warn(
         '[SERIAL] ✗ No serial ports found. Continuing without serial connection.',
       );
@@ -570,6 +572,8 @@ async function attemptSerialConnection(
         );
         serialConnected = true;
         serialLastError = null;
+        serialApIp = null;
+        serialKioskIp = null;
         clearSerialReconnectTimer();
         reconnectAttemptCount = 0;
         reconnectReason = null;
@@ -594,6 +598,8 @@ async function attemptSerialConnection(
         console.log('[SERIAL] ✗ Port closed — Arduino disconnected');
         serialConnected = false;
         activeSerialPort = null;
+        serialApIp = null;
+        serialKioskIp = null;
         markWatchdogHeartbeat('serial', {
           connected: false,
           portPath: serialPortPath,
@@ -634,6 +640,8 @@ async function attemptSerialConnection(
         serialConnected = false;
         serialLastError = error.message;
         activeSerialPort = null;
+        serialApIp = null;
+        serialKioskIp = null;
         markWatchdogHeartbeat('serial', {
           connected: false,
           portPath: serialPortPath,
@@ -1009,6 +1017,8 @@ async function attemptSerialConnection(
     serialConnected = false;
     serialLastError =
       error instanceof Error ? error.message : 'Unknown serial error.';
+    serialApIp = null;
+    serialKioskIp = null;
 
     const isAccessDenied = serialLastError
       .toLowerCase()

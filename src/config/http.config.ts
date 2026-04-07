@@ -53,6 +53,11 @@ export const ESP32_KIOSK_SUBNET_PREFIX =
 /** Explicit kiosk IP on the ESP32 AP network (bypasses auto-detection). */
 export const ESP32_KIOSK_IP =
   process.env.PRINTBIT_ESP32_KIOSK_IP?.trim() || undefined;
+export const ESP32_COIN_BRIDGE_SOURCE =
+  process.env.PRINTBIT_ESP32_COIN_SOURCE?.trim() || 'esp32';
+export const ESP32_COIN_BRIDGE_API_KEY =
+  process.env.PRINTBIT_ESP32_COIN_API_KEY?.trim() ||
+  'printbit-coin-bridge-key';
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
 

@@ -117,6 +117,10 @@ ESP32 compatibility route for captive-portal firmware coin forwarding.
 
 - Intended caller: ESP32 AP firmware (`esp32-captive-portal.ino`)
 - Valid values: `1`, `5`, `10`, `20`
+- Required dedupe key: `eventId` query or `x-coin-event-id` header
+- Required source: `source=esp32` query or `x-coin-source: esp32`
+- Required auth: `apiKey=<configured-key>` query or `x-coin-api-key` header
+- Duplicate `eventId` requests are idempotent and return `200` without double-crediting
 - Rejected values return `400`
 - Accepted values emit the same balance/coin Socket.IO updates used by kiosk flows
 

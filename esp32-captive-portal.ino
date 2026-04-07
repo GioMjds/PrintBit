@@ -16,13 +16,14 @@
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 #include <HTTPClient.h>
+#include <EEPROM.h>
 
 #define coinAcceptorPin 4
 #define hopperSensorPin 5
 #define relayPin 18
 
-const char *ssid = "PRINTBIT";
-const char *password = "12345678";
+const char *ssid = "PrintBit";
+const char *password = "printbit123";
 
 const IPAddress apIp(192, 168, 4, 1);
 const IPAddress apGateway(192, 168, 4, 1);
@@ -31,6 +32,8 @@ const IPAddress apSubnet(255, 255, 255, 0);
 const char *fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
 const char *fallbackPortalPath = "/portal";
+const char *coinBridgeSource = "esp32";
+const char *coinBridgeApiKey = "printbit-coin-bridge-key";
 
 NetworkServer server(80);
 DNSServer dnsServer;
@@ -62,6 +65,27 @@ bool dispenseDone = false;
 // SAFETY
 unsigned long hopperStartTime = 0;
 const unsigned long hopperMaxRunTime = 15000;
+
+struct CoinEvent {
+  uint32_t eventId;
+  uint8_t value;
+};
+
+const uint8_t QUEUE_MAGIC = 0xC7;
+const uint16_t QUEUE_EEPROM_SIZE = 1024;
+const uint8_t QUEUE_MAX_ITEMS = 120;
+const uint16_t QUEUE_META_OFFSET = 0;
+const uint16_t QUEUE_ITEMS_OFFSET = 8;
+const unsigned long QUEUE_FLUSH_MIN_MS = 120;
+const unsigned long QUEUE_FLUSH_BACKOFF_BASE_MS = 500;
+const unsigned long QUEUE_FLUSH_BACKOFF_MAX_MS = 10000;
+
+uint8_t queueHead = 0;
+uint8_t queueTail = 0;
+uint8_t queueCount = 0;
+uint32_t nextCoinEventId = 1;
+unsigned long nextQueueFlushAt = 0;
+unsigned long queueBackoffMs = QUEUE_FLUSH_BACKOFF_BASE_MS;
 
 String decodeUrlComponent(const String &value) {
   String decoded = "";
@@ -184,6 +208,146 @@ String readRequestBody(NetworkClient &client, int contentLength) {
   return body;
 }
 
+uint16_t queueItemOffset(uint8_t index) {
+  return QUEUE_ITEMS_OFFSET + uint16_t(index) * 5;
+}
+
+uint32_t readUint32Eeprom(uint16_t offset) {
+  uint32_t v = 0;
+  v |= uint32_t(EEPROM.read(offset));
+  v |= uint32_t(EEPROM.read(offset + 1)) << 8;
+  v |= uint32_t(EEPROM.read(offset + 2)) << 16;
+  v |= uint32_t(EEPROM.read(offset + 3)) << 24;
+  return v;
+}
+
+void writeUint32Eeprom(uint16_t offset, uint32_t value) {
+  EEPROM.update(offset, uint8_t(value & 0xFF));
+  EEPROM.update(offset + 1, uint8_t((value >> 8) & 0xFF));
+  EEPROM.update(offset + 2, uint8_t((value >> 16) & 0xFF));
+  EEPROM.update(offset + 3, uint8_t((value >> 24) & 0xFF));
+}
+
+CoinEvent readQueueItem(uint8_t index) {
+  const uint16_t offset = queueItemOffset(index);
+  CoinEvent event;
+  event.eventId = readUint32Eeprom(offset);
+  event.value = EEPROM.read(offset + 4);
+  return event;
+}
+
+void writeQueueItem(uint8_t index, const CoinEvent &event) {
+  const uint16_t offset = queueItemOffset(index);
+  writeUint32Eeprom(offset, event.eventId);
+  EEPROM.update(offset + 4, event.value);
+}
+
+void saveQueueState() {
+  EEPROM.update(QUEUE_META_OFFSET, QUEUE_MAGIC);
+  EEPROM.update(QUEUE_META_OFFSET + 1, queueHead);
+  EEPROM.update(QUEUE_META_OFFSET + 2, queueTail);
+  EEPROM.update(QUEUE_META_OFFSET + 3, queueCount);
+  writeUint32Eeprom(QUEUE_META_OFFSET + 4, nextCoinEventId);
+  EEPROM.commit();
+}
+
+void resetQueueState() {
+  queueHead = 0;
+  queueTail = 0;
+  queueCount = 0;
+  nextCoinEventId = 1;
+  saveQueueState();
+}
+
+void initCoinQueue() {
+  EEPROM.begin(QUEUE_EEPROM_SIZE);
+  if (EEPROM.read(QUEUE_META_OFFSET) != QUEUE_MAGIC) {
+    resetQueueState();
+    return;
+  }
+
+  queueHead = EEPROM.read(QUEUE_META_OFFSET + 1);
+  queueTail = EEPROM.read(QUEUE_META_OFFSET + 2);
+  queueCount = EEPROM.read(QUEUE_META_OFFSET + 3);
+  nextCoinEventId = readUint32Eeprom(QUEUE_META_OFFSET + 4);
+
+  const bool invalidState =
+      queueHead >= QUEUE_MAX_ITEMS || queueTail >= QUEUE_MAX_ITEMS ||
+      queueCount > QUEUE_MAX_ITEMS || nextCoinEventId == 0;
+  if (invalidState) {
+    resetQueueState();
+  }
+}
+
+bool enqueueCoinValue(uint8_t value) {
+  if (queueCount >= QUEUE_MAX_ITEMS) {
+    Serial.println("WARN: Coin queue full, dropping newest coin event");
+    return false;
+  }
+  CoinEvent event;
+  event.eventId = nextCoinEventId++;
+  event.value = value;
+  writeQueueItem(queueTail, event);
+  queueTail = (queueTail + 1) % QUEUE_MAX_ITEMS;
+  queueCount++;
+  saveQueueState();
+  return true;
+}
+
+bool peekCoinEvent(CoinEvent &event) {
+  if (queueCount == 0) return false;
+  event = readQueueItem(queueHead);
+  return true;
+}
+
+void popCoinEvent() {
+  if (queueCount == 0) return;
+  queueHead = (queueHead + 1) % QUEUE_MAX_ITEMS;
+  queueCount--;
+  saveQueueState();
+}
+
+bool dispatchCoinEvent(const CoinEvent &event, int &httpCodeOut) {
+  HTTPClient http;
+  String url = tabletServer + "?value=" + String(event.value) +
+               "&eventId=" + String(event.eventId) + "&source=" +
+               String(coinBridgeSource) + "&apiKey=" + String(coinBridgeApiKey);
+  http.begin(url);
+  httpCodeOut = http.GET();
+  http.end();
+  return httpCodeOut == 200;
+}
+
+void flushCoinQueue(bool force) {
+  if (queueCount == 0) return;
+  if (!force && millis() < nextQueueFlushAt) return;
+  if (WiFi.softAPgetStationNum() == 0) {
+    nextQueueFlushAt = millis() + queueBackoffMs;
+    return;
+  }
+
+  CoinEvent event;
+  if (!peekCoinEvent(event)) return;
+
+  int httpCode = -1;
+  if (dispatchCoinEvent(event, httpCode)) {
+    popCoinEvent();
+    queueBackoffMs = QUEUE_FLUSH_BACKOFF_BASE_MS;
+    nextQueueFlushAt = millis() + QUEUE_FLUSH_MIN_MS;
+    Serial.print("COIN_HTTP_OK:");
+    Serial.println(event.value);
+    return;
+  }
+
+  queueBackoffMs =
+      min(queueBackoffMs * 2, (unsigned long)QUEUE_FLUSH_BACKOFF_MAX_MS);
+  nextQueueFlushAt = millis() + queueBackoffMs;
+  Serial.print("WARN: Coin queue flush failed, code=");
+  Serial.print(httpCode);
+  Serial.print(", retry_in_ms=");
+  Serial.println(queueBackoffMs);
+}
+
 void handleRegisterRequest(NetworkClient &client, const String &body) {
   String postedIp = getFormValue(body, "ip");
   String postedPort = getFormValue(body, "port");
@@ -241,31 +405,18 @@ void IRAM_ATTR coinDetected() {
   }
 }
 
-// SEND COIN EVENT WITH RETRY
+// ENQUEUE COIN EVENT; FLUSH ROUTINE DELIVERS WITH RETRY/BACKOFF
 void sendCoinToTablet(int value) {
-  if (WiFi.softAPgetStationNum() == 0) {
-    Serial.println("WARN: No stations connected, coin dropped");
+  if (!enqueueCoinValue(uint8_t(value))) {
     return;
   }
 
-  HTTPClient http;
-  String url = tabletServer + "?value=" + String(value);
-  int lastCode = -1;
-
-  for (int i = 0; i < 3; i++) {
-    http.begin(url);
-    lastCode = http.GET();
-    http.end();
-    if (lastCode == 200) {
-      Serial.print("COIN_HTTP_OK:");
-      Serial.println(value);
-      return;
-    }
-    delay(200);
+  if (WiFi.softAPgetStationNum() == 0) {
+    Serial.println("WARN: No stations connected, queued coin event");
+    return;
   }
 
-  Serial.print("WARN: Coin event failed, last code=");
-  Serial.println(lastCode);
+  flushCoinQueue(true);
 }
 
 // DISPENSE
@@ -351,6 +502,9 @@ void setup() {
   digitalWrite(relayPin, LOW);
 
   Serial.begin(115200);
+  initCoinQueue();
+  Serial.print("COIN_QUEUE_RESTORED:");
+  Serial.println(queueCount);
 
   attachInterrupt(coinAcceptorPin, countPulse, FALLING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
@@ -381,6 +535,7 @@ void setup() {
 // LOOP
 void loop() {
   dnsServer.processNextRequest();
+  flushCoinQueue(false);
   byte tempCount;
   unsigned long tempLastPulse;
 

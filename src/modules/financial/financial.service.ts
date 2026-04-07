@@ -13,7 +13,15 @@ import {
   evaluateInkPreflight,
   getPrinterTelemetry,
   refreshPrinterTelemetry,
+  isCoinSlotLocked,
+  getCoinSlotLockOwnerId,
+  getPrinterFaultLock,
+  clearPrinterFaultLock,
 } from '@/services';
+import {
+  ESP32_COIN_BRIDGE_API_KEY,
+  ESP32_COIN_BRIDGE_SOURCE,
+} from '@/config/http.config';
 import { adminService } from '@/services/admin';
 import { settlementService } from '@/services/settlement';
 import { printFile, type PrintJobOptions } from '@/services/printer';
@@ -69,6 +77,7 @@ interface ConfirmPaymentBody {
 const LEGACY_UPLOAD_STAGING_DIR = path.resolve('uploads/staging/legacy');
 const ACCEPTED_COIN_VALUES = new Set([1, 5, 10, 20]);
 type CoinSource = 'test-ui' | 'esp32-http';
+const COIN_TELEMETRY_MAX_AGE_MS = 45_000;
 
 function buildTrustedTimeBlockedResponse(error: unknown): {
   code: 'TRUSTED_TIME_UNAVAILABLE';
@@ -214,10 +223,107 @@ async function deleteUploadByStoredFilename(
 export class FinancialService {
   constructor(private readonly deps: FinancialServiceDeps) {}
 
+  private getPrinterAvailabilityForCoin() {
+    const telemetry = getPrinterTelemetry();
+    const checkedAtMs = Date.parse(telemetry.lastCheckedAt);
+    const telemetryStale =
+      !Number.isFinite(checkedAtMs) ||
+      Date.now() - checkedAtMs > COIN_TELEMETRY_MAX_AGE_MS;
+    const printerStatusBlocked = BLOCKED_STATUSES.has(telemetry.status);
+    const faultLock = getPrinterFaultLock();
+
+    if (faultLock.active) {
+      const recovered =
+        !telemetryStale && telemetry.connected && !printerStatusBlocked;
+      if (recovered) {
+        clearPrinterFaultLock();
+      } else {
+        const reason = faultLock.status
+          ? `Printer fault lock active: ${faultLock.status}`
+          : `Printer fault lock active: ${faultLock.reason ?? 'Unknown fault'}`;
+        return {
+          telemetry,
+          printerBlocked: true,
+          reason,
+          faultLock,
+        };
+      }
+    }
+
+    const printerBlocked =
+      telemetryStale || !telemetry.connected || printerStatusBlocked;
+    const reason = telemetryStale
+      ? 'Printer telemetry is stale'
+      : !telemetry.connected
+        ? 'Printer not connected'
+        : `Printer status: ${telemetry.status}`;
+
+    return {
+      telemetry,
+      printerBlocked,
+      reason,
+      faultLock: null,
+    };
+  }
+
   private async creditCoinBalance(
     coinValue: number,
     source: CoinSource,
   ): Promise<number> {
+    if (isCoinSlotLocked()) {
+      this.deps.io.emit('coinRejected', {
+        value: coinValue,
+        reason: 'slot_locked',
+        printerStatus: null,
+        telemetryLastCheckedAt: null,
+        faultLock: null,
+      });
+      await adminService.appendAdminLog(
+        'coin_rejected_slot_locked',
+        'Coin rejected because coin slot is locked.',
+        {
+          source,
+          coinValue,
+          lockOwnerId: getCoinSlotLockOwnerId(),
+        },
+      );
+      return db.data!.balance;
+    }
+
+    const { telemetry, printerBlocked, reason, faultLock } =
+      this.getPrinterAvailabilityForCoin();
+    if (printerBlocked) {
+      this.deps.io.emit('coinRejected', {
+        value: coinValue,
+        reason,
+        printerStatus: telemetry.status,
+        telemetryLastCheckedAt: telemetry.lastCheckedAt,
+        faultLock: faultLock
+          ? {
+              source: faultLock.source,
+              reason: faultLock.reason,
+              status: faultLock.status,
+              lockedAt: faultLock.lockedAt,
+            }
+          : null,
+      });
+      await adminService.appendAdminLog(
+        'coin_rejected_printer_unavailable',
+        `Coin rejected: printer unavailable (${reason}).`,
+        {
+          source,
+          coinValue,
+          printerStatus: telemetry.status,
+          printerConnected: telemetry.connected,
+          telemetryLastCheckedAt: telemetry.lastCheckedAt,
+          faultLockSource: faultLock?.source ?? null,
+          faultLockReason: faultLock?.reason ?? null,
+          faultLockStatus: faultLock?.status ?? null,
+        },
+      );
+      return db.data!.balance;
+    }
+
     const trustedTime = getTrustedTimeStatus();
     if (
       trustedTime.enforceForFinancial &&
@@ -239,6 +345,7 @@ export class FinancialService {
       );
     }
 
+    await adminService.incrementCoinStats(coinValue);
     db.data!.balance += coinValue;
     await db.write();
 
@@ -284,7 +391,17 @@ export class FinancialService {
     req: Request,
     res: Response,
   ): Promise<Response | void> => {
-    const { value } = req.query as { value?: string | string[] };
+    const {
+      value,
+      eventId: queryEventId,
+      source: querySource,
+      apiKey: queryApiKey,
+    } = req.query as {
+      value?: string | string[];
+      eventId?: string | string[];
+      source?: string | string[];
+      apiKey?: string | string[];
+    };
     const rawValue = Array.isArray(value) ? value[0] : value;
     const coinValue = rawValue !== undefined ? Number(rawValue) : Number.NaN;
 
@@ -302,12 +419,98 @@ export class FinancialService {
         .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
     }
 
-    const balance = await this.creditCoinBalance(coinValue, 'esp32-http');
-    res.status(200).json({
-      ok: true,
-      coinValue,
-      balance,
-    });
+    const queryEventIdRaw = Array.isArray(queryEventId)
+      ? queryEventId[0]
+      : queryEventId;
+    const eventId = (req.get('x-coin-event-id') ?? queryEventIdRaw ?? '').trim();
+    if (!eventId) {
+      await adminService.appendAdminLog(
+        'coin_rejected_missing_event_id',
+        'ESP32 /coin rejected due to missing event ID.',
+        {
+          source: 'esp32-http',
+          coinValue,
+        },
+      );
+      return res.status(400).json({ error: 'Missing coin event ID' });
+    }
+
+    const querySourceRaw = Array.isArray(querySource)
+      ? querySource[0]
+      : querySource;
+    const source = (req.get('x-coin-source') ?? querySourceRaw ?? '').trim();
+    if (source !== ESP32_COIN_BRIDGE_SOURCE) {
+      await adminService.appendAdminLog(
+        'coin_rejected_invalid_source',
+        'ESP32 /coin rejected due to invalid source.',
+        {
+          source: source || null,
+          expectedSource: ESP32_COIN_BRIDGE_SOURCE,
+          coinValue,
+        },
+      );
+      return res.status(403).json({ error: 'Invalid coin source' });
+    }
+
+    const queryApiKeyRaw = Array.isArray(queryApiKey)
+      ? queryApiKey[0]
+      : queryApiKey;
+    const apiKey = (req.get('x-coin-api-key') ?? queryApiKeyRaw ?? '').trim();
+    if (!apiKey || apiKey !== ESP32_COIN_BRIDGE_API_KEY) {
+      await adminService.appendAdminLog(
+        'coin_rejected_auth_failed',
+        'ESP32 /coin rejected due to invalid API key.',
+        {
+          source,
+          coinValue,
+        },
+      );
+      return res.status(403).json({ error: 'Unauthorized coin source' });
+    }
+
+    const namespace = 'GET:/coin';
+    const idempotencyClaim = acquireIdempotencyKey(eventId, namespace);
+    if (idempotencyClaim.type === 'hit') {
+      res.status(200).json(idempotencyClaim.entry.response);
+      return;
+    }
+    if (idempotencyClaim.type === 'inflight') {
+      const entry = await idempotencyClaim.promise;
+      if (entry) {
+        res.status(entry.statusCode).json(entry.response);
+      } else {
+        res.status(200).json({
+          ok: true,
+          coinValue,
+          balance: db.data?.balance ?? 0,
+        });
+      }
+      return;
+    }
+
+    try {
+      const balance = await this.creditCoinBalance(coinValue, 'esp32-http');
+      const payload = {
+        ok: true,
+        coinValue,
+        balance,
+      };
+      storeIdempotencyKey(eventId, namespace, 200, payload);
+      res.status(200).json(payload);
+    } catch (error) {
+      releaseIdempotencyKey(eventId, namespace);
+      await adminService.appendAdminLog(
+        'coin_processing_failed',
+        'ESP32 /coin failed due to an unexpected server error.',
+        {
+          source,
+          coinValue,
+          eventId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      res.status(500).json({ error: 'Failed to process coin event' });
+    }
   };
 
   getPrintQuote = (req: Request, res: Response): Response => {
