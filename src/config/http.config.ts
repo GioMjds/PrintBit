@@ -48,6 +48,9 @@ export const ESP32_CAPTIVE_PORTAL_PATH =
   process.env.PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH ?? '/portal';
 export const ESP32_AP_BASE_URL =
   process.env.PRINTBIT_ESP32_AP_BASE_URL?.trim() || 'http://192.168.4.1';
+export const ESP32_REGISTER_TOKEN =
+  process.env.PRINTBIT_ESP32_REGISTER_TOKEN?.trim() ||
+  'printbit-register-token';
 export const ESP32_KIOSK_SUBNET_PREFIX =
   process.env.PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX?.trim() || '192.168.4.';
 /** Explicit kiosk IP on the ESP32 AP network (bypasses auto-detection). */
@@ -55,9 +58,17 @@ export const ESP32_KIOSK_IP =
   process.env.PRINTBIT_ESP32_KIOSK_IP?.trim() || undefined;
 export const ESP32_COIN_BRIDGE_SOURCE =
   process.env.PRINTBIT_ESP32_COIN_SOURCE?.trim() || 'esp32';
+const rawEsp32CoinBridgeApiKey =
+  process.env.PRINTBIT_ESP32_COIN_API_KEY?.trim() || '';
+if (NETWORK_PROVIDER === 'esp32' && rawEsp32CoinBridgeApiKey.length === 0) {
+  throw new Error(
+    'PRINTBIT_ESP32_COIN_API_KEY must be set when PRINTBIT_NETWORK_PROVIDER=esp32.',
+  );
+}
 export const ESP32_COIN_BRIDGE_API_KEY =
-  process.env.PRINTBIT_ESP32_COIN_API_KEY?.trim() ||
-  'printbit-coin-bridge-key';
+  rawEsp32CoinBridgeApiKey.length > 0
+    ? rawEsp32CoinBridgeApiKey
+    : 'printbit-coin-bridge-key';
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
 

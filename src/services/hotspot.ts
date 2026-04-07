@@ -10,6 +10,7 @@ import {
   HOTSPOT_AUTH_TYPE,
   ESP32_CAPTIVE_PORTAL_PATH,
   ESP32_AP_BASE_URL,
+  ESP32_REGISTER_TOKEN,
   ESP32_KIOSK_SUBNET_PREFIX,
   ESP32_KIOSK_IP,
   PORT,
@@ -167,6 +168,7 @@ async function registerKioskWithEsp32(): Promise<boolean> {
 
   const requestUrl = new URL(ESP32_REGISTER_ROUTE, `${ESP32_AP_BASE_URL}/`);
   const payload = new URLSearchParams({
+    token: ESP32_REGISTER_TOKEN,
     ip: kioskIp,
     port: String(PORT),
     path: ESP32_CAPTIVE_PORTAL_PATH,

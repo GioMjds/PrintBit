@@ -32,6 +32,7 @@ const IPAddress apSubnet(255, 255, 255, 0);
 const char *fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
 const char *fallbackPortalPath = "/portal";
+const char *kioskRegisterToken = "printbit-register-token";
 const char *coinBridgeSource = "esp32";
 const char *coinBridgeApiKey = "printbit-coin-bridge-key";
 
@@ -75,15 +76,18 @@ const uint8_t QUEUE_MAGIC = 0xC7;
 const uint16_t QUEUE_EEPROM_SIZE = 1024;
 const uint8_t QUEUE_MAX_ITEMS = 120;
 const uint16_t QUEUE_META_OFFSET = 0;
-const uint16_t QUEUE_ITEMS_OFFSET = 8;
+const uint16_t QUEUE_ITEMS_OFFSET = 16;
 const unsigned long QUEUE_FLUSH_MIN_MS = 120;
 const unsigned long QUEUE_FLUSH_BACKOFF_BASE_MS = 500;
 const unsigned long QUEUE_FLUSH_BACKOFF_MAX_MS = 10000;
+const int MAX_REGISTER_BODY_BYTES = 256;
 
 uint8_t queueHead = 0;
 uint8_t queueTail = 0;
 uint8_t queueCount = 0;
 uint32_t nextCoinEventId = 1;
+uint32_t owedCoinCredits = 0;
+bool coinAcceptorLocked = false;
 unsigned long nextQueueFlushAt = 0;
 unsigned long queueBackoffMs = QUEUE_FLUSH_BACKOFF_BASE_MS;
 
@@ -248,6 +252,8 @@ void saveQueueState() {
   EEPROM.update(QUEUE_META_OFFSET + 2, queueTail);
   EEPROM.update(QUEUE_META_OFFSET + 3, queueCount);
   writeUint32Eeprom(QUEUE_META_OFFSET + 4, nextCoinEventId);
+  writeUint32Eeprom(QUEUE_META_OFFSET + 8, owedCoinCredits);
+  EEPROM.update(QUEUE_META_OFFSET + 12, coinAcceptorLocked ? 1 : 0);
   EEPROM.commit();
 }
 
@@ -256,6 +262,8 @@ void resetQueueState() {
   queueTail = 0;
   queueCount = 0;
   nextCoinEventId = 1;
+  owedCoinCredits = 0;
+  coinAcceptorLocked = false;
   saveQueueState();
 }
 
@@ -270,6 +278,8 @@ void initCoinQueue() {
   queueTail = EEPROM.read(QUEUE_META_OFFSET + 2);
   queueCount = EEPROM.read(QUEUE_META_OFFSET + 3);
   nextCoinEventId = readUint32Eeprom(QUEUE_META_OFFSET + 4);
+  owedCoinCredits = readUint32Eeprom(QUEUE_META_OFFSET + 8);
+  coinAcceptorLocked = EEPROM.read(QUEUE_META_OFFSET + 12) == 1;
 
   const bool invalidState =
       queueHead >= QUEUE_MAX_ITEMS || queueTail >= QUEUE_MAX_ITEMS ||
@@ -279,9 +289,33 @@ void initCoinQueue() {
   }
 }
 
+void setCoinAcceptorLock(bool locked) {
+  coinAcceptorLocked = locked;
+  if (locked) {
+    detachInterrupt(coinAcceptorPin);
+  } else {
+    attachInterrupt(coinAcceptorPin, countPulse, FALLING);
+  }
+  saveQueueState();
+}
+
+void recordOwedCredit(uint8_t value) {
+  owedCoinCredits += value;
+  saveQueueState();
+  if (!coinAcceptorLocked) {
+    setCoinAcceptorLock(true);
+  }
+  Serial.print("ERROR: Coin queue overflow, owed_credit=");
+  Serial.println(owedCoinCredits);
+}
+
 bool enqueueCoinValue(uint8_t value) {
+  if (coinAcceptorLocked) {
+    recordOwedCredit(value);
+    return false;
+  }
   if (queueCount >= QUEUE_MAX_ITEMS) {
-    Serial.println("WARN: Coin queue full, dropping newest coin event");
+    recordOwedCredit(value);
     return false;
   }
   CoinEvent event;
@@ -349,12 +383,20 @@ void flushCoinQueue(bool force) {
 }
 
 void handleRegisterRequest(NetworkClient &client, const String &body) {
+  String postedToken = getFormValue(body, "token");
   String postedIp = getFormValue(body, "ip");
   String postedPort = getFormValue(body, "port");
   String postedPath = getFormValue(body, "path");
+  postedToken.trim();
   postedIp.trim();
   postedPort.trim();
   postedPath.trim();
+
+  if (postedToken.length() == 0 || postedToken != kioskRegisterToken) {
+    Serial.println("WARN: Unauthorized kiosk register attempt");
+    replyPlain(client, 401, "Unauthorized", "Invalid registration token");
+    return;
+  }
 
   if (postedIp.length() == 0 || !isValidIpv4Address(postedIp)) {
     replyPlain(client, 400, "Bad Request", "Missing or invalid ip");
@@ -470,9 +512,14 @@ void handleWifiRequest(NetworkClient &client) {
     }
   }
 
-  String body = readRequestBody(client, contentLength);
-
   if (method == "POST" && path == "/kiosk/register") {
+    if (contentLength <= 0 || contentLength > MAX_REGISTER_BODY_BYTES) {
+      replyPlain(client, 413, "Payload Too Large",
+                "Invalid registration payload size");
+      client.stop();
+      return;
+    }
+    String body = readRequestBody(client, contentLength);
     handleRegisterRequest(client, body);
     client.stop();
     return;
@@ -505,8 +552,15 @@ void setup() {
   initCoinQueue();
   Serial.print("COIN_QUEUE_RESTORED:");
   Serial.println(queueCount);
+  if (coinAcceptorLocked) {
+    setCoinAcceptorLock(true);
+    Serial.println("ERROR: Coin acceptor locked due to owed credit state");
+  } else {
+    attachInterrupt(coinAcceptorPin, countPulse, FALLING);
+  }
+  Serial.print("OWED_CREDIT_RESTORED:");
+  Serial.println(owedCoinCredits);
 
-  attachInterrupt(coinAcceptorPin, countPulse, FALLING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
 
   refreshTargets();

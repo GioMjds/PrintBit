@@ -1,10 +1,12 @@
 import type { Request, Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import type { Server } from 'socket.io';
 import {
   db,
+  type FinancialLedgerEntry,
   acquireIdempotencyKey,
   storeIdempotencyKey,
   releaseIdempotencyKey,
@@ -22,7 +24,9 @@ import {
   ESP32_COIN_BRIDGE_API_KEY,
   ESP32_COIN_BRIDGE_SOURCE,
 } from '@/config/http.config';
+import { getSqliteDb } from '@/core/database/sqlite-storage';
 import { adminService } from '@/services/admin';
+import { financialLedgerService } from '@/services/financial-ledger';
 import { settlementService } from '@/services/settlement';
 import { printFile, type PrintJobOptions } from '@/services/printer';
 import { monitorSpoolerJob } from '@/services/print-spooler';
@@ -30,7 +34,6 @@ import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-st
 import type { SessionStore, UploadedDocument } from '@/services/session';
 import { buildPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
-import { financialLedgerService } from '@/services/financial-ledger';
 import {
   checkpointRecoverySession,
   getSpoolerLifecycleRecord,
@@ -78,6 +81,43 @@ const LEGACY_UPLOAD_STAGING_DIR = path.resolve('uploads/staging/legacy');
 const ACCEPTED_COIN_VALUES = new Set([1, 5, 10, 20]);
 type CoinSource = 'test-ui' | 'esp32-http';
 const COIN_TELEMETRY_MAX_AGE_MS = 45_000;
+const COIN_BRIDGE_EVENTS_TABLE = 'coin_bridge_events';
+
+class CoinCreditRejectedError extends Error {
+  constructor(
+    readonly reason: 'slot_locked' | 'printer_unavailable',
+    readonly statusCode: number,
+    readonly retryable: boolean,
+    readonly details: Record<string, unknown>,
+  ) {
+    super(reason);
+    this.name = 'CoinCreditRejectedError';
+  }
+}
+
+function serializeLedgerHashPayload(entry: {
+  id: string;
+  timestamp: string;
+  eventType: 'coin_inserted';
+  amount: number;
+  referenceId: string | null;
+  meta: Record<string, string | number | boolean | null>;
+  previousHash: string | null;
+}): string {
+  return JSON.stringify({
+    id: entry.id,
+    timestamp: entry.timestamp,
+    eventType: entry.eventType,
+    amount: entry.amount,
+    referenceId: entry.referenceId,
+    meta: entry.meta,
+    previousHash: entry.previousHash,
+  });
+}
+
+function computeLedgerHash(payload: string): string {
+  return createHash('sha256').update(payload).digest('hex');
+}
 
 function buildTrustedTimeBlockedResponse(error: unknown): {
   code: 'TRUSTED_TIME_UNAVAILABLE';
@@ -223,6 +263,72 @@ async function deleteUploadByStoredFilename(
 export class FinancialService {
   constructor(private readonly deps: FinancialServiceDeps) {}
 
+  private incrementCoinStatsInMemory(coinValue: number): void {
+    switch (coinValue) {
+      case 1:
+        db.data!.coinStats.one += 1;
+        break;
+      case 5:
+        db.data!.coinStats.five += 1;
+        break;
+      case 10:
+        db.data!.coinStats.ten += 1;
+        break;
+      case 20:
+        db.data!.coinStats.twenty += 1;
+        break;
+      default:
+        break;
+    }
+  }
+
+  private buildCoinLedgerEntry(
+    coinValue: number,
+    source: CoinSource,
+  ): FinancialLedgerEntry {
+    const trusted = getTrustedTimestamp();
+    const id = randomUUID();
+    const previous = db.data!.financialLedger[0] ?? null;
+    const previousHash = previous?.hash ?? null;
+    const amount = Number.isFinite(coinValue) ? Number(coinValue.toFixed(2)) : 0;
+    const meta = {
+      source,
+      balance: db.data!.balance,
+    };
+    const hashPayload = serializeLedgerHashPayload({
+      id,
+      timestamp: trusted.timestamp,
+      eventType: 'coin_inserted',
+      amount,
+      referenceId: null,
+      meta,
+      previousHash,
+    });
+
+    return {
+      id,
+      timestamp: trusted.timestamp,
+      timestampMeta: trusted.meta,
+      eventType: 'coin_inserted',
+      amount,
+      referenceId: null,
+      meta,
+      previousHash,
+      hash: computeLedgerHash(hashPayload),
+    };
+  }
+
+  private ensureCoinBridgeEventsTable(sqliteDb: DatabaseSync): void {
+    sqliteDb.exec(`
+      CREATE TABLE IF NOT EXISTS ${COIN_BRIDGE_EVENTS_TABLE} (
+        event_id TEXT PRIMARY KEY,
+        coin_value INTEGER NOT NULL,
+        balance_after INTEGER NOT NULL,
+        processed_at TEXT NOT NULL
+      );
+    `);
+  }
+
   private getPrinterAvailabilityForCoin() {
     const telemetry = getPrinterTelemetry();
     const checkedAtMs = Date.parse(telemetry.lastCheckedAt);
@@ -269,6 +375,7 @@ export class FinancialService {
   private async creditCoinBalance(
     coinValue: number,
     source: CoinSource,
+    eventId?: string,
   ): Promise<number> {
     if (isCoinSlotLocked()) {
       this.deps.io.emit('coinRejected', {
@@ -287,7 +394,9 @@ export class FinancialService {
           lockOwnerId: getCoinSlotLockOwnerId(),
         },
       );
-      return db.data!.balance;
+      throw new CoinCreditRejectedError('slot_locked', 409, true, {
+        lockOwnerId: getCoinSlotLockOwnerId(),
+      });
     }
 
     const { telemetry, printerBlocked, reason, faultLock } =
@@ -321,7 +430,15 @@ export class FinancialService {
           faultLockStatus: faultLock?.status ?? null,
         },
       );
-      return db.data!.balance;
+      throw new CoinCreditRejectedError('printer_unavailable', 409, true, {
+        printerStatus: telemetry.status,
+        printerConnected: telemetry.connected,
+        telemetryLastCheckedAt: telemetry.lastCheckedAt,
+        faultLockSource: faultLock?.source ?? null,
+        faultLockReason: faultLock?.reason ?? null,
+        faultLockStatus: faultLock?.status ?? null,
+        rejectionReason: reason,
+      });
     }
 
     const trustedTime = getTrustedTimeStatus();
@@ -345,35 +462,72 @@ export class FinancialService {
       );
     }
 
-    await adminService.incrementCoinStats(coinValue);
-    db.data!.balance += coinValue;
-    await db.write();
+    const sqliteDb = getSqliteDb();
+    const normalizedEventId = eventId?.trim() ?? '';
+    const shouldPersistBridgeEvent =
+      source === 'esp32-http' && normalizedEventId.length > 0;
+    if (shouldPersistBridgeEvent) {
+      this.ensureCoinBridgeEventsTable(sqliteDb);
+    }
+
+    let balanceAfterCredit = db.data!.balance;
+    sqliteDb.exec('BEGIN IMMEDIATE');
+    try {
+      if (shouldPersistBridgeEvent) {
+        const existing = sqliteDb
+          .prepare(
+            `SELECT balance_after AS balanceAfter FROM ${COIN_BRIDGE_EVENTS_TABLE} WHERE event_id = ? LIMIT 1`,
+          )
+          .get(normalizedEventId) as { balanceAfter: number } | undefined;
+        if (existing) {
+          sqliteDb.exec('COMMIT');
+          return Number(existing.balanceAfter);
+        }
+      }
+
+      this.incrementCoinStatsInMemory(coinValue);
+      db.data!.balance += coinValue;
+      balanceAfterCredit = db.data!.balance;
+      const ledgerEntry = this.buildCoinLedgerEntry(coinValue, source);
+      db.data!.financialLedger.unshift(ledgerEntry);
+      await db.write();
+
+      if (shouldPersistBridgeEvent) {
+        sqliteDb
+          .prepare(
+            `INSERT INTO ${COIN_BRIDGE_EVENTS_TABLE} (event_id, coin_value, balance_after, processed_at)
+             VALUES (?, ?, ?, ?)`,
+          )
+          .run(
+            normalizedEventId,
+            coinValue,
+            balanceAfterCredit,
+            new Date().toISOString(),
+          );
+      }
+
+      sqliteDb.exec('COMMIT');
+    } catch (error) {
+      sqliteDb.exec('ROLLBACK');
+      throw error;
+    }
 
     await adminService.appendAdminLog(
       'coin_accepted',
       `${source === 'esp32-http' ? 'ESP32 bridge' : 'Test'} coin inserted: ${coinValue}`,
       {
         coinValue,
-        balance: db.data!.balance,
+        balance: balanceAfterCredit,
         source,
       },
     );
-    await financialLedgerService.append({
-      eventType: 'coin_inserted',
-      amount: coinValue,
-      meta: {
-        source,
-        balance: db.data!.balance,
-      },
-    });
-
-    this.deps.io.emit('balance', db.data!.balance);
+    this.deps.io.emit('balance', balanceAfterCredit);
     this.deps.io.emit('coinAccepted', {
       value: coinValue,
-      balance: db.data!.balance,
+      balance: balanceAfterCredit,
     });
 
-    return db.data!.balance;
+    return balanceAfterCredit;
   }
 
   getBalance = (_req: Request, res: Response): void => {
@@ -422,7 +576,11 @@ export class FinancialService {
     const queryEventIdRaw = Array.isArray(queryEventId)
       ? queryEventId[0]
       : queryEventId;
-    const eventId = (req.get('x-coin-event-id') ?? queryEventIdRaw ?? '').trim();
+    const eventId = (
+      req.get('x-coin-event-id') ??
+      queryEventIdRaw ??
+      ''
+    ).trim();
     if (!eventId) {
       await adminService.appendAdminLog(
         'coin_rejected_missing_event_id',
@@ -479,17 +637,19 @@ export class FinancialService {
       if (entry) {
         res.status(entry.statusCode).json(entry.response);
       } else {
-        res.status(200).json({
-          ok: true,
-          coinValue,
-          balance: db.data?.balance ?? 0,
-        });
+        res
+          .status(503)
+          .json({ error: 'Concurrent request failed. Please retry.' });
       }
       return;
     }
 
     try {
-      const balance = await this.creditCoinBalance(coinValue, 'esp32-http');
+      const balance = await this.creditCoinBalance(
+        coinValue,
+        'esp32-http',
+        eventId,
+      );
       const payload = {
         ok: true,
         coinValue,
@@ -499,6 +659,15 @@ export class FinancialService {
       res.status(200).json(payload);
     } catch (error) {
       releaseIdempotencyKey(eventId, namespace);
+      if (error instanceof CoinCreditRejectedError) {
+        res.status(error.statusCode).json({
+          error: 'Coin rejected',
+          reason: error.reason,
+          retryable: error.retryable,
+          details: error.details,
+        });
+        return;
+      }
       await adminService.appendAdminLog(
         'coin_processing_failed',
         'ESP32 /coin failed due to an unexpected server error.',
@@ -683,7 +852,29 @@ export class FinancialService {
         .status(400)
         .json({ error: 'Invalid coin value. Accepted: 1, 5, 10, 20' });
     }
-    const balance = await this.creditCoinBalance(coinValue, 'test-ui');
+    let balance: number;
+    try {
+      balance = await this.creditCoinBalance(coinValue, 'test-ui');
+    } catch (error) {
+      if (error instanceof CoinCreditRejectedError) {
+        return res.status(error.statusCode).json({
+          error: 'Coin rejected',
+          reason: error.reason,
+          retryable: error.retryable,
+          details: error.details,
+        });
+      }
+      await adminService.appendAdminLog(
+        'coin_processing_failed',
+        'Test coin failed due to an unexpected server error.',
+        {
+          source: 'test-ui',
+          coinValue,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return res.status(500).json({ error: 'Failed to process test coin' });
+    }
 
     res.json({
       ok: true,
@@ -1841,9 +2032,7 @@ export class FinancialService {
         }).catch((cleanupError) => {
           console.error(
             '[CONFIRM-PAYMENT] Fallback print upload cleanup failed:',
-            cleanupError instanceof Error
-              ? cleanupError.message
-              : cleanupError,
+            cleanupError instanceof Error ? cleanupError.message : cleanupError,
           );
         });
       }

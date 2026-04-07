@@ -159,10 +159,11 @@ Related env knobs:
 - `PRINTBIT_HOTSPOT_AUTH_TYPE` (derived from password by default: `nopass` when empty, `WPA` otherwise)
 - `PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH` (default `/portal`)
 - `PRINTBIT_ESP32_AP_BASE_URL` (default `http://192.168.4.1`) for kiosk registration endpoint
+- `PRINTBIT_ESP32_REGISTER_TOKEN` (default `printbit-register-token`) shared token for ESP32 `/kiosk/register`
 - `PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX` (default `192.168.4.`) to detect kiosk IP for ESP32 mode
 - `PRINTBIT_ESP32_KIOSK_IP` (optional) explicitly set the kiosk's IP on the ESP32 network (bypasses auto-detection)
 - `PRINTBIT_ESP32_COIN_SOURCE` (default `esp32`) expected source label for `/coin` bridge requests
-- `PRINTBIT_ESP32_COIN_API_KEY` (default `printbit-coin-bridge-key`) shared secret required by `/coin` bridge requests
+- `PRINTBIT_ESP32_COIN_API_KEY` (**required in `esp32` mode**) shared secret required by `/coin` bridge requests
 - `PRINTBIT_SERIAL_PORT` (optional) to pin the serial coin/hopper device when multiple COM ports are present
 
 Recommended `.env` for ESP32 mode:
@@ -175,6 +176,7 @@ PRINTBIT_HOTSPOT_AUTH_TYPE=WPA
 # Leave empty for dynamic kiosk IP registration (recommended)
 PRINTBIT_ESP32_KIOSK_IP=
 PRINTBIT_ESP32_AP_BASE_URL=http://192.168.4.1
+PRINTBIT_ESP32_REGISTER_TOKEN=printbit-register-token
 PRINTBIT_ESP32_COIN_SOURCE=esp32
 PRINTBIT_ESP32_COIN_API_KEY=printbit-coin-bridge-key
 ```
