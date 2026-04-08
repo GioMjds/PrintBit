@@ -102,21 +102,28 @@ function applyConsumablesForecast(summary: SummaryResponse): void {
     for (const supply of forecast.inkSupplies) {
       const item = document.createElement('li');
       item.className = 'consumables-item';
-      if (
-        supply.status === 'ok' &&
+      const isDepletionRisk =
         supply.daysRemaining !== null &&
-        supply.daysRemaining <= forecast.alertDaysThreshold
+        supply.daysRemaining <= forecast.alertDaysThreshold;
+      if (
+        supply.supplyStatus === 'low' ||
+        supply.supplyStatus === 'empty' ||
+        isDepletionRisk
       ) {
         item.classList.add('consumables-item--warn');
       }
 
       const name = document.createElement('span');
       name.className = 'consumables-item__name';
-      name.textContent = supply.name;
+      name.textContent = `${supply.printerName} • ${supply.name}`;
       const meta = document.createElement('span');
       meta.className = 'consumables-item__meta';
       const levelLabel =
-        supply.level === null ? 'unknown level' : `${supply.level.toFixed(0)}%`;
+        supply.level === null
+          ? supply.supplyStatus === 'low' || supply.supplyStatus === 'empty'
+            ? supply.supplyStatus
+            : 'level unavailable'
+          : `${supply.level.toFixed(0)}%`;
       meta.textContent = `${levelLabel} • ${formatDaysRemaining(supply.daysRemaining)}`;
 
       item.append(name, meta);

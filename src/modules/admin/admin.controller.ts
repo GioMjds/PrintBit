@@ -954,38 +954,41 @@ export class AdminController {
         .json({ error: 'Admin PIN must be at least 4 characters.' });
     }
 
+    const originalSettings = db.data!.settings;
+    const nextSettings = {
+      ...originalSettings,
+      pricing: { ...originalSettings.pricing },
+      kioskPreferences: { ...originalSettings.kioskPreferences },
+      inkMonitoring: { ...originalSettings.inkMonitoring },
+      consumablesForecasting: { ...originalSettings.consumablesForecasting },
+    };
+
     if (body.pricing) {
-      if (printPerPage !== undefined)
-        db.data!.settings.pricing.printPerPage = printPerPage;
-      if (copyPerPage !== undefined)
-        db.data!.settings.pricing.copyPerPage = copyPerPage;
-      if (scanDocument !== undefined)
-        db.data!.settings.pricing.scanDocument = scanDocument;
+      if (printPerPage !== undefined) nextSettings.pricing.printPerPage = printPerPage;
+      if (copyPerPage !== undefined) nextSettings.pricing.copyPerPage = copyPerPage;
+      if (scanDocument !== undefined) nextSettings.pricing.scanDocument = scanDocument;
       if (colorSurcharge !== undefined)
-        db.data!.settings.pricing.colorSurcharge = colorSurcharge;
+        nextSettings.pricing.colorSurcharge = colorSurcharge;
     }
 
     if (body.idleTimeoutSeconds !== undefined) {
-      db.data!.settings.idleTimeoutSeconds = Math.floor(
-        body.idleTimeoutSeconds,
-      );
+      nextSettings.idleTimeoutSeconds = Math.floor(body.idleTimeoutSeconds);
     }
 
     if (body.adminPin && body.adminPin.trim()) {
-      db.data!.settings.adminPin = await hashPassword(body.adminPin.trim());
+      nextSettings.adminPin = await hashPassword(body.adminPin.trim());
     }
 
     if (body.adminLocalOnly !== undefined) {
-      db.data!.settings.adminLocalOnly = Boolean(body.adminLocalOnly);
+      nextSettings.adminLocalOnly = Boolean(body.adminLocalOnly);
     }
 
     let refreshInkTelemetry = false;
     let refreshConsumablesAlerts = false;
     if (body.inkMonitoring) {
       const incoming = body.inkMonitoring;
-      const current = db.data!.settings.inkMonitoring;
+      const current = nextSettings.inkMonitoring;
       const next = { ...current };
-      const previousTargetPrinterName = current.targetPrinterName;
       if (incoming.enabled !== undefined) {
         if (typeof incoming.enabled !== 'boolean') {
           return res
@@ -1006,8 +1009,6 @@ export class AdminController {
         next.targetPrinterName = normalizeTargetPrinterName(
           incoming.targetPrinterName,
         );
-        refreshInkTelemetry =
-          previousTargetPrinterName !== next.targetPrinterName;
       }
       if (incoming.lowThresholdPercent !== undefined) {
         if (
@@ -1070,12 +1071,15 @@ export class AdminController {
         next.telemetryUnknownPolicy = incoming.telemetryUnknownPolicy;
       }
 
-      db.data!.settings.inkMonitoring = next;
+      nextSettings.inkMonitoring = next;
+      refreshInkTelemetry =
+        originalSettings.inkMonitoring.targetPrinterName !==
+        nextSettings.inkMonitoring.targetPrinterName;
     }
 
     if (body.consumablesForecasting) {
       const incoming = body.consumablesForecasting;
-      const current = db.data!.settings.consumablesForecasting;
+      const current = nextSettings.consumablesForecasting;
       const next = { ...current };
 
       if (incoming.enabled !== undefined) {
@@ -1150,14 +1154,28 @@ export class AdminController {
         });
       }
 
-      if (incoming.paperCurrentSheets !== undefined) {
+      if (
+        incoming.paperCurrentSheets !== undefined &&
+        next.paperCurrentSheets !==
+          originalSettings.consumablesForecasting.paperCurrentSheets
+      ) {
         next.paperRefillUpdatedAt = new Date().toISOString();
       }
 
-      db.data!.settings.consumablesForecasting = next;
-      refreshConsumablesAlerts = true;
+      nextSettings.consumablesForecasting = next;
+      refreshConsumablesAlerts =
+        originalSettings.consumablesForecasting.enabled !== next.enabled ||
+        originalSettings.consumablesForecasting.rollingWindowDays !==
+          next.rollingWindowDays ||
+        originalSettings.consumablesForecasting.alertDaysThreshold !==
+          next.alertDaysThreshold ||
+        originalSettings.consumablesForecasting.paperTrayCapacitySheets !==
+          next.paperTrayCapacitySheets ||
+        originalSettings.consumablesForecasting.paperCurrentSheets !==
+          next.paperCurrentSheets;
     }
 
+    db.data!.settings = nextSettings;
     await db.write();
     if (refreshConsumablesAlerts) {
       await this.consumablesService.evaluateAndPublishForecastAlerts();

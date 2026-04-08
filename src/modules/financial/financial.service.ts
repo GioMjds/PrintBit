@@ -1702,23 +1702,6 @@ export class FinancialService {
       return;
     }
 
-    sendResponse(200, {
-      ok: true,
-      transactionId,
-      chargedAmount: settlement.chargedAmount,
-      balance: settlement.remainingBalance,
-      earnings: settlement.earnings,
-      change: settlement.change,
-      print:
-        mode === 'print'
-          ? {
-              state: 'awaiting_spooler_terminal',
-              spoolerCorrelationKey,
-              jobDispatchedAt,
-            }
-          : undefined,
-    });
-
     const settledAmount = settlement.chargedAmount;
     const settledChangeState = settlement.change.state;
     const settledChangeRequested = settlement.change.requested;
@@ -1727,7 +1710,7 @@ export class FinancialService {
     const settledOwedChangeId = settlement.change.owedChangeId ?? null;
     const settledChangeMessage = settlement.change.message ?? null;
     const settledRemainingBalance = settlement.remainingBalance;
-    const appendConsumableUsageEvent = (eventMode: 'print' | 'copy'): void => {
+    function appendConsumableUsageEvent(eventMode: 'print' | 'copy'): void {
       const isPrintMode = eventMode === 'print';
       const selectedPages = isPrintMode
         ? Math.max(1, printQuotePages?.selectedPages ?? 1)
@@ -1758,7 +1741,36 @@ export class FinancialService {
         estimatedSheetsUsed,
         source: 'confirm-payment',
       });
-    };
+    }
+
+    if (mode === 'copy') {
+      try {
+        appendConsumableUsageEvent('copy');
+        await evaluateConsumablesForecastAlerts();
+      } catch (error) {
+        console.error(
+          '[CONFIRM-PAYMENT] Failed to persist copy consumable usage event.',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    sendResponse(200, {
+      ok: true,
+      transactionId,
+      chargedAmount: settlement.chargedAmount,
+      balance: settlement.remainingBalance,
+      earnings: settlement.earnings,
+      change: settlement.change,
+      print:
+        mode === 'print'
+          ? {
+              state: 'awaiting_spooler_terminal',
+              spoolerCorrelationKey,
+              jobDispatchedAt,
+            }
+          : undefined,
+    });
 
     void (async () => {
       const runAuditStep = async (
@@ -1778,12 +1790,6 @@ export class FinancialService {
       await runAuditStep('increment_job_stats', () =>
         adminService.incrementJobStats(mode),
       );
-
-      await runAuditStep('record_consumable_usage', async () => {
-        if (mode === 'print') return;
-        appendConsumableUsageEvent('copy');
-        await evaluateConsumablesForecastAlerts();
-      });
 
       await runAuditStep('payment_confirmed', () =>
         adminService.appendAdminLog('payment_confirmed', 'Payment confirmed.', {

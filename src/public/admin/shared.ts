@@ -71,8 +71,10 @@ export type SummaryResponse = {
       usageEventsConsidered: number;
     };
     inkSupplies: Array<{
+      printerName: string;
       name: string;
       status: 'ok' | 'insufficient_data' | 'telemetry_unavailable';
+      supplyStatus: 'ok' | 'low' | 'empty' | 'unknown';
       confidence: 'high' | 'medium' | 'low';
       level: number | null;
       avgDailyDrop: number | null;

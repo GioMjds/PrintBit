@@ -28,8 +28,10 @@ export interface PaperConsumableForecast {
 }
 
 export interface InkConsumableForecast {
+  printerName: string;
   name: string;
   status: ConsumableForecastStatus;
+  supplyStatus: 'ok' | 'low' | 'empty' | 'unknown';
   confidence: ForecastConfidence;
   level: number | null;
   avgDailyDrop: number;
@@ -114,8 +116,22 @@ function resolveLatestSupply(
   return candidate ?? null;
 }
 
-function toInkAlertFingerprint(name: string): string {
-  return `consumables-forecast:ink:${name.trim().toLowerCase().replace(/\s+/g, '-')}`;
+function normalizePrinterName(printerName: string | null | undefined): string {
+  if (typeof printerName !== 'string') return 'Unknown printer';
+  const trimmed = printerName.trim();
+  return trimmed.length > 0 ? trimmed : 'Unknown printer';
+}
+
+function toSupplyCompositeKey(printerName: string, supplyName: string): string {
+  return `${printerName.trim().toLowerCase()}:${supplyName.trim().toLowerCase()}`;
+}
+
+function toInkAlertFingerprint(printerName: string, supplyName: string): string {
+  const composite = toSupplyCompositeKey(printerName, supplyName).replace(
+    /\s+/g,
+    '-',
+  );
+  return `consumables-forecast:ink:${composite}`;
 }
 
 export class ConsumablesService {
@@ -160,7 +176,7 @@ export class ConsumablesService {
       ) {
         withinThresholdFlag = true;
         reasons.push(
-          `${supply.name} is projected to deplete in ${roundTo(supply.daysRemaining, 1)} day(s).`,
+          `${supply.printerName} / ${supply.name} is projected to deplete in ${roundTo(supply.daysRemaining, 1)} day(s).`,
         );
       }
     }
@@ -221,13 +237,13 @@ export class ConsumablesService {
     const activeRiskFingerprints = new Set<string>();
     const alertsEnabled = db.data!.settings.consumablesForecasting.enabled;
 
-    if (alertsEnabled) {
-      if (
-        forecast.paper.status === 'ok' &&
-        forecast.paper.daysRemaining !== null &&
-        forecast.paper.daysRemaining <= forecast.alertDaysThreshold
-      ) {
-        activeRiskFingerprints.add(paperFingerprint);
+    if (
+      forecast.paper.status === 'ok' &&
+      forecast.paper.daysRemaining !== null &&
+      forecast.paper.daysRemaining <= forecast.alertDaysThreshold
+    ) {
+      activeRiskFingerprints.add(paperFingerprint);
+      if (alertsEnabled) {
         await this.reportForecastIncidentIfNeeded({
           type: 'consumables_paper_depletion_forecast',
           source: 'consumables-forecast',
@@ -243,25 +259,31 @@ export class ConsumablesService {
           },
         });
       }
+    }
 
-      for (const supply of forecast.inkSupplies) {
-        if (
-          supply.status !== 'ok' ||
-          supply.daysRemaining === null ||
-          supply.daysRemaining > forecast.alertDaysThreshold
-        ) {
-          continue;
-        }
-        const supplyFingerprint = toInkAlertFingerprint(supply.name);
-        activeRiskFingerprints.add(supplyFingerprint);
+    for (const supply of forecast.inkSupplies) {
+      if (
+        supply.status !== 'ok' ||
+        supply.daysRemaining === null ||
+        supply.daysRemaining > forecast.alertDaysThreshold
+      ) {
+        continue;
+      }
+      const supplyFingerprint = toInkAlertFingerprint(
+        supply.printerName,
+        supply.name,
+      );
+      activeRiskFingerprints.add(supplyFingerprint);
+      if (alertsEnabled) {
         await this.reportForecastIncidentIfNeeded({
           type: 'consumables_ink_depletion_forecast',
           source: 'consumables-forecast',
           category: 'printer',
           severity: 'warning',
-          message: `${supply.name} is projected to deplete in ${supply.daysRemaining.toFixed(1)} day(s).`,
+          message: `${supply.printerName} / ${supply.name} is projected to deplete in ${supply.daysRemaining.toFixed(1)} day(s).`,
           fingerprint: supplyFingerprint,
           context: {
+            printerName: supply.printerName,
             supplyName: supply.name,
             level: supply.level ?? null,
             avgDailyDrop: supply.avgDailyDrop,
@@ -286,11 +308,6 @@ export class ConsumablesService {
     context: Record<string, string | number | boolean | null>;
   }): Promise<void> {
     const fingerprint = input.fingerprint.trim().toLowerCase();
-    const existing = db.data!.anomalyIncidents.find(
-      (entry) =>
-        entry.status !== 'resolved' && entry.fingerprint === fingerprint,
-    );
-    if (existing) return;
     await anomalyService.report({
       ...input,
       fingerprint,
@@ -363,20 +380,43 @@ export class ConsumablesService {
     snapshotsAscending: ConsumableInkSnapshotEntry[],
   ): InkConsumableForecast[] {
     if (snapshotsAscending.length === 0) return [];
-    const latestSnapshot = snapshotsAscending[snapshotsAscending.length - 1];
-    const supplyNames = new Set<string>();
+    const suppliesByCompositeKey = new Map<
+      string,
+      { printerName: string; supplyName: string }
+    >();
     for (const snapshot of snapshotsAscending) {
+      const printerName = normalizePrinterName(snapshot.printerName);
       for (const supply of snapshot.supplies) {
-        if (supply.name.trim()) supplyNames.add(supply.name.trim());
+        const supplyName = supply.name.trim();
+        if (!supplyName) continue;
+        const compositeKey = toSupplyCompositeKey(printerName, supplyName);
+        if (!suppliesByCompositeKey.has(compositeKey)) {
+          suppliesByCompositeKey.set(compositeKey, {
+            printerName,
+            supplyName,
+          });
+        }
       }
     }
 
     const results: InkConsumableForecast[] = [];
-    for (const name of supplyNames) {
-      const latestSupply = resolveLatestSupply(latestSnapshot, name);
-      const points = snapshotsAscending
+    for (const { printerName, supplyName } of suppliesByCompositeKey.values()) {
+      const relevantSnapshots = snapshotsAscending.filter((snapshot) => {
+        if (normalizePrinterName(snapshot.printerName) !== printerName) {
+          return false;
+        }
+        return snapshot.supplies.some(
+          (supply) =>
+            supply.name.trim().toLowerCase() === supplyName.toLowerCase(),
+        );
+      });
+      if (relevantSnapshots.length === 0) continue;
+
+      const latestSnapshot = relevantSnapshots[relevantSnapshots.length - 1];
+      const latestSupply = resolveLatestSupply(latestSnapshot, supplyName);
+      const points = relevantSnapshots
         .map((snapshot) => {
-          const supply = resolveLatestSupply(snapshot, name);
+          const supply = resolveLatestSupply(snapshot, supplyName);
           if (!supply) return null;
           if (supply.level === null) return null;
           if (!snapshot.inkTelemetryAvailable) return null;
@@ -437,8 +477,10 @@ export class ConsumablesService {
       });
 
       results.push({
-        name,
+        printerName,
+        name: supplyName,
         status,
+        supplyStatus: latestSupply?.status ?? 'unknown',
         confidence,
         level: latestLevel,
         avgDailyDrop,
@@ -448,7 +490,11 @@ export class ConsumablesService {
       });
     }
 
-    return results.sort((a, b) => a.name.localeCompare(b.name));
+    return results.sort((a, b) => {
+      const byPrinter = a.printerName.localeCompare(b.printerName);
+      if (byPrinter !== 0) return byPrinter;
+      return a.name.localeCompare(b.name);
+    });
   }
 }
 

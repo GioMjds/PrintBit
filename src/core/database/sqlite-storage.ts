@@ -17,8 +17,18 @@ const SQLITE_FILE_PATH = path.resolve('printbit.sqlite');
 const LOWDB_IMPORT_META_KEY = 'lowdb_import_v1';
 const SCHEMA_SNAPSHOT_META_KEY = 'schema_snapshot_v1';
 const RUNTIME_STATE_ROW_ID = 1;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const CONSUMABLE_TELEMETRY_RETENTION_DAYS = parsePositiveIntEnv(
+  process.env.PRINTBIT_CONSUMABLE_TELEMETRY_RETENTION_DAYS,
+  90,
+);
+const CONSUMABLE_TELEMETRY_CLEANUP_INTERVAL_MS = parsePositiveIntEnv(
+  process.env.PRINTBIT_CONSUMABLE_TELEMETRY_CLEANUP_INTERVAL_MS,
+  60 * 60 * 1000,
+);
 
 let sqliteDb: DatabaseSync | null = null;
+let lastConsumableTelemetryCleanupAtMs = 0;
 
 type ListFeedbackOptions = {
   status?: FeedbackEntry['status'];
@@ -122,6 +132,13 @@ function parseJsonValue<T>(value: unknown): T | undefined {
   } catch {
     return undefined;
   }
+}
+
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
 }
 
 function normalizeTrustedTimestampMeta(
@@ -1377,6 +1394,7 @@ export class ConsumablesSqliteStore {
         entry.estimatedSheetsUsed,
         entry.source,
       );
+    this.maybePruneOldTelemetryRows();
   }
 
   listUsageEventsSince(sinceTimestamp: string): ConsumableUsageEventEntry[] {
@@ -1425,6 +1443,7 @@ export class ConsumablesSqliteStore {
         entry.inkTelemetryReason,
         JSON.stringify(entry.supplies),
       );
+    this.maybePruneOldTelemetryRows();
   }
 
   listInkSnapshotsSince(sinceTimestamp: string): ConsumableInkSnapshotEntry[] {
@@ -1465,6 +1484,34 @@ export class ConsumablesSqliteStore {
       normalizedCurrentSheets;
     db.data!.settings.consumablesForecasting.paperRefillUpdatedAt = updatedAt;
     await db.write();
+  }
+
+  private maybePruneOldTelemetryRows(): void {
+    const nowMs = Date.now();
+    if (
+      nowMs - lastConsumableTelemetryCleanupAtMs <
+      CONSUMABLE_TELEMETRY_CLEANUP_INTERVAL_MS
+    ) {
+      return;
+    }
+    lastConsumableTelemetryCleanupAtMs = nowMs;
+    const cutoffIso = new Date(
+      nowMs - CONSUMABLE_TELEMETRY_RETENTION_DAYS * DAY_MS,
+    ).toISOString();
+    try {
+      const db = getSqliteDb();
+      db.prepare(
+        'DELETE FROM consumable_usage_events WHERE timestamp < ?',
+      ).run(cutoffIso);
+      db.prepare(
+        'DELETE FROM consumable_ink_snapshots WHERE timestamp < ?',
+      ).run(cutoffIso);
+    } catch (error) {
+      console.warn(
+        '[SQLITE-STORAGE] Failed to prune old consumables telemetry rows.',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 
   private toUsageEventEntry(
