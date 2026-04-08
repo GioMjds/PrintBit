@@ -69,6 +69,18 @@ export const ESP32_COIN_BRIDGE_API_KEY =
   rawEsp32CoinBridgeApiKey.length > 0
     ? rawEsp32CoinBridgeApiKey
     : 'printbit-coin-bridge-key';
+const relaxedBridgeTokens = new Set(['1', 'true', 'yes', 'on']);
+export const ESP32_COIN_BRIDGE_RELAXED_MODE = relaxedBridgeTokens.has(
+  process.env.PRINTBIT_ESP32_COIN_BRIDGE_RELAXED?.trim().toLowerCase() ?? '',
+);
+const alwaysAcceptCoinTokens = new Set(['1', 'true', 'yes', 'on']);
+const defaultAlwaysAcceptCoinsToken =
+  NETWORK_PROVIDER === 'esp32' ? 'true' : 'false';
+export const ESP32_ALWAYS_ACCEPT_COINS = alwaysAcceptCoinTokens.has(
+  process.env.PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS
+    ?.trim()
+    .toLowerCase() ?? defaultAlwaysAcceptCoinsToken,
+);
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
 

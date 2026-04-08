@@ -22,7 +22,7 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
-import { NETWORK_PROVIDER } from '@/config/http.config';
+import { NETWORK_PROVIDER, ESP32_ALWAYS_ACCEPT_COINS } from '@/config/http.config';
 import { getTrustedTimeStatus } from './time-source';
 import {
   markWatchdogHeartbeat,
@@ -809,25 +809,62 @@ async function attemptSerialConnection(
       };
 
       const creditResolvedCoin = async (coinValue: number, token: string) => {
+        const bypassMachineSafetyChecks =
+          NETWORK_PROVIDER === 'esp32' && ESP32_ALWAYS_ACCEPT_COINS;
         if (coinSlotLocked) {
-          console.warn(
-            `[SERIAL] ⚠ Coin rejected — slot is locked (balance sufficient). Token: "${token}"`,
-          );
-          socketIo?.emit('coinRejected', {
-            value: coinValue,
-            reason: 'slot_locked',
-            printerStatus: null,
-            telemetryLastCheckedAt: null,
-            faultLock: null,
-          });
-          return;
+          if (bypassMachineSafetyChecks) {
+            console.warn(
+              `[SERIAL] ⚠ Slot lock is active, but coin will be accepted in always-accept mode. Token: "${token}"`,
+            );
+            await adminService.appendAdminLog(
+              'coin_accept_override_slot_locked',
+              'Serial coin accepted while slot lock is active because always-accept mode is enabled.',
+              {
+                token,
+                coinValue,
+                lockOwnerId: coinSlotLockOwnerId,
+              },
+            );
+          } else {
+            console.warn(
+              `[SERIAL] ⚠ Coin rejected — slot is locked (balance sufficient). Token: "${token}"`,
+            );
+            socketIo?.emit('coinRejected', {
+              value: coinValue,
+              reason: 'slot_locked',
+              printerStatus: null,
+              telemetryLastCheckedAt: null,
+              faultLock: null,
+            });
+            return;
+          }
         }
 
         const { telemetry, printerBlocked, reason, faultLock } =
           getPrinterAvailability();
         if (printerBlocked) {
-          rejectCoinCredit(token, coinValue, reason, telemetry, faultLock);
-          return;
+          if (bypassMachineSafetyChecks) {
+            console.warn(
+              `[SERIAL] ⚠ Printer gate is blocked (${reason}), but coin will be accepted in always-accept mode. Token: "${token}"`,
+            );
+            await adminService.appendAdminLog(
+              'coin_accept_override_printer_unavailable',
+              `Serial coin accepted while printer gate is blocked (${reason}) because always-accept mode is enabled.`,
+              {
+                token,
+                coinValue,
+                printerStatus: telemetry.status,
+                printerConnected: telemetry.connected,
+                telemetryLastCheckedAt: telemetry.lastCheckedAt,
+                faultLockSource: faultLock?.source ?? null,
+                faultLockReason: faultLock?.reason ?? null,
+                faultLockStatus: faultLock?.status ?? null,
+              },
+            );
+          } else {
+            rejectCoinCredit(token, coinValue, reason, telemetry, faultLock);
+            return;
+          }
         }
 
         const trustedTime = getTrustedTimeStatus();
@@ -994,13 +1031,12 @@ async function attemptSerialConnection(
         if (tryHandleHopperResponse(rawLine)) return;
 
         console.log(`[SERIAL] Raw data: "${rawLine}"`);
-        if (NETWORK_PROVIDER === 'esp32' && /^\d+$/.test(token)) {
-          console.log(
-            `[SERIAL] Ignoring numeric serial token in ESP32 mode: "${token}"`,
-          );
-          return;
-        }
         if (!/^\d+$/.test(token)) return;
+        if (NETWORK_PROVIDER === 'esp32') {
+          console.log(
+            `[SERIAL] Processing numeric serial token in ESP32 mode: "${token}"`,
+          );
+        }
         void processToken(token);
       });
     });

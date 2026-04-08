@@ -164,6 +164,8 @@ Related env knobs:
 - `PRINTBIT_ESP32_KIOSK_IP` (optional) explicitly set the kiosk's IP on the ESP32 network (bypasses auto-detection)
 - `PRINTBIT_ESP32_COIN_SOURCE` (default `esp32`) expected source label for `/coin` bridge requests
 - `PRINTBIT_ESP32_COIN_API_KEY` (**required in `esp32` mode**) shared secret required by `/coin` bridge requests
+- `PRINTBIT_ESP32_COIN_BRIDGE_RELAXED` (default `false`) simulation-only compatibility mode for legacy `/coin?value=` requests
+- `PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS` (default `true` in `esp32` mode) accepts coin credits even when slot/printer safety gates are active so kiosk UI balance keeps updating from ESP32 events
 - `PRINTBIT_SERIAL_PORT` (optional) to pin the serial coin/hopper device when multiple COM ports are present
 
 Recommended `.env` for ESP32 mode:
@@ -179,6 +181,10 @@ PRINTBIT_ESP32_AP_BASE_URL=http://192.168.4.1
 PRINTBIT_ESP32_REGISTER_TOKEN=printbit-register-token
 PRINTBIT_ESP32_COIN_SOURCE=esp32
 PRINTBIT_ESP32_COIN_API_KEY=printbit-coin-bridge-key
+# Keep strict mode for production and real ESP32 bridging
+PRINTBIT_ESP32_COIN_BRIDGE_RELAXED=false
+# Optional: keep ESP32 coin credits flowing even during printer/slot safety gates
+PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS=true
 ```
 
 Security note: `printbit-coin-bridge-key` is a predictable example value. Before deployment, generate a unique secret for `PRINTBIT_ESP32_COIN_API_KEY`, set it in the kiosk environment, and use the same value in ESP32 firmware (`coinBridgeApiKey` in `esp32-captive-portal.ino`). Do not reuse the default key in production.
@@ -187,7 +193,11 @@ Recommended `.ino` alignment for ESP32 mode:
 
 - AP SSID: `PrintBit`
 - AP password: `printbit123`
-- Captive redirect target should be dynamically updated via ESP32 `POST /kiosk/register` (kiosk server sends its current IP)
+- Handle kiosk registration on `POST /kiosk/register` (ESP32 listens on port `80`)
+- Forward coins with secure `/coin` request headers:
+  - `x-coin-source: esp32`
+  - `x-coin-api-key: <same as PRINTBIT_ESP32_COIN_API_KEY>`
+  - `x-coin-event-id: <unique id per coin>`
 
 Troubleshooting mobile captive onboarding:
 

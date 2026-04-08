@@ -1,49 +1,30 @@
-/*
- * ESP32 Captive Portal for PrintBit Kiosk
- *
- * Captive redirect helper for PrintBit.
- * Keep KIOSK_IP in sync with the kiosk URL host used by PrintBit server.
- *
- * SETUP:
- * 1. Flash this to ESP32
- * 2. Connect kiosk's WiFi adapter to "PrintBit" network (password: printbit123)
- * 3. Kiosk will get IP 192.168.4.2
- * 4. Phones connect to same network and get redirected to kiosk
- */
-
 #include <WiFi.h>
-#include <DNSServer.h>
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 #include <HTTPClient.h>
-#include <EEPROM.h>
 
 #define coinAcceptorPin 4
 #define hopperSensorPin 5
 #define relayPin 18
 
-const char *ssid = "PrintBit";
-const char *password = "printbit123";
+const char* ssid = "PrintBit";
+const char* password = "printbit123";
 
-const IPAddress apIp(192, 168, 4, 1);
-const IPAddress apGateway(192, 168, 4, 1);
-const IPAddress apSubnet(255, 255, 255, 0);
-
-const char *fallbackKioskIp = "192.168.4.2";
+const char* fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
-const char *fallbackPortalPath = "/portal";
-const char *kioskRegisterToken = "printbit-register-token";
-const char *coinBridgeSource = "esp32";
-const char *coinBridgeApiKey = "printbit-coin-bridge-key";
+const char* fallbackKioskPortalPath = "/portal";
+const char* kioskRegisterToken = "printbit-register-token";
+const char* coinBridgeSource = "esp32";
+const char* coinBridgeApiKey = "printbit-coin-bridge-key";
 
 NetworkServer server(80);
-DNSServer dnsServer;
 
 String kioskIp = fallbackKioskIp;
 uint16_t kioskPort = fallbackKioskPort;
-String kioskPortalPath = fallbackPortalPath;
+String kioskPortalPath = fallbackKioskPortalPath;
 String kioskPortalUrl = "";
 String tabletServer = "";
+bool hasKioskRegistration = false;
 
 // COIN ACCEPTOR
 volatile byte pulseCount = 0;
@@ -52,6 +33,7 @@ volatile unsigned long lastPulseMillis = 0;
 
 const unsigned long debounceMicros = 3000;
 const unsigned long coinTimeout = 200;
+const int maxCoinSendAttempts = 3;
 
 // HOPPER
 volatile int coinDispensed = 0;
@@ -67,31 +49,9 @@ bool dispenseDone = false;
 unsigned long hopperStartTime = 0;
 const unsigned long hopperMaxRunTime = 15000;
 
-struct CoinEvent {
-  uint32_t eventId;
-  uint8_t value;
-};
+unsigned long coinEventCounter = 0;
 
-const uint8_t QUEUE_MAGIC = 0xC7;
-const uint16_t QUEUE_EEPROM_SIZE = 1024;
-const uint8_t QUEUE_MAX_ITEMS = 120;
-const uint16_t QUEUE_META_OFFSET = 0;
-const uint16_t QUEUE_ITEMS_OFFSET = 16;
-const unsigned long QUEUE_FLUSH_MIN_MS = 120;
-const unsigned long QUEUE_FLUSH_BACKOFF_BASE_MS = 500;
-const unsigned long QUEUE_FLUSH_BACKOFF_MAX_MS = 10000;
-const int MAX_REGISTER_BODY_BYTES = 256;
-
-uint8_t queueHead = 0;
-uint8_t queueTail = 0;
-uint8_t queueCount = 0;
-uint32_t nextCoinEventId = 1;
-uint32_t owedCoinCredits = 0;
-bool coinAcceptorLocked = false;
-unsigned long nextQueueFlushAt = 0;
-unsigned long queueBackoffMs = QUEUE_FLUSH_BACKOFF_BASE_MS;
-
-String decodeUrlComponent(const String &value) {
+String decodeUrlComponent(const String& value) {
   String decoded = "";
   for (size_t i = 0; i < value.length(); i++) {
     char c = value.charAt(i);
@@ -100,16 +60,14 @@ String decodeUrlComponent(const String &value) {
       continue;
     }
     if (c == '%' && i + 2 < value.length()) {
-      char h1 = value.charAt(i + 1);
-      char h2 = value.charAt(i + 2);
       auto hexToInt = [](char h) -> int {
         if (h >= '0' && h <= '9') return h - '0';
         if (h >= 'A' && h <= 'F') return h - 'A' + 10;
         if (h >= 'a' && h <= 'f') return h - 'a' + 10;
         return -1;
       };
-      int hi = hexToInt(h1);
-      int lo = hexToInt(h2);
+      int hi = hexToInt(value.charAt(i + 1));
+      int lo = hexToInt(value.charAt(i + 2));
       if (hi >= 0 && lo >= 0) {
         decoded += char((hi << 4) | lo);
         i += 2;
@@ -121,7 +79,7 @@ String decodeUrlComponent(const String &value) {
   return decoded;
 }
 
-String getFormValue(const String &body, const String &key) {
+String getFormValue(const String& body, const String& key) {
   String needle = key + "=";
   int start = body.indexOf(needle);
   if (start < 0) return "";
@@ -131,13 +89,13 @@ String getFormValue(const String &body, const String &key) {
   return decodeUrlComponent(body.substring(start, end));
 }
 
-String normalizedPortalPath(const String &pathCandidate) {
+String normalizedPath(const String& pathCandidate) {
   if (pathCandidate.length() == 0) return "/portal";
   if (pathCandidate.charAt(0) == '/') return pathCandidate;
   return "/" + pathCandidate;
 }
 
-bool isValidIpv4Address(const String &ip) {
+bool isValidIpv4Address(const String& ip) {
   int start = 0;
   for (int i = 0; i < 4; i++) {
     int dot = i < 3 ? ip.indexOf('.', start) : ip.length();
@@ -155,18 +113,13 @@ bool isValidIpv4Address(const String &ip) {
 }
 
 void refreshTargets() {
-  kioskPortalPath = normalizedPortalPath(kioskPortalPath);
+  kioskPortalPath = normalizedPath(kioskPortalPath);
   kioskPortalUrl =
       "http://" + kioskIp + ":" + String(kioskPort) + kioskPortalPath;
   tabletServer = "http://" + kioskIp + ":" + String(kioskPort) + "/coin";
 }
 
-bool isCaptiveProbePath(const String &path) {
-  return path == "/hotspot-detect.html" || path == "/generate_204" ||
-         path == "/ncsi.txt" || path == "/connecttest.txt";
-}
-
-void replyRedirect(NetworkClient &client, const String &location) {
+void replyRedirect(NetworkClient& client, const String& location) {
   client.println("HTTP/1.1 302 Found");
   client.print("Location: ");
   client.println(location);
@@ -175,8 +128,11 @@ void replyRedirect(NetworkClient &client, const String &location) {
   client.println();
 }
 
-void replyPlain(NetworkClient &client, int statusCode, const String &statusText,
-                const String &body) {
+void replyPlain(
+    NetworkClient& client,
+    int statusCode,
+    const String& statusText,
+    const String& body) {
   client.print("HTTP/1.1 ");
   client.print(statusCode);
   client.print(" ");
@@ -189,7 +145,7 @@ void replyPlain(NetworkClient &client, int statusCode, const String &statusText,
   client.print(body);
 }
 
-bool parseRequestLine(const String &requestLine, String &method, String &path) {
+bool parseRequestLine(const String& requestLine, String& method, String& path) {
   int firstSpace = requestLine.indexOf(' ');
   if (firstSpace <= 0) return false;
   int secondSpace = requestLine.indexOf(' ', firstSpace + 1);
@@ -199,11 +155,11 @@ bool parseRequestLine(const String &requestLine, String &method, String &path) {
   return method.length() > 0 && path.length() > 0;
 }
 
-String readRequestBody(NetworkClient &client, int contentLength) {
+String readRequestBody(NetworkClient& client, int contentLength) {
   if (contentLength <= 0) return "";
   String body = "";
   unsigned long start = millis();
-  while ((int)body.length() < contentLength && millis() - start < 1200) {
+  while ((int)body.length() < contentLength && millis() - start < 1500) {
     while (client.available() && (int)body.length() < contentLength) {
       body += char(client.read());
     }
@@ -212,177 +168,90 @@ String readRequestBody(NetworkClient &client, int contentLength) {
   return body;
 }
 
-uint16_t queueItemOffset(uint8_t index) {
-  return QUEUE_ITEMS_OFFSET + uint16_t(index) * 5;
+bool isCaptiveProbePath(const String& path) {
+  return path == "/hotspot-detect.html" || path == "/generate_204" ||
+      path == "/ncsi.txt" || path == "/connecttest.txt";
 }
 
-uint32_t readUint32Eeprom(uint16_t offset) {
-  uint32_t v = 0;
-  v |= uint32_t(EEPROM.read(offset));
-  v |= uint32_t(EEPROM.read(offset + 1)) << 8;
-  v |= uint32_t(EEPROM.read(offset + 2)) << 16;
-  v |= uint32_t(EEPROM.read(offset + 3)) << 24;
-  return v;
+String buildCoinEventId() {
+  coinEventCounter++;
+  return String((uint32_t)esp_random(), HEX) + "-" + String(millis()) + "-" +
+      String(coinEventCounter);
 }
 
-void writeUint32Eeprom(uint16_t offset, uint32_t value) {
-  EEPROM.update(offset, uint8_t(value & 0xFF));
-  EEPROM.update(offset + 1, uint8_t((value >> 8) & 0xFF));
-  EEPROM.update(offset + 2, uint8_t((value >> 16) & 0xFF));
-  EEPROM.update(offset + 3, uint8_t((value >> 24) & 0xFF));
-}
-
-CoinEvent readQueueItem(uint8_t index) {
-  const uint16_t offset = queueItemOffset(index);
-  CoinEvent event;
-  event.eventId = readUint32Eeprom(offset);
-  event.value = EEPROM.read(offset + 4);
-  return event;
-}
-
-void writeQueueItem(uint8_t index, const CoinEvent &event) {
-  const uint16_t offset = queueItemOffset(index);
-  writeUint32Eeprom(offset, event.eventId);
-  EEPROM.update(offset + 4, event.value);
-}
-
-void saveQueueState() {
-  EEPROM.update(QUEUE_META_OFFSET, QUEUE_MAGIC);
-  EEPROM.update(QUEUE_META_OFFSET + 1, queueHead);
-  EEPROM.update(QUEUE_META_OFFSET + 2, queueTail);
-  EEPROM.update(QUEUE_META_OFFSET + 3, queueCount);
-  writeUint32Eeprom(QUEUE_META_OFFSET + 4, nextCoinEventId);
-  writeUint32Eeprom(QUEUE_META_OFFSET + 8, owedCoinCredits);
-  EEPROM.update(QUEUE_META_OFFSET + 12, coinAcceptorLocked ? 1 : 0);
-  EEPROM.commit();
-}
-
-void resetQueueState() {
-  queueHead = 0;
-  queueTail = 0;
-  queueCount = 0;
-  nextCoinEventId = 1;
-  owedCoinCredits = 0;
-  coinAcceptorLocked = false;
-  saveQueueState();
-}
-
-void initCoinQueue() {
-  EEPROM.begin(QUEUE_EEPROM_SIZE);
-  if (EEPROM.read(QUEUE_META_OFFSET) != QUEUE_MAGIC) {
-    resetQueueState();
-    return;
+void logCoinSendFailure(const String& classification, int code, const String& body) {
+  Serial.print("coin_send_failed:");
+  Serial.print(classification);
+  Serial.print(":code=");
+  Serial.print(code);
+  if (body.length() > 0) {
+    Serial.print(":body=");
+    Serial.print(body);
   }
-
-  queueHead = EEPROM.read(QUEUE_META_OFFSET + 1);
-  queueTail = EEPROM.read(QUEUE_META_OFFSET + 2);
-  queueCount = EEPROM.read(QUEUE_META_OFFSET + 3);
-  nextCoinEventId = readUint32Eeprom(QUEUE_META_OFFSET + 4);
-  owedCoinCredits = readUint32Eeprom(QUEUE_META_OFFSET + 8);
-  coinAcceptorLocked = EEPROM.read(QUEUE_META_OFFSET + 12) == 1;
-
-  const bool invalidState =
-      queueHead >= QUEUE_MAX_ITEMS || queueTail >= QUEUE_MAX_ITEMS ||
-      queueCount > QUEUE_MAX_ITEMS || nextCoinEventId == 0;
-  if (invalidState) {
-    resetQueueState();
-  }
+  Serial.println();
 }
 
-void setCoinAcceptorLock(bool locked) {
-  coinAcceptorLocked = locked;
-  if (locked) {
-    detachInterrupt(coinAcceptorPin);
-  } else {
-    attachInterrupt(coinAcceptorPin, countPulse, FALLING);
-  }
-  saveQueueState();
-}
-
-void recordOwedCredit(uint8_t value) {
-  owedCoinCredits += value;
-  saveQueueState();
-  if (!coinAcceptorLocked) {
-    setCoinAcceptorLock(true);
-  }
-  Serial.print("ERROR: Coin queue overflow, owed_credit=");
-  Serial.println(owedCoinCredits);
-}
-
-bool enqueueCoinValue(uint8_t value) {
-  if (coinAcceptorLocked) {
-    recordOwedCredit(value);
-    return false;
-  }
-  if (queueCount >= QUEUE_MAX_ITEMS) {
-    recordOwedCredit(value);
-    return false;
-  }
-  CoinEvent event;
-  event.eventId = nextCoinEventId++;
-  event.value = value;
-  writeQueueItem(queueTail, event);
-  queueTail = (queueTail + 1) % QUEUE_MAX_ITEMS;
-  queueCount++;
-  saveQueueState();
-  return true;
-}
-
-bool peekCoinEvent(CoinEvent &event) {
-  if (queueCount == 0) return false;
-  event = readQueueItem(queueHead);
-  return true;
-}
-
-void popCoinEvent() {
-  if (queueCount == 0) return;
-  queueHead = (queueHead + 1) % QUEUE_MAX_ITEMS;
-  queueCount--;
-  saveQueueState();
-}
-
-bool dispatchCoinEvent(const CoinEvent &event, int &httpCodeOut) {
-  HTTPClient http;
-  String url = tabletServer + "?value=" + String(event.value) +
-               "&eventId=" + String(event.eventId) + "&source=" +
-               String(coinBridgeSource) + "&apiKey=" + String(coinBridgeApiKey);
-  http.begin(url);
-  httpCodeOut = http.GET();
-  http.end();
-  return httpCodeOut == 200;
-}
-
-void flushCoinQueue(bool force) {
-  if (queueCount == 0) return;
-  if (!force && millis() < nextQueueFlushAt) return;
+void sendCoinToTablet(int value) {
   if (WiFi.softAPgetStationNum() == 0) {
-    nextQueueFlushAt = millis() + queueBackoffMs;
+    logCoinSendFailure("network_unreachable_no_station", 0, "");
+    return;
+  }
+  if (tabletServer.length() == 0) {
+    logCoinSendFailure("not_registered", 0, "");
     return;
   }
 
-  CoinEvent event;
-  if (!peekCoinEvent(event)) return;
+  const String eventId = buildCoinEventId();
+  const String url =
+      tabletServer + "?value=" + String(value) + "&eventId=" + eventId;
 
-  int httpCode = -1;
-  if (dispatchCoinEvent(event, httpCode)) {
-    popCoinEvent();
-    queueBackoffMs = QUEUE_FLUSH_BACKOFF_BASE_MS;
-    nextQueueFlushAt = millis() + QUEUE_FLUSH_MIN_MS;
-    Serial.print("COIN_HTTP_OK:");
-    Serial.println(event.value);
-    return;
+  for (int attempt = 1; attempt <= maxCoinSendAttempts; attempt++) {
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("x-coin-source", coinBridgeSource);
+    http.addHeader("x-coin-api-key", coinBridgeApiKey);
+    http.addHeader("x-coin-event-id", eventId);
+    int code = http.GET();
+    String body = http.getString();
+    http.end();
+
+    if (code == 200) {
+      Serial.print("coin_sent_ok:eventId=");
+      Serial.print(eventId);
+      Serial.print(":value=");
+      Serial.println(value);
+      return;
+    }
+    if (code == 409) {
+      logCoinSendFailure("coin_rejected_409", code, body);
+      return;
+    }
+    if (code == 400) {
+      logCoinSendFailure("validation_failed", code, body);
+      return;
+    }
+    if (code == 401 || code == 403) {
+      logCoinSendFailure("auth_failed", code, body);
+      return;
+    }
+    if (code > 0 && code < 500) {
+      logCoinSendFailure("request_rejected", code, body);
+      return;
+    }
+
+    if (attempt >= maxCoinSendAttempts) {
+      if (code < 0) {
+        logCoinSendFailure("network_unreachable", code, body);
+      } else {
+        logCoinSendFailure("server_error", code, body);
+      }
+      return;
+    }
+    delay(200 * attempt);
   }
-
-  queueBackoffMs =
-      min(queueBackoffMs * 2, (unsigned long)QUEUE_FLUSH_BACKOFF_MAX_MS);
-  nextQueueFlushAt = millis() + queueBackoffMs;
-  Serial.print("WARN: Coin queue flush failed, code=");
-  Serial.print(httpCode);
-  Serial.print(", retry_in_ms=");
-  Serial.println(queueBackoffMs);
 }
 
-void handleRegisterRequest(NetworkClient &client, const String &body) {
+void handleRegisterRequest(NetworkClient& client, const String& body) {
   String postedToken = getFormValue(body, "token");
   String postedIp = getFormValue(body, "ip");
   String postedPort = getFormValue(body, "port");
@@ -393,94 +262,37 @@ void handleRegisterRequest(NetworkClient &client, const String &body) {
   postedPath.trim();
 
   if (postedToken.length() == 0 || postedToken != kioskRegisterToken) {
-    Serial.println("WARN: Unauthorized kiosk register attempt");
     replyPlain(client, 401, "Unauthorized", "Invalid registration token");
+    Serial.println("kiosk_register_failed:unauthorized");
     return;
   }
-
   if (postedIp.length() == 0 || !isValidIpv4Address(postedIp)) {
     replyPlain(client, 400, "Bad Request", "Missing or invalid ip");
+    Serial.println("kiosk_register_failed:invalid_ip");
     return;
   }
 
   int parsedPort = postedPort.toInt();
-  if (parsedPort <= 0 || parsedPort > 65535) parsedPort = fallbackKioskPort;
+  if (parsedPort <= 0 || parsedPort > 65535) {
+    parsedPort = fallbackKioskPort;
+  }
 
   kioskIp = postedIp;
   kioskPort = uint16_t(parsedPort);
-  kioskPortalPath = normalizedPortalPath(postedPath);
+  kioskPortalPath = normalizedPath(postedPath);
+  hasKioskRegistration = true;
   refreshTargets();
 
-  Serial.print("KIOSK_IP:");
-  Serial.println(kioskIp);
-  Serial.print("KIOSK_PORT:");
-  Serial.println(kioskPort);
-  Serial.print("KIOSK_PORTAL_URL:");
+  Serial.print("kiosk_registered:coin_target=");
+  Serial.println(tabletServer);
+  Serial.print("kiosk_registered:portal_target=");
   Serial.println(kioskPortalUrl);
 
   replyPlain(client, 200, "OK", "registered");
 }
 
-// INTERRUPTS
-void IRAM_ATTR countPulse() {
-  unsigned long nowMicros = micros();
-
-  if (nowMicros - lastPulseMicros > debounceMicros) {
-    if (pulseCount < 8) pulseCount++;
-    lastPulseMicros = nowMicros;
-    lastPulseMillis = millis();
-  }
-}
-
-void IRAM_ATTR coinDetected() {
-  unsigned long now = millis();
-
-  if (now - lastCoinTime > hopperDebounce) {
-    coinDispensed++;
-    lastCoinTime = now;
-
-    if (dispensing && coinDispensed >= targetCoins) {
-      digitalWrite(relayPin, LOW);
-      dispensing = false;
-      dispenseDone = true;
-    }
-  }
-}
-
-// ENQUEUE COIN EVENT; FLUSH ROUTINE DELIVERS WITH RETRY/BACKOFF
-void sendCoinToTablet(int value) {
-  if (!enqueueCoinValue(uint8_t(value))) {
-    return;
-  }
-
-  if (WiFi.softAPgetStationNum() == 0) {
-    Serial.println("WARN: No stations connected, queued coin event");
-    return;
-  }
-
-  flushCoinQueue(true);
-}
-
-// DISPENSE
-void startDispense(int coins) {
-  if (dispensing) return;
-  if (coins <= 0 || coins > 50) return;
-
-  targetCoins = coins;
-  coinDispensed = 0;
-  dispensing = true;
-  dispenseDone = false;
-
-  hopperStartTime = millis();
-
-  digitalWrite(relayPin, HIGH);
-
-  Serial.print("START ");
-  Serial.println(targetCoins);
-}
-
-void handleWifiRequest(NetworkClient &client) {
-  client.setTimeout(200);
+void handleWifiRequest(NetworkClient& client) {
+  client.setTimeout(250);
   String requestLine = client.readStringUntil('\r');
   client.readStringUntil('\n');
   if (requestLine.length() == 0) {
@@ -512,10 +324,9 @@ void handleWifiRequest(NetworkClient &client) {
     }
   }
 
-  if (method == "POST" && path == "/kiosk/register") {
-    if (contentLength <= 0 || contentLength > MAX_REGISTER_BODY_BYTES) {
-      replyPlain(client, 413, "Payload Too Large",
-                "Invalid registration payload size");
+  if (method == "POST" && path.startsWith("/kiosk/register")) {
+    if (contentLength <= 0 || contentLength > 512) {
+      replyPlain(client, 413, "Payload Too Large", "Invalid payload size");
       client.stop();
       return;
     }
@@ -540,6 +351,49 @@ void handleWifiRequest(NetworkClient &client) {
   client.stop();
 }
 
+// INTERRUPTS
+void IRAM_ATTR countPulse() {
+  unsigned long nowMicros = micros();
+
+  if (nowMicros - lastPulseMicros > debounceMicros) {
+    if (pulseCount < 8) pulseCount++;
+    lastPulseMicros = nowMicros;
+    lastPulseMillis = millis();
+  }
+}
+
+void IRAM_ATTR coinDetected() {
+  unsigned long now = millis();
+
+  if (now - lastCoinTime > hopperDebounce) {
+    coinDispensed++;
+    lastCoinTime = now;
+
+    if (dispensing && coinDispensed >= targetCoins) {
+      digitalWrite(relayPin, LOW);
+      dispensing = false;
+      dispenseDone = true;
+    }
+  }
+}
+
+// DISPENSE
+void startDispense(int coins) {
+  if (dispensing) return;
+  if (coins <= 0 || coins > 50) return;
+
+  targetCoins = coins;
+  coinDispensed = 0;
+  dispensing = true;
+  dispenseDone = false;
+  hopperStartTime = millis();
+
+  digitalWrite(relayPin, HIGH);
+
+  Serial.print("START ");
+  Serial.println(targetCoins);
+}
+
 // SETUP
 void setup() {
   pinMode(coinAcceptorPin, INPUT_PULLUP);
@@ -549,36 +403,19 @@ void setup() {
   digitalWrite(relayPin, LOW);
 
   Serial.begin(115200);
-  initCoinQueue();
-  Serial.print("COIN_QUEUE_RESTORED:");
-  Serial.println(queueCount);
-  if (coinAcceptorLocked) {
-    setCoinAcceptorLock(true);
-    Serial.println("ERROR: Coin acceptor locked due to owed credit state");
-  } else {
-    attachInterrupt(coinAcceptorPin, countPulse, FALLING);
-  }
-  Serial.print("OWED_CREDIT_RESTORED:");
-  Serial.println(owedCoinCredits);
 
+  attachInterrupt(coinAcceptorPin, countPulse, FALLING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
 
   refreshTargets();
-
-  if (!WiFi.softAPConfig(apIp, apGateway, apSubnet)) {
-    Serial.println("WARN: softAPConfig failed, using default AP network settings");
-  }
-  WiFi.softAP(ssid, password);
-  dnsServer.start(53, "*", WiFi.softAPIP());
+  WiFi.softAP(ssid, password, 1, 0);
 
   Serial.println("AP Started");
   Serial.print("AP_IP:");
   Serial.println(WiFi.softAPIP());
-  Serial.print("KIOSK_IP:");
-  Serial.println(kioskIp);
-  Serial.print("KIOSK_PORT:");
-  Serial.println(kioskPort);
-  Serial.print("KIOSK_PORTAL_URL:");
+  Serial.print("coin_target:");
+  Serial.println(tabletServer);
+  Serial.print("portal_target:");
   Serial.println(kioskPortalUrl);
 
   server.begin();
@@ -588,8 +425,6 @@ void setup() {
 
 // LOOP
 void loop() {
-  dnsServer.processNextRequest();
-  flushCoinQueue(false);
   byte tempCount;
   unsigned long tempLastPulse;
 
@@ -608,7 +443,7 @@ void loop() {
     else if (tempCount == 7) value = 20;
 
     if (value > 0) {
-      Serial.print("COIN_PULSE:");
+      Serial.print("coin_pulse:");
       Serial.println(value);
       sendCoinToTablet(value);
     }
@@ -643,5 +478,11 @@ void loop() {
   if (dispenseDone) {
     Serial.println("DONE");
     dispenseDone = false;
+  }
+
+  static unsigned long lastRegistrationStatusAt = 0;
+  if (!hasKioskRegistration && millis() - lastRegistrationStatusAt > 15000) {
+    lastRegistrationStatusAt = millis();
+    Serial.println("kiosk_register_pending:waiting_for_post");
   }
 }

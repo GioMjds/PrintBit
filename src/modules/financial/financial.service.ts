@@ -23,7 +23,9 @@ import {
 } from '@/services';
 import {
   ESP32_COIN_BRIDGE_API_KEY,
+  ESP32_COIN_BRIDGE_RELAXED_MODE,
   ESP32_COIN_BRIDGE_SOURCE,
+  ESP32_ALWAYS_ACCEPT_COINS,
 } from '@/config/http.config';
 import {
   getSqliteDb,
@@ -383,68 +385,99 @@ export class FinancialService {
     source: CoinSource,
     eventId?: string,
   ): Promise<number> {
+    const bypassMachineSafetyChecks =
+      source === 'esp32-http' && ESP32_ALWAYS_ACCEPT_COINS;
     if (isCoinSlotLocked()) {
-      this.deps.io.emit('coinRejected', {
-        value: coinValue,
-        reason: 'slot_locked',
-        printerStatus: null,
-        telemetryLastCheckedAt: null,
-        faultLock: null,
-      });
-      await adminService.appendAdminLog(
-        'coin_rejected_slot_locked',
-        'Coin rejected because coin slot is locked.',
-        {
-          source,
-          coinValue,
+      if (bypassMachineSafetyChecks) {
+        await adminService.appendAdminLog(
+          'coin_accept_override_slot_locked',
+          'ESP32 coin accepted while slot lock is active because always-accept mode is enabled.',
+          {
+            source,
+            coinValue,
+            lockOwnerId: getCoinSlotLockOwnerId(),
+          },
+        );
+      } else {
+        this.deps.io.emit('coinRejected', {
+          value: coinValue,
+          reason: 'slot_locked',
+          printerStatus: null,
+          telemetryLastCheckedAt: null,
+          faultLock: null,
+        });
+        await adminService.appendAdminLog(
+          'coin_rejected_slot_locked',
+          'Coin rejected because coin slot is locked.',
+          {
+            source,
+            coinValue,
+            lockOwnerId: getCoinSlotLockOwnerId(),
+          },
+        );
+        throw new CoinCreditRejectedError('slot_locked', 409, true, {
           lockOwnerId: getCoinSlotLockOwnerId(),
-        },
-      );
-      throw new CoinCreditRejectedError('slot_locked', 409, true, {
-        lockOwnerId: getCoinSlotLockOwnerId(),
-      });
+        });
+      }
     }
 
     const { telemetry, printerBlocked, reason, faultLock } =
       this.getPrinterAvailabilityForCoin();
     if (printerBlocked) {
-      this.deps.io.emit('coinRejected', {
-        value: coinValue,
-        reason,
-        printerStatus: telemetry.status,
-        telemetryLastCheckedAt: telemetry.lastCheckedAt,
-        faultLock: faultLock
-          ? {
-              source: faultLock.source,
-              reason: faultLock.reason,
-              status: faultLock.status,
-              lockedAt: faultLock.lockedAt,
-            }
-          : null,
-      });
-      await adminService.appendAdminLog(
-        'coin_rejected_printer_unavailable',
-        `Coin rejected: printer unavailable (${reason}).`,
-        {
-          source,
-          coinValue,
+      if (bypassMachineSafetyChecks) {
+        await adminService.appendAdminLog(
+          'coin_accept_override_printer_unavailable',
+          `ESP32 coin accepted while printer gate is blocked (${reason}) because always-accept mode is enabled.`,
+          {
+            source,
+            coinValue,
+            printerStatus: telemetry.status,
+            printerConnected: telemetry.connected,
+            telemetryLastCheckedAt: telemetry.lastCheckedAt,
+            faultLockSource: faultLock?.source ?? null,
+            faultLockReason: faultLock?.reason ?? null,
+            faultLockStatus: faultLock?.status ?? null,
+          },
+        );
+      } else {
+        this.deps.io.emit('coinRejected', {
+          value: coinValue,
+          reason,
+          printerStatus: telemetry.status,
+          telemetryLastCheckedAt: telemetry.lastCheckedAt,
+          faultLock: faultLock
+            ? {
+                source: faultLock.source,
+                reason: faultLock.reason,
+                status: faultLock.status,
+                lockedAt: faultLock.lockedAt,
+              }
+            : null,
+        });
+        await adminService.appendAdminLog(
+          'coin_rejected_printer_unavailable',
+          `Coin rejected: printer unavailable (${reason}).`,
+          {
+            source,
+            coinValue,
+            printerStatus: telemetry.status,
+            printerConnected: telemetry.connected,
+            telemetryLastCheckedAt: telemetry.lastCheckedAt,
+            faultLockSource: faultLock?.source ?? null,
+            faultLockReason: faultLock?.reason ?? null,
+            faultLockStatus: faultLock?.status ?? null,
+          },
+        );
+        throw new CoinCreditRejectedError('printer_unavailable', 409, true, {
           printerStatus: telemetry.status,
           printerConnected: telemetry.connected,
           telemetryLastCheckedAt: telemetry.lastCheckedAt,
           faultLockSource: faultLock?.source ?? null,
           faultLockReason: faultLock?.reason ?? null,
           faultLockStatus: faultLock?.status ?? null,
-        },
-      );
-      throw new CoinCreditRejectedError('printer_unavailable', 409, true, {
-        printerStatus: telemetry.status,
-        printerConnected: telemetry.connected,
-        telemetryLastCheckedAt: telemetry.lastCheckedAt,
-        faultLockSource: faultLock?.source ?? null,
-        faultLockReason: faultLock?.reason ?? null,
-        faultLockStatus: faultLock?.status ?? null,
-        rejectionReason: reason,
-      });
+          rejectionReason: reason,
+        });
+      }
     }
 
     const trustedTime = getTrustedTimeStatus();
@@ -595,12 +628,12 @@ export class FinancialService {
     const queryEventIdRaw = Array.isArray(queryEventId)
       ? queryEventId[0]
       : queryEventId;
-    const eventId = (
+    let eventId = (
       req.get('x-coin-event-id') ??
       queryEventIdRaw ??
       ''
     ).trim();
-    if (!eventId) {
+    if (!eventId && !ESP32_COIN_BRIDGE_RELAXED_MODE) {
       await adminService.appendAdminLog(
         'coin_rejected_missing_event_id',
         'ESP32 /coin rejected due to missing event ID.',
@@ -611,12 +644,24 @@ export class FinancialService {
       );
       return res.status(400).json({ error: 'Missing coin event ID' });
     }
+    if (!eventId) {
+      eventId = `sim-${randomUUID()}`;
+      await adminService.appendAdminLog(
+        'coin_relaxed_mode_event_id_generated',
+        'ESP32 /coin accepted in relaxed mode with generated event ID.',
+        {
+          source: 'esp32-http',
+          coinValue,
+          generatedEventId: eventId,
+        },
+      );
+    }
 
     const querySourceRaw = Array.isArray(querySource)
       ? querySource[0]
       : querySource;
     const source = (req.get('x-coin-source') ?? querySourceRaw ?? '').trim();
-    if (source !== ESP32_COIN_BRIDGE_SOURCE) {
+    if (!ESP32_COIN_BRIDGE_RELAXED_MODE && source !== ESP32_COIN_BRIDGE_SOURCE) {
       await adminService.appendAdminLog(
         'coin_rejected_invalid_source',
         'ESP32 /coin rejected due to invalid source.',
@@ -628,13 +673,15 @@ export class FinancialService {
       );
       return res.status(403).json({ error: 'Invalid coin source' });
     }
+    const normalizedSource =
+      source.length > 0 ? source : ESP32_COIN_BRIDGE_SOURCE;
 
-    if (queryApiKey !== undefined) {
+    if (!ESP32_COIN_BRIDGE_RELAXED_MODE && queryApiKey !== undefined) {
       await adminService.appendAdminLog(
         'coin_rejected_api_key_in_query',
         'ESP32 /coin rejected because API key was sent in query string.',
         {
-          source,
+          source: normalizedSource,
           coinValue,
           eventId,
         },
@@ -645,16 +692,30 @@ export class FinancialService {
     }
 
     const apiKey = (req.get('x-coin-api-key') ?? '').trim();
-    if (!apiKey || apiKey !== ESP32_COIN_BRIDGE_API_KEY) {
+    if (
+      !ESP32_COIN_BRIDGE_RELAXED_MODE &&
+      (!apiKey || apiKey !== ESP32_COIN_BRIDGE_API_KEY)
+    ) {
       await adminService.appendAdminLog(
         'coin_rejected_auth_failed',
         'ESP32 /coin rejected due to invalid API key.',
         {
-          source,
+          source: normalizedSource,
           coinValue,
         },
       );
       return res.status(403).json({ error: 'Unauthorized coin source' });
+    }
+    if (ESP32_COIN_BRIDGE_RELAXED_MODE) {
+      await adminService.appendAdminLog(
+        'coin_relaxed_mode_accept',
+        'ESP32 /coin accepted in relaxed compatibility mode.',
+        {
+          source: normalizedSource,
+          coinValue,
+          eventId,
+        },
+      );
     }
 
     const namespace = 'GET:/coin';
@@ -703,7 +764,7 @@ export class FinancialService {
         'coin_processing_failed',
         'ESP32 /coin failed due to an unexpected server error.',
         {
-          source,
+          source: normalizedSource,
           coinValue,
           eventId,
           error: error instanceof Error ? error.message : String(error),
