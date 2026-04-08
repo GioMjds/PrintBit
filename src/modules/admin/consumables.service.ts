@@ -352,12 +352,13 @@ export class ConsumablesService {
       input.rollingWindowDays > 0
         ? roundTo(totalSheetsUsed / input.rollingWindowDays, 3)
         : 0;
-    const usageEventsConsidered = byDay.size;
+    const usageEventsConsidered = input.usageEvents.length;
+    const usageDaysConsidered = byDay.size;
     const status: ConsumableForecastStatus =
       avgDailyUse > 0 ? 'ok' : 'insufficient_data';
     const confidence = estimatePaperConfidence(
       input.rollingWindowDays,
-      usageEventsConsidered,
+      usageDaysConsidered,
     );
     const daysRemaining =
       avgDailyUse > 0 ? roundTo(input.currentSheets / avgDailyUse, 2) : null;
@@ -403,6 +404,10 @@ export class ConsumablesService {
 
     const results: InkConsumableForecast[] = [];
     for (const { printerName, supplyName } of suppliesByCompositeKey.values()) {
+      const printerSnapshots = snapshotsAscending.filter(
+        (snapshot) => normalizePrinterName(snapshot.printerName) === printerName,
+      );
+      if (printerSnapshots.length === 0) continue;
       const relevantSnapshots = snapshotsAscending.filter((snapshot) => {
         if (normalizePrinterName(snapshot.printerName) !== printerName) {
           return false;
@@ -414,7 +419,7 @@ export class ConsumablesService {
       });
       if (relevantSnapshots.length === 0) continue;
 
-      const latestSnapshot = relevantSnapshots[relevantSnapshots.length - 1];
+      const latestSnapshot = printerSnapshots[printerSnapshots.length - 1];
       const latestSupply = resolveLatestSupply(latestSnapshot, supplyName);
       const points = relevantSnapshots
         .map((snapshot) => {
