@@ -1447,6 +1447,26 @@ export class ConsumablesSqliteStore {
     return rows.map((row) => this.toInkSnapshotEntry(row));
   }
 
+  async updatePaperRefill(
+    nextCapacity: number,
+    nextCurrentSheets: number,
+    updatedAt: string,
+  ): Promise<void> {
+    const normalizedCapacity = Math.max(1, Math.floor(nextCapacity));
+    const normalizedCurrentSheets = Math.max(
+      0,
+      Math.min(Math.floor(nextCurrentSheets), normalizedCapacity),
+    );
+    getSqliteDb();
+    const { db } = await import('./db');
+    db.data!.settings.consumablesForecasting.paperTrayCapacitySheets =
+      normalizedCapacity;
+    db.data!.settings.consumablesForecasting.paperCurrentSheets =
+      normalizedCurrentSheets;
+    db.data!.settings.consumablesForecasting.paperRefillUpdatedAt = updatedAt;
+    await db.write();
+  }
+
   private toUsageEventEntry(
     row: Record<string, unknown>,
   ): ConsumableUsageEventEntry {

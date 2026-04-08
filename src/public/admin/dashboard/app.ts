@@ -62,7 +62,10 @@ function applyConsumablesForecast(summary: SummaryResponse): void {
     if (forecastPaperDays) forecastPaperDays.textContent = '--';
     if (forecastPaperStock) forecastPaperStock.textContent = '--';
     if (forecastPaperStatus) forecastPaperStatus.textContent = 'Unavailable';
-    if (forecastAlert) forecastAlert.textContent = 'Consumables forecast is unavailable.';
+    if (forecastAlert) {
+      forecastAlert.textContent = 'Consumables forecast is unavailable.';
+      forecastAlert.classList.remove('consumables-alert--active');
+    }
     if (forecastInkList)
       forecastInkList.innerHTML =
         '<li class="consumables-item consumables-item--muted">No ink forecast data available.</li>';

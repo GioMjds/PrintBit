@@ -7,6 +7,7 @@ import {
   setWatchdogComponentState,
 } from './watchdog-health';
 import { consumablesStore } from '@/core/database/sqlite-storage';
+import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -672,6 +673,9 @@ async function runRefreshCycle(): Promise<PrinterTelemetry> {
         });
       }
       await db.write();
+      if (next.connected) {
+        await evaluateConsumablesForecastAlerts();
+      }
     } catch (err) {
       console.warn(
         '[PRINTER-STATUS] Failed to persist telemetry history:',

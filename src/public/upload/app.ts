@@ -88,14 +88,17 @@ let countdownHandle: number | null = null;
 let isSessionUnavailable = false;
 
 function getOrCreateUploadClientId(): string {
-  const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
-  if (existing && existing.trim().length > 0) return existing;
-
   const generated =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+  try {
+    const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (existing && existing.trim().length > 0) return existing;
+    window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+  } catch {
+    return generated;
+  }
   return generated;
 }
 
@@ -798,9 +801,15 @@ function detectCaptivePortalWebview(): boolean {
     'standalone' in navigator && (navigator as { standalone?: boolean }).standalone === true;
   
   // Check for limited features typical of captive webviews
+  let hasStorageAccess = false;
+  try {
+    hasStorageAccess = typeof window.localStorage !== 'undefined';
+  } catch {
+    hasStorageAccess = false;
+  }
   const hasLimitedFeatures =
-    !window.indexedDB || 
-    !window.localStorage ||
+    !window.indexedDB ||
+    !hasStorageAccess ||
     typeof FileReader === 'undefined';
   
   // Chrome Custom Tabs and similar can work, but captive webviews often have restrictions
@@ -847,30 +856,33 @@ function showOpenInBrowserBanner(): void {
   }
   
   // Copy URL button
-  const copyBtn = document.getElementById('copyUrlBtn');
-  copyBtn?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(currentUrl);
-      copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
-        copyBtn.textContent = 'Copy Link';
-      }, 2000);
-    } catch {
-      // Fallback: select text
-      const textArea = document.createElement('textarea');
-      textArea.value = currentUrl;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
-        copyBtn.textContent = 'Copy Link';
-      }, 2000);
-    }
-  });
+  const copyBtn = document.getElementById('copyUrlBtn') as HTMLButtonElement | null;
+  if (copyBtn) {
+    const btn = copyBtn;
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(currentUrl);
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.textContent = 'Copy Link';
+        }, 2000);
+      } catch {
+        // Fallback: select text
+        const textArea = document.createElement('textarea');
+        textArea.value = currentUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.textContent = 'Copy Link';
+        }, 2000);
+      }
+    });
+  }
   
   // Dismiss button
   const dismissBtn = document.getElementById('dismissBannerBtn');

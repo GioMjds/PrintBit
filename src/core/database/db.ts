@@ -587,6 +587,24 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const alertSettings = data?.settings?.alerts;
   const inkMonitoring = data?.settings?.inkMonitoring;
   const consumablesForecasting = data?.settings?.consumablesForecasting;
+  const normalizedPaperTrayCapacitySheets = Math.max(
+    1,
+    Math.floor(
+      finiteOr(
+        consumablesForecasting?.paperTrayCapacitySheets,
+        DEFAULT_DATA.settings.consumablesForecasting.paperTrayCapacitySheets,
+      ),
+    ),
+  );
+  const normalizedPaperCurrentSheets = Math.max(
+    0,
+    Math.floor(
+      finiteOr(
+        consumablesForecasting?.paperCurrentSheets,
+        DEFAULT_DATA.settings.consumablesForecasting.paperCurrentSheets,
+      ),
+    ),
+  );
   const kioskPreferences = data?.settings?.kioskPreferences;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
@@ -723,7 +741,8 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
               (entry): entry is SpoolerLifecycleTransitionEntry =>
                 typeof entry === 'object' &&
                 entry !== null &&
-                ((entry as SpoolerLifecycleTransitionEntry).state === 'queued' ||
+                ((entry as SpoolerLifecycleTransitionEntry).state ===
+                  'queued' ||
                   (entry as SpoolerLifecycleTransitionEntry).state ===
                     'processing' ||
                   (entry as SpoolerLifecycleTransitionEntry).state ===
@@ -738,7 +757,9 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
               timestamp: entry.timestamp,
               reason: typeof entry.reason === 'string' ? entry.reason : null,
               printerName:
-                typeof entry.printerName === 'string' ? entry.printerName : null,
+                typeof entry.printerName === 'string'
+                  ? entry.printerName
+                  : null,
               spoolerCorrelationKey:
                 typeof entry.spoolerCorrelationKey === 'string'
                   ? entry.spoolerCorrelationKey
@@ -776,18 +797,22 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             ? candidate.updatedAt
             : new Date(0).toISOString(),
         currentState,
-        queuedAt: typeof candidate.queuedAt === 'string' ? candidate.queuedAt : null,
+        queuedAt:
+          typeof candidate.queuedAt === 'string' ? candidate.queuedAt : null,
         processingAt:
           typeof candidate.processingAt === 'string'
             ? candidate.processingAt
             : null,
         printedAt:
           typeof candidate.printedAt === 'string' ? candidate.printedAt : null,
-        failedAt: typeof candidate.failedAt === 'string' ? candidate.failedAt : null,
+        failedAt:
+          typeof candidate.failedAt === 'string' ? candidate.failedAt : null,
         sessionId:
           typeof candidate.sessionId === 'string' ? candidate.sessionId : null,
         documentId:
-          typeof candidate.documentId === 'string' ? candidate.documentId : null,
+          typeof candidate.documentId === 'string'
+            ? candidate.documentId
+            : null,
         requiredAmount: Math.max(0, finiteOr(candidate.requiredAmount, 0)),
         spoolerCorrelationKey:
           typeof candidate.spoolerCorrelationKey === 'string'
@@ -799,7 +824,9 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             ? Math.floor(candidate.spoolerJobId)
             : null,
         printerName:
-          typeof candidate.printerName === 'string' ? candidate.printerName : null,
+          typeof candidate.printerName === 'string'
+            ? candidate.printerName
+            : null,
         reason: typeof candidate.reason === 'string' ? candidate.reason : null,
         jobStatus:
           typeof candidate.jobStatus === 'string' ? candidate.jobStatus : null,
@@ -1175,23 +1202,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             ),
           ),
         ),
-        paperTrayCapacitySheets: Math.max(
-          1,
-          Math.floor(
-            finiteOr(
-              consumablesForecasting?.paperTrayCapacitySheets,
-              DEFAULT_DATA.settings.consumablesForecasting.paperTrayCapacitySheets,
-            ),
-          ),
-        ),
-        paperCurrentSheets: Math.max(
-          0,
-          Math.floor(
-            finiteOr(
-              consumablesForecasting?.paperCurrentSheets,
-              DEFAULT_DATA.settings.consumablesForecasting.paperCurrentSheets,
-            ),
-          ),
+        paperTrayCapacitySheets: normalizedPaperTrayCapacitySheets,
+        paperCurrentSheets: Math.min(
+          normalizedPaperTrayCapacitySheets,
+          normalizedPaperCurrentSheets,
         ),
         paperRefillUpdatedAt:
           typeof consumablesForecasting?.paperRefillUpdatedAt === 'string'

@@ -57,6 +57,7 @@ import {
   PendingRefundServiceError,
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
+import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1726,6 +1727,38 @@ export class FinancialService {
     const settledOwedChangeId = settlement.change.owedChangeId ?? null;
     const settledChangeMessage = settlement.change.message ?? null;
     const settledRemainingBalance = settlement.remainingBalance;
+    const appendConsumableUsageEvent = (eventMode: 'print' | 'copy'): void => {
+      const isPrintMode = eventMode === 'print';
+      const selectedPages = isPrintMode
+        ? Math.max(1, printQuotePages?.selectedPages ?? 1)
+        : 1;
+      const duplexEnabled = isPrintMode ? Boolean(printOptions?.duplex) : false;
+      const billableColorPages = isPrintMode
+        ? Math.max(0, printQuotePages?.billableColorPages ?? 0)
+        : colorMode === 'colored'
+          ? 1
+          : 0;
+      const billableBwPages = isPrintMode
+        ? Math.max(0, printQuotePages?.billableBwPages ?? 0)
+        : billableColorPages > 0
+          ? 0
+          : 1;
+      const estimatedSheetsUsed =
+        Math.max(1, copies) * Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
+      consumablesStore.appendUsageEvent({
+        id: randomUUID(),
+        timestamp: getTrustedTimestamp().timestamp,
+        transactionId,
+        mode: eventMode,
+        copies: Math.max(1, copies),
+        duplex: duplexEnabled,
+        selectedPages,
+        billableColorPages,
+        billableBwPages,
+        estimatedSheetsUsed,
+        source: 'confirm-payment',
+      });
+    };
 
     void (async () => {
       const runAuditStep = async (
@@ -1747,38 +1780,9 @@ export class FinancialService {
       );
 
       await runAuditStep('record_consumable_usage', async () => {
-        const isPrintMode = mode === 'print';
-        const selectedPages = isPrintMode
-          ? Math.max(1, printQuotePages?.selectedPages ?? 1)
-          : 1;
-        const duplexEnabled = isPrintMode ? Boolean(printOptions?.duplex) : false;
-        const billableColorPages = isPrintMode
-          ? Math.max(0, printQuotePages?.billableColorPages ?? 0)
-          : colorMode === 'colored'
-            ? 1
-            : 0;
-        const billableBwPages = isPrintMode
-          ? Math.max(0, printQuotePages?.billableBwPages ?? 0)
-          : billableColorPages > 0
-            ? 0
-            : 1;
-        const estimatedSheetsUsed =
-          Math.max(1, copies) *
-          Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
-
-        consumablesStore.appendUsageEvent({
-          id: randomUUID(),
-          timestamp: getTrustedTimestamp().timestamp,
-          transactionId,
-          mode,
-          copies: Math.max(1, copies),
-          duplex: duplexEnabled,
-          selectedPages,
-          billableColorPages,
-          billableBwPages,
-          estimatedSheetsUsed,
-          source: 'confirm-payment',
-        });
+        if (mode === 'print') return;
+        appendConsumableUsageEvent('copy');
+        await evaluateConsumablesForecastAlerts();
       });
 
       await runAuditStep('payment_confirmed', () =>
@@ -1859,6 +1863,15 @@ export class FinancialService {
             pageRange: printOptions?.pageRange ?? null,
           },
           onConfirmed: async () => {
+            try {
+              appendConsumableUsageEvent('print');
+              await evaluateConsumablesForecastAlerts();
+            } catch (error) {
+              console.error(
+                '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
+                error instanceof Error ? error.message : error,
+              );
+            }
             if (!serverFilename) return;
             await this.cleanupPrintUploadAfterSpoolerSuccess({
               transactionId,

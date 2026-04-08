@@ -1,4 +1,5 @@
 import { db } from '@/services/db';
+import { anomalyService } from '@/services/anomaly';
 import {
   consumablesStore,
   type ConsumableInkSnapshotEntry,
@@ -93,7 +94,8 @@ function estimateInkConfidence(input: {
           input.detectionMethod === 'printer-property'
         ? 1
         : 0;
-  const intervalScore = input.validIntervals >= 5 ? 2 : input.validIntervals >= 2 ? 1 : 0;
+  const intervalScore =
+    input.validIntervals >= 5 ? 2 : input.validIntervals >= 2 ? 1 : 0;
   const continuityScore = input.usablePoints >= 4 ? 1 : 0;
   const total = methodScore + intervalScore + continuityScore;
   if (total >= 4) return 'high';
@@ -110,6 +112,10 @@ function resolveLatestSupply(
     (entry) => entry.name.trim().toLowerCase() === name.trim().toLowerCase(),
   );
   return candidate ?? null;
+}
+
+function toInkAlertFingerprint(name: string): string {
+  return `consumables-forecast:ink:${name.trim().toLowerCase().replace(/\s+/g, '-')}`;
 }
 
 export class ConsumablesService {
@@ -135,11 +141,13 @@ export class ConsumablesService {
     const inkSupplies = this.buildInkForecasts(inkSnapshots);
 
     const reasons: string[] = [];
+    let withinThresholdFlag = false;
     if (
       paper.status === 'ok' &&
       paper.daysRemaining !== null &&
       paper.daysRemaining <= alertDaysThreshold
     ) {
+      withinThresholdFlag = true;
       reasons.push(
         `Paper is projected to deplete in ${roundTo(paper.daysRemaining, 1)} day(s).`,
       );
@@ -150,6 +158,7 @@ export class ConsumablesService {
         supply.daysRemaining !== null &&
         supply.daysRemaining <= alertDaysThreshold
       ) {
+        withinThresholdFlag = true;
         reasons.push(
           `${supply.name} is projected to deplete in ${roundTo(supply.daysRemaining, 1)} day(s).`,
         );
@@ -166,9 +175,7 @@ export class ConsumablesService {
       paper,
       inkSupplies,
       alerts: {
-        withinThreshold: reasons.some((reason) =>
-          reason.includes('projected to deplete'),
-        ),
+        withinThreshold: withinThresholdFlag,
         reasons,
       },
     };
@@ -184,7 +191,8 @@ export class ConsumablesService {
     updatedAt: string;
   }> {
     const nextCapacityRaw =
-      input.trayCapacitySheets ?? db.data!.settings.consumablesForecasting.paperTrayCapacitySheets;
+      input.trayCapacitySheets ??
+      db.data!.settings.consumablesForecasting.paperTrayCapacitySheets;
     const nextCapacity = Math.max(1, Math.floor(nextCapacityRaw));
     const nextCurrentSheets = Math.max(
       0,
@@ -192,16 +200,114 @@ export class ConsumablesService {
     );
     const updatedAt = input.updatedAt ?? nowIso();
 
-    db.data!.settings.consumablesForecasting.paperTrayCapacitySheets = nextCapacity;
-    db.data!.settings.consumablesForecasting.paperCurrentSheets = nextCurrentSheets;
-    db.data!.settings.consumablesForecasting.paperRefillUpdatedAt = updatedAt;
-    await db.write();
+    await consumablesStore.updatePaperRefill(
+      nextCapacity,
+      nextCurrentSheets,
+      updatedAt,
+    );
+    await this.evaluateAndPublishForecastAlerts();
 
     return {
       currentSheets: nextCurrentSheets,
       trayCapacitySheets: nextCapacity,
       updatedAt,
     };
+  }
+
+  async evaluateAndPublishForecastAlerts(
+    forecast = this.getForecast(),
+  ): Promise<void> {
+    const paperFingerprint = 'consumables-forecast:paper';
+    const activeRiskFingerprints = new Set<string>();
+    const alertsEnabled = db.data!.settings.consumablesForecasting.enabled;
+
+    if (alertsEnabled) {
+      if (
+        forecast.paper.status === 'ok' &&
+        forecast.paper.daysRemaining !== null &&
+        forecast.paper.daysRemaining <= forecast.alertDaysThreshold
+      ) {
+        activeRiskFingerprints.add(paperFingerprint);
+        await this.reportForecastIncidentIfNeeded({
+          type: 'consumables_paper_depletion_forecast',
+          source: 'consumables-forecast',
+          category: 'printer',
+          severity: 'warning',
+          message: `Paper is projected to deplete in ${forecast.paper.daysRemaining.toFixed(1)} day(s).`,
+          fingerprint: paperFingerprint,
+          context: {
+            daysRemaining: Number(forecast.paper.daysRemaining.toFixed(2)),
+            avgDailyUse: forecast.paper.avgDailyUse,
+            currentSheets: forecast.paper.currentSheets,
+            thresholdDays: forecast.alertDaysThreshold,
+          },
+        });
+      }
+
+      for (const supply of forecast.inkSupplies) {
+        if (
+          supply.status !== 'ok' ||
+          supply.daysRemaining === null ||
+          supply.daysRemaining > forecast.alertDaysThreshold
+        ) {
+          continue;
+        }
+        const supplyFingerprint = toInkAlertFingerprint(supply.name);
+        activeRiskFingerprints.add(supplyFingerprint);
+        await this.reportForecastIncidentIfNeeded({
+          type: 'consumables_ink_depletion_forecast',
+          source: 'consumables-forecast',
+          category: 'printer',
+          severity: 'warning',
+          message: `${supply.name} is projected to deplete in ${supply.daysRemaining.toFixed(1)} day(s).`,
+          fingerprint: supplyFingerprint,
+          context: {
+            supplyName: supply.name,
+            level: supply.level ?? null,
+            avgDailyDrop: supply.avgDailyDrop,
+            daysRemaining: Number(supply.daysRemaining.toFixed(2)),
+            thresholdDays: forecast.alertDaysThreshold,
+            detectionMethod: supply.detectionMethod,
+          },
+        });
+      }
+    }
+
+    await this.resolveRecoveredForecastIncidents(activeRiskFingerprints);
+  }
+
+  private async reportForecastIncidentIfNeeded(input: {
+    type: string;
+    source: string;
+    category: 'printer';
+    severity: 'warning';
+    message: string;
+    fingerprint: string;
+    context: Record<string, string | number | boolean | null>;
+  }): Promise<void> {
+    const fingerprint = input.fingerprint.trim().toLowerCase();
+    const existing = db.data!.anomalyIncidents.find(
+      (entry) =>
+        entry.status !== 'resolved' && entry.fingerprint === fingerprint,
+    );
+    if (existing) return;
+    await anomalyService.report({
+      ...input,
+      fingerprint,
+    });
+  }
+
+  private async resolveRecoveredForecastIncidents(
+    activeRiskFingerprints: Set<string>,
+  ): Promise<void> {
+    const candidates = db.data!.anomalyIncidents.filter((entry) => {
+      if (entry.status === 'resolved') return false;
+      if (!isForecastIncidentFingerprint(entry.fingerprint)) return false;
+      return !activeRiskFingerprints.has(entry.fingerprint);
+    });
+    for (const incident of candidates) {
+      await anomalyService.updateIncidentStatus(incident.id, 'resolved');
+    }
   }
 
   private buildPaperForecast(input: {
@@ -230,7 +336,10 @@ export class ConsumablesService {
     const sampleDays = byDay.size;
     const status: ConsumableForecastStatus =
       avgDailyUse > 0 ? 'ok' : 'insufficient_data';
-    const confidence = estimatePaperConfidence(input.rollingWindowDays, sampleDays);
+    const confidence = estimatePaperConfidence(
+      input.rollingWindowDays,
+      sampleDays,
+    );
     const daysRemaining =
       avgDailyUse > 0 ? roundTo(input.currentSheets / avgDailyUse, 2) : null;
     const projectedDepletionDate =
@@ -310,11 +419,12 @@ export class ConsumablesService {
       const avgDailyDrop =
         intervalDaysTotal > 0 ? roundTo(dropTotal / intervalDaysTotal, 4) : 0;
       const latestLevel = latestSupply?.level ?? null;
-      const status: ConsumableForecastStatus = !latestSnapshot.inkTelemetryAvailable
-        ? 'telemetry_unavailable'
-        : latestLevel === null || avgDailyDrop <= 0
-          ? 'insufficient_data'
-          : 'ok';
+      const status: ConsumableForecastStatus =
+        !latestSnapshot.inkTelemetryAvailable
+          ? 'telemetry_unavailable'
+          : latestLevel === null || avgDailyDrop <= 0
+            ? 'insufficient_data'
+            : 'ok';
       const daysRemaining =
         status === 'ok' && latestLevel !== null
           ? roundTo(latestLevel / avgDailyDrop, 2)
@@ -344,4 +454,15 @@ export class ConsumablesService {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function isForecastIncidentFingerprint(fingerprint: string): boolean {
+  return (
+    fingerprint === 'consumables-forecast:paper' ||
+    fingerprint.startsWith('consumables-forecast:ink:')
+  );
+}
+
+export async function evaluateConsumablesForecastAlerts(): Promise<void> {
+  await new ConsumablesService().evaluateAndPublishForecastAlerts();
 }

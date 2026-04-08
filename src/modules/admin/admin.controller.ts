@@ -43,10 +43,7 @@ import {
 import { hashPassword, verifyPassword } from '@/utils/hash';
 import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
 import type { AlertSettings } from './admin.schema';
-import {
-  ConsumablesService,
-  type ConsumablesForecastResponse,
-} from './consumables.service';
+import { ConsumablesService } from './consumables.service';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -680,7 +677,6 @@ export class AdminController {
     });
     const recovery = getRecoveryStatusSnapshot();
     const consumablesForecast = this.consumablesService.getForecast();
-    this.publishConsumableForecastAlerts(consumablesForecast);
     res.json({
       balance: db.data!.balance,
       earnings: this.adminService.computeEarningsBuckets(),
@@ -860,72 +856,6 @@ export class AdminController {
     });
   };
 
-  private publishConsumableForecastAlerts(
-    forecast: ConsumablesForecastResponse,
-  ): void {
-    const hasOpenIncident = (fingerprint: string): boolean =>
-      db.data!.anomalyIncidents.some(
-        (entry) =>
-          entry.status === 'open' &&
-          entry.fingerprint === fingerprint.toLowerCase(),
-      );
-
-    if (
-      forecast.paper.status === 'ok' &&
-      forecast.paper.daysRemaining !== null &&
-      forecast.paper.daysRemaining <= forecast.alertDaysThreshold
-    ) {
-      const paperFingerprint = 'consumables-forecast:paper';
-      if (!hasOpenIncident(paperFingerprint)) {
-        void anomalyService.report({
-          type: 'consumables_paper_depletion_forecast',
-          source: 'consumables-forecast',
-          category: 'printer',
-          severity: 'warning',
-          message: `Paper is projected to deplete in ${forecast.paper.daysRemaining.toFixed(1)} day(s).`,
-          fingerprint: paperFingerprint,
-          context: {
-            daysRemaining: Number(forecast.paper.daysRemaining.toFixed(2)),
-            avgDailyUse: forecast.paper.avgDailyUse,
-            currentSheets: forecast.paper.currentSheets,
-            thresholdDays: forecast.alertDaysThreshold,
-          },
-        });
-      }
-    }
-
-    for (const supply of forecast.inkSupplies) {
-      if (
-        supply.status !== 'ok' ||
-        supply.daysRemaining === null ||
-        supply.daysRemaining > forecast.alertDaysThreshold
-      ) {
-        continue;
-      }
-      const supplyKey = supply.name.trim().toLowerCase().replace(/\s+/g, '-');
-      const supplyFingerprint = `consumables-forecast:ink:${supplyKey}`;
-      if (hasOpenIncident(supplyFingerprint)) {
-        continue;
-      }
-      void anomalyService.report({
-        type: 'consumables_ink_depletion_forecast',
-        source: 'consumables-forecast',
-        category: 'printer',
-        severity: 'warning',
-        message: `${supply.name} is projected to deplete in ${supply.daysRemaining.toFixed(1)} day(s).`,
-        fingerprint: supplyFingerprint,
-        context: {
-          supplyName: supply.name,
-          level: supply.level ?? null,
-          avgDailyDrop: supply.avgDailyDrop,
-          daysRemaining: Number(supply.daysRemaining.toFixed(2)),
-          thresholdDays: forecast.alertDaysThreshold,
-          detectionMethod: supply.detectionMethod,
-        },
-      });
-    }
-  }
-
   // ── Hopper handlers ────────────────────────────────────────────────────────
 
   private handleHopperSelfTest = async (_req: Request, res: Response) => {
@@ -1050,6 +980,7 @@ export class AdminController {
     }
 
     let refreshInkTelemetry = false;
+    let refreshConsumablesAlerts = false;
     if (body.inkMonitoring) {
       const incoming = body.inkMonitoring;
       const current = db.data!.settings.inkMonitoring;
@@ -1224,9 +1155,13 @@ export class AdminController {
       }
 
       db.data!.settings.consumablesForecasting = next;
+      refreshConsumablesAlerts = true;
     }
 
     await db.write();
+    if (refreshConsumablesAlerts) {
+      await this.consumablesService.evaluateAndPublishForecastAlerts();
+    }
     if (refreshInkTelemetry) {
       try {
         await refreshPrinterTelemetry();

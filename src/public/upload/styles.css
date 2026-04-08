@@ -426,7 +426,6 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 .queue-item__size {
@@ -607,7 +606,6 @@ body {
   font-size: 13px;
   line-height: 1.55;
   overflow-wrap: anywhere;
-  word-break: break-word;
   display: none;
 }
 
@@ -672,7 +670,6 @@ body {
     min-width: 0;
     max-width: 100%;
     overflow-wrap: anywhere;
-    word-break: break-word;
   }
 }
 

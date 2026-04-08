@@ -28,6 +28,7 @@ import {
 } from '@/services/time-source';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import { consumablesStore } from '@/core/database/sqlite-storage';
+import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -579,6 +580,7 @@ export class CopyService {
               estimatedSheetsUsed: Math.max(1, normalized.copies),
               source: 'copy-service',
             });
+            await evaluateConsumablesForecastAlerts();
           } catch (error) {
             console.error('[COPY] Failed to persist consumable usage event.', {
               error: error instanceof Error ? error.message : String(error),
