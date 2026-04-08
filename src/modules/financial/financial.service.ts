@@ -29,6 +29,7 @@ import {
 } from '@/config/http.config';
 import {
   getSqliteDb,
+  consumablesStore,
   readRuntimeState,
   writeRuntimeState,
 } from '@/core/database/sqlite-storage';
@@ -1744,6 +1745,41 @@ export class FinancialService {
       await runAuditStep('increment_job_stats', () =>
         adminService.incrementJobStats(mode),
       );
+
+      await runAuditStep('record_consumable_usage', async () => {
+        const isPrintMode = mode === 'print';
+        const selectedPages = isPrintMode
+          ? Math.max(1, printQuotePages?.selectedPages ?? 1)
+          : 1;
+        const duplexEnabled = isPrintMode ? Boolean(printOptions?.duplex) : false;
+        const billableColorPages = isPrintMode
+          ? Math.max(0, printQuotePages?.billableColorPages ?? 0)
+          : colorMode === 'colored'
+            ? 1
+            : 0;
+        const billableBwPages = isPrintMode
+          ? Math.max(0, printQuotePages?.billableBwPages ?? 0)
+          : billableColorPages > 0
+            ? 0
+            : 1;
+        const estimatedSheetsUsed =
+          Math.max(1, copies) *
+          Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
+
+        consumablesStore.appendUsageEvent({
+          id: randomUUID(),
+          timestamp: getTrustedTimestamp().timestamp,
+          transactionId,
+          mode,
+          copies: Math.max(1, copies),
+          duplex: duplexEnabled,
+          selectedPages,
+          billableColorPages,
+          billableBwPages,
+          estimatedSheetsUsed,
+          source: 'confirm-payment',
+        });
+      });
 
       await runAuditStep('payment_confirmed', () =>
         adminService.appendAdminLog('payment_confirmed', 'Payment confirmed.', {

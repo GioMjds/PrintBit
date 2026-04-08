@@ -56,6 +56,41 @@ export type SummaryResponse = {
     recent24h: number;
     lastJamAt: string | null;
   };
+  consumables?: {
+    generatedAt: string;
+    rollingWindowDays: number;
+    alertDaysThreshold: number;
+    paper: {
+      status: 'ok' | 'insufficient_data' | 'telemetry_unavailable';
+      confidence: 'high' | 'medium' | 'low';
+      currentSheets: number;
+      trayCapacitySheets: number;
+      avgDailyUse: number | null;
+      daysRemaining: number | null;
+      projectedEmptyAt: string | null;
+      usageEventsConsidered: number;
+    };
+    inkSupplies: Array<{
+      name: string;
+      status: 'ok' | 'insufficient_data' | 'telemetry_unavailable';
+      confidence: 'high' | 'medium' | 'low';
+      level: number | null;
+      avgDailyDrop: number | null;
+      daysRemaining: number | null;
+      projectedEmptyAt: string | null;
+      snapshotsConsidered: number;
+      detectionMethod:
+        | 'snmp'
+        | 'vendor-wmi'
+        | 'printer-property'
+        | 'error-state'
+        | 'none';
+    }>;
+    alerts: {
+      withinThreshold: boolean;
+      reasons: string[];
+    };
+  };
   storage: {
     fileCount: number;
     bytes: number;
@@ -135,6 +170,14 @@ export type SettingsResponse = {
     blockOnLow: boolean;
     blockOnEmpty: boolean;
     telemetryUnknownPolicy: 'warn_allow' | 'block';
+  };
+  consumablesForecasting: {
+    enabled: boolean;
+    rollingWindowDays: number;
+    alertDaysThreshold: number;
+    paperTrayCapacitySheets: number;
+    paperCurrentSheets: number;
+    paperRefillUpdatedAt: string | null;
   };
   alerts: {
     severityThreshold: 'warning' | 'critical';

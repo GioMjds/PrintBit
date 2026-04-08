@@ -6,6 +6,7 @@ import {
   markWatchdogHeartbeat,
   setWatchdogComponentState,
 } from './watchdog-health';
+import { consumablesStore } from '@/core/database/sqlite-storage';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -655,6 +656,21 @@ async function runRefreshCycle(): Promise<PrinterTelemetry> {
 
     try {
       persistInkHistoryEntry(next);
+      if (next.connected) {
+        consumablesStore.appendInkSnapshot({
+          id: randomUUID(),
+          timestamp: next.lastCheckedAt,
+          printerName: next.name ?? null,
+          inkDetectionMethod: next.inkDetectionMethod,
+          inkTelemetryAvailable: next.inkTelemetryAvailable ?? false,
+          inkTelemetryReason: next.inkTelemetryReason ?? null,
+          supplies: next.ink.map((entry) => ({
+            name: entry.name,
+            level: entry.level,
+            status: entry.status,
+          })),
+        });
+      }
       await db.write();
     } catch (err) {
       console.warn(

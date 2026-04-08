@@ -35,6 +35,15 @@ export interface InkMonitoringSettings {
   telemetryUnknownPolicy: InkTelemetryUnknownPolicy;
 }
 
+export interface ConsumablesForecastingSettings {
+  enabled: boolean;
+  rollingWindowDays: number;
+  alertDaysThreshold: number;
+  paperTrayCapacitySheets: number;
+  paperCurrentSheets: number;
+  paperRefillUpdatedAt: string | null;
+}
+
 export interface AdminSettings {
   pricing: PricingSettings;
   idleTimeoutSeconds: number;
@@ -43,6 +52,7 @@ export interface AdminSettings {
   kioskPreferences: KioskPreferences;
   alerts: AlertSettings;
   inkMonitoring: InkMonitoringSettings;
+  consumablesForecasting: ConsumablesForecastingSettings;
 }
 
 export type SupportedLanguage = 'en' | 'fil';
@@ -483,6 +493,14 @@ const DEFAULT_DATA: Schema = {
       blockOnEmpty: true,
       telemetryUnknownPolicy: 'warn_allow',
     },
+    consumablesForecasting: {
+      enabled: false,
+      rollingWindowDays: 14,
+      alertDaysThreshold: 7,
+      paperTrayCapacitySheets: 100,
+      paperCurrentSheets: 100,
+      paperRefillUpdatedAt: null,
+    },
   },
   coinStats: {
     one: 0,
@@ -568,6 +586,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const pricing = data?.settings?.pricing;
   const alertSettings = data?.settings?.alerts;
   const inkMonitoring = data?.settings?.inkMonitoring;
+  const consumablesForecasting = data?.settings?.consumablesForecasting;
   const kioskPreferences = data?.settings?.kioskPreferences;
   const hopperSettings = data?.hopperSettings;
   const hopperStats = data?.hopperStats;
@@ -1126,6 +1145,58 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           inkMonitoring?.telemetryUnknownPolicy === 'block'
             ? 'block'
             : 'warn_allow',
+      },
+      consumablesForecasting: {
+        enabled:
+          typeof consumablesForecasting?.enabled === 'boolean'
+            ? consumablesForecasting.enabled
+            : DEFAULT_DATA.settings.consumablesForecasting.enabled,
+        rollingWindowDays: Math.max(
+          1,
+          Math.min(
+            90,
+            Math.floor(
+              finiteOr(
+                consumablesForecasting?.rollingWindowDays,
+                DEFAULT_DATA.settings.consumablesForecasting.rollingWindowDays,
+              ),
+            ),
+          ),
+        ),
+        alertDaysThreshold: Math.max(
+          1,
+          Math.min(
+            60,
+            Math.floor(
+              finiteOr(
+                consumablesForecasting?.alertDaysThreshold,
+                DEFAULT_DATA.settings.consumablesForecasting.alertDaysThreshold,
+              ),
+            ),
+          ),
+        ),
+        paperTrayCapacitySheets: Math.max(
+          1,
+          Math.floor(
+            finiteOr(
+              consumablesForecasting?.paperTrayCapacitySheets,
+              DEFAULT_DATA.settings.consumablesForecasting.paperTrayCapacitySheets,
+            ),
+          ),
+        ),
+        paperCurrentSheets: Math.max(
+          0,
+          Math.floor(
+            finiteOr(
+              consumablesForecasting?.paperCurrentSheets,
+              DEFAULT_DATA.settings.consumablesForecasting.paperCurrentSheets,
+            ),
+          ),
+        ),
+        paperRefillUpdatedAt:
+          typeof consumablesForecasting?.paperRefillUpdatedAt === 'string'
+            ? consumablesForecasting.paperRefillUpdatedAt
+            : DEFAULT_DATA.settings.consumablesForecasting.paperRefillUpdatedAt,
       },
     },
     coinStats: {

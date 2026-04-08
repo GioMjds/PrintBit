@@ -25,6 +25,21 @@ const settingAdminPin = document.getElementById(
 const settingAdminLocalOnly = document.getElementById(
   'settingAdminLocalOnly',
 ) as HTMLInputElement;
+const settingConsumablesForecastingEnabled = document.getElementById(
+  'settingConsumablesForecastingEnabled',
+) as HTMLInputElement | null;
+const settingRollingWindowDays = document.getElementById(
+  'settingRollingWindowDays',
+) as HTMLInputElement | null;
+const settingAlertDaysThreshold = document.getElementById(
+  'settingAlertDaysThreshold',
+) as HTMLInputElement | null;
+const settingPaperTrayCapacitySheets = document.getElementById(
+  'settingPaperTrayCapacitySheets',
+) as HTMLInputElement | null;
+const settingPaperCurrentSheets = document.getElementById(
+  'settingPaperCurrentSheets',
+) as HTMLInputElement | null;
 
 // ── Optional sections (may be commented out in HTML) ─────────────────────────
 const settingIdleTimeout = document.getElementById(
@@ -124,6 +139,26 @@ function applySettings(settings: SettingsResponse): void {
     inkTelemetryUnknownPolicy.value =
       settings.inkMonitoring.telemetryUnknownPolicy;
 
+  if (settingConsumablesForecastingEnabled)
+    settingConsumablesForecastingEnabled.checked =
+      settings.consumablesForecasting.enabled;
+  if (settingRollingWindowDays)
+    settingRollingWindowDays.value = String(
+      settings.consumablesForecasting.rollingWindowDays,
+    );
+  if (settingAlertDaysThreshold)
+    settingAlertDaysThreshold.value = String(
+      settings.consumablesForecasting.alertDaysThreshold,
+    );
+  if (settingPaperTrayCapacitySheets)
+    settingPaperTrayCapacitySheets.value = String(
+      settings.consumablesForecasting.paperTrayCapacitySheets,
+    );
+  if (settingPaperCurrentSheets)
+    settingPaperCurrentSheets.value = String(
+      settings.consumablesForecasting.paperCurrentSheets,
+    );
+
   // Admin Alerts (optional)
   if (alertSeverityThreshold)
     alertSeverityThreshold.value = settings.alerts.severityThreshold;
@@ -218,6 +253,54 @@ settingsForm.addEventListener('submit', (e) => {
     }
   }
 
+  const rollingWindowDays = Number(settingRollingWindowDays?.value ?? 0);
+  const alertDaysThreshold = Number(settingAlertDaysThreshold?.value ?? 0);
+  const paperTrayCapacitySheets = Number(
+    settingPaperTrayCapacitySheets?.value ?? 0,
+  );
+  const paperCurrentSheets = Number(settingPaperCurrentSheets?.value ?? 0);
+
+  if (
+    settingRollingWindowDays &&
+    (!Number.isInteger(rollingWindowDays) ||
+      rollingWindowDays < 1 ||
+      rollingWindowDays > 90)
+  ) {
+    setMessage('Rolling window must be a whole number between 1 and 90.');
+    return;
+  }
+  if (
+    settingAlertDaysThreshold &&
+    (!Number.isInteger(alertDaysThreshold) ||
+      alertDaysThreshold < 1 ||
+      alertDaysThreshold > 60)
+  ) {
+    setMessage('Alert threshold must be a whole number between 1 and 60.');
+    return;
+  }
+  if (
+    settingPaperTrayCapacitySheets &&
+    (!Number.isInteger(paperTrayCapacitySheets) || paperTrayCapacitySheets < 1)
+  ) {
+    setMessage('Tray capacity must be a whole number greater than 0.');
+    return;
+  }
+  if (
+    settingPaperCurrentSheets &&
+    (!Number.isInteger(paperCurrentSheets) || paperCurrentSheets < 0)
+  ) {
+    setMessage('Current paper must be a whole number greater than or equal to 0.');
+    return;
+  }
+  if (
+    settingPaperCurrentSheets &&
+    settingPaperTrayCapacitySheets &&
+    paperCurrentSheets > paperTrayCapacitySheets
+  ) {
+    setMessage('Current paper cannot exceed tray capacity.');
+    return;
+  }
+
   const payload: Record<string, unknown> = {
     pricing: {
       printPerPage: Number(settingPrintPerPage.value),
@@ -245,6 +328,16 @@ settingsForm.addEventListener('submit', (e) => {
       blockOnEmpty: inkBlockOnEmpty?.checked ?? false,
       telemetryUnknownPolicy:
         inkTelemetryUnknownPolicy?.value === 'block' ? 'block' : 'warn_allow',
+    };
+  }
+
+  if (settingConsumablesForecastingEnabled) {
+    payload.consumablesForecasting = {
+      enabled: settingConsumablesForecastingEnabled.checked,
+      rollingWindowDays,
+      alertDaysThreshold,
+      paperTrayCapacitySheets,
+      paperCurrentSheets,
     };
   }
 

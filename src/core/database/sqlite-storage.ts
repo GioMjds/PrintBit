@@ -71,6 +71,41 @@ export interface LowDbImportResult {
   };
 }
 
+export interface ConsumableUsageEventEntry {
+  id: string;
+  timestamp: string;
+  transactionId: string;
+  mode: 'print' | 'copy';
+  copies: number;
+  duplex: boolean;
+  selectedPages: number;
+  billableColorPages: number;
+  billableBwPages: number;
+  estimatedSheetsUsed: number;
+  source: string;
+}
+
+export interface ConsumableInkSnapshotSupply {
+  name: string;
+  level: number | null;
+  status: 'ok' | 'low' | 'empty' | 'unknown';
+}
+
+export interface ConsumableInkSnapshotEntry {
+  id: string;
+  timestamp: string;
+  printerName: string | null;
+  inkDetectionMethod:
+    | 'snmp'
+    | 'vendor-wmi'
+    | 'printer-property'
+    | 'error-state'
+    | 'none';
+  inkTelemetryAvailable: boolean;
+  inkTelemetryReason: string | null;
+  supplies: ConsumableInkSnapshotSupply[];
+}
+
 type ReportSessionCleanupResult = {
   changed: boolean;
   orphanedAttachments: ReportIssueAttachmentEntry[];
@@ -288,6 +323,40 @@ function ensureSchema(db: DatabaseSync): void {
       ON report_issue_attachments(report_issue_id);
     CREATE INDEX IF NOT EXISTS idx_report_issue_attachments_timestamp
       ON report_issue_attachments(timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS consumable_usage_events (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      transaction_id TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      copies INTEGER NOT NULL,
+      duplex INTEGER NOT NULL,
+      selected_pages INTEGER NOT NULL,
+      billable_color_pages INTEGER NOT NULL,
+      billable_bw_pages INTEGER NOT NULL,
+      estimated_sheets_used INTEGER NOT NULL,
+      source TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_consumable_usage_events_timestamp
+      ON consumable_usage_events(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_consumable_usage_events_transaction_id
+      ON consumable_usage_events(transaction_id);
+    CREATE INDEX IF NOT EXISTS idx_consumable_usage_events_mode
+      ON consumable_usage_events(mode);
+
+    CREATE TABLE IF NOT EXISTS consumable_ink_snapshots (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      printer_name TEXT,
+      ink_detection_method TEXT NOT NULL,
+      ink_telemetry_available INTEGER NOT NULL,
+      ink_telemetry_reason TEXT,
+      supplies_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_timestamp
+      ON consumable_ink_snapshots(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name
+      ON consumable_ink_snapshots(printer_name);
   `);
 }
 
@@ -1277,9 +1346,182 @@ export class ReportIssueSqliteStore {
   }
 }
 
+export class ConsumablesSqliteStore {
+  appendUsageEvent(entry: ConsumableUsageEventEntry): void {
+    getSqliteDb()
+      .prepare(
+        `INSERT OR REPLACE INTO consumable_usage_events (
+          id,
+          timestamp,
+          transaction_id,
+          mode,
+          copies,
+          duplex,
+          selected_pages,
+          billable_color_pages,
+          billable_bw_pages,
+          estimated_sheets_used,
+          source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.timestamp,
+        entry.transactionId,
+        entry.mode,
+        entry.copies,
+        entry.duplex ? 1 : 0,
+        entry.selectedPages,
+        entry.billableColorPages,
+        entry.billableBwPages,
+        entry.estimatedSheetsUsed,
+        entry.source,
+      );
+  }
+
+  listUsageEventsSince(sinceTimestamp: string): ConsumableUsageEventEntry[] {
+    const rows = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          timestamp,
+          transaction_id,
+          mode,
+          copies,
+          duplex,
+          selected_pages,
+          billable_color_pages,
+          billable_bw_pages,
+          estimated_sheets_used,
+          source
+         FROM consumable_usage_events
+         WHERE timestamp >= ?
+         ORDER BY timestamp DESC, rowid DESC`,
+      )
+      .all(sinceTimestamp) as Array<Record<string, unknown>>;
+
+    return rows.map((row) => this.toUsageEventEntry(row));
+  }
+
+  appendInkSnapshot(entry: ConsumableInkSnapshotEntry): void {
+    getSqliteDb()
+      .prepare(
+        `INSERT OR REPLACE INTO consumable_ink_snapshots (
+          id,
+          timestamp,
+          printer_name,
+          ink_detection_method,
+          ink_telemetry_available,
+          ink_telemetry_reason,
+          supplies_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.timestamp,
+        entry.printerName,
+        entry.inkDetectionMethod,
+        entry.inkTelemetryAvailable ? 1 : 0,
+        entry.inkTelemetryReason,
+        JSON.stringify(entry.supplies),
+      );
+  }
+
+  listInkSnapshotsSince(sinceTimestamp: string): ConsumableInkSnapshotEntry[] {
+    const rows = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          timestamp,
+          printer_name,
+          ink_detection_method,
+          ink_telemetry_available,
+          ink_telemetry_reason,
+          supplies_json
+         FROM consumable_ink_snapshots
+         WHERE timestamp >= ?
+         ORDER BY timestamp DESC, rowid DESC`,
+      )
+      .all(sinceTimestamp) as Array<Record<string, unknown>>;
+
+    return rows.map((row) => this.toInkSnapshotEntry(row));
+  }
+
+  private toUsageEventEntry(
+    row: Record<string, unknown>,
+  ): ConsumableUsageEventEntry {
+    const mode = row.mode === 'copy' ? 'copy' : 'print';
+    return {
+      id: String(row.id ?? ''),
+      timestamp: String(row.timestamp ?? ''),
+      transactionId: String(row.transaction_id ?? ''),
+      mode,
+      copies: Number(row.copies ?? 0),
+      duplex: Number(row.duplex ?? 0) === 1,
+      selectedPages: Number(row.selected_pages ?? 0),
+      billableColorPages: Number(row.billable_color_pages ?? 0),
+      billableBwPages: Number(row.billable_bw_pages ?? 0),
+      estimatedSheetsUsed: Number(row.estimated_sheets_used ?? 0),
+      source: String(row.source ?? ''),
+    };
+  }
+
+  private toInkSnapshotEntry(
+    row: Record<string, unknown>,
+  ): ConsumableInkSnapshotEntry {
+    const parsedSupplies =
+      parseJsonValue<unknown>(row.supplies_json) ?? ([] as unknown[]);
+    const supplies = Array.isArray(parsedSupplies)
+      ? parsedSupplies
+          .map((item) => {
+            if (typeof item !== 'object' || item === null) return null;
+            const candidate = item as Record<string, unknown>;
+            const status =
+              candidate.status === 'ok' ||
+              candidate.status === 'low' ||
+              candidate.status === 'empty'
+                ? candidate.status
+                : 'unknown';
+            return {
+              name: String(candidate.name ?? 'Supply'),
+              level:
+                typeof candidate.level === 'number' &&
+                Number.isFinite(candidate.level)
+                  ? candidate.level
+                  : null,
+              status,
+            } as ConsumableInkSnapshotSupply;
+          })
+          .filter((value): value is ConsumableInkSnapshotSupply => value !== null)
+      : [];
+    const detectionMethod =
+      row.ink_detection_method === 'snmp' ||
+      row.ink_detection_method === 'vendor-wmi' ||
+      row.ink_detection_method === 'printer-property' ||
+      row.ink_detection_method === 'error-state'
+        ? row.ink_detection_method
+        : 'none';
+
+    return {
+      id: String(row.id ?? ''),
+      timestamp: String(row.timestamp ?? ''),
+      printerName:
+        typeof row.printer_name === 'string' ? row.printer_name : null,
+      inkDetectionMethod: detectionMethod,
+      inkTelemetryAvailable: Number(row.ink_telemetry_available ?? 0) === 1,
+      inkTelemetryReason:
+        typeof row.ink_telemetry_reason === 'string'
+          ? row.ink_telemetry_reason
+          : null,
+      supplies,
+    };
+  }
+}
+
 export const adminLogStore = new AdminLogSqliteStore();
 export const feedbackStore = new FeedbackSqliteStore();
 export const reportIssueStore = new ReportIssueSqliteStore();
+export const consumablesStore = new ConsumablesSqliteStore();
 
 export function importLowDbSnapshotIfNeeded(
   snapshot: LowDbImportSnapshot,

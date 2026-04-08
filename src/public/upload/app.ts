@@ -384,13 +384,15 @@ function createQueueItem(qf: QueuedFile): HTMLElement {
       <p class="queue-item__name" title="${escHtml(qf.file.name)}">${escHtml(qf.file.name)}</p>
       <span class="queue-item__size">${size}</span>
     </div>
-    <span class="queue-item__status queue-item__status--pending">Pending</span>
-    <button type="button" class="queue-item__remove" aria-label="Remove ${escHtml(qf.file.name)}">
-      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd"
-        d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414
-        10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586
-        10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-    </button>
+    <div class="queue-item__actions">
+      <span class="queue-item__status queue-item__status--pending">Pending</span>
+      <button type="button" class="queue-item__remove" aria-label="Remove ${escHtml(qf.file.name)}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd"
+          d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414
+          10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586
+          10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+    </div>
     <div class="queue-item__progress" style="width:0%"></div>
   `;
 

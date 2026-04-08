@@ -347,6 +347,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   padding: 12px 14px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
@@ -409,23 +410,36 @@ body {
 }
 
 .queue-item__info {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .queue-item__name {
   font-size: 13px;
   font-weight: 600;
   color: var(--white);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   margin: 0 0 2px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .queue-item__size {
   font-size: 11px;
   color: var(--ink-muted);
+}
+
+.queue-item__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* Status badge */
@@ -592,6 +606,8 @@ body {
   border-radius: 12px;
   font-size: 13px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   display: none;
 }
 
@@ -622,6 +638,41 @@ body {
   }
   .card-title {
     font-size: 18px;
+  }
+
+  .queue-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "icon info"
+      "actions actions";
+    align-items: start;
+    column-gap: 10px;
+    row-gap: 8px;
+  }
+
+  .queue-item__icon {
+    grid-area: icon;
+  }
+
+  .queue-item__info {
+    grid-area: info;
+    width: 100%;
+  }
+
+  .queue-item__actions {
+    grid-area: actions;
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .queue-item__status {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 }
 

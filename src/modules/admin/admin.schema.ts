@@ -35,6 +35,15 @@ export interface InkMonitoringSettings {
   telemetryUnknownPolicy: InkTelemetryUnknownPolicy;
 }
 
+export interface ConsumablesForecastingSettings {
+  enabled: boolean;
+  rollingWindowDays: number;
+  alertDaysThreshold: number;
+  paperTrayCapacitySheets: number;
+  paperCurrentSheets: number;
+  paperRefillUpdatedAt: string | null;
+}
+
 export interface KioskPreferences {
   language: SupportedLanguage;
   highContrast: boolean;
@@ -89,6 +98,7 @@ export interface AdminSettings {
   kioskPreferences: KioskPreferences;
   alerts: AlertSettings;
   inkMonitoring: InkMonitoringSettings;
+  consumablesForecasting: ConsumablesForecastingSettings;
 }
 
 export interface AdminLogEntry {
