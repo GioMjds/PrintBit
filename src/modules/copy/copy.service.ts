@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import { jobStore } from '@/services/job-store';
 import { printFile, type PrintJobOptions } from '@/services/printer';
@@ -22,9 +23,12 @@ import { BLOCKED_STATUSES } from '@/utils';
 import { financialLedgerService } from '@/services/financial-ledger';
 import {
   assertTrustedTimeForFinancialOperation,
+  getTrustedTimestamp,
   isTrustedTimeError,
 } from '@/services/time-source';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
+import { consumablesStore } from '@/core/database/sqlite-storage';
+import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -562,6 +566,27 @@ export class CopyService {
               changeDispensed: settlement.change.dispensed,
             },
           });
+          try {
+            consumablesStore.appendUsageEvent({
+              id: randomUUID(),
+              timestamp: getTrustedTimestamp().timestamp,
+              transactionId: jobId,
+              mode: 'copy',
+              copies: normalized.copies,
+              duplex: false,
+              selectedPages: 1,
+              billableColorPages: normalized.colorMode === 'colored' ? 1 : 0,
+              billableBwPages: normalized.colorMode === 'colored' ? 0 : 1,
+              estimatedSheetsUsed: Math.max(1, normalized.copies),
+              source: 'copy-service',
+            });
+            await evaluateConsumablesForecastAlerts();
+          } catch (error) {
+            console.error('[COPY] Failed to persist consumable usage event.', {
+              error: error instanceof Error ? error.message : String(error),
+              jobId,
+            });
+          }
           await adminService.incrementJobStats('copy');
           await this.cleanupPreviewFile(previewFilename, {
             jobId,

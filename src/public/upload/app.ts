@@ -88,14 +88,17 @@ let countdownHandle: number | null = null;
 let isSessionUnavailable = false;
 
 function getOrCreateUploadClientId(): string {
-  const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
-  if (existing && existing.trim().length > 0) return existing;
-
   const generated =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+  try {
+    const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (existing && existing.trim().length > 0) return existing;
+    window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+  } catch {
+    return generated;
+  }
   return generated;
 }
 
@@ -384,13 +387,15 @@ function createQueueItem(qf: QueuedFile): HTMLElement {
       <p class="queue-item__name" title="${escHtml(qf.file.name)}">${escHtml(qf.file.name)}</p>
       <span class="queue-item__size">${size}</span>
     </div>
-    <span class="queue-item__status queue-item__status--pending">Pending</span>
-    <button type="button" class="queue-item__remove" aria-label="Remove ${escHtml(qf.file.name)}">
-      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd"
-        d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414
-        10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586
-        10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-    </button>
+    <div class="queue-item__actions">
+      <span class="queue-item__status queue-item__status--pending">Pending</span>
+      <button type="button" class="queue-item__remove" aria-label="Remove ${escHtml(qf.file.name)}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd"
+          d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414
+          10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586
+          10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+    </div>
     <div class="queue-item__progress" style="width:0%"></div>
   `;
 
@@ -796,9 +801,15 @@ function detectCaptivePortalWebview(): boolean {
     'standalone' in navigator && (navigator as { standalone?: boolean }).standalone === true;
   
   // Check for limited features typical of captive webviews
+  let hasStorageAccess = false;
+  try {
+    hasStorageAccess = typeof window.localStorage !== 'undefined';
+  } catch {
+    hasStorageAccess = false;
+  }
   const hasLimitedFeatures =
-    !window.indexedDB || 
-    !window.localStorage ||
+    !window.indexedDB ||
+    !hasStorageAccess ||
     typeof FileReader === 'undefined';
   
   // Chrome Custom Tabs and similar can work, but captive webviews often have restrictions
@@ -845,30 +856,33 @@ function showOpenInBrowserBanner(): void {
   }
   
   // Copy URL button
-  const copyBtn = document.getElementById('copyUrlBtn');
-  copyBtn?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(currentUrl);
-      copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
-        copyBtn.textContent = 'Copy Link';
-      }, 2000);
-    } catch {
-      // Fallback: select text
-      const textArea = document.createElement('textarea');
-      textArea.value = currentUrl;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
-        copyBtn.textContent = 'Copy Link';
-      }, 2000);
-    }
-  });
+  const copyBtn = document.getElementById('copyUrlBtn') as HTMLButtonElement | null;
+  if (copyBtn) {
+    const btn = copyBtn;
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(currentUrl);
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.textContent = 'Copy Link';
+        }, 2000);
+      } catch {
+        // Fallback: select text
+        const textArea = document.createElement('textarea');
+        textArea.value = currentUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        btn.textContent = 'Copied!';
+        setTimeout(() => {
+          btn.textContent = 'Copy Link';
+        }, 2000);
+      }
+    });
+  }
   
   // Dismiss button
   const dismissBtn = document.getElementById('dismissBannerBtn');

@@ -184,6 +184,20 @@ All sections below must pass before closing spooler handoff reliability work.
 - Printers that expose `DetectedErrorState` may still show "Low" or "Empty" alerts even without exact percentages.
 - Telemetry is queried from the Windows default printer only; ensure the correct printer is set as default.
 
+### Epson L5290 software setup for ink telemetry (Wi-Fi/LAN first)
+
+1. Install the official Epson L5290 driver package on the kiosk host and confirm the queue appears in Windows Printers.
+2. Ensure the printer and kiosk are on the same LAN and the queue uses a stable network port/IP.
+3. In PrintBit admin, open **System** and verify `/api/admin/printer/list` shows the expected Epson queue identity.
+4. In PrintBit admin settings, explicitly **enable Consumables Forecasting** (`consumablesForecasting.enabled = true`) before saving, then set rolling window, alert threshold, and tray capacity/current sheets.  
+   - Fresh kiosks default this flag to `false` (`src/core/database/db.ts`, `DEFAULT_DATA.settings.consumablesForecasting.enabled`), so toggle it on first.
+   - API alternative: `PUT /api/admin/settings` with `{ "consumablesForecasting": { "enabled": true, ... } }`.
+5. If ink telemetry is not immediately visible, run `POST /api/admin/printer/re-detect` and re-check (after enabling forecasting):
+   - `/api/admin/printer/ink-diagnostics`
+   - `/api/admin/printer/ink-history`
+   - `/api/admin/consumables/forecast`
+6. Use SNMP-capable network queue/driver configuration where possible; fallback methods can report lower-confidence ink estimates.
+
 ## Coins not updating
 
 - Verify serial cable and COM availability.

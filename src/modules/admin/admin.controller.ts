@@ -43,6 +43,7 @@ import {
 import { hashPassword, verifyPassword } from '@/utils/hash';
 import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
 import type { AlertSettings } from './admin.schema';
+import { ConsumablesService } from './consumables.service';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -318,11 +319,17 @@ const adminStorageClearRateLimit = createRateLimit({
 export class AdminController {
   public readonly router: Router;
   private readonly adminService: AdminService;
+  private readonly consumablesService: ConsumablesService;
   private readonly deps: AdminControllerDeps;
 
-  constructor(adminService: AdminService, deps: AdminControllerDeps) {
+  constructor(
+    adminService: AdminService,
+    consumablesService: ConsumablesService,
+    deps: AdminControllerDeps,
+  ) {
     this.router = Router();
     this.adminService = adminService;
+    this.consumablesService = consumablesService;
     this.deps = deps;
     this.initializeRoutes();
   }
@@ -368,6 +375,18 @@ export class AdminController {
       requireAdminPin,
       adminTimeSyncRateLimit,
       this.handleGetTimeSync,
+    );
+    this.router.get(
+      '/consumables/forecast',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetConsumablesForecast,
+    );
+    this.router.post(
+      '/consumables/paper-refill',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handlePaperRefill,
     );
 
     // ── Hopper routes ──────────────────────────────────────────────────────────
@@ -657,6 +676,7 @@ export class AdminController {
       return Number.isFinite(tsMs) && nowMs - tsMs <= 24 * 60 * 60 * 1000;
     });
     const recovery = getRecoveryStatusSnapshot();
+    const consumablesForecast = this.consumablesService.getForecast();
     res.json({
       balance: db.data!.balance,
       earnings: this.adminService.computeEarningsBuckets(),
@@ -694,6 +714,7 @@ export class AdminController {
         recent24h: recentJamEvents.length,
         lastJamAt: jamEvents[0]?.timestamp ?? null,
       },
+      consumables: consumablesForecast,
       storage,
       status: {
         serverRunning: true,
@@ -767,6 +788,74 @@ export class AdminController {
     });
   };
 
+  private handleGetConsumablesForecast = (_req: Request, res: Response) => {
+    res.json(this.consumablesService.getForecast());
+  };
+
+  private handlePaperRefill = async (req: Request, res: Response) => {
+    const body = req.body as {
+      currentSheets?: unknown;
+      paperTrayCapacitySheets?: unknown;
+    };
+    const currentSheetsRaw = body.currentSheets;
+    const trayCapacityRaw = body.paperTrayCapacitySheets;
+
+    if (!isFiniteNumber(currentSheetsRaw) || !Number.isInteger(currentSheetsRaw)) {
+      return res.status(400).json({
+        error: 'currentSheets must be a whole number.',
+      });
+    }
+    if (currentSheetsRaw < 0) {
+      return res.status(400).json({
+        error: 'currentSheets must be >= 0.',
+      });
+    }
+    if (
+      trayCapacityRaw !== undefined &&
+      (!isFiniteNumber(trayCapacityRaw) ||
+        !Number.isInteger(trayCapacityRaw) ||
+        trayCapacityRaw < 1)
+    ) {
+      return res.status(400).json({
+        error: 'paperTrayCapacitySheets must be a whole number >= 1.',
+      });
+    }
+
+    const currentSheets = Math.floor(currentSheetsRaw);
+    const trayCapacitySheets =
+      trayCapacityRaw === undefined ? undefined : Math.floor(trayCapacityRaw);
+    const targetCapacity =
+      trayCapacitySheets ??
+      db.data!.settings.consumablesForecasting.paperTrayCapacitySheets;
+
+    if (currentSheets > targetCapacity) {
+      return res.status(400).json({
+        error: 'currentSheets cannot exceed paperTrayCapacitySheets.',
+      });
+    }
+
+    const updated = await this.consumablesService.applyPaperRefill({
+      currentSheets,
+      trayCapacitySheets,
+    });
+
+    await this.adminService.appendAdminLog(
+      'consumables_paper_refilled',
+      'Paper inventory was updated from admin refill action.',
+      {
+        currentSheets: updated.currentSheets,
+        trayCapacitySheets: updated.trayCapacitySheets,
+        updatedAt: updated.updatedAt,
+      },
+    );
+
+    return res.json({
+      ok: true,
+      paper: updated,
+      forecast: this.consumablesService.getForecast(),
+    });
+  };
+
   // ── Hopper handlers ────────────────────────────────────────────────────────
 
   private handleHopperSelfTest = async (_req: Request, res: Response) => {
@@ -799,6 +888,13 @@ export class AdminController {
         blockOnLow?: boolean;
         blockOnEmpty?: boolean;
         telemetryUnknownPolicy?: 'warn_allow' | 'block';
+      };
+      consumablesForecasting?: {
+        enabled?: boolean;
+        rollingWindowDays?: number;
+        alertDaysThreshold?: number;
+        paperTrayCapacitySheets?: number;
+        paperCurrentSheets?: number;
       };
     };
 
@@ -858,37 +954,41 @@ export class AdminController {
         .json({ error: 'Admin PIN must be at least 4 characters.' });
     }
 
+    const originalSettings = db.data!.settings;
+    const nextSettings = {
+      ...originalSettings,
+      pricing: { ...originalSettings.pricing },
+      kioskPreferences: { ...originalSettings.kioskPreferences },
+      inkMonitoring: { ...originalSettings.inkMonitoring },
+      consumablesForecasting: { ...originalSettings.consumablesForecasting },
+    };
+
     if (body.pricing) {
-      if (printPerPage !== undefined)
-        db.data!.settings.pricing.printPerPage = printPerPage;
-      if (copyPerPage !== undefined)
-        db.data!.settings.pricing.copyPerPage = copyPerPage;
-      if (scanDocument !== undefined)
-        db.data!.settings.pricing.scanDocument = scanDocument;
+      if (printPerPage !== undefined) nextSettings.pricing.printPerPage = printPerPage;
+      if (copyPerPage !== undefined) nextSettings.pricing.copyPerPage = copyPerPage;
+      if (scanDocument !== undefined) nextSettings.pricing.scanDocument = scanDocument;
       if (colorSurcharge !== undefined)
-        db.data!.settings.pricing.colorSurcharge = colorSurcharge;
+        nextSettings.pricing.colorSurcharge = colorSurcharge;
     }
 
     if (body.idleTimeoutSeconds !== undefined) {
-      db.data!.settings.idleTimeoutSeconds = Math.floor(
-        body.idleTimeoutSeconds,
-      );
+      nextSettings.idleTimeoutSeconds = Math.floor(body.idleTimeoutSeconds);
     }
 
     if (body.adminPin && body.adminPin.trim()) {
-      db.data!.settings.adminPin = await hashPassword(body.adminPin.trim());
+      nextSettings.adminPin = await hashPassword(body.adminPin.trim());
     }
 
     if (body.adminLocalOnly !== undefined) {
-      db.data!.settings.adminLocalOnly = Boolean(body.adminLocalOnly);
+      nextSettings.adminLocalOnly = Boolean(body.adminLocalOnly);
     }
 
     let refreshInkTelemetry = false;
+    let refreshConsumablesAlerts = false;
     if (body.inkMonitoring) {
       const incoming = body.inkMonitoring;
-      const current = db.data!.settings.inkMonitoring;
+      const current = nextSettings.inkMonitoring;
       const next = { ...current };
-      const previousTargetPrinterName = current.targetPrinterName;
       if (incoming.enabled !== undefined) {
         if (typeof incoming.enabled !== 'boolean') {
           return res
@@ -909,8 +1009,6 @@ export class AdminController {
         next.targetPrinterName = normalizeTargetPrinterName(
           incoming.targetPrinterName,
         );
-        refreshInkTelemetry =
-          previousTargetPrinterName !== next.targetPrinterName;
       }
       if (incoming.lowThresholdPercent !== undefined) {
         if (
@@ -973,10 +1071,115 @@ export class AdminController {
         next.telemetryUnknownPolicy = incoming.telemetryUnknownPolicy;
       }
 
-      db.data!.settings.inkMonitoring = next;
+      nextSettings.inkMonitoring = next;
+      refreshInkTelemetry =
+        originalSettings.inkMonitoring.targetPrinterName !==
+        nextSettings.inkMonitoring.targetPrinterName;
     }
 
+    if (body.consumablesForecasting) {
+      const incoming = body.consumablesForecasting;
+      const current = nextSettings.consumablesForecasting;
+      const next = { ...current };
+
+      if (incoming.enabled !== undefined) {
+        if (typeof incoming.enabled !== 'boolean') {
+          return res.status(400).json({
+            error: 'consumablesForecasting.enabled must be boolean.',
+          });
+        }
+        next.enabled = incoming.enabled;
+      }
+
+      if (incoming.rollingWindowDays !== undefined) {
+        if (
+          !isFiniteNumber(incoming.rollingWindowDays) ||
+          !Number.isInteger(incoming.rollingWindowDays) ||
+          incoming.rollingWindowDays < 1 ||
+          incoming.rollingWindowDays > 90
+        ) {
+          return res.status(400).json({
+            error: 'consumablesForecasting.rollingWindowDays must be 1..90.',
+          });
+        }
+        next.rollingWindowDays = Math.floor(incoming.rollingWindowDays);
+      }
+
+      if (incoming.alertDaysThreshold !== undefined) {
+        if (
+          !isFiniteNumber(incoming.alertDaysThreshold) ||
+          !Number.isInteger(incoming.alertDaysThreshold) ||
+          incoming.alertDaysThreshold < 1 ||
+          incoming.alertDaysThreshold > 60
+        ) {
+          return res.status(400).json({
+            error: 'consumablesForecasting.alertDaysThreshold must be 1..60.',
+          });
+        }
+        next.alertDaysThreshold = Math.floor(incoming.alertDaysThreshold);
+      }
+
+      if (incoming.paperTrayCapacitySheets !== undefined) {
+        if (
+          !isFiniteNumber(incoming.paperTrayCapacitySheets) ||
+          !Number.isInteger(incoming.paperTrayCapacitySheets) ||
+          incoming.paperTrayCapacitySheets < 1
+        ) {
+          return res.status(400).json({
+            error:
+              'consumablesForecasting.paperTrayCapacitySheets must be a whole number >= 1.',
+          });
+        }
+        next.paperTrayCapacitySheets = Math.floor(incoming.paperTrayCapacitySheets);
+      }
+
+      if (incoming.paperCurrentSheets !== undefined) {
+        if (
+          !isFiniteNumber(incoming.paperCurrentSheets) ||
+          !Number.isInteger(incoming.paperCurrentSheets) ||
+          incoming.paperCurrentSheets < 0
+        ) {
+          return res.status(400).json({
+            error:
+              'consumablesForecasting.paperCurrentSheets must be a whole number >= 0.',
+          });
+        }
+        next.paperCurrentSheets = Math.floor(incoming.paperCurrentSheets);
+      }
+
+      if (next.paperCurrentSheets > next.paperTrayCapacitySheets) {
+        return res.status(400).json({
+          error:
+            'consumablesForecasting.paperCurrentSheets cannot exceed paperTrayCapacitySheets.',
+        });
+      }
+
+      if (
+        incoming.paperCurrentSheets !== undefined &&
+        next.paperCurrentSheets !==
+          originalSettings.consumablesForecasting.paperCurrentSheets
+      ) {
+        next.paperRefillUpdatedAt = new Date().toISOString();
+      }
+
+      nextSettings.consumablesForecasting = next;
+      refreshConsumablesAlerts =
+        originalSettings.consumablesForecasting.enabled !== next.enabled ||
+        originalSettings.consumablesForecasting.rollingWindowDays !==
+          next.rollingWindowDays ||
+        originalSettings.consumablesForecasting.alertDaysThreshold !==
+          next.alertDaysThreshold ||
+        originalSettings.consumablesForecasting.paperTrayCapacitySheets !==
+          next.paperTrayCapacitySheets ||
+        originalSettings.consumablesForecasting.paperCurrentSheets !==
+          next.paperCurrentSheets;
+    }
+
+    db.data!.settings = nextSettings;
     await db.write();
+    if (refreshConsumablesAlerts) {
+      await this.consumablesService.evaluateAndPublishForecastAlerts();
+    }
     if (refreshInkTelemetry) {
       try {
         await refreshPrinterTelemetry();

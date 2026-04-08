@@ -367,6 +367,13 @@ Validates PIN.
 
 Returns balance, earnings buckets, job stats, coin stats, storage, system status (including printer telemetry).
 
+Also includes `consumables` forecasting output:
+
+- `generatedAt`, `rollingWindowDays`, `alertDaysThreshold`
+- `paper` forecast (`currentSheets`, `trayCapacitySheets`, `avgDailyUse`, `daysRemaining`, `projectedEmptyAt`, `status`, `confidence`)
+- `inkSupplies[]` forecast (`name`, `level`, `avgDailyDrop`, `daysRemaining`, `projectedEmptyAt`, `status`, `confidence`, `detectionMethod`)
+- `alerts` (`withinThreshold`, `reasons[]`)
+
 The `status.printer` object contains:
 
 ```json
@@ -459,6 +466,46 @@ Returns settings. All pricing values are whole-peso integers.
 ### `PUT /api/admin/settings`
 
 Updates pricing, timeout, PIN, and local-only guard. Pricing fields (`printPerPage`, `copyPerPage`, `scanDocument`, `colorSurcharge`) must be non-negative integers (whole pesos). Fractional values are rejected with `400`.
+
+Supports `consumablesForecasting` updates:
+
+```json
+{
+  "consumablesForecasting": {
+    "enabled": true,
+    "rollingWindowDays": 14,
+    "alertDaysThreshold": 7,
+    "paperTrayCapacitySheets": 100,
+    "paperCurrentSheets": 60
+  }
+}
+```
+
+Validation rules:
+
+- `rollingWindowDays`: integer `1..90`
+- `alertDaysThreshold`: integer `1..60`
+- `paperTrayCapacitySheets`: integer `>= 1`
+- `paperCurrentSheets`: integer `>= 0` and must not exceed tray capacity
+
+### `GET /api/admin/consumables/forecast`
+
+Returns the same consumables forecast payload exposed under `/api/admin/summary.consumables`.
+
+### `POST /api/admin/consumables/paper-refill`
+
+Updates paper refill inventory and returns updated forecast.
+
+Request:
+
+```json
+{
+  "currentSheets": 95,
+  "paperTrayCapacitySheets": 100
+}
+```
+
+`paperTrayCapacitySheets` is optional; when omitted, current configured tray capacity is used.
 
 ### `GET /api/admin/printer/list`
 

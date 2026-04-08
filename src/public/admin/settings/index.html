@@ -749,6 +749,115 @@
               </div> -->
 
               <div class="sg">
+                <div class="sg__head">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path
+                      fill-rule="evenodd"
+                      d="M3 3.75A1.75 1.75 0 014.75 2h6.5A1.75 1.75 0 0113 3.75v8.5A1.75 1.75 0 0111.25 14h-6.5A1.75 1.75 0 013 12.25v-8.5zm2.5.75a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 3a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 3a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  <h3 class="sg__title">Consumables Forecasting</h3>
+                </div>
+                <div class="fields">
+                  <div class="field field--stretch">
+                    <label
+                      class="toggle-lbl"
+                      for="settingConsumablesForecastingEnabled"
+                    >
+                      <div class="toggle-lbl__text">
+                        <span class="toggle-lbl__title">Enable forecasting</span>
+                        <span class="toggle-lbl__desc"
+                          >Show paper/ink depletion forecast in admin dashboard</span
+                        >
+                      </div>
+                      <div class="toggle">
+                        <input
+                          id="settingConsumablesForecastingEnabled"
+                          type="checkbox"
+                          role="switch"
+                          class="toggle__input"
+                        />
+                        <div class="toggle__track" aria-hidden="true">
+                          <div class="toggle__thumb"></div>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="settingRollingWindowDays"
+                      >Rolling window</label
+                    >
+                    <div class="field__wrap field__wrap--post">
+                      <input
+                        id="settingRollingWindowDays"
+                        type="number"
+                        min="1"
+                        max="90"
+                        step="1"
+                        class="field__input"
+                        required
+                      />
+                      <span class="field__affix">days</span>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="settingAlertDaysThreshold"
+                      >Alert threshold</label
+                    >
+                    <div class="field__wrap field__wrap--post">
+                      <input
+                        id="settingAlertDaysThreshold"
+                        type="number"
+                        min="1"
+                        max="60"
+                        step="1"
+                        class="field__input"
+                        required
+                      />
+                      <span class="field__affix">days</span>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="settingPaperTrayCapacitySheets"
+                      >Tray capacity</label
+                    >
+                    <div class="field__wrap field__wrap--post">
+                      <input
+                        id="settingPaperTrayCapacitySheets"
+                        type="number"
+                        min="1"
+                        step="1"
+                        class="field__input"
+                        required
+                      />
+                      <span class="field__affix">sheets</span>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label class="field__lbl" for="settingPaperCurrentSheets"
+                      >Current paper</label
+                    >
+                    <div class="field__wrap field__wrap--post">
+                      <input
+                        id="settingPaperCurrentSheets"
+                        type="number"
+                        min="0"
+                        step="1"
+                        class="field__input"
+                        required
+                      />
+                      <span class="field__affix">sheets</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sg">
                 <!-- Security -->
                 <div class="sg__head">
                   <svg

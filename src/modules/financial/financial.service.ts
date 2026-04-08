@@ -29,6 +29,7 @@ import {
 } from '@/config/http.config';
 import {
   getSqliteDb,
+  consumablesStore,
   readRuntimeState,
   writeRuntimeState,
 } from '@/core/database/sqlite-storage';
@@ -56,6 +57,7 @@ import {
   PendingRefundServiceError,
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
+import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1700,6 +1702,59 @@ export class FinancialService {
       return;
     }
 
+    const settledAmount = settlement.chargedAmount;
+    const settledChangeState = settlement.change.state;
+    const settledChangeRequested = settlement.change.requested;
+    const settledChangeDispensed = settlement.change.dispensed;
+    const settledChangeAttempts = settlement.change.attempts ?? 0;
+    const settledOwedChangeId = settlement.change.owedChangeId ?? null;
+    const settledChangeMessage = settlement.change.message ?? null;
+    const settledRemainingBalance = settlement.remainingBalance;
+    function appendConsumableUsageEvent(eventMode: 'print' | 'copy'): void {
+      const isPrintMode = eventMode === 'print';
+      const selectedPages = isPrintMode
+        ? Math.max(1, printQuotePages?.selectedPages ?? 1)
+        : 1;
+      const duplexEnabled = isPrintMode ? Boolean(printOptions?.duplex) : false;
+      const billableColorPages = isPrintMode
+        ? Math.max(0, printQuotePages?.billableColorPages ?? 0)
+        : colorMode === 'colored'
+          ? 1
+          : 0;
+      const billableBwPages = isPrintMode
+        ? Math.max(0, printQuotePages?.billableBwPages ?? 0)
+        : billableColorPages > 0
+          ? 0
+          : 1;
+      const estimatedSheetsUsed =
+        Math.max(1, copies) * Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
+      consumablesStore.appendUsageEvent({
+        id: randomUUID(),
+        timestamp: getTrustedTimestamp().timestamp,
+        transactionId,
+        mode: eventMode,
+        copies: Math.max(1, copies),
+        duplex: duplexEnabled,
+        selectedPages,
+        billableColorPages,
+        billableBwPages,
+        estimatedSheetsUsed,
+        source: 'confirm-payment',
+      });
+    }
+
+    if (mode === 'copy') {
+      try {
+        appendConsumableUsageEvent('copy');
+        await evaluateConsumablesForecastAlerts();
+      } catch (error) {
+        console.error(
+          '[CONFIRM-PAYMENT] Failed to persist copy consumable usage event.',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
     sendResponse(200, {
       ok: true,
       transactionId,
@@ -1716,15 +1771,6 @@ export class FinancialService {
             }
           : undefined,
     });
-
-    const settledAmount = settlement.chargedAmount;
-    const settledChangeState = settlement.change.state;
-    const settledChangeRequested = settlement.change.requested;
-    const settledChangeDispensed = settlement.change.dispensed;
-    const settledChangeAttempts = settlement.change.attempts ?? 0;
-    const settledOwedChangeId = settlement.change.owedChangeId ?? null;
-    const settledChangeMessage = settlement.change.message ?? null;
-    const settledRemainingBalance = settlement.remainingBalance;
 
     void (async () => {
       const runAuditStep = async (
@@ -1823,6 +1869,15 @@ export class FinancialService {
             pageRange: printOptions?.pageRange ?? null,
           },
           onConfirmed: async () => {
+            try {
+              appendConsumableUsageEvent('print');
+              await evaluateConsumablesForecastAlerts();
+            } catch (error) {
+              console.error(
+                '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
+                error instanceof Error ? error.message : error,
+              );
+            }
             if (!serverFilename) return;
             await this.cleanupPrintUploadAfterSpoolerSuccess({
               transactionId,
