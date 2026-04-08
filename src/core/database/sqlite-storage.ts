@@ -12,6 +12,7 @@ import type {
   ReportIssueStatus,
   TrustedTimestampMeta,
 } from './db';
+import { db as runtimeDb } from './db';
 
 const SQLITE_FILE_PATH = path.resolve('printbit.sqlite');
 const LOWDB_IMPORT_META_KEY = 'lowdb_import_v1';
@@ -1477,13 +1478,13 @@ export class ConsumablesSqliteStore {
       Math.min(Math.floor(nextCurrentSheets), normalizedCapacity),
     );
     getSqliteDb();
-    const { db } = await import('./db');
-    db.data!.settings.consumablesForecasting.paperTrayCapacitySheets =
+    runtimeDb.data!.settings.consumablesForecasting.paperTrayCapacitySheets =
       normalizedCapacity;
-    db.data!.settings.consumablesForecasting.paperCurrentSheets =
+    runtimeDb.data!.settings.consumablesForecasting.paperCurrentSheets =
       normalizedCurrentSheets;
-    db.data!.settings.consumablesForecasting.paperRefillUpdatedAt = updatedAt;
-    await db.write();
+    runtimeDb.data!.settings.consumablesForecasting.paperRefillUpdatedAt =
+      updatedAt;
+    await runtimeDb.write();
   }
 
   private maybePruneOldTelemetryRows(): void {

@@ -66,9 +66,12 @@ function applyConsumablesForecast(summary: SummaryResponse): void {
       forecastAlert.textContent = 'Consumables forecast is unavailable.';
       forecastAlert.classList.remove('consumables-alert--active');
     }
-    if (forecastInkList)
-      forecastInkList.innerHTML =
-        '<li class="consumables-item consumables-item--muted">No ink forecast data available.</li>';
+    if (forecastInkList) {
+      const empty = document.createElement('li');
+      empty.className = 'consumables-item consumables-item--muted';
+      empty.textContent = 'No ink forecast data available.';
+      forecastInkList.replaceChildren(empty);
+    }
     return;
   }
 

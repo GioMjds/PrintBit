@@ -23,8 +23,8 @@ export interface PaperConsumableForecast {
   trayCapacitySheets: number;
   avgDailyUse: number;
   daysRemaining: number | null;
-  projectedDepletionDate: string | null;
-  sampleDays: number;
+  projectedEmptyAt: string | null;
+  usageEventsConsidered: number;
 }
 
 export interface InkConsumableForecast {
@@ -36,6 +36,8 @@ export interface InkConsumableForecast {
   level: number | null;
   avgDailyDrop: number;
   daysRemaining: number | null;
+  projectedEmptyAt: string | null;
+  snapshotsConsidered: number;
   detectionMethod:
     | 'snmp'
     | 'vendor-wmi'
@@ -350,16 +352,16 @@ export class ConsumablesService {
       input.rollingWindowDays > 0
         ? roundTo(totalSheetsUsed / input.rollingWindowDays, 3)
         : 0;
-    const sampleDays = byDay.size;
+    const usageEventsConsidered = byDay.size;
     const status: ConsumableForecastStatus =
       avgDailyUse > 0 ? 'ok' : 'insufficient_data';
     const confidence = estimatePaperConfidence(
       input.rollingWindowDays,
-      sampleDays,
+      usageEventsConsidered,
     );
     const daysRemaining =
       avgDailyUse > 0 ? roundTo(input.currentSheets / avgDailyUse, 2) : null;
-    const projectedDepletionDate =
+    const projectedEmptyAt =
       daysRemaining !== null
         ? new Date(input.now.getTime() + daysRemaining * DAY_MS).toISOString()
         : null;
@@ -371,8 +373,8 @@ export class ConsumablesService {
       trayCapacitySheets: input.trayCapacitySheets,
       avgDailyUse,
       daysRemaining,
-      projectedDepletionDate,
-      sampleDays,
+      projectedEmptyAt,
+      usageEventsConsidered,
     };
   }
 
@@ -469,6 +471,11 @@ export class ConsumablesService {
         status === 'ok' && latestLevel !== null
           ? roundTo(latestLevel / avgDailyDrop, 2)
           : null;
+      const latestTimestampMs = Date.parse(latestSnapshot.timestamp);
+      const projectedEmptyAt =
+        daysRemaining !== null && Number.isFinite(latestTimestampMs)
+          ? new Date(latestTimestampMs + daysRemaining * DAY_MS).toISOString()
+          : null;
       const confidence = estimateInkConfidence({
         status,
         detectionMethod: latestSnapshot.inkDetectionMethod,
@@ -485,6 +492,8 @@ export class ConsumablesService {
         level: latestLevel,
         avgDailyDrop,
         daysRemaining,
+        projectedEmptyAt,
+        snapshotsConsidered: points.length,
         detectionMethod: latestSnapshot.inkDetectionMethod,
         telemetryReason: latestSnapshot.inkTelemetryReason,
       });
