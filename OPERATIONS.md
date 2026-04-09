@@ -4,7 +4,7 @@
 
 - Start dev server: `pnpm dev`
 - Build client bundle: `pnpm build`
-- Type-check: `pnpm exec tsc --noEmit`
+- Type-check: `pnpm exec tsc --noEmit --ignoreDeprecations 6.0`
 - Run one-time legacy JSON->SQLite import: `pnpm run db:migrate:legacy`
 - Force rerun legacy import (clears import marker): `pnpm run db:migrate:legacy -- --force`
 - Apply controlled updates policy: `pnpm run updates:apply`
@@ -19,7 +19,12 @@
 
 ## Pre-flight checklist (kiosk)
 
-1. `bin/SumatraPDF.exe` exists.
+1. Print dispatcher dependencies are available for the configured mode:
+   - `PRINTBIT_PRINT_DISPATCH_MODE=legacy|phased|new-only`
+   - `bin/PDFtoPrinter.exe` (or `PRINTBIT_PDFTOPRINTER_PATH`)
+   - GhostScript (`gswin64c.exe`) via PATH or `PRINTBIT_GHOSTSCRIPT_PATH`
+   - LibreOffice (`soffice.exe`) via PATH or `PRINTBIT_LIBREOFFICE_PATH`
+   - Optional Sumatra fallback (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`) for phased mode
 2. Printer is installed and has a default printer selected.
 3. Serial coin hardware is connected (if coin mode is used).
 4. Scanner is connected (for copy/scan features).
@@ -173,9 +178,23 @@ All sections below must pass before closing spooler handoff reliability work.
 
 ## Print fails
 
-- Verify `bin/SumatraPDF.exe` path and permissions.
+- Verify print dispatcher mode and binary paths.
 - Confirm uploaded file exists in `uploads/`.
 - Check default Windows printer status.
+
+## Print dispatcher phased rollout gate (Issue #112)
+
+Use `GET /api/admin/print-dispatch/latency` to evaluate cutover readiness.
+
+Move from `PRINTBIT_PRINT_DISPATCH_MODE=phased` to `new-only` only when:
+
+1. `sampleCount` has representative traffic for both PDF and non-PDF uploads.
+2. p95 latency and failure behavior are stable across recent operating windows.
+3. If validating the slowness speculation, non-PDF p95 is interpreted as materially slower only when it is >=30% above PDF p95.
+
+Rollback path:
+
+- Set `PRINTBIT_PRINT_DISPATCH_MODE=legacy` and restart the service.
 
 ## Ink / toner levels show "N/A"
 

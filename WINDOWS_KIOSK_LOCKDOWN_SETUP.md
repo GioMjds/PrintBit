@@ -16,7 +16,11 @@ Install these first:
 - pnpm `10.13.1`
 - Git
 - Microsoft Edge (latest stable)
-- `bin/SumatraPDF.exe` present in project
+- Print dispatcher binaries available for selected mode:
+  - `bin/PDFtoPrinter.exe` (or `PRINTBIT_PDFTOPRINTER_PATH`)
+  - GhostScript (`gswin64c.exe`) via PATH or `PRINTBIT_GHOSTSCRIPT_PATH`
+  - LibreOffice (`soffice.exe`) via PATH or `PRINTBIT_LIBREOFFICE_PATH`
+  - Optional Sumatra fallback (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`) for phased mode
 - Printer driver package (production printer)
 - Scanner driver + NAPS2 (`C:\Program Files\NAPS2\NAPS2.Console.exe`)
 - Serial/USB drivers for coin acceptor / hopper controller
@@ -55,7 +59,7 @@ From the project root:
 ```powershell
 pnpm install
 pnpm run build
-pnpm exec tsc --noEmit
+pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 
 Validate launcher scripts exist:

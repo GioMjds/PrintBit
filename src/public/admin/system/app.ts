@@ -438,11 +438,29 @@ testPrintBtn?.addEventListener('click', () => {
         message?: string;
         error?: string;
         printerName?: string;
+        timing?: {
+          totalElapsedMs?: number | null;
+          dispatchDurationMs?: number | null;
+          dispatchEngine?: string | null;
+          dispatchAttempts?: number | null;
+        };
       };
       if (!res.ok || !body.ok) {
         throw new Error(body.error ?? 'Printer unavailable or not connected.');
       }
-      setMessage(body.message ?? 'Test page sent successfully.');
+      const timingParts: string[] = [];
+      if (typeof body.timing?.dispatchEngine === 'string') {
+        timingParts.push(`engine: ${body.timing.dispatchEngine}`);
+      }
+      if (typeof body.timing?.dispatchDurationMs === 'number') {
+        timingParts.push(`dispatch: ${body.timing.dispatchDurationMs}ms`);
+      }
+      if (typeof body.timing?.totalElapsedMs === 'number') {
+        timingParts.push(`total: ${body.timing.totalElapsedMs}ms`);
+      }
+      const timingSuffix =
+        timingParts.length > 0 ? ` (${timingParts.join(', ')})` : '';
+      setMessage((body.message ?? 'Test page sent successfully.') + timingSuffix);
     })
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Test print failed.'),

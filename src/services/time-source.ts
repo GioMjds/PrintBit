@@ -83,7 +83,17 @@ function readRevalidationIntervalMs(): number {
 }
 
 function readEnforceFlag(): boolean {
-  return process.env.PRINTBIT_TRUSTED_TIME_ENFORCE !== 'false';
+  const raw = process.env.PRINTBIT_TRUSTED_TIME_ENFORCE;
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+      return false;
+    }
+    return true;
+  }
+  // ESP32 deployments are commonly offline-only, so strict trusted-time
+  // enforcement must be opt-in there to avoid blocking kiosk payments/prints.
+  return process.env.PRINTBIT_NETWORK_PROVIDER?.trim().toLowerCase() !== 'esp32';
 }
 
 function readNtpServerOverride(): string | null {
@@ -279,6 +289,7 @@ export function assertTrustedTimeForFinancialOperation(
   operation: string,
 ): void {
   const status = getTrustedTimeStatus();
+  if (!status.enforceForFinancial) return;
   const ageMs = Date.now() - Date.parse(status.checkedAt);
   const staleThresholdMs = readRevalidationIntervalMs();
   if (!Number.isFinite(ageMs) || ageMs > staleThresholdMs) {
@@ -292,7 +303,6 @@ export function assertTrustedTimeForFinancialOperation(
         'Trusted time status is stale. Wait for the next verification cycle or run a manual time-sync check.',
     });
   }
-  if (!status.enforceForFinancial) return;
   if (!status.synced || status.offsetMs === null || status.driftExceeded) {
     throw new TrustedTimeError(operation, status);
   }

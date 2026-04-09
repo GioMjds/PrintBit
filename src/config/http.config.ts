@@ -115,6 +115,74 @@ export const SESSION_EXPIRY_ENABLED =
     ? true
     : !SESSION_EXPIRY_DISABLED_TOKENS.has(rawSessionExpiryEnabled);
 
+export type PrintDispatchMode = 'legacy' | 'phased' | 'new-only';
+
+function readPathEnv(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function readPositiveIntEnv(
+  value: string | undefined,
+  fallback: number,
+  minimum = 1,
+): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const normalized = Math.floor(parsed);
+  return normalized >= minimum ? normalized : fallback;
+}
+
+const rawPrintDispatchMode = (
+  process.env.PRINTBIT_PRINT_DISPATCH_MODE ??
+  process.env.PRINT_DISPATCH_MODE ??
+  'legacy'
+)
+  .trim()
+  .toLowerCase();
+
+export const PRINT_DISPATCH_MODE: PrintDispatchMode =
+  rawPrintDispatchMode === 'phased' || rawPrintDispatchMode === 'new-only'
+    ? rawPrintDispatchMode
+    : 'legacy';
+
+export const SUMATRA_PATH =
+  readPathEnv('PRINTBIT_SUMATRA_PATH', 'SUMATRA_PATH') ??
+  path.resolve('bin', 'SumatraPDF.exe');
+
+export const PDFTOPRINTER_PATH =
+  readPathEnv(
+    'PRINTBIT_PDFTOPRINTER_PATH',
+    'PDFTOPRINTER_PATH',
+    'PDFTTOPRINTER_PATH',
+  ) ?? path.resolve('bin', 'PDFtoPrinter.exe');
+
+export const GHOSTSCRIPT_PATH = readPathEnv(
+  'PRINTBIT_GHOSTSCRIPT_PATH',
+  'GHOSTSCRIPT_PATH',
+);
+
+export const LIBREOFFICE_PATH = readPathEnv(
+  'PRINTBIT_LIBREOFFICE_PATH',
+  'LIBREOFFICE_PATH',
+);
+
+export const PRINT_DISPATCH_TIMEOUT_MS = readPositiveIntEnv(
+  process.env.PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS?.trim(),
+  60_000,
+  5_000,
+);
+
+export const PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS = readPositiveIntEnv(
+  process.env.PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS?.trim(),
+  120_000,
+  10_000,
+);
+
 export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
   { route: '/', filePath: path.join(PUBLIC_DIR, 'index.html') },
   { route: '/print', filePath: path.join(PUBLIC_DIR, 'print', 'index.html') },

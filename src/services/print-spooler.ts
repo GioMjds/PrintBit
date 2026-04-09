@@ -866,6 +866,30 @@ export async function monitorSpoolerJob(
             );
           }
         }
+        try {
+          await adminService.appendAdminLog(
+            'print_spooler_confirmed',
+            `Print spooler confirmed successful print: ${job.status}.`,
+            {
+              spoolerJobId: job.id,
+              spoolerStatus: job.status,
+              pagesPrinted: job.pagesPrinted,
+              totalPages: job.totalPages,
+              printerName: normalizedPrinterName,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              monitorElapsedMs: Date.now() - startedAtMs,
+              handoffLatencyMs,
+              pollCount,
+              queryFailureCount,
+            },
+          );
+        } catch (error) {
+          console.error(
+            '[SPOOLER-MONITOR] Failed to append spooler confirmed admin log.',
+            error,
+          );
+        }
         if (onConfirmed) {
           try {
             await onConfirmed({

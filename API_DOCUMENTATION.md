@@ -417,6 +417,23 @@ Both `/api/admin/summary` and `/api/admin/status` now include:
 }
 ```
 
+### `GET /api/admin/print-dispatch/latency`
+
+Returns print dispatcher latency analytics derived from admin logs by correlating:
+
+- `print_dispatch_summary` (dispatch timestamp + MIME/engine), and
+- spooler terminal logs (`print_spooler_confirmed`, `print_spooler_job_failed`, `print_spooler_auto_refund`, `print_spooler_monitor_timeout`, `print_spooler_monitor_unavailable`).
+
+Query:
+
+- `maxEvents` (optional, default `5000`, clamped `100..20000`)
+
+Response includes:
+
+- `byMimeType[]` with `p50`, `p95`, and `sampleCount`
+- `byEngine[]` with `p50`, `p95`, and `sampleCount`
+- `speculation` summary where `confirmed=true` when worst non-PDF p95 is at least 30% higher than PDF p95
+
 ### `GET /api/admin/transactions/:transactionId`
 
 Returns a transaction-focused support snapshot for the given reference ID. Response includes:
@@ -550,6 +567,13 @@ Forces immediate printer re-detection and telemetry refresh. Returns `{ ok, prin
 ### `POST /api/admin/printer/test-print`
 
 Prints a diagnostic test page to the currently connected printer.
+
+Response includes dispatch timing metadata:
+
+- `timing.totalElapsedMs` — end-to-end request handling time
+- `timing.dispatchDurationMs` — dispatcher engine handoff duration
+- `timing.dispatchEngine` — selected engine (`sumatra`, `pdftoprinter`, `ghostscript`, `libreoffice`)
+- `timing.dispatchAttempts` — number of dispatch attempts in the fallback chain
 
 ### `GET /api/admin/logs`
 

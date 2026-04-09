@@ -16,7 +16,13 @@ export * from './print-spooler';
 export * from './printer-monitor';
 export * from './printer-fault-lock';
 export type { Orientation, PaperSize, PrintJobOptions } from './printer';
-export { detectDefaultPrinter, printFile } from './printer';
+export type { PrintDispatchContext, PrintDispatchResult } from './printer';
+export {
+  assertPrintDispatcherReady,
+  detectDefaultPrinter,
+  printFile,
+  warmPrintDispatcherProfile,
+} from './printer';
 export * from './printer-status';
 export * from './report-issue';
 export * from './recovery';
