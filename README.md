@@ -183,7 +183,7 @@ Related env knobs:
 - `PRINTBIT_ESP32_COIN_API_KEY` (**required in `esp32` mode**) shared secret required by `/coin` bridge requests
 - `PRINTBIT_ESP32_COIN_BRIDGE_RELAXED` (default `false`) simulation-only compatibility mode for legacy `/coin?value=` requests
 - `PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS` (default `true` in `esp32` mode) accepts coin credits even when slot/printer safety gates are active so kiosk UI balance keeps updating from ESP32 events
-- `PRINTBIT_TRUSTED_TIME_ENFORCE` (default `false` in `esp32` mode, else `true`) blocks or allows financial operations when trusted time cannot sync
+- `PRINTBIT_TRUSTED_TIME_ENFORCE` (default `false`) blocks or allows financial operations when trusted time cannot sync
 - `PRINTBIT_SERIAL_PORT` (optional) to pin the serial coin/hopper device when multiple COM ports are present
 
 Recommended `.env` for ESP32 mode:
@@ -218,6 +218,10 @@ Recommended `.ino` alignment for ESP32 mode:
   - `x-coin-source: esp32`
   - `x-coin-api-key: <same as PRINTBIT_ESP32_COIN_API_KEY>`
   - `x-coin-event-id: <unique id per coin>`
+- For hopper change dispensing, support authenticated commands:
+  - `POST /hopper/dispense` with `token`, `coins`, optional `requestId`
+  - `GET /hopper/status?token=...` for live dispense state
+  - Use the same shared secret as `PRINTBIT_ESP32_COIN_API_KEY` (`hopperControlToken` in `.ino`)
 
 Troubleshooting mobile captive onboarding:
 

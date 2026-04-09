@@ -1522,6 +1522,7 @@ export class FinancialService {
     let jobDispatchedAt: string | null = null;
     let dispatchResult: PrintDispatchResult | null = null;
     let spoolerMonitorStarted = false;
+    let settlementCompleted = false;
 
     if (mode === 'print' && serverFilename && printOptions) {
       if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -1610,59 +1611,6 @@ export class FinancialService {
             dispatchAttempts: dispatchResult.attempts.length,
           },
         });
-        if (jobDispatchedAt && telemetry.name) {
-          spoolerMonitorStarted = true;
-          void monitorSpoolerJob({
-            printerName: telemetry.name,
-            chargedAmount: requiredAmount,
-            jobDispatchedAt,
-            spoolerCorrelationKey,
-            io: this.deps.io,
-            jobContext: {
-              transactionId,
-              mode,
-              copies,
-              colorMode: printOptions?.colorMode ?? colorMode,
-              duplex: printOptions?.duplex ?? false,
-              spoolerCorrelationKey,
-              sessionId: sessionId ?? null,
-              documentId: targetDocumentId ?? null,
-              filename: serverFilename ?? null,
-              pageRange: printOptions?.pageRange ?? null,
-              dispatchEngine: dispatchResult?.selectedEngine ?? null,
-              dispatchMode: dispatchResult?.mode ?? null,
-              dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
-              dispatchDurationMs: dispatchResult?.durationMs ?? null,
-              dispatchMimeType: dispatchResult?.mimeType ?? null,
-              dispatchExtension: dispatchResult?.fileExtension ?? null,
-              dispatchAttempts: dispatchResult?.attempts.length ?? null,
-              monitorStartPhase: 'post_dispatch',
-            },
-            onConfirmed: async () => {
-              try {
-                appendConsumableUsageEvent('print');
-                await evaluateConsumablesForecastAlerts();
-              } catch (error) {
-                console.error(
-                  '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
-                  error instanceof Error ? error.message : error,
-                );
-              }
-              if (!serverFilename) return;
-              await this.cleanupPrintUploadAfterSpoolerSuccess({
-                transactionId,
-                sessionId: sessionId ?? null,
-                documentId: targetDocumentId ?? null,
-                filename: serverFilename,
-              });
-            },
-          }).catch((err) => {
-            console.error(
-              '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
-              err instanceof Error ? err.message : err,
-            );
-          });
-        }
       } catch (err) {
         const dispatchFailure =
           err instanceof PrintDispatchError ? err.result : null;
@@ -1755,6 +1703,7 @@ export class FinancialService {
       });
       return;
     }
+    settlementCompleted = true;
 
     await checkpointRecoverySession({
       transactionId,
@@ -1977,6 +1926,7 @@ export class FinancialService {
           );
         });
       } else {
+        spoolerMonitorStarted = true;
         void monitorSpoolerJob({
           printerName: telemetry.name,
           chargedAmount: settledAmount,
@@ -2001,9 +1951,16 @@ export class FinancialService {
             dispatchMimeType: dispatchResult?.mimeType ?? null,
             dispatchExtension: dispatchResult?.fileExtension ?? null,
             dispatchAttempts: dispatchResult?.attempts.length ?? null,
-            monitorStartPhase: 'post_settlement_fallback',
+            monitorStartPhase: 'post_settlement',
           },
           onConfirmed: async () => {
+            if (!settlementCompleted) {
+              console.warn(
+                '[SPOOLER-MONITOR] Skipping post-confirmed callbacks because settlement did not complete.',
+                { transactionId, spoolerCorrelationKey },
+              );
+              return;
+            }
             try {
               appendConsumableUsageEvent('print');
               await evaluateConsumablesForecastAlerts();

@@ -50,7 +50,7 @@ let statusCache: TrustedTimeStatus = {
   offsetMs: null,
   driftExceeded: false,
   maxDriftMs: DEFAULT_MAX_DRIFT_MS,
-  enforceForFinancial: true,
+  enforceForFinancial: false,
   checkedAt: new Date(0).toISOString(),
   detail: 'Trusted time has not been verified yet.',
   ntpSource: null,
@@ -91,9 +91,10 @@ function readEnforceFlag(): boolean {
     }
     return true;
   }
-  // ESP32 deployments are commonly offline-only, so strict trusted-time
-  // enforcement must be opt-in there to avoid blocking kiosk payments/prints.
-  return process.env.PRINTBIT_NETWORK_PROVIDER?.trim().toLowerCase() !== 'esp32';
+  // Trusted-time enforcement is opt-in by default. Many production kiosks run
+  // in offline/limited-connectivity environments and should not block
+  // payments, refunds, or recovery on NTP availability.
+  return false;
 }
 
 function readNtpServerOverride(): string | null {
