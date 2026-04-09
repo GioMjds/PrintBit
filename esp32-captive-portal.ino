@@ -16,6 +16,7 @@ const char* fallbackKioskPortalPath = "/portal";
 const char* kioskRegisterToken = "printbit-register-token";
 const char* coinBridgeSource = "esp32";
 const char* coinBridgeApiKey = "printbit-coin-bridge-key";
+const char* hopperControlToken = "printbit-coin-bridge-key";
 
 NetworkServer server(80);
 
@@ -34,6 +35,7 @@ volatile unsigned long lastPulseMillis = 0;
 const unsigned long debounceMicros = 3000;
 const unsigned long coinTimeout = 200;
 const int maxCoinSendAttempts = 3;
+const int maxDispenseCoins = 50;
 
 // HOPPER
 volatile int coinDispensed = 0;
@@ -44,12 +46,21 @@ const unsigned long hopperDebounce = 120;
 
 bool dispensing = false;
 bool dispenseDone = false;
+bool dispenseTimedOut = false;
+volatile bool dispenseProgressDirty = false;
+int lastProgressReported = -1;
 
 // SAFETY
 unsigned long hopperStartTime = 0;
 const unsigned long hopperMaxRunTime = 15000;
 
 unsigned long coinEventCounter = 0;
+String activeDispenseRequestId = "";
+String lastDispenseRequestId = "";
+String lastDispenseOutcome = "idle";
+String lastDispenseError = "";
+unsigned long lastDispenseFinishedAt = 0;
+String serialLineBuffer = "";
 
 String decodeUrlComponent(const String& value) {
   String decoded = "";
@@ -87,6 +98,28 @@ String getFormValue(const String& body, const String& key) {
   int end = body.indexOf('&', start);
   if (end < 0) end = body.length();
   return decodeUrlComponent(body.substring(start, end));
+}
+
+String getQueryValue(const String& query, const String& key) {
+  String needle = key + "=";
+  int start = query.indexOf(needle);
+  if (start < 0) return "";
+  start += needle.length();
+  int end = query.indexOf('&', start);
+  if (end < 0) end = query.length();
+  return decodeUrlComponent(query.substring(start, end));
+}
+
+bool isNumericString(const String& value) {
+  if (value.length() == 0) return false;
+  for (size_t i = 0; i < value.length(); i++) {
+    if (!isDigit(value.charAt(i))) return false;
+  }
+  return true;
+}
+
+String buildHopperRequestId() {
+  return String((uint32_t)esp_random(), HEX) + "-" + String(millis());
 }
 
 String normalizedPath(const String& pathCandidate) {
@@ -187,6 +220,42 @@ void logCoinSendFailure(const String& classification, int code, const String& bo
   if (body.length() > 0) {
     Serial.print(":body=");
     Serial.print(body);
+  }
+  Serial.println();
+}
+
+void emitHopperAck(const String& requestId) {
+  Serial.print("HOPPER ACK ");
+  Serial.println(requestId);
+}
+
+void emitHopperProgress(const String& requestId, int dispensed, int total) {
+  Serial.print("HOPPER PROGRESS ");
+  Serial.print(requestId);
+  Serial.print(" ");
+  Serial.print(dispensed);
+  Serial.print(" ");
+  Serial.println(total);
+}
+
+void emitHopperDone(const String& requestId, int dispensedCount) {
+  Serial.print("HOPPER DONE ");
+  Serial.print(requestId);
+  Serial.print(" ");
+  Serial.println(dispensedCount);
+}
+
+void emitHopperError(
+    const String& requestId,
+    const String& errorCode,
+    const String& detail) {
+  Serial.print("HOPPER ERR ");
+  Serial.print(requestId.length() > 0 ? requestId : "n/a");
+  Serial.print(" ");
+  Serial.print(errorCode);
+  if (detail.length() > 0) {
+    Serial.print(" ");
+    Serial.print(detail);
   }
   Serial.println();
 }
@@ -308,7 +377,16 @@ void handleWifiRequest(NetworkClient& client) {
     return;
   }
 
+  String routePath = path;
+  String query = "";
+  int querySep = path.indexOf('?');
+  if (querySep >= 0) {
+    routePath = path.substring(0, querySep);
+    query = path.substring(querySep + 1);
+  }
+
   int contentLength = 0;
+  String hopperTokenHeader = "";
   while (client.connected()) {
     String headerLine = client.readStringUntil('\r');
     client.readStringUntil('\n');
@@ -321,30 +399,107 @@ void handleWifiRequest(NetworkClient& client) {
       String lengthPart = headerLine.substring(colonPos + 1);
       lengthPart.trim();
       contentLength = lengthPart.toInt();
+    } else if (headerKey == "x-hopper-token") {
+      hopperTokenHeader = headerLine.substring(colonPos + 1);
+      hopperTokenHeader.trim();
     }
   }
 
-  if (method == "POST" && path.startsWith("/kiosk/register")) {
+  String body = "";
+  if (contentLength > 0 && contentLength <= 512) {
+    body = readRequestBody(client, contentLength);
+  }
+
+  if (method == "POST" && routePath.startsWith("/kiosk/register")) {
     if (contentLength <= 0 || contentLength > 512) {
       replyPlain(client, 413, "Payload Too Large", "Invalid payload size");
       client.stop();
       return;
     }
-    String body = readRequestBody(client, contentLength);
     handleRegisterRequest(client, body);
     client.stop();
     return;
   }
 
-  if (method == "GET" && isCaptiveProbePath(path)) {
+  if (method == "GET" && isCaptiveProbePath(routePath)) {
     replyRedirect(client, kioskPortalUrl);
     client.stop();
     return;
   }
 
-  if (method == "GET" && path.startsWith("/?coins=")) {
-    int coins = path.substring(8).toInt();
-    startDispense(coins);
+  if ((method == "POST" || method == "GET") && routePath == "/hopper/dispense") {
+    String postedToken = getFormValue(body, "token");
+    String postedCoins = getFormValue(body, "coins");
+    String postedRequestId = getFormValue(body, "requestId");
+    if (postedToken.length() == 0) postedToken = hopperTokenHeader;
+    if (postedToken.length() == 0) postedToken = getQueryValue(query, "token");
+    if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "coins");
+    if (postedRequestId.length() == 0) postedRequestId = getQueryValue(query, "requestId");
+
+    if (postedToken.length() == 0 || postedToken != hopperControlToken) {
+      replyPlain(client, 401, "Unauthorized", "Invalid hopper token");
+      Serial.println("hopper_dispense_rejected:unauthorized");
+      client.stop();
+      return;
+    }
+    if (!isNumericString(postedCoins)) {
+      replyPlain(client, 400, "Bad Request", "Missing or invalid coins");
+      Serial.println("hopper_dispense_rejected:invalid_coins");
+      client.stop();
+      return;
+    }
+
+    int coins = postedCoins.toInt();
+    String requestId = postedRequestId.length() > 0 ? postedRequestId : buildHopperRequestId();
+    if (!startDispense(coins, requestId, "http")) {
+      replyPlain(client, 409, "Conflict", "Dispense busy or invalid");
+      client.stop();
+      return;
+    }
+    replyPlain(client, 202, "Accepted", "hopper_dispense_started");
+    client.stop();
+    return;
+  }
+
+  if (method == "GET" && routePath == "/hopper/status") {
+    String providedToken = getQueryValue(query, "token");
+    if (providedToken.length() == 0) providedToken = hopperTokenHeader;
+    if (providedToken.length() == 0 || providedToken != hopperControlToken) {
+      replyPlain(client, 401, "Unauthorized", "Invalid hopper token");
+      client.stop();
+      return;
+    }
+    int dispensedSnapshot = 0;
+    noInterrupts();
+    dispensedSnapshot = coinDispensed;
+    interrupts();
+
+    String response = "{";
+    response += "\"dispensing\":";
+    response += dispensing ? "true" : "false";
+    response += ",\"targetCoins\":";
+    response += String(targetCoins);
+    response += ",\"dispensedCoins\":";
+    response += String(dispensedSnapshot);
+    response += ",\"activeRequestId\":\"";
+    response += activeDispenseRequestId;
+    response += "\",\"lastRequestId\":\"";
+    response += lastDispenseRequestId;
+    response += "\",\"lastOutcome\":\"";
+    response += lastDispenseOutcome;
+    response += "\",\"lastError\":\"";
+    response += lastDispenseError;
+    response += "\",\"lastFinishedAtMs\":";
+    response += String(lastDispenseFinishedAt);
+    response += "}";
+    replyPlain(client, 200, "OK", response);
+    client.stop();
+    return;
+  }
+
+  if (method == "GET" && routePath == "/" && query.startsWith("coins=")) {
+    int coins = getQueryValue(query, "coins").toInt();
+    startDispense(coins, buildHopperRequestId(), "legacy_query");
   }
 
   replyPlain(client, 200, "OK", "PRINTBIT OK");
@@ -367,6 +522,7 @@ void IRAM_ATTR coinDetected() {
 
   if (now - lastCoinTime > hopperDebounce) {
     coinDispensed++;
+    dispenseProgressDirty = true;
     lastCoinTime = now;
 
     if (dispensing && coinDispensed >= targetCoins) {
@@ -378,20 +534,94 @@ void IRAM_ATTR coinDetected() {
 }
 
 // DISPENSE
-void startDispense(int coins) {
-  if (dispensing) return;
-  if (coins <= 0 || coins > 50) return;
+bool startDispense(
+    int coins,
+    const String& requestId,
+    const String& sourceLabel) {
+  if (dispensing) {
+    emitHopperError(requestId, "UNKNOWN", "BUSY");
+    return false;
+  }
+  if (coins <= 0 || coins > maxDispenseCoins) {
+    emitHopperError(requestId, "UNKNOWN", "INVALID_COIN_COUNT");
+    return false;
+  }
 
   targetCoins = coins;
+  noInterrupts();
   coinDispensed = 0;
+  dispenseProgressDirty = false;
+  interrupts();
   dispensing = true;
   dispenseDone = false;
+  dispenseTimedOut = false;
   hopperStartTime = millis();
+  lastProgressReported = -1;
+  activeDispenseRequestId = requestId.length() > 0 ? requestId : buildHopperRequestId();
+  lastDispenseRequestId = activeDispenseRequestId;
+  lastDispenseOutcome = "dispensing";
+  lastDispenseError = "";
 
   digitalWrite(relayPin, HIGH);
+  emitHopperAck(activeDispenseRequestId);
 
-  Serial.print("START ");
-  Serial.println(targetCoins);
+  Serial.print("hopper_start:requestId=");
+  Serial.print(activeDispenseRequestId);
+  Serial.print(":coins=");
+  Serial.print(targetCoins);
+  Serial.print(":source=");
+  Serial.println(sourceLabel);
+  return true;
+}
+
+void handleSerialCommand(const String& rawLine) {
+  String line = rawLine;
+  line.trim();
+  if (line.length() == 0) return;
+
+  if (line.startsWith("HOPPER ")) {
+    int first = line.indexOf(' ');
+    int second = line.indexOf(' ', first + 1);
+    String verb = second > 0 ? line.substring(first + 1, second) : "";
+    verb.toUpperCase();
+
+    if (verb == "SELFTEST") {
+      String requestId =
+          second > 0 ? line.substring(second + 1) : buildHopperRequestId();
+      requestId.trim();
+      if (requestId.length() == 0) requestId = buildHopperRequestId();
+      emitHopperAck(requestId);
+      emitHopperDone(requestId, 0);
+      return;
+    }
+
+    if (verb == "DISPENSE") {
+      int third = line.indexOf(' ', second + 1);
+      String requestId = third > 0 ? line.substring(second + 1, third) : "";
+      String coinsRaw = third > 0 ? line.substring(third + 1) : "";
+      requestId.trim();
+      coinsRaw.trim();
+      if (requestId.length() == 0) requestId = buildHopperRequestId();
+      if (!isNumericString(coinsRaw)) {
+        emitHopperError(requestId, "UNKNOWN", "INVALID_COIN_COUNT");
+        return;
+      }
+
+      int coins = coinsRaw.toInt();
+      startDispense(coins, requestId, "serial_protocol");
+      return;
+    }
+
+    emitHopperError(buildHopperRequestId(), "UNKNOWN", "UNSUPPORTED_COMMAND");
+    return;
+  }
+
+  if (isNumericString(line)) {
+    int command = line.toInt();
+    if (command > 0 && command <= maxDispenseCoins) {
+      startDispense(command, buildHopperRequestId(), "serial_legacy");
+    }
+  }
 }
 
 // SETUP
@@ -454,10 +684,16 @@ void loop() {
   }
 
   // SERIAL COMMAND
-  if (Serial.available()) {
-    int command = Serial.parseInt();
-    if (command > 0 && command <= 50) {
-      startDispense(command);
+  while (Serial.available()) {
+    char c = char(Serial.read());
+    if (c == '\r') continue;
+    if (c == '\n') {
+      handleSerialCommand(serialLineBuffer);
+      serialLineBuffer = "";
+      continue;
+    }
+    if (serialLineBuffer.length() < 120) {
+      serialLineBuffer += c;
     }
   }
 
@@ -467,17 +703,49 @@ void loop() {
     handleWifiRequest(client);
   }
 
+  int dispensedSnapshot = 0;
+  bool progressDirtySnapshot = false;
+  noInterrupts();
+  dispensedSnapshot = coinDispensed;
+  progressDirtySnapshot = dispenseProgressDirty;
+  dispenseProgressDirty = false;
+  interrupts();
+
+  if (dispensing && progressDirtySnapshot && dispensedSnapshot != lastProgressReported) {
+    lastProgressReported = dispensedSnapshot;
+    emitHopperProgress(activeDispenseRequestId, dispensedSnapshot, targetCoins);
+  }
+
   // HOPPER TIMEOUT
   if (dispensing && millis() - hopperStartTime > hopperMaxRunTime) {
-    Serial.println("HOPPER TIMEOUT");
     digitalWrite(relayPin, LOW);
     dispensing = false;
-    dispenseDone = true;
+    dispenseTimedOut = true;
+  }
+
+  if (dispenseTimedOut) {
+    dispenseTimedOut = false;
+    lastDispenseOutcome = "failed";
+    lastDispenseError = "MOTOR_TIMEOUT";
+    lastDispenseFinishedAt = millis();
+    emitHopperError(activeDispenseRequestId, "MOTOR_TIMEOUT", "timeout");
+    Serial.print("hopper_done:requestId=");
+    Serial.print(activeDispenseRequestId);
+    Serial.println(":outcome=failed");
+    activeDispenseRequestId = "";
   }
 
   if (dispenseDone) {
-    Serial.println("DONE");
     dispenseDone = false;
+    lastDispenseOutcome = "done";
+    lastDispenseError = "";
+    lastDispenseFinishedAt = millis();
+    emitHopperDone(lastDispenseRequestId, dispensedSnapshot);
+    Serial.print("hopper_done:requestId=");
+    Serial.print(lastDispenseRequestId);
+    Serial.print(":dispensed=");
+    Serial.println(dispensedSnapshot);
+    activeDispenseRequestId = "";
   }
 
   static unsigned long lastRegistrationStatusAt = 0;

@@ -17,7 +17,10 @@ This guide explains what software to install, what dependencies are used, and ho
 
 ## Kiosk/production integrations
 
-- **SumatraPDF portable executable** at: `bin/SumatraPDF.exe` (used for print dispatch).
+- **PDFtoPrinter** at: `bin/PDFtoPrinter.exe` (or configured via `PRINTBIT_PDFTOPRINTER_PATH`).
+- **GhostScript** (`gswin64c.exe`) installed and discoverable via PATH or `PRINTBIT_GHOSTSCRIPT_PATH`.
+- **LibreOffice** (`soffice.exe`) installed and discoverable via PATH or `PRINTBIT_LIBREOFFICE_PATH`.
+- **Optional phased fallback:** SumatraPDF portable executable at `bin/SumatraPDF.exe` (or `PRINTBIT_SUMATRA_PATH`).
 - **MyPublicWiFi** (used for hotspot/captive behavior integration).
 - **Printer driver package** for the production printer model.
 - **Scanner driver package / TWAIN/WIA support** for the scanner model.
@@ -66,12 +69,16 @@ pnpm run build
 5\. Type-check:
 
 ```bash
-pnpm exec tsc --noEmit
+pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 
 ## 5) Preflight checklist (recommended)
 
-- `bin/SumatraPDF.exe` exists.
+- `PRINTBIT_PRINT_DISPATCH_MODE` is set appropriately (`legacy`, `phased`, or `new-only`).
+- `bin/PDFtoPrinter.exe` exists (or `PRINTBIT_PDFTOPRINTER_PATH` points to a valid file).
+- GhostScript (`gswin64c.exe`) is reachable by PATH or `PRINTBIT_GHOSTSCRIPT_PATH`.
+- LibreOffice (`soffice.exe`) is reachable by PATH or `PRINTBIT_LIBREOFFICE_PATH`.
+- If using `phased`, Sumatra fallback path is valid (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`).
 - Printer appears online in Windows.
 - Scanner is recognized by Windows/scanner APIs.
 - Serial coin/hopper controller is connected and readable.
@@ -85,7 +92,8 @@ pnpm exec tsc --noEmit
   - Ensure supported Node version is installed.
   - Reinstall dependencies after Node changes: `pnpm install`.
 - **Printing fails:**
-  - Verify `bin/SumatraPDF.exe` path and printer driver availability.
+  - Verify dispatcher mode (`PRINTBIT_PRINT_DISPATCH_MODE`) and binary paths.
+  - Verify printer driver availability and default printer configuration.
 - **Scanner endpoints fail:**
   - Confirm scanner drivers and device permissions.
 - **Hotspot features unavailable:**

@@ -36,7 +36,11 @@ import {
 import { adminService } from '@/services/admin';
 import { financialLedgerService } from '@/services/financial-ledger';
 import { settlementService } from '@/services/settlement';
-import { printFile, type PrintJobOptions } from '@/services/printer';
+import {
+  printFile,
+  type PrintDispatchResult,
+  type PrintJobOptions,
+} from '@/services/printer';
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
@@ -58,6 +62,7 @@ import {
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
+import { PrintDispatchError } from '@/services/print-dispatcher';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1114,7 +1119,17 @@ export class FinancialService {
     }
 
     try {
-      await printFile(filename, defaultOptions);
+      await printFile(
+        filename,
+        {
+          ...defaultOptions,
+          printerName: legacyTelemetry.name ?? undefined,
+        },
+        {
+          mode: 'legacy-print',
+          source: 'legacy-print-route',
+        },
+      );
     } catch (err) {
       void adminService.appendAdminLog(
         'print_failed',
@@ -1505,6 +1520,9 @@ export class FinancialService {
         ? await refreshPrinterTelemetry()
         : getPrinterTelemetry();
     let jobDispatchedAt: string | null = null;
+    let dispatchResult: PrintDispatchResult | null = null;
+    let spoolerMonitorStarted = false;
+    let settlementCompleted = false;
 
     if (mode === 'print' && serverFilename && printOptions) {
       if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -1559,7 +1577,18 @@ export class FinancialService {
 
       try {
         jobDispatchedAt = getTrustedTimestamp().timestamp;
-        await printFile(serverFilename, printOptions);
+        const dispatchOptions: PrintJobOptions = {
+          ...printOptions,
+          printerName: telemetry.name ?? undefined,
+        };
+        dispatchResult = await printFile(serverFilename, dispatchOptions, {
+          transactionId,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          spoolerCorrelationKey,
+          mode: 'print',
+          source: 'confirm-payment',
+        });
         await checkpointRecoverySession({
           transactionId,
           mode,
@@ -1573,9 +1602,18 @@ export class FinancialService {
           context: {
             filename: serverFilename,
             spoolerDispatched: true,
+            dispatchEngine: dispatchResult.selectedEngine ?? null,
+            dispatchMode: dispatchResult.mode,
+            dispatchRequestedMode: dispatchResult.requestedMode,
+            dispatchDurationMs: dispatchResult.durationMs,
+            dispatchMimeType: dispatchResult.mimeType,
+            dispatchExtension: dispatchResult.fileExtension,
+            dispatchAttempts: dispatchResult.attempts.length,
           },
         });
       } catch (err) {
+        const dispatchFailure =
+          err instanceof PrintDispatchError ? err.result : null;
         await persistAndEmitPrintLifecycleState(
           this.deps.io,
           {
@@ -1592,6 +1630,13 @@ export class FinancialService {
             documentId: targetDocumentId ?? null,
             meta: {
               stage: 'dispatch',
+              dispatchEngine: dispatchFailure?.selectedEngine ?? null,
+              dispatchMode: dispatchFailure?.mode ?? null,
+              dispatchRequestedMode: dispatchFailure?.requestedMode ?? null,
+              dispatchDurationMs: dispatchFailure?.durationMs ?? null,
+              dispatchMimeType: dispatchFailure?.mimeType ?? null,
+              dispatchExtension: dispatchFailure?.fileExtension ?? null,
+              dispatchAttempts: dispatchFailure?.attempts.length ?? null,
             },
           },
         );
@@ -1658,6 +1703,7 @@ export class FinancialService {
       });
       return;
     }
+    settlementCompleted = true;
 
     await checkpointRecoverySession({
       transactionId,
@@ -1768,6 +1814,10 @@ export class FinancialService {
               state: 'awaiting_spooler_terminal',
               spoolerCorrelationKey,
               jobDispatchedAt,
+              dispatchEngine: dispatchResult?.selectedEngine ?? null,
+              dispatchMode: dispatchResult?.mode ?? null,
+              dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
+              dispatchDurationMs: dispatchResult?.durationMs ?? null,
             }
           : undefined,
     });
@@ -1808,6 +1858,13 @@ export class FinancialService {
           documentId: targetDocumentId ?? null,
           sessionId: sessionId ?? null,
           filename: serverFilename ?? null,
+          dispatchEngine: dispatchResult?.selectedEngine ?? null,
+          dispatchMode: dispatchResult?.mode ?? null,
+          dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
+          dispatchDurationMs: dispatchResult?.durationMs ?? null,
+          dispatchMimeType: dispatchResult?.mimeType ?? null,
+          dispatchExtension: dispatchResult?.fileExtension ?? null,
+          dispatchAttempts: dispatchResult?.attempts.length ?? null,
           remainingBalance: settledRemainingBalance,
           changeState: settledChangeState,
           changeRequested: settledChangeRequested,
@@ -1848,8 +1905,28 @@ export class FinancialService {
       }
     })();
 
-    if (mode === 'print' && jobDispatchedAt) {
-      if (telemetry.name) {
+    if (mode === 'print' && jobDispatchedAt && !spoolerMonitorStarted) {
+      if (!telemetry.name) {
+        void this.handleMissingSpoolerTelemetry({
+          transactionId,
+          chargedAmount: settledAmount,
+          spoolerCorrelationKey,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          filename: serverFilename ?? null,
+          copies,
+          colorMode: printOptions?.colorMode ?? colorMode,
+          duplex: printOptions?.duplex ?? false,
+          pageRange: printOptions?.pageRange ?? null,
+          jobDispatchedAt,
+        }).catch((error) => {
+          console.error(
+            '[CONFIRM-PAYMENT] Missing telemetry fallback failed:',
+            error instanceof Error ? error.message : error,
+          );
+        });
+      } else {
+        spoolerMonitorStarted = true;
         void monitorSpoolerJob({
           printerName: telemetry.name,
           chargedAmount: settledAmount,
@@ -1867,8 +1944,23 @@ export class FinancialService {
             documentId: targetDocumentId ?? null,
             filename: serverFilename ?? null,
             pageRange: printOptions?.pageRange ?? null,
+            dispatchEngine: dispatchResult?.selectedEngine ?? null,
+            dispatchMode: dispatchResult?.mode ?? null,
+            dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
+            dispatchDurationMs: dispatchResult?.durationMs ?? null,
+            dispatchMimeType: dispatchResult?.mimeType ?? null,
+            dispatchExtension: dispatchResult?.fileExtension ?? null,
+            dispatchAttempts: dispatchResult?.attempts.length ?? null,
+            monitorStartPhase: 'post_settlement',
           },
           onConfirmed: async () => {
+            if (!settlementCompleted) {
+              console.warn(
+                '[SPOOLER-MONITOR] Skipping post-confirmed callbacks because settlement did not complete.',
+                { transactionId, spoolerCorrelationKey },
+              );
+              return;
+            }
             try {
               appendConsumableUsageEvent('print');
               await evaluateConsumablesForecastAlerts();
@@ -1890,25 +1982,6 @@ export class FinancialService {
           console.error(
             '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
             err instanceof Error ? err.message : err,
-          );
-        });
-      } else {
-        void this.handleMissingSpoolerTelemetry({
-          transactionId,
-          chargedAmount: settledAmount,
-          spoolerCorrelationKey,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          filename: serverFilename ?? null,
-          copies,
-          colorMode: printOptions?.colorMode ?? colorMode,
-          duplex: printOptions?.duplex ?? false,
-          pageRange: printOptions?.pageRange ?? null,
-          jobDispatchedAt,
-        }).catch((error) => {
-          console.error(
-            '[CONFIRM-PAYMENT] Missing telemetry fallback failed:',
-            error instanceof Error ? error.message : error,
           );
         });
       }

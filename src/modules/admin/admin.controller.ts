@@ -24,6 +24,7 @@ import {
 } from '@/services/printer-status';
 import { getExternalWatchdogState } from '@/services/watchdog-health';
 import { detectDefaultPrinter, printFile } from '@/services/printer';
+import { PrintDispatchError } from '@/services/print-dispatcher';
 import { getScannerStatus } from '@/services/scanner';
 import {
   getTrustedTimeStatus,
@@ -368,6 +369,12 @@ export class AdminController {
       requireAdminLocalAccess,
       requireAdminPin,
       this.handleGetEarningsAnalytics,
+    );
+    this.router.get(
+      '/print-dispatch/latency',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetPrintDispatchLatency,
     );
     this.router.get(
       '/system/time-sync',
@@ -774,6 +781,14 @@ export class AdminController {
     });
 
     return res.json(analytics);
+  };
+
+  private handleGetPrintDispatchLatency = (req: Request, res: Response) => {
+    const maxEventsRaw =
+      typeof req.query.maxEvents === 'string' ? req.query.maxEvents : undefined;
+    const maxEvents = maxEventsRaw ? Number(maxEventsRaw) : 5000;
+    const metrics = this.adminService.computeDispatchLatencyMetrics(maxEvents);
+    return res.json(metrics);
   };
 
   private handleGetTimeSync = async (_req: Request, res: Response) => {
@@ -1296,6 +1311,7 @@ export class AdminController {
 
   private handleTestPrint = async (_req: Request, res: Response) => {
     const telemetry = getPrinterTelemetry();
+    const startedAtMs = Date.now();
 
     if (!telemetry.connected || !telemetry.name) {
       await this.adminService.appendAdminLog(
@@ -1317,12 +1333,21 @@ export class AdminController {
       const pdfBuffer = generateTestPagePdf(new Date());
       fs.writeFileSync(tmpAbsPath, pdfBuffer);
 
-      await printFile(tmpFilename, {
-        copies: 1,
-        colorMode: 'grayscale',
-        orientation: 'portrait',
-        paperSize: 'A4',
-      });
+      const dispatchResult = await printFile(
+        tmpFilename,
+        {
+          copies: 1,
+          colorMode: 'grayscale',
+          orientation: 'portrait',
+          paperSize: 'A4',
+          printerName: telemetry.name,
+        },
+        {
+          mode: 'admin-test',
+          source: 'admin-test-print',
+        },
+      );
+      const totalElapsedMs = Date.now() - startedAtMs;
 
       await this.adminService.appendAdminLog(
         'admin_test_print',
@@ -1332,6 +1357,27 @@ export class AdminController {
           printerStatus: telemetry.status,
           driverName: telemetry.driverName ?? null,
           portName: telemetry.portName ?? null,
+          totalElapsedMs,
+          dispatchDurationMs: dispatchResult.durationMs,
+          dispatchEngine: dispatchResult.selectedEngine ?? null,
+          dispatchAttempts: dispatchResult.attempts.length,
+          dispatchMode: dispatchResult.mode,
+          dispatchRequestedMode: dispatchResult.requestedMode,
+        },
+      );
+      await this.adminService.appendAdminLog(
+        'admin_test_print_timing',
+        `Admin test print timing recorded for "${telemetry.name}".`,
+        {
+          printerName: telemetry.name,
+          totalElapsedMs,
+          dispatchDurationMs: dispatchResult.durationMs,
+          dispatchEngine: dispatchResult.selectedEngine ?? null,
+          dispatchAttempts: dispatchResult.attempts.length,
+          dispatchMode: dispatchResult.mode,
+          dispatchRequestedMode: dispatchResult.requestedMode,
+          dispatchMimeType: dispatchResult.mimeType,
+          dispatchExtension: dispatchResult.fileExtension,
         },
       );
 
@@ -1340,21 +1386,42 @@ export class AdminController {
         printerName: telemetry.name,
         printerStatus: telemetry.status,
         message: `Test page sent to "${telemetry.name}". Check the printer output tray.`,
+        timing: {
+          totalElapsedMs,
+          dispatchDurationMs: dispatchResult.durationMs,
+          dispatchEngine: dispatchResult.selectedEngine,
+          dispatchAttempts: dispatchResult.attempts.length,
+        },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
+      const totalElapsedMs = Date.now() - startedAtMs;
+      const dispatchFailure =
+        err instanceof PrintDispatchError ? err.result : null;
       await this.adminService.appendAdminLog(
         'admin_test_print_failed',
         `Admin test print failed on "${telemetry.name}".`,
         {
           printerName: telemetry.name,
           error: message,
+          totalElapsedMs,
+          dispatchDurationMs: dispatchFailure?.durationMs ?? null,
+          dispatchEngine: dispatchFailure?.selectedEngine ?? null,
+          dispatchAttempts: dispatchFailure?.attempts.length ?? null,
+          dispatchMode: dispatchFailure?.mode ?? null,
+          dispatchRequestedMode: dispatchFailure?.requestedMode ?? null,
         },
       );
       res.status(500).json({
         ok: false,
         error: message,
         printerName: telemetry.name,
+        timing: {
+          totalElapsedMs,
+          dispatchDurationMs: dispatchFailure?.durationMs ?? null,
+          dispatchEngine: dispatchFailure?.selectedEngine ?? null,
+          dispatchAttempts: dispatchFailure?.attempts.length ?? null,
+        },
       });
     } finally {
       try {

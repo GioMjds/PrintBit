@@ -43,7 +43,9 @@ pnpm run db:migrate:legacy
 - Avoid destructive changes to runtime artifacts:
   - `uploads/`
   - `printbit.sqlite`
-- Printing depends on `bin/SumatraPDF.exe`; do not change printer integration casually.
+- Printing uses a mode-based dispatcher (`legacy|phased|new-only`) and external binaries
+  (`PDFtoPrinter`, `GhostScript`, `LibreOffice`, optional Sumatra fallback); do not
+  change printer integration casually.
 - Serial/hotspot/scanner behavior should degrade gracefully when hardware is unavailable.
 
 ## API and validation expectations
@@ -57,7 +59,7 @@ pnpm run db:migrate:legacy
 There is currently no formal test suite configured.
 For every change, at minimum:
 
-1. Run `pnpm exec tsc --noEmit`.
+1. Run `pnpm exec tsc --noEmit --ignoreDeprecations 6.0`.
 2. Manually verify the affected UI/API flow.
 3. Confirm no regressions in print, upload, or admin behavior related to your change.
 

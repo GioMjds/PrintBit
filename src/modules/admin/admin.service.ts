@@ -49,6 +49,35 @@ export interface EarningsAnalyticsResult {
   };
 }
 
+export interface DispatchLatencyPercentiles {
+  p50: number | null;
+  p95: number | null;
+  sampleCount: number;
+}
+
+export interface DispatchLatencyByMime extends DispatchLatencyPercentiles {
+  mimeType: string;
+}
+
+export interface DispatchLatencyByEngine extends DispatchLatencyPercentiles {
+  engine: string;
+}
+
+export interface DispatchLatencySpeculation {
+  baselinePdfP95: number | null;
+  worstNonPdfP95: number | null;
+  thresholdPercent: number;
+  confirmed: boolean;
+}
+
+export interface DispatchLatencyMetricsResult {
+  generatedAt: string;
+  sampleCount: number;
+  byMimeType: DispatchLatencyByMime[];
+  byEngine: DispatchLatencyByEngine[];
+  speculation: DispatchLatencySpeculation;
+}
+
 export class AdminService {
   private readonly MAX_LOGS = 3000;
 
@@ -515,6 +544,157 @@ export class AdminService {
         scan: normalizedMethods.scan,
         total: methodTotal,
         topMode,
+      },
+    };
+  }
+
+  private computePercentile(
+    values: number[],
+    percentile: number,
+  ): number | null {
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    if (sorted.length === 1) return sorted[0];
+    const index = (percentile / 100) * (sorted.length - 1);
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    if (lower === upper) return sorted[lower];
+    const weight = index - lower;
+    return sorted[lower] + (sorted[upper] - sorted[lower]) * weight;
+  }
+
+  private summarizeLatencies(values: number[]): DispatchLatencyPercentiles {
+    const p50 = this.computePercentile(values, 50);
+    const p95 = this.computePercentile(values, 95);
+    return {
+      p50: p50 === null ? null : Math.round(p50),
+      p95: p95 === null ? null : Math.round(p95),
+      sampleCount: values.length,
+    };
+  }
+
+  computeDispatchLatencyMetrics(maxEvents = 5000): DispatchLatencyMetricsResult {
+    const safeMaxEvents = Number.isFinite(maxEvents)
+      ? Math.max(100, Math.min(20_000, Math.floor(maxEvents)))
+      : 5000;
+    const logs = adminLogStore
+      .listByTypes([
+        'print_dispatch_summary',
+        'print_spooler_confirmed',
+        'print_spooler_job_failed',
+        'print_spooler_auto_refund',
+        'print_spooler_monitor_timeout',
+        'print_spooler_monitor_unavailable',
+      ])
+      .slice(0, safeMaxEvents);
+
+    const dispatchByTransaction = new Map<
+      string,
+      {
+        dispatchedAtMs: number;
+        mimeType: string;
+        engine: string;
+      }
+    >();
+    const terminalByTransaction = new Map<string, number>();
+
+    for (const log of logs) {
+      const transactionId =
+        typeof log.meta?.transactionId === 'string'
+          ? log.meta.transactionId.trim()
+          : '';
+      if (!transactionId) continue;
+      const timestampMs = Date.parse(log.timestamp);
+      if (!Number.isFinite(timestampMs)) continue;
+
+      if (log.type === 'print_dispatch_summary') {
+        const engine =
+          typeof log.meta?.selectedEngine === 'string'
+            ? log.meta.selectedEngine
+            : null;
+        if (!engine) continue;
+        const mimeType =
+          typeof log.meta?.mimeType === 'string' && log.meta.mimeType.length > 0
+            ? log.meta.mimeType
+            : 'application/octet-stream';
+        const existing = dispatchByTransaction.get(transactionId);
+        if (!existing || timestampMs >= existing.dispatchedAtMs) {
+          dispatchByTransaction.set(transactionId, {
+            dispatchedAtMs: timestampMs,
+            mimeType,
+            engine,
+          });
+        }
+        continue;
+      }
+
+      const existingTerminal = terminalByTransaction.get(transactionId);
+      if (!existingTerminal || timestampMs >= existingTerminal) {
+        terminalByTransaction.set(transactionId, timestampMs);
+      }
+    }
+
+    const mimeSamples = new Map<string, number[]>();
+    const engineSamples = new Map<string, number[]>();
+
+    for (const [transactionId, dispatchMeta] of dispatchByTransaction.entries()) {
+      const terminalAtMs = terminalByTransaction.get(transactionId);
+      if (terminalAtMs === undefined || !Number.isFinite(terminalAtMs)) continue;
+      const latencyMs = terminalAtMs - dispatchMeta.dispatchedAtMs;
+      if (!Number.isFinite(latencyMs) || latencyMs < 0) continue;
+
+      const byMime = mimeSamples.get(dispatchMeta.mimeType) ?? [];
+      byMime.push(latencyMs);
+      mimeSamples.set(dispatchMeta.mimeType, byMime);
+
+      const byEngine = engineSamples.get(dispatchMeta.engine) ?? [];
+      byEngine.push(latencyMs);
+      engineSamples.set(dispatchMeta.engine, byEngine);
+    }
+
+    const byMimeType = Array.from(mimeSamples.entries())
+      .map(([mimeType, values]) => ({
+        mimeType,
+        ...this.summarizeLatencies(values),
+      }))
+      .sort((a, b) => b.sampleCount - a.sampleCount);
+
+    const byEngine = Array.from(engineSamples.entries())
+      .map(([engine, values]) => ({
+        engine,
+        ...this.summarizeLatencies(values),
+      }))
+      .sort((a, b) => b.sampleCount - a.sampleCount);
+
+    const pdfBucket = byMimeType.find(
+      (bucket) => bucket.mimeType === 'application/pdf',
+    );
+    const nonPdfP95Values = byMimeType
+      .filter((bucket) => bucket.mimeType !== 'application/pdf')
+      .map((bucket) => bucket.p95)
+      .filter((value): value is number => value !== null);
+    const worstNonPdfP95 =
+      nonPdfP95Values.length > 0 ? Math.max(...nonPdfP95Values) : null;
+    const thresholdPercent = 30;
+    const baselinePdfP95 = pdfBucket?.p95 ?? null;
+    const confirmed =
+      baselinePdfP95 !== null &&
+      worstNonPdfP95 !== null &&
+      worstNonPdfP95 >= baselinePdfP95 * (1 + thresholdPercent / 100);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      sampleCount: Array.from(mimeSamples.values()).reduce(
+        (sum, values) => sum + values.length,
+        0,
+      ),
+      byMimeType,
+      byEngine,
+      speculation: {
+        baselinePdfP95,
+        worstNonPdfP95,
+        thresholdPercent,
+        confirmed,
       },
     };
   }

@@ -38,7 +38,8 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `hopper.ts`: coin hopper orchestration — dispense with retries, stats tracking, owed-change fallback.
 - `hopper-protocol.ts`: Arduino hopper serial protocol contract (command builders, response parser, error codes).
 - `settlement.ts`: shared payment settlement logic (charge balance + dispense change) used by print and copy flows.
-- `printer.ts`: SumatraPDF-based print dispatch.
+- `printer.ts` + `print-dispatcher.ts`: mode-based print dispatch orchestration
+  (`legacy`, `phased`, `new-only`) with engine adapters.
 - `session.ts`: in-memory wireless upload session domain.
 - `hotspot.ts`: MyPublicWiFi process/config integration.
 - `scanner.ts`: scanner adapter integration.
@@ -119,7 +120,8 @@ Ephemeral (process memory):
 ## External dependencies
 
 - MyPublicWiFi (hotspot + captive behavior)
-- SumatraPDF executable for print dispatch
+- PDFtoPrinter, GhostScript, and LibreOffice binaries for print dispatch
+- Optional Sumatra fallback in phased mode
 - Serial device for coin input + coin hopper (shared 115200-baud line via Arduino Uno)
 - Scanner hardware adapter
 

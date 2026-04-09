@@ -462,6 +462,7 @@ export class CopyService {
           colorMode: normalized.colorMode,
           orientation: normalized.orientation,
           paperSize: normalized.paperSize,
+          printerName: telemetry.name ?? undefined,
         };
         const relPath = path.join('scans', previewFilename);
         await financialLedgerService.append({
@@ -475,7 +476,11 @@ export class CopyService {
             previewFilename,
           },
         });
-        await printFile(relPath, printOptions);
+        await printFile(relPath, printOptions, {
+          transactionId: jobId,
+          mode: 'copy',
+          source: 'copy-service',
+        });
 
         void watchJobForMalfunction(this.deps.io, {
           jobId,

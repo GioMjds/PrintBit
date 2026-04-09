@@ -3,8 +3,8 @@
  * No npm dependencies. Uses the standard Type1 Helvetica font (always available
  * in PDF readers and print drivers — no font embedding needed).
  *
- * The resulting PDF is suitable for printing via SumatraPDF to verify a printer
- * is correctly installed and producing output after setup or replacement.
+ * The resulting PDF is suitable for validating printer output through the
+ * configured PrintBit print dispatcher path after setup or replacement.
  */
 
 /**
@@ -70,7 +70,7 @@ export function generateTestPagePdf(now: Date = new Date()): Buffer {
     S(68, 636, '- Printer power, USB/network cable, and driver installation'),
     S(68, 620, '- Default printer is set correctly in Windows Settings'),
     S(68, 604, '- No paper jam or paper-out condition'),
-    S(68, 588, '- SumatraPDF is present at bin/SumatraPDF.exe'),
+    S(68, 588, '- Print dispatcher dependencies are configured for this kiosk'),
 
     // ── Checklist ──────────────────────────────────────────────────────────
     S(50, 564, '-'.repeat(62)),

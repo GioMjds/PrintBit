@@ -13,6 +13,7 @@ import { createCaptivePortalMiddleware, createCsrfProtectionMiddleware } from '@
 import { registerAppModules } from '@/app.module';
 import {
   initDB,
+  assertPrintDispatcherReady,
   detectDefaultPrinter,
   detectScanner,
   startScanStorageCleanup,
@@ -35,6 +36,7 @@ import {
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
+  warmPrintDispatcherProfile,
   isCoinSlotLocked,
   getCoinSlotLockOwnerId,
   getCoinSlotLockedAt,
@@ -251,6 +253,8 @@ async function start() {
       });
   }
   await detectDefaultPrinter();
+  await assertPrintDispatcherReady();
+  await warmPrintDispatcherProfile();
   await detectScanner();
   await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
     console.error('[STARTUP] Failed to clean up transient files on startup.', {

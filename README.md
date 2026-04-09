@@ -66,7 +66,7 @@ Troubleshooting:
 - **Backend:** Node.js, Express, Socket.IO, TypeScript
 - **Storage:** SQLite (`printbit.sqlite`) for persisted kiosk state
 - **Upload handling:** Multer
-- **Printing:** SumatraPDF portable executable (`bin/SumatraPDF.exe`)
+- **Printing:** Phased dispatcher (`PDFtoPrinter`, `GhostScript`, `LibreOffice`, with optional Sumatra fallback)
 - **Serial integration:** `serialport`
 - **Frontend:** Static HTML/CSS + TypeScript bundles under `src/public`
 
@@ -95,7 +95,7 @@ pnpm run build
 ### 4) Type-check
 
 ```bash
-pnpm exec tsc --noEmit
+pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 
 ### 5) One-time legacy import (optional)
@@ -124,17 +124,34 @@ src/
   public/                   # Browser UI pages (print/upload/config/confirm/copy/scan/admin)
 uploads/                    # Runtime uploaded files
 printbit.sqlite             # Runtime persisted machine state (SQLite)
-bin/                        # External executables (ex: SumatraPDF.exe)
+  bin/                        # External executables (ex: PDFtoPrinter.exe, SumatraPDF.exe)
 ```
 
 ## Runtime prerequisites
 
 - Windows machine (required for current hardware/print/hotspot integrations).
-- `bin/SumatraPDF.exe` present for print dispatch.
+- Print dispatch dependencies configured for your selected mode:
+  - `bin/PDFtoPrinter.exe` (or `PRINTBIT_PDFTOPRINTER_PATH`)
+  - GhostScript (`PRINTBIT_GHOSTSCRIPT_PATH` or PATH `gswin64c`)
+  - LibreOffice (`PRINTBIT_LIBREOFFICE_PATH` or PATH `soffice`)
+  - Optional Sumatra fallback (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`) for phased mode
 - Optional but expected in production:
   - Coin acceptor serial device
   - Scanner device
   - MyPublicWiFi installation
+
+### Print dispatcher configuration
+
+- `PRINTBIT_PRINT_DISPATCH_MODE=legacy|phased|new-only` (default `legacy`)
+  - `legacy`: Sumatra-only behavior
+  - `phased`: PDFtoPrinter/GhostScript/LibreOffice with Sumatra emergency fallback
+  - `new-only`: PDFtoPrinter/GhostScript/LibreOffice only
+- `PRINTBIT_PDFTOPRINTER_PATH` (or `PDFTOPRINTER_PATH`) default: `bin/PDFtoPrinter.exe`
+- `PRINTBIT_GHOSTSCRIPT_PATH` (or `GHOSTSCRIPT_PATH`) optional explicit path to `gswin64c.exe`
+- `PRINTBIT_LIBREOFFICE_PATH` (or `LIBREOFFICE_PATH`) optional explicit path to `soffice.exe`
+- `PRINTBIT_SUMATRA_PATH` (or `SUMATRA_PATH`) optional Sumatra fallback path
+- `PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS` (default `60000`)
+- `PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS` (default `120000`, minimum 10s)
 
 ## Mobile and network matrix
 
@@ -166,6 +183,7 @@ Related env knobs:
 - `PRINTBIT_ESP32_COIN_API_KEY` (**required in `esp32` mode**) shared secret required by `/coin` bridge requests
 - `PRINTBIT_ESP32_COIN_BRIDGE_RELAXED` (default `false`) simulation-only compatibility mode for legacy `/coin?value=` requests
 - `PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS` (default `true` in `esp32` mode) accepts coin credits even when slot/printer safety gates are active so kiosk UI balance keeps updating from ESP32 events
+- `PRINTBIT_TRUSTED_TIME_ENFORCE` (default `false`) blocks or allows financial operations when trusted time cannot sync
 - `PRINTBIT_SERIAL_PORT` (optional) to pin the serial coin/hopper device when multiple COM ports are present
 
 Recommended `.env` for ESP32 mode:
@@ -185,6 +203,8 @@ PRINTBIT_ESP32_COIN_API_KEY=printbit-coin-bridge-key
 PRINTBIT_ESP32_COIN_BRIDGE_RELAXED=false
 # Optional: keep ESP32 coin credits flowing even during printer/slot safety gates
 PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS=true
+# Optional: turn on only when kiosk has stable NTP/internet access
+PRINTBIT_TRUSTED_TIME_ENFORCE=false
 ```
 
 Security note: `printbit-coin-bridge-key` is a predictable example value. Before deployment, generate a unique secret for `PRINTBIT_ESP32_COIN_API_KEY`, set it in the kiosk environment, and use the same value in ESP32 firmware (`coinBridgeApiKey` in `esp32-captive-portal.ino`). Do not reuse the default key in production.
@@ -198,6 +218,10 @@ Recommended `.ino` alignment for ESP32 mode:
   - `x-coin-source: esp32`
   - `x-coin-api-key: <same as PRINTBIT_ESP32_COIN_API_KEY>`
   - `x-coin-event-id: <unique id per coin>`
+- For hopper change dispensing, support authenticated commands:
+  - `POST /hopper/dispense` with `token`, `coins`, optional `requestId`
+  - `GET /hopper/status?token=...` for live dispense state
+  - Use the same shared secret as `PRINTBIT_ESP32_COIN_API_KEY` (`hopperControlToken` in `.ino`)
 
 Troubleshooting mobile captive onboarding:
 
