@@ -20,7 +20,7 @@ const JOB_LOOKBACK_MINUTES = 3;
 /** Allowed clock skew between app dispatch time and spooler submitted time */
 const JOB_SUBMITTED_TIME_SKEW_MS = 5_000;
 /** Timeout per individual PowerShell query */
-const SPOOLER_QUERY_TIMEOUT_MS = 10_000;
+const SPOOLER_QUERY_TIMEOUT_MS = 20_000;
 /** Stop monitoring when spooler queries repeatedly fail */
 const MAX_CONSECUTIVE_QUERY_FAILURES = 3;
 
@@ -324,6 +324,7 @@ export async function monitorSpoolerJob(
   let pollCount = 0;
   let queryFailureCount = 0;
   let consecutiveQueryFailures = 0;
+  let psRestartCount = 0;
   let lastQueryErrorCode: SpoolerQueryErrorCode | null = null;
   let lastQueryErrorDetail: string | null = null;
   let lastQueryElapsedMs = 0;
@@ -337,6 +338,7 @@ export async function monitorSpoolerJob(
       monitorPollCount: pollCount,
       spoolerQueryFailureCount: queryFailureCount,
       spoolerConsecutiveQueryFailures: consecutiveQueryFailures,
+      spoolerPsRestartCount: psRestartCount,
       spoolerLastQueryElapsedMs: lastQueryElapsedMs,
     };
     if (handoffLatencyMs !== null) {
@@ -456,7 +458,25 @@ export async function monitorSpoolerJob(
   let trackedJobId: number | null = null;
   let warnedSubmittedTimeFallback = false;
 
-  const ps = createPersistentPS();
+  let ps = createPersistentPS();
+  const restartPersistentPs = (
+    reason: string,
+    errorCode: SpoolerQueryErrorCode,
+    errorDetail: string | null,
+  ): void => {
+    ps.dispose();
+    ps = createPersistentPS();
+    psRestartCount += 1;
+    console.warn('[SPOOLER-MONITOR] Restarted PowerShell runspace.', {
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      printerName: normalizedPrinterName,
+      reason,
+      errorCode,
+      errorDetail,
+      psRestartCount,
+    });
+  };
 
   const settleMonitorAmbiguity = async (
     reason: string,
@@ -609,6 +629,19 @@ export async function monitorSpoolerJob(
           errorCode: queryResult.errorCode,
           errorDetail: queryResult.errorDetail,
         });
+        const recoverablePsFailure =
+          queryResult.errorCode === 'powershell_timeout' ||
+          (queryResult.errorCode === 'query_failed' &&
+            (queryResult.errorDetail ?? '').includes(
+              'PS runspace already disposed',
+            ));
+        if (recoverablePsFailure) {
+          restartPersistentPs(
+            'recoverable_query_failure',
+            queryResult.errorCode,
+            queryResult.errorDetail,
+          );
+        }
         if (consecutiveQueryFailures >= MAX_CONSECUTIVE_QUERY_FAILURES) {
           const reason =
             'Spooler monitoring aborted due to repeated spooler query failures.';
