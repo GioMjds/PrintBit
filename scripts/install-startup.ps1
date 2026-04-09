@@ -73,19 +73,19 @@ $Principal = New-ScheduledTaskPrincipal `
     -RunLevel Highest `
     -LogonType Interactive
 
+$TaskDescription = if ($AtStartup) {
+    "Starts PrintBit kiosk launcher at machine startup."
+} else {
+    "Starts PrintBit server with MyPublicWiFi hotspot on login."
+}
+
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $Action `
     -Trigger $Trigger `
     -Settings $Settings `
     -Principal $Principal `
-    -Description (
-        if ($AtStartup) {
-            "Starts PrintBit kiosk launcher at machine startup."
-        } else {
-            "Starts PrintBit server with MyPublicWiFi hotspot on login."
-        }
-    ) | Out-Null
+    -Description $TaskDescription | Out-Null
 
 Write-Host ""
 Write-Host "[PrintBit] Scheduled task '$TaskName' installed!" -ForegroundColor Green

@@ -62,19 +62,19 @@ $principal = New-ScheduledTaskPrincipal `
     -RunLevel Highest `
     -LogonType Interactive
 
+$watchdogDescription = if ($AtStartup) {
+    "PrintBit watchdog loop for health polling and self-healing at startup."
+} else {
+    "PrintBit watchdog loop for health polling and self-healing."
+}
+
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $watchdogAction `
     -Trigger $watchdogTrigger `
     -Settings $watchdogSettings `
     -Principal $principal `
-    -Description (
-        if ($AtStartup) {
-            "PrintBit watchdog loop for health polling and self-healing at startup."
-        } else {
-            "PrintBit watchdog loop for health polling and self-healing."
-        }
-    ) | Out-Null
+    -Description $watchdogDescription | Out-Null
 
 $verifyAction = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
