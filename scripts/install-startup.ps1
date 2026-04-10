@@ -30,27 +30,8 @@ param(
 $TaskName = "PrintBit Kiosk"
 $ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BatPath = Join-Path $ScriptsDir "start-kiosk.bat"
+$ServerStartupScript = Join-Path $ScriptsDir "start-kiosk-server.ps1"
 $ProjectDir = Split-Path -Parent $ScriptsDir
-
-function Resolve-PnpmRunDevCommand {
-    $pnpmCmd = Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue
-    if ($pnpmCmd) {
-        return "`"$($pnpmCmd.Source)`" run dev"
-    }
-    $pnpm = Get-Command "pnpm" -ErrorAction SilentlyContinue
-    if ($pnpm) {
-        return "`"$($pnpm.Source)`" run dev"
-    }
-    $corepackCmd = Get-Command "corepack.cmd" -ErrorAction SilentlyContinue
-    if ($corepackCmd) {
-        return "`"$($corepackCmd.Source)`" pnpm run dev"
-    }
-    $corepack = Get-Command "corepack" -ErrorAction SilentlyContinue
-    if ($corepack) {
-        return "`"$($corepack.Source)`" pnpm run dev"
-    }
-    return $null
-}
 
 function Resolve-TaskAccount {
     param(
@@ -114,6 +95,10 @@ if (-not (Test-Path $BatPath)) {
     Write-Error "[PrintBit] start-kiosk.bat not found at: $BatPath"
     return
 }
+if (-not (Test-Path $ServerStartupScript)) {
+    Write-Error "[PrintBit] start-kiosk-server.ps1 not found at: $ServerStartupScript"
+    return
+}
 
 # Remove existing task if present (idempotent)
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -125,14 +110,9 @@ $kioskUserNormalized = if ([string]::IsNullOrWhiteSpace($KioskUser)) { $null } e
 $kioskAccount = if ($kioskUserNormalized) { Resolve-TaskAccount -UserInput $kioskUserNormalized } else { $null }
 $resolvedKioskUser = if ($kioskAccount) { $kioskAccount.AccountName } else { $null }
 $Action = if ($kioskUserNormalized) {
-    $pnpmRunDevCommand = Resolve-PnpmRunDevCommand
-    if ([string]::IsNullOrWhiteSpace($pnpmRunDevCommand)) {
-        throw "[PrintBit] pnpm/corepack not found in PATH. Install Node.js with Corepack enabled or pnpm."
-    }
-    $devCommand = "/c cd /d `"$ProjectDir`" && set PRINTBIT_KIOSK_LOCKDOWN=true && set PRINTBIT_USB_EXPORT_ENABLED=false && $pnpmRunDevCommand"
     New-ScheduledTaskAction `
-        -Execute "cmd.exe" `
-        -Argument $devCommand `
+        -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ServerStartupScript`"" `
         -WorkingDirectory $ProjectDir
 } else {
     New-ScheduledTaskAction `
@@ -142,7 +122,7 @@ $Action = if ($kioskUserNormalized) {
 }
 
 $Trigger = if ($kioskUserNormalized) {
-    New-ScheduledTaskTrigger -AtLogOn -User $resolvedKioskUser
+    New-ScheduledTaskTrigger -AtLogOn
 } elseif ($AtStartup) {
     New-ScheduledTaskTrigger -AtStartup
 } else {
@@ -199,6 +179,8 @@ if ($kioskUserNormalized) {
     Write-Host "[PrintBit]   Runs at logon as $resolvedKioskUser (interactive token)." -ForegroundColor Cyan
     Write-Host "[PrintBit]   Resolved SID: $($kioskAccount.Sid)" -ForegroundColor Gray
     Write-Host "[PrintBit]   Mode: server-only startup for Assigned Access Edge (localhost)." -ForegroundColor Cyan
+    Write-Host "[PrintBit]   Startup logs: uploads\logs\kiosk-server-startup.log" -ForegroundColor Gray
+    Write-Host "[PrintBit]   Optional recovery: .\scripts\install-watchdog.ps1 -AtStartup" -ForegroundColor DarkGray
 } elseif ($useSystemPrincipal) {
     if ($AtStartup) {
         Write-Host "[PrintBit]   Runs at machine startup as SYSTEM." -ForegroundColor Cyan

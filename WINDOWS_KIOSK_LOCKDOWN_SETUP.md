@@ -84,6 +84,8 @@ If kiosk login still cannot load localhost reliably, you can re-register startup
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
 ```
 
+This kiosk-user mode starts the server through `scripts\start-kiosk-server.ps1` (runtime pnpm/corepack detection per account). If it does not come up, check `uploads\logs\kiosk-server-startup.log` for the startup failure reason.
+
 ## 5) Lockdown policy target (planned profile)
 
 For Issue #38, target these controls:

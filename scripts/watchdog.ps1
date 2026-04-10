@@ -1,7 +1,8 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [switch]$RunOnce
+    [switch]$RunOnce,
+    [string]$KioskUser
 )
 
 Set-StrictMode -Version Latest
@@ -86,6 +87,20 @@ function Should-ManageEdge {
         $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
         if ($null -ne $currentIdentity -and $currentIdentity.Name -eq "NT AUTHORITY\SYSTEM") {
             return $false
+        }
+        # When a specific kiosk account is configured, only manage Edge from within
+        # that account's interactive session — not from any other elevated context.
+        $effectiveKioskUser = if (-not [string]::IsNullOrWhiteSpace($KioskUser)) {
+            $KioskUser.Trim()
+        } else {
+            [Environment]::GetEnvironmentVariable("PRINTBIT_KIOSK_USER")
+        }
+        if (-not [string]::IsNullOrWhiteSpace($effectiveKioskUser)) {
+            $kioskShort   = $effectiveKioskUser -replace '^[^\\]+\\', ''
+            $currentShort = $currentIdentity.Name -replace '^[^\\]+\\', ''
+            if ($kioskShort -ne $currentShort) {
+                return $false
+            }
         }
     } catch {
         return $false
@@ -332,6 +347,9 @@ function Restart-Server {
 }
 
 Write-Host "[Watchdog] Starting PrintBit watchdog loop on $HealthUrl"
+if (-not [string]::IsNullOrWhiteSpace($KioskUser)) {
+    Write-Host "[Watchdog] Kiosk account: $KioskUser"
+}
 $state = Read-State
 $state.running = $true
 $state.watchdogPid = $PID
