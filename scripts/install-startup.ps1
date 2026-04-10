@@ -140,7 +140,7 @@ $Action = if ($kioskUserNormalized) {
 }
 
 $Trigger = if ($kioskUserNormalized) {
-    New-ScheduledTaskTrigger -AtLogOn -User $resolvedKioskUser
+    New-ScheduledTaskTrigger -AtLogOn
 } elseif ($AtStartup) {
     New-ScheduledTaskTrigger -AtStartup
 } else {
