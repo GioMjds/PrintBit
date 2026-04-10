@@ -9,6 +9,8 @@
     - Runs with highest privileges
     - Launches start-kiosk.bat from the scripts\ directory
     - Supports SYSTEM principal for cross-account kiosk deployments
+    - Supports explicit kiosk-user startup task registration
+    - Targets the kiosk account for Assigned Access Edge scenarios (server-only startup)
 
 .EXAMPLE
     # Run from Administrator PowerShell:
@@ -21,12 +23,34 @@
 param(
     [switch]$Uninstall,
     [switch]$AtStartup,
-    [switch]$RunAsSystem
+    [switch]$RunAsSystem,
+    [string]$KioskUser
 )
 
 $TaskName = "PrintBit Kiosk"
 $ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BatPath = Join-Path $ScriptsDir "start-kiosk.bat"
+$ProjectDir = Split-Path -Parent $ScriptsDir
+
+function Resolve-PnpmRunDevCommand {
+    $pnpmCmd = Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue
+    if ($pnpmCmd) {
+        return "`"$($pnpmCmd.Source)`" run dev"
+    }
+    $pnpm = Get-Command "pnpm" -ErrorAction SilentlyContinue
+    if ($pnpm) {
+        return "`"$($pnpm.Source)`" run dev"
+    }
+    $corepackCmd = Get-Command "corepack.cmd" -ErrorAction SilentlyContinue
+    if ($corepackCmd) {
+        return "`"$($corepackCmd.Source)`" pnpm run dev"
+    }
+    $corepack = Get-Command "corepack" -ErrorAction SilentlyContinue
+    if ($corepack) {
+        return "`"$($corepack.Source)`" pnpm run dev"
+    }
+    return $null
+}
 
 if ($Uninstall) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -36,6 +60,10 @@ if ($Uninstall) {
         Write-Host "[PrintBit] Task '$TaskName' not found -- nothing to remove." -ForegroundColor Yellow
     }
     return
+}
+
+if (-not [string]::IsNullOrWhiteSpace($KioskUser) -and ($AtStartup -or $RunAsSystem)) {
+    throw "[PrintBit] -KioskUser cannot be combined with -AtStartup or -RunAsSystem."
 }
 
 if (-not (Test-Path $BatPath)) {
@@ -49,12 +77,27 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Write-Host "[PrintBit] Replacing existing task..."
 }
 
-$Action = New-ScheduledTaskAction `
-    -Execute "cmd.exe" `
-    -Argument ("/c `"" + $BatPath + "`"") `
-    -WorkingDirectory (Split-Path $BatPath)
+$kioskUserNormalized = if ([string]::IsNullOrWhiteSpace($KioskUser)) { $null } else { $KioskUser.Trim() }
+$Action = if ($kioskUserNormalized) {
+    $pnpmRunDevCommand = Resolve-PnpmRunDevCommand
+    if ([string]::IsNullOrWhiteSpace($pnpmRunDevCommand)) {
+        throw "[PrintBit] pnpm/corepack not found in PATH. Install Node.js with Corepack enabled or pnpm."
+    }
+    $devCommand = "/c cd /d `"$ProjectDir`" && set PRINTBIT_KIOSK_LOCKDOWN=true && set PRINTBIT_USB_EXPORT_ENABLED=false && $pnpmRunDevCommand"
+    New-ScheduledTaskAction `
+        -Execute "cmd.exe" `
+        -Argument $devCommand `
+        -WorkingDirectory $ProjectDir
+} else {
+    New-ScheduledTaskAction `
+        -Execute "cmd.exe" `
+        -Argument ("/c `"" + $BatPath + "`"") `
+        -WorkingDirectory (Split-Path $BatPath)
+}
 
-$Trigger = if ($AtStartup) {
+$Trigger = if ($kioskUserNormalized) {
+    New-ScheduledTaskTrigger -AtLogOn -User $kioskUserNormalized
+} elseif ($AtStartup) {
     New-ScheduledTaskTrigger -AtStartup
 } else {
     New-ScheduledTaskTrigger -AtLogOn
@@ -69,7 +112,12 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartInterval (New-TimeSpan -Minutes 1)
 
 $useSystemPrincipal = $AtStartup -or $RunAsSystem
-$Principal = if ($useSystemPrincipal) {
+$Principal = if ($kioskUserNormalized) {
+    New-ScheduledTaskPrincipal `
+        -UserId $kioskUserNormalized `
+        -RunLevel Limited `
+        -LogonType Interactive
+} elseif ($useSystemPrincipal) {
     New-ScheduledTaskPrincipal `
         -UserId "SYSTEM" `
         -RunLevel Highest `
@@ -81,7 +129,9 @@ $Principal = if ($useSystemPrincipal) {
         -LogonType Interactive
 }
 
-$TaskDescription = if ($AtStartup) {
+$TaskDescription = if ($kioskUserNormalized) {
+    "Starts PrintBit server at kiosk-user logon ($kioskUserNormalized)."
+} elseif ($AtStartup) {
     "Starts PrintBit kiosk launcher at machine startup (SYSTEM principal)."
 } elseif ($RunAsSystem) {
     "Starts PrintBit kiosk launcher at logon using SYSTEM principal."
@@ -99,7 +149,10 @@ Register-ScheduledTask `
 
 Write-Host ""
 Write-Host "[PrintBit] Scheduled task '$TaskName' installed!" -ForegroundColor Green
-if ($useSystemPrincipal) {
+if ($kioskUserNormalized) {
+    Write-Host "[PrintBit]   Runs at logon as $kioskUserNormalized (interactive token)." -ForegroundColor Cyan
+    Write-Host "[PrintBit]   Mode: server-only startup for Assigned Access Edge (localhost)." -ForegroundColor Cyan
+} elseif ($useSystemPrincipal) {
     if ($AtStartup) {
         Write-Host "[PrintBit]   Runs at machine startup as SYSTEM." -ForegroundColor Cyan
     } else {

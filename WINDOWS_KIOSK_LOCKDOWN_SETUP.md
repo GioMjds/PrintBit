@@ -78,6 +78,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartu
 
 This installs the scheduled task `PrintBit Kiosk` for machine-start auto-run using the SYSTEM principal (recommended when kiosk and admin users differ).
 
+If kiosk login still cannot load localhost reliably, you can re-register startup specifically for the kiosk user token:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
+```
+
 ## 5) Lockdown policy target (planned profile)
 
 For Issue #38, target these controls:

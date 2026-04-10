@@ -99,9 +99,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStart
 pnpm run watchdog:verify
 ```
 
+If your dedicated kiosk login still cannot reach `http://localhost:3000`, install a kiosk-user targeted startup task (server-only at kiosk logon):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
+```
+
 `install-watchdog.ps1 -AtStartup` registers watchdog tasks with the **SYSTEM** principal so server recovery still runs when the kiosk login account is different from the admin account used during setup.
 Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`, watchdog Edge recovery) now honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
 `install-startup.ps1 -AtStartup` now also uses **SYSTEM** principal for cross-account kiosk deployments; when running as SYSTEM it starts/restarts the server and intentionally skips visible Edge launch in Session 0.
+`install-startup.ps1 -KioskUser <user>` creates a **kiosk-user logon** task that starts only the server (`pnpm run dev`) under that user's interactive token.
 
 What this gives you:
 
