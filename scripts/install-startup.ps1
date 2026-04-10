@@ -52,6 +52,48 @@ function Resolve-PnpmRunDevCommand {
     return $null
 }
 
+function Resolve-TaskAccount {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$UserInput
+    )
+
+    $raw = $UserInput.Trim()
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "[PrintBit] -KioskUser cannot be empty."
+    }
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    $candidates.Add($raw)
+
+    if ($raw.StartsWith(".\")) {
+        $candidates.Add("$env:COMPUTERNAME\$($raw.Substring(2))")
+    } elseif ($raw -notmatch "[\\@]") {
+        $candidates.Add("$env:COMPUTERNAME\$raw")
+    }
+
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($candidate in $candidates) {
+        if (-not $seen.Add($candidate)) {
+            continue
+        }
+        try {
+            $account = New-Object System.Security.Principal.NTAccount($candidate)
+            $sid = $account.Translate([System.Security.Principal.SecurityIdentifier])
+            $resolvedAccount = $sid.Translate([System.Security.Principal.NTAccount]).Value
+            return [pscustomobject]@{
+                AccountName = $resolvedAccount
+                Sid = $sid.Value
+            }
+        } catch {
+            continue
+        }
+    }
+
+    $attempted = ($seen.ToArray() -join ", ")
+    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: $attempted. Use an existing local account like '.\PrintBitKiosk' or '$env:COMPUTERNAME\PrintBitKiosk'."
+}
+
 if ($Uninstall) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
@@ -78,6 +120,8 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 }
 
 $kioskUserNormalized = if ([string]::IsNullOrWhiteSpace($KioskUser)) { $null } else { $KioskUser.Trim() }
+$kioskAccount = if ($kioskUserNormalized) { Resolve-TaskAccount -UserInput $kioskUserNormalized } else { $null }
+$resolvedKioskUser = if ($kioskAccount) { $kioskAccount.AccountName } else { $null }
 $Action = if ($kioskUserNormalized) {
     $pnpmRunDevCommand = Resolve-PnpmRunDevCommand
     if ([string]::IsNullOrWhiteSpace($pnpmRunDevCommand)) {
@@ -96,7 +140,7 @@ $Action = if ($kioskUserNormalized) {
 }
 
 $Trigger = if ($kioskUserNormalized) {
-    New-ScheduledTaskTrigger -AtLogOn -User $kioskUserNormalized
+    New-ScheduledTaskTrigger -AtLogOn -User $resolvedKioskUser
 } elseif ($AtStartup) {
     New-ScheduledTaskTrigger -AtStartup
 } else {
@@ -114,7 +158,7 @@ $Settings = New-ScheduledTaskSettingsSet `
 $useSystemPrincipal = $AtStartup -or $RunAsSystem
 $Principal = if ($kioskUserNormalized) {
     New-ScheduledTaskPrincipal `
-        -UserId $kioskUserNormalized `
+        -UserId $resolvedKioskUser `
         -RunLevel Limited `
         -LogonType Interactive
 } elseif ($useSystemPrincipal) {
@@ -130,7 +174,7 @@ $Principal = if ($kioskUserNormalized) {
 }
 
 $TaskDescription = if ($kioskUserNormalized) {
-    "Starts PrintBit server at kiosk-user logon ($kioskUserNormalized)."
+    "Starts PrintBit server at kiosk-user logon ($resolvedKioskUser)."
 } elseif ($AtStartup) {
     "Starts PrintBit kiosk launcher at machine startup (SYSTEM principal)."
 } elseif ($RunAsSystem) {
@@ -150,7 +194,8 @@ Register-ScheduledTask `
 Write-Host ""
 Write-Host "[PrintBit] Scheduled task '$TaskName' installed!" -ForegroundColor Green
 if ($kioskUserNormalized) {
-    Write-Host "[PrintBit]   Runs at logon as $kioskUserNormalized (interactive token)." -ForegroundColor Cyan
+    Write-Host "[PrintBit]   Runs at logon as $resolvedKioskUser (interactive token)." -ForegroundColor Cyan
+    Write-Host "[PrintBit]   Resolved SID: $($kioskAccount.Sid)" -ForegroundColor Gray
     Write-Host "[PrintBit]   Mode: server-only startup for Assigned Access Edge (localhost)." -ForegroundColor Cyan
 } elseif ($useSystemPrincipal) {
     if ($AtStartup) {
