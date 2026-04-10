@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [switch]$Uninstall,
-    [switch]$AtStartup
+    [switch]$AtStartup,
+    [switch]$RunAsSystem
 )
 
 Set-StrictMode -Version Latest
@@ -57,10 +58,18 @@ $watchdogSettings = New-ScheduledTaskSettingsSet `
     -RestartCount 999 `
     -RestartInterval (New-TimeSpan -Minutes 1)
 
-$principal = New-ScheduledTaskPrincipal `
-    -UserId $env:USERNAME `
-    -RunLevel Highest `
-    -LogonType Interactive
+$useSystemPrincipal = $AtStartup -or $RunAsSystem
+$principal = if ($useSystemPrincipal) {
+    New-ScheduledTaskPrincipal `
+        -UserId "SYSTEM" `
+        -RunLevel Highest `
+        -LogonType ServiceAccount
+} else {
+    New-ScheduledTaskPrincipal `
+        -UserId $env:USERNAME `
+        -RunLevel Highest `
+        -LogonType Interactive
+}
 
 $watchdogDescription = if ($AtStartup) {
     "PrintBit watchdog loop for health polling and self-healing at startup."
@@ -100,6 +109,12 @@ Register-ScheduledTask `
 
 $TASK_UPDATE = 4
 $TASK_LOGON_INTERACTIVE_TOKEN = 3
+$TASK_LOGON_SERVICE_ACCOUNT = 5
+$verifyLogonType = if ($useSystemPrincipal) {
+    $TASK_LOGON_SERVICE_ACCOUNT
+} else {
+    $TASK_LOGON_INTERACTIVE_TOKEN
+}
 
 $svc = New-Object -ComObject "Schedule.Service"
 $svc.Connect()
@@ -107,7 +122,7 @@ $taskDef = $svc.GetFolder("\").GetTask($VerifyTaskName).Definition
 $taskDef.Triggers.Item(1).Repetition.Interval = "PT2M"
 $taskDef.Triggers.Item(1).Repetition.Duration = ""   # empty = run indefinitely
 $svc.GetFolder("\").RegisterTaskDefinition(
-    $VerifyTaskName, $taskDef, $TASK_UPDATE, $null, $null, $TASK_LOGON_INTERACTIVE_TOKEN
+    $VerifyTaskName, $taskDef, $TASK_UPDATE, $null, $null, $verifyLogonType
 ) | Out-Null
 
 Start-ScheduledTask -TaskName $TaskName
@@ -117,5 +132,10 @@ Write-Host ""
 Write-Host "[PrintBit] Watchdog scheduled tasks installed." -ForegroundColor Green
 Write-Host "[PrintBit]   - $TaskName" -ForegroundColor Cyan
 Write-Host "[PrintBit]   - $VerifyTaskName" -ForegroundColor Cyan
+if ($useSystemPrincipal) {
+    Write-Host "[PrintBit]   Principal: SYSTEM (startup-safe across kiosk/admin users)." -ForegroundColor Cyan
+} else {
+    Write-Host "[PrintBit]   Principal: $env:USERNAME (interactive user)." -ForegroundColor Cyan
+}
 Write-Host "[PrintBit] To uninstall: .\scripts\install-watchdog.ps1 -Uninstall" -ForegroundColor DarkGray
 Write-Host ""

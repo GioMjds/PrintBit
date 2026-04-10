@@ -36,13 +36,80 @@ $Port = Get-EnvInt -Name "PRINTBIT_WATCHDOG_PORT" -Default 3000
 $HealthUrl = "http://127.0.0.1:$Port/api/watchdog/health"
 $ReportUrl = "http://127.0.0.1:$Port/api/watchdog/report"
 
+function Resolve-PnpmRunDevCommand {
+    $pnpmCmd = Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue
+    if ($pnpmCmd) {
+        return "`"$($pnpmCmd.Source)`" run dev"
+    }
+    $pnpm = Get-Command "pnpm" -ErrorAction SilentlyContinue
+    if ($pnpm) {
+        return "`"$($pnpm.Source)`" run dev"
+    }
+    $corepackCmd = Get-Command "corepack.cmd" -ErrorAction SilentlyContinue
+    if ($corepackCmd) {
+        return "`"$($corepackCmd.Source)`" pnpm run dev"
+    }
+    $corepack = Get-Command "corepack" -ErrorAction SilentlyContinue
+    if ($corepack) {
+        return "`"$($corepack.Source)`" pnpm run dev"
+    }
+    return $null
+}
+
+$PnpmRunDevCommand = Resolve-PnpmRunDevCommand
+
+function Get-NetworkProvider {
+    $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return "mypublicwifi"
+    }
+    return $raw.Trim().ToLowerInvariant()
+}
+
+function Get-Esp32KioskIp {
+    $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_ESP32_KIOSK_IP")
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return "192.168.4.2"
+    }
+    return $raw.Trim()
+}
+
+function Should-ManageEdge {
+    $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_WATCHDOG_MANAGE_EDGE")
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+        $disabledTokens = @("0", "false", "no", "off")
+        if ($disabledTokens -contains $raw.Trim().ToLowerInvariant()) {
+            return $false
+        }
+    }
+    try {
+        $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        if ($null -ne $currentIdentity -and $currentIdentity.Name -eq "NT AUTHORITY\SYSTEM") {
+            return $false
+        }
+    } catch {
+        return $false
+    }
+    return $true
+}
+
+$ManageEdge = Should-ManageEdge
+
 function Get-KioskLocalIp {
+    if ((Get-NetworkProvider) -eq "esp32") {
+        return (Get-Esp32KioskIp)
+    }
+
     $ipCandidates = Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
         $_.IPAddress -notmatch '^127\.' -and
         $_.PrefixOrigin -ne 'WellKnown'
     }
     $preferred = $ipCandidates |
-        Where-Object { $_.IPAddress -like "192.168.5.*" -or $_.IPAddress -like "192.168.137.*" } |
+        Where-Object {
+            $_.IPAddress -like "192.168.4.*" -or
+            $_.IPAddress -like "192.168.5.*" -or
+            $_.IPAddress -like "192.168.137.*"
+        } |
         Select-Object -First 1
     if (-not $preferred) {
         $preferred = $ipCandidates | Select-Object -First 1
@@ -176,10 +243,17 @@ function Ensure-ServerRunning {
         return $false
     }
 
+    if ([string]::IsNullOrWhiteSpace($PnpmRunDevCommand)) {
+        $State.lastAction = "server_start_failed"
+        $State.lastError = "pnpm/corepack is not available in PATH for the watchdog task account."
+        return $false
+    }
+
     try {
+        $runCommand = "/c cd /d `"$ProjectDir`" && $PnpmRunDevCommand"
         $proc = Start-Process `
             -FilePath "cmd.exe" `
-            -ArgumentList "/c cd /d `"$ProjectDir`" && pnpm run dev" `
+            -ArgumentList $runCommand `
             -WorkingDirectory $ProjectDir `
             -WindowStyle Hidden `
             -PassThru
@@ -267,6 +341,10 @@ Write-State -State $state
 Update-Heartbeat -Status "running" -Message "Watchdog started."
 Send-WatchdogReport -State $state
 
+if (-not $ManageEdge) {
+    Write-Host "[Watchdog] Edge management disabled for this execution context."
+}
+
 while ($true) {
     $health = $null
     $healthOk = $false
@@ -298,7 +376,9 @@ while ($true) {
             }
 
             $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
-            $null = Ensure-EdgeRunning -State $state
+            if ($ManageEdge) {
+                $null = Ensure-EdgeRunning -State $state
+            }
             if ($didRecovery) {
                 $state.lastAction = "recovery_restart_performed"
                 $state.lastError = $null
@@ -312,7 +392,9 @@ while ($true) {
             $state.lastAction = "health_ok"
             $state.lastError = $null
             $null = Ensure-ServerRunning -State $state -Reason "health_ok_ensure"
-            $null = Ensure-EdgeRunning -State $state
+            if ($ManageEdge) {
+                $null = Ensure-EdgeRunning -State $state
+            }
         }
     } else {
         $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
@@ -329,7 +411,9 @@ while ($true) {
         }
 
         $didRecovery = Restart-Server -State $state -Reason "health_unreachable"
-        $null = Ensure-EdgeRunning -State $state
+        if ($ManageEdge) {
+            $null = Ensure-EdgeRunning -State $state
+        }
         if ($didRecovery) {
             $state.lastAction = "recovery_restart_after_unreachable"
             $state.lastError = $null

@@ -31,6 +31,7 @@ Set machine-wide env vars (run PowerShell as Administrator):
 setx PRINTBIT_NETWORK_PROVIDER esp32 /M
 setx PRINTBIT_ESP32_AP_BASE_URL http://192.168.4.1 /M
 setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX 192.168.4. /M
+setx PRINTBIT_ESP32_KIOSK_IP 192.168.4.2 /M
 setx PORT 3000 /M
 setx PRINTBIT_KIOSK_LOCKDOWN true /M
 setx PRINTBIT_USB_EXPORT_ENABLED false /M
@@ -98,9 +99,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStart
 pnpm run watchdog:verify
 ```
 
+`install-watchdog.ps1 -AtStartup` registers watchdog tasks with the **SYSTEM** principal so server recovery still runs when the kiosk login account is different from the admin account used during setup.
+Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`, watchdog Edge recovery) now honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
+`install-startup.ps1 -AtStartup` now also uses **SYSTEM** principal for cross-account kiosk deployments; when running as SYSTEM it starts/restarts the server and intentionally skips visible Edge launch in Session 0.
+
 What this gives you:
 
-- PrintBit launcher starts automatically at machine startup
+- PrintBit launcher starts automatically at machine startup (SYSTEM)
 - watchdog task monitors health and can recover server/browser
 
 ## 7) Expected startup behavior
@@ -110,7 +115,7 @@ After power-on/reboot:
 1. Tablet boots and connects to ESP32 Wi-Fi (`PrintBit`) automatically.
 2. Startup task runs PrintBit launcher.
 3. Server starts in background on port `3000`.
-4. Edge opens in kiosk mode automatically.
+4. Assigned Access opens Edge in kiosk mode for `PrintBitKiosk` at `http://localhost:3000`.
 5. In ESP32 mode, PrintBit attempts kiosk registration to ESP32 (`/kiosk/register`) and uses `192.168.4.x` network path.
 6. ESP32 firmware should run captive DNS hijack and probe redirects (`/hotspot-detect.html`, `/generate_204`, `/ncsi.txt`, `/connecttest.txt`) to the registered kiosk portal URL.
 7. ESP32 coin forwarding should target `GET http://<kiosk-ip>:3000/coin?value=<coin>` (compatibility bridge endpoint).

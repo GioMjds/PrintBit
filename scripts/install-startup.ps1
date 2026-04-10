@@ -1,15 +1,14 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Registers PrintBit as a Windows Scheduled Task that runs at user login
-    with Administrator privileges. This ensures the server and MyPublicWiFi
-    hotspot start automatically when the kiosk machine boots.
+    Registers PrintBit as a Windows Scheduled Task for kiosk startup.
 
 .DESCRIPTION
     Creates a scheduled task "PrintBit Kiosk" that:
-    - Triggers at user logon
-    - Runs with highest privileges (admin)
+    - Triggers at user logon or machine startup
+    - Runs with highest privileges
     - Launches start-kiosk.bat from the scripts\ directory
+    - Supports SYSTEM principal for cross-account kiosk deployments
 
 .EXAMPLE
     # Run from Administrator PowerShell:
@@ -21,7 +20,8 @@
 
 param(
     [switch]$Uninstall,
-    [switch]$AtStartup
+    [switch]$AtStartup,
+    [switch]$RunAsSystem
 )
 
 $TaskName = "PrintBit Kiosk"
@@ -68,13 +68,23 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 1)
 
-$Principal = New-ScheduledTaskPrincipal `
-    -UserId $env:USERNAME `
-    -RunLevel Highest `
-    -LogonType Interactive
+$useSystemPrincipal = $AtStartup -or $RunAsSystem
+$Principal = if ($useSystemPrincipal) {
+    New-ScheduledTaskPrincipal `
+        -UserId "SYSTEM" `
+        -RunLevel Highest `
+        -LogonType ServiceAccount
+} else {
+    New-ScheduledTaskPrincipal `
+        -UserId $env:USERNAME `
+        -RunLevel Highest `
+        -LogonType Interactive
+}
 
 $TaskDescription = if ($AtStartup) {
-    "Starts PrintBit kiosk launcher at machine startup."
+    "Starts PrintBit kiosk launcher at machine startup (SYSTEM principal)."
+} elseif ($RunAsSystem) {
+    "Starts PrintBit kiosk launcher at logon using SYSTEM principal."
 } else {
     "Starts PrintBit server with MyPublicWiFi hotspot on login."
 }
@@ -89,8 +99,12 @@ Register-ScheduledTask `
 
 Write-Host ""
 Write-Host "[PrintBit] Scheduled task '$TaskName' installed!" -ForegroundColor Green
-if ($AtStartup) {
-    Write-Host "[PrintBit]   Runs at machine startup with admin privileges." -ForegroundColor Cyan
+if ($useSystemPrincipal) {
+    if ($AtStartup) {
+        Write-Host "[PrintBit]   Runs at machine startup as SYSTEM." -ForegroundColor Cyan
+    } else {
+        Write-Host "[PrintBit]   Runs at logon as SYSTEM." -ForegroundColor Cyan
+    }
 } else {
     Write-Host "[PrintBit]   Runs at logon as $env:USERNAME with admin privileges." -ForegroundColor Cyan
 }

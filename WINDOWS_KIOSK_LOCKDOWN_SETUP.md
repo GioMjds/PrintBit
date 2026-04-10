@@ -73,10 +73,10 @@ Validate launcher scripts exist:
 Run as Administrator:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup
 ```
 
-This installs the scheduled task `PrintBit Kiosk` for auto-start at login.
+This installs the scheduled task `PrintBit Kiosk` for machine-start auto-run using the SYSTEM principal (recommended when kiosk and admin users differ).
 
 ## 5) Lockdown policy target (planned profile)
 

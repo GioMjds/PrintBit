@@ -24,12 +24,28 @@ if (-not $isAdmin) {
     exit
 }
 
+$isSystemAccount = $false
+try {
+    $isSystemAccount = ([Security.Principal.WindowsIdentity]::GetCurrent().Name -eq "NT AUTHORITY\SYSTEM")
+} catch {
+    $isSystemAccount = $false
+}
+
 # ── 2. RESOLVE PATHS ─────────────────────────────────────────────────────────
 $ScriptsDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir  = Split-Path -Parent $ScriptsDir
 $Port        = "3000"
 $kioskLockdown = if ($env:PRINTBIT_KIOSK_LOCKDOWN) { $env:PRINTBIT_KIOSK_LOCKDOWN } else { 'true' }
 $usbExportEnabled = if ($env:PRINTBIT_USB_EXPORT_ENABLED) { $env:PRINTBIT_USB_EXPORT_ENABLED } else { 'false' }
+$networkProvider = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
+if ([string]::IsNullOrWhiteSpace($networkProvider)) {
+    $networkProvider = "mypublicwifi"
+}
+$networkProvider = $networkProvider.Trim().ToLowerInvariant()
+$esp32KioskIp = [Environment]::GetEnvironmentVariable("PRINTBIT_ESP32_KIOSK_IP")
+if ([string]::IsNullOrWhiteSpace($esp32KioskIp)) {
+    $esp32KioskIp = "192.168.4.2"
+}
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Cyan
@@ -131,30 +147,46 @@ if (-not $ready) {
 }
 
 # ── 7. RESOLVE LOCAL IP ──────────────────────────────────────────────────────
-# Prefer hotspot-style ranges (e.g. 192.168.5.x / 192.168.137.x) so the
-# kiosk URL matches what clients on the Wi‑Fi hotspot can actually reach.
-$ipCandidates = Get-NetIPAddress -AddressFamily IPv4 |
-    Where-Object { $_.IPAddress -notmatch "^127\." -and $_.PrefixOrigin -ne "WellKnown" }
-$preferred = $ipCandidates |
-    Where-Object { $_.IPAddress -like "192.168.5.*" -or $_.IPAddress -like "192.168.137.*" } |
-    Select-Object -First 1
-if (-not $preferred) {
-    $preferred = $ipCandidates | Select-Object -First 1
+# In ESP32 mode, use the configured/static kiosk IP so Edge always opens
+# the same address expected by the ESP32 captive portal firmware.
+$localIP = $null
+if ($networkProvider -eq "esp32") {
+    $localIP = $esp32KioskIp
+    Write-Host "[PrintBit] ESP32 mode detected. Using kiosk IP: $localIP" -ForegroundColor Gray
+} else {
+    # Prefer hotspot-style ranges (e.g. 192.168.4.x / 192.168.5.x / 192.168.137.x) so the
+    # kiosk URL matches what clients on the Wi‑Fi hotspot can actually reach.
+    $ipCandidates = Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object { $_.IPAddress -notmatch "^127\." -and $_.PrefixOrigin -ne "WellKnown" }
+    $preferred = $ipCandidates |
+        Where-Object {
+            $_.IPAddress -like "192.168.5.*" -or
+            $_.IPAddress -like "192.168.137.*" -or
+            $_.IPAddress -like "192.168.4.*"
+        } |
+        Select-Object -First 1
+    if (-not $preferred) {
+        $preferred = $ipCandidates | Select-Object -First 1
+    }
+    $localIP = if ($preferred) { $preferred.IPAddress } else { $null }
 }
-$localIP = if ($preferred) { $preferred.IPAddress } else { $null }
 
 $kioskUrl = if ($localIP) { "http://${localIP}:${Port}" } else { "http://localhost:${Port}" }
 Write-Host "[PrintBit] Kiosk URL: $kioskUrl" -ForegroundColor Cyan
 
 # ── 8. LAUNCH EDGE IN KIOSK MODE ─────────────────────────────────────────────
-Write-Host "[PrintBit] Launching Edge in kiosk mode..." -ForegroundColor Green
-
-Start-Process $edgePath -ArgumentList @(
-    "--kiosk", $kioskUrl,
-    "--edge-kiosk-type=fullscreen",
-    "--no-first-run",
-    "--disable-infobars"
-)
+if ($isSystemAccount) {
+    Write-Host "[PrintBit] Running as SYSTEM. Skipping Edge launch in Session 0." -ForegroundColor Yellow
+    Write-Host "[PrintBit] Assigned Access should open Edge for the kiosk user at http://localhost:$Port." -ForegroundColor Yellow
+} else {
+    Write-Host "[PrintBit] Launching Edge in kiosk mode..." -ForegroundColor Green
+    Start-Process $edgePath -ArgumentList @(
+        "--kiosk", $kioskUrl,
+        "--edge-kiosk-type=fullscreen",
+        "--no-first-run",
+        "--disable-infobars"
+    )
+}
 
 Write-Host ""
 Write-Host "[PrintBit] ✓ Kiosk is live at $kioskUrl" -ForegroundColor Green

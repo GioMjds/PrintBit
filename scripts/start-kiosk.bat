@@ -51,35 +51,50 @@ if %errorlevel% neq 0 (
 
 if "%PORT%"=="" set "PORT=3000"
 
-:: Start PrintBit server (this also launches MyPublicWiFi + hotspot)
+:: Start PrintBit server
 echo [PrintBit] Starting server...
 start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && pnpm run dev"
+
+set "NETWORK_PROVIDER=%PRINTBIT_NETWORK_PROVIDER%"
 
 :: Wait for server + hotspot to come up before selecting kiosk IP
 echo [PrintBit] Waiting for server to start...
 timeout /t 10 /nobreak >nul
 
-call :detect_ip
-set "INITIAL_IP=%LOCAL_IP%"
-timeout /t 3 /nobreak >nul
-call :detect_ip
-set "NEW_IP=%LOCAL_IP%"
+if /I "%NETWORK_PROVIDER%"=="esp32" (
+    set "LOCAL_IP=%PRINTBIT_ESP32_KIOSK_IP%"
+    if "%LOCAL_IP%"=="" set "LOCAL_IP=192.168.4.2"
+    echo [PrintBit] ESP32 mode detected. Using kiosk IP: %LOCAL_IP%
+) else (
+    call :detect_ip
+    set "INITIAL_IP=%LOCAL_IP%"
+    timeout /t 3 /nobreak >nul
+    call :detect_ip
+    set "NEW_IP=%LOCAL_IP%"
 
-set "LOCAL_IP=%INITIAL_IP%"
-if not "%NEW_IP%"=="" (
-    echo %NEW_IP% | findstr /R "^192\.168\.5\." >nul && set "LOCAL_IP=%NEW_IP%"
-    echo %NEW_IP% | findstr /R "^192\.168\.137\." >nul && set "LOCAL_IP=%NEW_IP%"
-    if "%LOCAL_IP%"=="" set "LOCAL_IP=%NEW_IP%"
-)
-set "INITIAL_IP="
-set "NEW_IP="
-if "%LOCAL_IP%"=="" (
-    echo [PrintBit] WARNING: Could not detect local IP. Falling back to localhost.
-    set "LOCAL_IP=localhost"
+    set "LOCAL_IP=%INITIAL_IP%"
+    if not "%NEW_IP%"=="" (
+        echo %NEW_IP% | findstr /R "^192\.168\.4\." >nul && set "LOCAL_IP=%NEW_IP%"
+        echo %NEW_IP% | findstr /R "^192\.168\.5\." >nul && set "LOCAL_IP=%NEW_IP%"
+        echo %NEW_IP% | findstr /R "^192\.168\.137\." >nul && set "LOCAL_IP=%NEW_IP%"
+        if "%LOCAL_IP%"=="" set "LOCAL_IP=%NEW_IP%"
+    )
+    set "INITIAL_IP="
+    set "NEW_IP="
+    if "%LOCAL_IP%"=="" (
+        echo [PrintBit] WARNING: Could not detect local IP. Falling back to localhost.
+        set "LOCAL_IP=localhost"
+    )
 )
 
 set "KIOSK_URL=http://%LOCAL_IP%:%PORT%"
 echo [PrintBit] Kiosk URL: %KIOSK_URL%
+
+if /I "%USERNAME%"=="SYSTEM" (
+    echo [PrintBit] Running as SYSTEM. Skipping Edge launch in Session 0.
+    echo [PrintBit] Assigned Access should open Edge for kiosk user at http://localhost:%PORT%.
+    goto :eof
+)
 
 :: Launch Edge in kiosk mode pointed at the dynamic IP
 echo [PrintBit] Launching kiosk browser...
@@ -90,6 +105,10 @@ goto :eof
 
 :detect_ip
 set "LOCAL_IP="
+for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.4\."') do (
+    for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
+    goto :detect_done
+)
 for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.5\."') do (
     for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
     goto :detect_done

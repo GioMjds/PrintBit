@@ -11,12 +11,22 @@ function getLocalIPv4() {
     }
   }
 
-  // Prefer hotspot ranges first (matches MyPublicWiFi defaults)
-  const preferred = all.find(ip => ip.startsWith('192.168.5.') || ip.startsWith('192.168.137.'));
+  // Prefer hotspot ranges first.
+  const preferred = all.find(
+    ip =>
+      ip.startsWith('192.168.4.') ||
+      ip.startsWith('192.168.5.') ||
+      ip.startsWith('192.168.137.'),
+  );
   return preferred ?? all[0] ?? null;
 }
 
-const host = getLocalIPv4() || 'localhost';
+const networkProvider = (process.env.PRINTBIT_NETWORK_PROVIDER || '')
+  .trim()
+  .toLowerCase();
+const esp32KioskIp = (process.env.PRINTBIT_ESP32_KIOSK_IP || '192.168.4.2').trim();
+const host =
+  networkProvider === 'esp32' ? esp32KioskIp : getLocalIPv4() || 'localhost';
 const port = process.env.PORT || '3000';
 const url = `http://${host}:${port}`;
 const args = ['--kiosk', url, '--edge-kiosk-type=fullscreen'];
