@@ -73,10 +73,12 @@ function Resolve-TaskAccount {
     }
 
     $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $attemptedCandidates = [System.Collections.Generic.List[string]]::new()
     foreach ($candidate in $candidates) {
         if (-not $seen.Add($candidate)) {
             continue
         }
+        $null = $attemptedCandidates.Add($candidate)
         try {
             $account = New-Object System.Security.Principal.NTAccount($candidate)
             $sid = $account.Translate([System.Security.Principal.SecurityIdentifier])
@@ -90,8 +92,8 @@ function Resolve-TaskAccount {
         }
     }
 
-    $attempted = ($seen.ToArray() -join ", ")
-    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: $attempted. Use an existing local account like '.\PrintBitKiosk' or '$env:COMPUTERNAME\PrintBitKiosk'."
+    $attempted = if ($attemptedCandidates.Count -gt 0) { ([string[]]$attemptedCandidates) -join ", " } else { $raw }
+    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: [$attempted]. Use an existing local account like '.\PrintBitKiosk' or '$env:COMPUTERNAME\PrintBitKiosk'."
 }
 
 if ($Uninstall) {
@@ -140,7 +142,7 @@ $Action = if ($kioskUserNormalized) {
 }
 
 $Trigger = if ($kioskUserNormalized) {
-    New-ScheduledTaskTrigger -AtLogOn
+    New-ScheduledTaskTrigger -AtLogOn -User $resolvedKioskUser
 } elseif ($AtStartup) {
     New-ScheduledTaskTrigger -AtStartup
 } else {
