@@ -10,11 +10,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$TaskName = "PrintBit Watchdog"
+$TaskName       = "PrintBit Watchdog"
 $VerifyTaskName = "PrintBit Watchdog Verifier"
-$ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptsDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $WatchdogScript = Join-Path $ScriptsDir "watchdog.ps1"
-$VerifyScript = Join-Path $ScriptsDir "verify-watchdog.ps1"
+$VerifyScript   = Join-Path $ScriptsDir "verify-watchdog.ps1"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 function Resolve-TaskAccount {
     param([Parameter(Mandatory)][string]$UserInput)
@@ -27,7 +31,7 @@ function Resolve-TaskAccount {
     } elseif ($raw -notmatch "[\\@]") {
         $candidates.Add("$env:COMPUTERNAME\$raw")
     }
-    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $seen  = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     $tried = [System.Collections.Generic.List[string]]::new()
     foreach ($c in $candidates) {
         if (-not $seen.Add($c)) { continue }
@@ -45,24 +49,36 @@ function Resolve-TaskAccount {
     throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: [$attempted]. Use an existing local account like '.\PrintBitKiosk' or '$env:COMPUTERNAME\PrintBitKiosk'."
 }
 
-if (-not [string]::IsNullOrWhiteSpace($KioskUser) -and ($AtStartup -or $RunAsSystem)) {
-    throw "[PrintBit] -KioskUser cannot be combined with -AtStartup or -RunAsSystem."
+function Remove-PrintBitTask {
+    param([string]$Name)
+    # Explicitly target the root "\" path so Get-ScheduledTask never gives a
+    # false "not found" due to tasks being registered under a different path.
+    $task = Get-ScheduledTask -TaskName $Name -TaskPath "\" -ErrorAction SilentlyContinue
+    if ($task) {
+        Unregister-ScheduledTask -TaskName $Name -TaskPath "\" -Confirm:$false
+        Write-Host "[PrintBit] Removed scheduled task '$Name'." -ForegroundColor Green
+    } else {
+        Write-Host "[PrintBit] Task '$Name' not found at root path — skipping." -ForegroundColor Yellow
+    }
 }
 
-$kioskUserNormalized = if ([string]::IsNullOrWhiteSpace($KioskUser)) { $null } else { $KioskUser.Trim() }
-$kioskAccount        = if ($kioskUserNormalized) { Resolve-TaskAccount -UserInput $kioskUserNormalized } else { $null }
-$resolvedKioskUser   = if ($kioskAccount) { $kioskAccount.AccountName } else { $null }
+# ---------------------------------------------------------------------------
+# Uninstall
+# ---------------------------------------------------------------------------
 
-
+if ($Uninstall) {
     foreach ($name in @($VerifyTaskName, $TaskName)) {
-        if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
-            Unregister-ScheduledTask -TaskName $name -Confirm:$false
-            Write-Host "[PrintBit] Removed scheduled task '$name'." -ForegroundColor Green
-        } else {
-            Write-Host "[PrintBit] Task '$name' not found." -ForegroundColor Yellow
-        }
+        Remove-PrintBitTask -Name $name
     }
     return
+}
+
+# ---------------------------------------------------------------------------
+# Validate params
+# ---------------------------------------------------------------------------
+
+if (-not [string]::IsNullOrWhiteSpace($KioskUser) -and ($AtStartup -or $RunAsSystem)) {
+    throw "[PrintBit] -KioskUser cannot be combined with -AtStartup or -RunAsSystem."
 }
 
 if (-not (Test-Path $WatchdogScript)) {
@@ -72,18 +88,32 @@ if (-not (Test-Path $VerifyScript)) {
     throw "[PrintBit] verify-watchdog.ps1 not found at $VerifyScript"
 }
 
+# ---------------------------------------------------------------------------
+# Resolve kiosk account (if supplied)
+# ---------------------------------------------------------------------------
+
+$kioskUserNormalized = if ([string]::IsNullOrWhiteSpace($KioskUser)) { $null } else { $KioskUser.Trim() }
+$kioskAccount        = if ($kioskUserNormalized) { Resolve-TaskAccount -UserInput $kioskUserNormalized } else { $null }
+$resolvedKioskUser   = if ($kioskAccount) { $kioskAccount.AccountName } else { $null }
+
+# ---------------------------------------------------------------------------
+# Replace any existing tasks (idempotent)
+# ---------------------------------------------------------------------------
+
 foreach ($name in @($VerifyTaskName, $TaskName)) {
-    if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $name -Confirm:$false
-        Write-Host "[PrintBit] Replacing existing task '$name'..."
-    }
+    Remove-PrintBitTask -Name $name
 }
+
+# ---------------------------------------------------------------------------
+# Build watchdog task
+# ---------------------------------------------------------------------------
 
 $watchdogArg = if ($kioskUserNormalized) {
     "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`" -KioskUser `"$resolvedKioskUser`""
 } else {
     "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
 }
+
 $watchdogAction = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument $watchdogArg
@@ -95,6 +125,7 @@ $watchdogTrigger = if ($kioskUserNormalized) {
 } else {
     New-ScheduledTaskTrigger -AtLogOn
 }
+
 $watchdogSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
@@ -131,11 +162,16 @@ $watchdogDescription = if ($kioskUserNormalized) {
 
 Register-ScheduledTask `
     -TaskName $TaskName `
+    -TaskPath "\" `
     -Action $watchdogAction `
     -Trigger $watchdogTrigger `
     -Settings $watchdogSettings `
     -Principal $principal `
     -Description $watchdogDescription | Out-Null
+
+# ---------------------------------------------------------------------------
+# Build verifier task
+# ---------------------------------------------------------------------------
 
 $verifyAction = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
@@ -153,19 +189,25 @@ $verifySettings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask `
     -TaskName $VerifyTaskName `
+    -TaskPath "\" `
     -Action $verifyAction `
     -Trigger $verifyTrigger `
     -Settings $verifySettings `
     -Principal $principal `
     -Description "PrintBit secondary watchdog verifier and auto-restart task." | Out-Null
 
-$TASK_UPDATE = 4
-$TASK_LOGON_INTERACTIVE_TOKEN = 3
+# ---------------------------------------------------------------------------
+# Patch verifier trigger via COM to add PT2M repetition (cmdlet can't do this)
+# ---------------------------------------------------------------------------
+
+$TASK_UPDATE                = 4
+$TASK_LOGON_INTERACTIVE     = 3
 $TASK_LOGON_SERVICE_ACCOUNT = 5
-$verifyLogonType = if ($kioskUserNormalized -or -not $useSystemPrincipal) {
-    $TASK_LOGON_INTERACTIVE_TOKEN
+
+$verifyLogonType = if ($useSystemPrincipal -and -not $kioskUserNormalized) {
+    $TASK_LOGON_SERVICE_ACCOUNT
 } else {
-    $TASK_LOGON_INTERACTIVE_TOKEN
+    $TASK_LOGON_INTERACTIVE
 }
 
 $svc = New-Object -ComObject "Schedule.Service"
@@ -177,8 +219,21 @@ $svc.GetFolder("\").RegisterTaskDefinition(
     $VerifyTaskName, $taskDef, $TASK_UPDATE, $null, $null, $verifyLogonType
 ) | Out-Null
 
-Start-ScheduledTask -TaskName $TaskName
-Start-ScheduledTask -TaskName $VerifyTaskName
+# ---------------------------------------------------------------------------
+# Kick off tasks — skip gracefully if the kiosk user isn't logged in yet
+# ---------------------------------------------------------------------------
+
+foreach ($name in @($TaskName, $VerifyTaskName)) {
+    try {
+        Start-ScheduledTask -TaskName $name -TaskPath "\"
+    } catch {
+        Write-Warning "[PrintBit] Could not start '$name' immediately (kiosk user may not be logged in yet): $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 
 Write-Host ""
 Write-Host "[PrintBit] Watchdog scheduled tasks installed." -ForegroundColor Green
