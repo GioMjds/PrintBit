@@ -58,7 +58,7 @@ function Remove-PrintBitTask {
         Unregister-ScheduledTask -TaskName $Name -TaskPath "\" -Confirm:$false
         Write-Host "[PrintBit] Removed scheduled task '$Name'." -ForegroundColor Green
     } else {
-        Write-Host "[PrintBit] Task '$Name' not found at root path — skipping." -ForegroundColor Yellow
+        Write-Host "[PrintBit] Task '$Name' not found at root path - skipping." -ForegroundColor Yellow
     }
 }
 
@@ -220,7 +220,7 @@ $svc.GetFolder("\").RegisterTaskDefinition(
 ) | Out-Null
 
 # ---------------------------------------------------------------------------
-# Kick off tasks — skip gracefully if the kiosk user isn't logged in yet
+# Kick off tasks - skip gracefully if the kiosk user isn't logged in yet
 # ---------------------------------------------------------------------------
 
 foreach ($name in @($TaskName, $VerifyTaskName)) {
