@@ -7,7 +7,13 @@ import {
   requireAdminPin,
 } from '@/middleware/admin-auth';
 import { createRateLimit } from '@/middleware/rate-limit';
-import { AdminService, type EarningsAnalyticsView } from './admin.service';
+import {
+  AdminService,
+  type EarningsAnalyticsView,
+  type TransactionLogFilters,
+  type TransactionLogMode,
+  type TransactionLogStatus,
+} from './admin.service';
 import { db } from '@/services/db';
 import {
   PendingRefundServiceError,
@@ -122,6 +128,37 @@ function isAnomalyCategory(
     value === 'network' ||
     value === 'security'
   );
+}
+
+function isTransactionLogMode(value: unknown): value is TransactionLogMode {
+  return value === 'print' || value === 'copy' || value === 'scan';
+}
+
+function isTransactionLogStatus(value: unknown): value is TransactionLogStatus {
+  return (
+    value === 'created' ||
+    value === 'processing' ||
+    value === 'completed' ||
+    value === 'failed' ||
+    value === 'refund'
+  );
+}
+
+function parseIsoTimestampQuery(
+  queryValue: unknown,
+  fieldName: string,
+): { value?: string; error?: string } {
+  if (queryValue === undefined || queryValue === null || queryValue === '') {
+    return {};
+  }
+  if (typeof queryValue !== 'string') {
+    return { error: `${fieldName} must be a valid ISO timestamp.` };
+  }
+  const parsed = Date.parse(queryValue);
+  if (!Number.isFinite(parsed)) {
+    return { error: `${fieldName} must be a valid ISO timestamp.` };
+  }
+  return { value: new Date(parsed).toISOString() };
 }
 
 function parseAlertSettingsPayload(
@@ -496,7 +533,19 @@ export class AdminController {
       '/logs',
       requireAdminLocalAccess,
       requireAdminPin,
-      this.handleGetLogs,
+      this.handleGetSystemLogs,
+    );
+    this.router.get(
+      '/logs/system',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetSystemLogs,
+    );
+    this.router.get(
+      '/logs/transactions',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetTransactionLogs,
     );
     this.router.get(
       '/transactions/:transactionId',
@@ -508,13 +557,37 @@ export class AdminController {
       '/logs/export.csv',
       requireAdminLocalAccess,
       requireAdminPin,
-      this.handleExportLogs,
+      this.handleExportSystemLogs,
+    );
+    this.router.get(
+      '/logs/system/export.csv',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleExportSystemLogs,
+    );
+    this.router.get(
+      '/logs/transactions/export.csv',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleExportTransactionLogs,
     );
     this.router.delete(
       '/logs',
       requireAdminLocalAccess,
       requireAdminPin,
-      this.handleDeleteLogs,
+      this.handleDeleteSystemLogs,
+    );
+    this.router.delete(
+      '/logs/system',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleDeleteSystemLogs,
+    );
+    this.router.delete(
+      '/logs/transactions',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleDeleteTransactionLogs,
     );
 
     // ── Balance and storage routes ─────────────────────────────────────────────
@@ -1494,36 +1567,81 @@ export class AdminController {
 
   // ── Logs handlers ──────────────────────────────────────────────────────────
 
-  private handleGetLogs = (req: Request, res: Response) => {
-    const rawLimit = Number(req.query.limit ?? 200);
-    const limit = Number.isFinite(rawLimit)
-      ? Math.max(1, Math.min(1000, Math.floor(rawLimit)))
-      : 200;
-    const transactionIdRaw =
+  private parseLogLimit(rawLimit: unknown, fallback = 200): number {
+    const numericLimit = Number(rawLimit ?? fallback);
+    return Number.isFinite(numericLimit)
+      ? Math.max(1, Math.min(1000, Math.floor(numericLimit)))
+      : fallback;
+  }
+
+  private parseTransactionLogFilters(
+    req: Request,
+  ): { filters?: TransactionLogFilters; error?: string } {
+    const transactionId =
       typeof req.query.transactionId === 'string'
-        ? req.query.transactionId
+        ? req.query.transactionId.trim()
         : '';
-    const transactionId = transactionIdRaw.trim();
-    if (!transactionId) {
-      res.json({ logs: this.adminService.listLogs(limit) });
-      return;
+    const eventType =
+      typeof req.query.eventType === 'string' ? req.query.eventType.trim() : '';
+
+    let mode: TransactionLogMode | undefined;
+    if (req.query.mode !== undefined && req.query.mode !== '') {
+      if (!isTransactionLogMode(req.query.mode)) {
+        return { error: 'mode must be one of: print, copy, scan.' };
+      }
+      mode = req.query.mode;
     }
 
-    const matchingLogs = this.adminService
-      .listAllLogs()
-      .filter((log) => {
-        const metaTransactionId = log.meta?.transactionId;
-        if (
-          typeof metaTransactionId === 'string' &&
-          metaTransactionId === transactionId
-        ) {
-          return true;
-        }
-        const messageHasId = log.message.includes(transactionId);
-        return messageHasId;
-      })
-      .slice(0, limit);
-    res.json({ logs: matchingLogs });
+    let status: TransactionLogStatus | undefined;
+    if (req.query.status !== undefined && req.query.status !== '') {
+      if (!isTransactionLogStatus(req.query.status)) {
+        return {
+          error:
+            'status must be one of: created, processing, completed, failed, refund.',
+        };
+      }
+      status = req.query.status;
+    }
+
+    const dateFrom = parseIsoTimestampQuery(req.query.dateFrom, 'dateFrom');
+    if (dateFrom.error) return { error: dateFrom.error };
+
+    const dateTo = parseIsoTimestampQuery(req.query.dateTo, 'dateTo');
+    if (dateTo.error) return { error: dateTo.error };
+
+    if (
+      dateFrom.value &&
+      dateTo.value &&
+      Date.parse(dateFrom.value) > Date.parse(dateTo.value)
+    ) {
+      return { error: 'dateFrom must be earlier than or equal to dateTo.' };
+    }
+
+    const filters: TransactionLogFilters = {};
+    if (transactionId) filters.transactionId = transactionId;
+    if (mode) filters.mode = mode;
+    if (status) filters.status = status;
+    if (eventType) filters.eventType = eventType;
+    if (dateFrom.value) filters.dateFrom = dateFrom.value;
+    if (dateTo.value) filters.dateTo = dateTo.value;
+
+    return { filters };
+  }
+
+  private handleGetSystemLogs = (req: Request, res: Response) => {
+    const limit = this.parseLogLimit(req.query.limit, 200);
+    res.json({ logs: this.adminService.listSystemLogs(limit) });
+  };
+
+  private handleGetTransactionLogs = (req: Request, res: Response) => {
+    const parsed = this.parseTransactionLogFilters(req);
+    if (parsed.error) {
+      return res.status(400).json({ error: parsed.error });
+    }
+    const limit = this.parseLogLimit(req.query.limit, 200);
+    res.json({
+      logs: this.adminService.listTransactionLogs(limit, parsed.filters ?? {}),
+    });
   };
 
   private handleGetTransactionById = (req: Request, res: Response) => {
@@ -1532,9 +1650,7 @@ export class AdminController {
       return res.status(400).json({ error: 'transactionId is required.' });
     }
 
-    const logs = this.adminService
-      .listAllLogs()
-      .filter((log) => log.meta?.transactionId === transactionId);
+    const logs = this.adminService.listAllTransactionLogs({ transactionId });
     const ledgerEntries = db.data!.financialLedger.filter(
       (entry) => entry.referenceId === transactionId,
     );
@@ -1613,19 +1729,41 @@ export class AdminController {
     });
   };
 
-  private handleExportLogs = (_req: Request, res: Response) => {
-    const csv = this.adminService.logsToCsv(this.adminService.listAllLogs());
+  private handleExportSystemLogs = (_req: Request, res: Response) => {
+    const csv = this.adminService.logsToCsv(this.adminService.listAllSystemLogs());
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="printbit-admin-logs-${new Date().toISOString().slice(0, 10)}.csv"`,
+      `attachment; filename="printbit-admin-system-logs-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
     res.send(csv);
   };
 
-  private handleDeleteLogs = async (_req: Request, res: Response) => {
-    await this.adminService.clearLogs();
-    res.json({ ok: true });
+  private handleExportTransactionLogs = (req: Request, res: Response) => {
+    const parsed = this.parseTransactionLogFilters(req);
+    if (parsed.error) {
+      return res.status(400).json({ error: parsed.error });
+    }
+
+    const csv = this.adminService.logsToCsv(
+      this.adminService.listAllTransactionLogs(parsed.filters ?? {}),
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="printbit-admin-transaction-logs-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    res.send(csv);
+  };
+
+  private handleDeleteSystemLogs = (_req: Request, res: Response) => {
+    const deleted = this.adminService.clearSystemLogs();
+    res.json({ ok: true, deleted });
+  };
+
+  private handleDeleteTransactionLogs = (_req: Request, res: Response) => {
+    const deleted = this.adminService.clearTransactionLogs();
+    res.json({ ok: true, deleted });
   };
 
   // ── Balance and storage handlers ───────────────────────────────────────────

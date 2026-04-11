@@ -192,7 +192,7 @@
             </svg>
             <span>Earnings</span>
           </a>
-          
+
           <a href="/admin/system" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
@@ -231,7 +231,15 @@
                 clip-rule="evenodd"
               />
             </svg>
-            <span>Logs</span>
+            <span>System Logs</span>
+          </a>
+          <a href="/admin/transactions" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
+              />
+            </svg>
+            <span>Transaction Logs</span>
           </a>
           <a href="/admin/feedback/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -321,157 +329,16 @@
 
         <div class="content">
           <section class="page">
+            <section class="admin-page-hero">
+              <p class="admin-page-hero__kicker">Configuration</p>
+              <h3 class="admin-page-hero__title">Policy and Device Settings</h3>
+              <p class="admin-page-hero__desc">
+                Adjust print pricing, runtime behavior, and machine safeguards for
+                stable kiosk operations.
+              </p>
+            </section>
+
             <form id="settingsForm" class="settings-form" novalidate>
-              <!-- Ink Monitoring -->
-              <!-- <div class="sg">
-                <div class="sg__head">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M5 4a2 2 0 012-2h2a2 2 0 012 2v1h2a2 2 0 012 2v3a2 2 0 01-2 2h-1v2H4v-2H3a2 2 0 01-2-2V7a2 2 0 012-2h2V4zm2 0v1h2V4H7z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  <h3 class="sg__title">Ink Monitoring</h3>
-                </div>
-                <div class="fields">
-                  <div class="field field--stretch">
-                    <label class="toggle-lbl" for="inkMonitoringEnabled">
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title">Enable ink monitoring</span>
-                        <span class="toggle-lbl__desc"
-                          >Turn on preflight ink checks and ink telemetry warnings</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="inkMonitoringEnabled"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field field--stretch">
-                    <label class="field__lbl" for="inkTargetPrinterName"
-                      >Target printer queue (optional)</label
-                    >
-                    <input
-                      id="inkTargetPrinterName"
-                      type="text"
-                      class="field__input"
-                      placeholder="e.g. EPSON L5290 Series (Copy 1)"
-                    />
-                    <p class="field__hint">
-                      Leave empty to monitor Windows default printer.
-                    </p>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="inkLowThresholdPercent"
-                      >Low threshold (%)</label
-                    >
-                    <div class="field__wrap field__wrap--post">
-                      <input
-                        id="inkLowThresholdPercent"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        class="field__input"
-                        required
-                      />
-                      <span class="field__affix">%</span>
-                    </div>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="inkCriticalThresholdPercent"
-                      >Critical threshold (%)</label
-                    >
-                    <div class="field__wrap field__wrap--post">
-                      <input
-                        id="inkCriticalThresholdPercent"
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="1"
-                        class="field__input"
-                        required
-                      />
-                      <span class="field__affix">%</span>
-                    </div>
-                  </div>
-
-                  <div class="field field--stretch">
-                    <label class="toggle-lbl" for="inkBlockOnLow">
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title"
-                          >Block printing on low ink</span
-                        >
-                        <span class="toggle-lbl__desc"
-                          >Reject print preflight when any supply is at/below low threshold</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="inkBlockOnLow"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field field--stretch">
-                    <label class="toggle-lbl" for="inkBlockOnEmpty">
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title"
-                          >Block printing on empty ink</span
-                        >
-                        <span class="toggle-lbl__desc"
-                          >Reject print preflight when any supply is empty</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="inkBlockOnEmpty"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="inkTelemetryUnknownPolicy"
-                      >Unknown telemetry policy</label
-                    >
-                    <select id="inkTelemetryUnknownPolicy" class="field__input">
-                      <option value="warn_allow">Warn only, allow print</option>
-                      <option value="block">Block print until telemetry is available</option>
-                    </select>
-                  </div>
-                </div>
-              </div> -->
-
               <!-- Pricing -->
               <div class="sg">
                 <div class="sg__head">
@@ -560,160 +427,8 @@
                 </div>
               </div>
 
-              <!-- Admin Alerts -->
-              <!-- <div class="sg">
-                <div class="sg__head">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l3.58 6.36c.75 1.334-.213 2.98-1.742 2.98H2.42c-1.53 0-2.493-1.646-1.743-2.98l3.58-6.36zM8 5a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V5.75A.75.75 0 018 5zm0 5.5a.9.9 0 100 1.8.9.9 0 000-1.8z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  <h3 class="sg__title">Admin Alerts</h3>
-                </div>
-                <div class="fields">
-                  <div class="field field--stretch">
-                    <label class="toggle-lbl" for="alertDashboardEnabled">
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title">Dashboard push alerts</span>
-                        <span class="toggle-lbl__desc"
-                          >Show real-time anomaly cards in admin interfaces</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="alertDashboardEnabled"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="alertSeverityThreshold"
-                      >Minimum severity</label
-                    >
-                    <select id="alertSeverityThreshold" class="field__input">
-                      <option value="warning">Warning and above</option>
-                      <option value="critical">Critical only</option>
-                    </select>
-                  </div>
-
-                  <div class="field field--stretch">
-                    <label class="toggle-lbl" for="alertEmailEnabled">
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title">Email alerts</span>
-                        <span class="toggle-lbl__desc"
-                          >Send anomaly notifications to configured addresses</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="alertEmailEnabled"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="alertSmtpHost">SMTP host</label>
-                    <input id="alertSmtpHost" type="text" class="field__input" />
-                  </div>
-                  <div class="field">
-                    <label class="field__lbl" for="alertSmtpPort">SMTP port</label>
-                    <input
-                      id="alertSmtpPort"
-                      type="number"
-                      min="1"
-                      step="1"
-                      class="field__input"
-                    />
-                  </div>
-                  <div class="field field--stretch">
-                    <label class="toggle-lbl" for="alertSmtpSecure">
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title">Secure SMTP (SSL/TLS)</span>
-                        <span class="toggle-lbl__desc"
-                          >Enable SSL/TLS when connecting to SMTP server</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="alertSmtpSecure"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="alertEmailUsername"
-                      >SMTP username</label
-                    >
-                    <input
-                      id="alertEmailUsername"
-                      type="text"
-                      class="field__input"
-                      autocomplete="username"
-                    />
-                  </div>
-                  <div class="field field--stretch">
-                    <p class="field__hint">
-                      SMTP password is loaded from the runtime environment via
-                      <code>PRINTBIT_ALERT_SMTP_PASSWORD</code> and is never stored
-                      in kiosk settings.
-                    </p>
-                  </div>
-                  <div class="field">
-                    <label class="field__lbl" for="alertEmailFrom">From email</label>
-                    <input id="alertEmailFrom" type="email" class="field__input" />
-                  </div>
-                  <div class="field">
-                    <label class="field__lbl" for="alertEmailTo"
-                      >To email(s)</label
-                    >
-                    <input
-                      id="alertEmailTo"
-                      type="text"
-                      class="field__input"
-                      placeholder="comma-separated"
-                    />
-                  </div>
-                  <div class="field field--stretch">
-                    <button
-                      id="testEmailAlertBtn"
-                      type="button"
-                      class="save-btn save-btn--secondary"
-                    >
-                      Send Test Email Alert
-                    </button>
-                  </div>
-                </div>
-              </div> -->
-
               <!-- Kiosk Behaviour -->
-              <!-- <div class="sg">
+              <div class="sg">
                 <div class="sg__head">
                   <svg
                     viewBox="0 0 16 16"
@@ -746,119 +461,10 @@
                     </div>
                   </div>
                 </div>
-              </div> -->
-
-              <div class="sg">
-                <div class="sg__head">
-                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <path
-                      fill-rule="evenodd"
-                      d="M3 3.75A1.75 1.75 0 014.75 2h6.5A1.75 1.75 0 0113 3.75v8.5A1.75 1.75 0 0111.25 14h-6.5A1.75 1.75 0 013 12.25v-8.5zm2.5.75a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 3a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 3a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  <h3 class="sg__title">Consumables Forecasting</h3>
-                </div>
-                <div class="fields">
-                  <div class="field field--stretch">
-                    <label
-                      class="toggle-lbl"
-                      for="settingConsumablesForecastingEnabled"
-                    >
-                      <div class="toggle-lbl__text">
-                        <span class="toggle-lbl__title">Enable forecasting</span>
-                        <span class="toggle-lbl__desc"
-                          >Show paper/ink depletion forecast in admin dashboard</span
-                        >
-                      </div>
-                      <div class="toggle">
-                        <input
-                          id="settingConsumablesForecastingEnabled"
-                          type="checkbox"
-                          role="switch"
-                          class="toggle__input"
-                        />
-                        <div class="toggle__track" aria-hidden="true">
-                          <div class="toggle__thumb"></div>
-                        </div>
-                      </div>
-                    </label>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="settingRollingWindowDays"
-                      >Rolling window</label
-                    >
-                    <div class="field__wrap field__wrap--post">
-                      <input
-                        id="settingRollingWindowDays"
-                        type="number"
-                        min="1"
-                        max="90"
-                        step="1"
-                        class="field__input"
-                        required
-                      />
-                      <span class="field__affix">days</span>
-                    </div>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="settingAlertDaysThreshold"
-                      >Alert threshold</label
-                    >
-                    <div class="field__wrap field__wrap--post">
-                      <input
-                        id="settingAlertDaysThreshold"
-                        type="number"
-                        min="1"
-                        max="60"
-                        step="1"
-                        class="field__input"
-                        required
-                      />
-                      <span class="field__affix">days</span>
-                    </div>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="settingPaperTrayCapacitySheets"
-                      >Tray capacity</label
-                    >
-                    <div class="field__wrap field__wrap--post">
-                      <input
-                        id="settingPaperTrayCapacitySheets"
-                        type="number"
-                        min="1"
-                        step="1"
-                        class="field__input"
-                        required
-                      />
-                      <span class="field__affix">sheets</span>
-                    </div>
-                  </div>
-
-                  <div class="field">
-                    <label class="field__lbl" for="settingPaperCurrentSheets"
-                      >Current paper</label
-                    >
-                    <div class="field__wrap field__wrap--post">
-                      <input
-                        id="settingPaperCurrentSheets"
-                        type="number"
-                        min="0"
-                        step="1"
-                        class="field__input"
-                        required
-                      />
-                      <span class="field__affix">sheets</span>
-                    </div>
-                  </div>
-                </div>
               </div>
 
+              <!-- Security -->
               <div class="sg">
-                <!-- Security -->
                 <div class="sg__head">
                   <svg
                     viewBox="0 0 16 16"

@@ -9,33 +9,14 @@ const serverBadge = document.getElementById(
 const hostStatus = document.getElementById('hostStatus') as HTMLElement;
 const wifiStatus = document.getElementById('wifiStatus') as HTMLElement;
 const wifiBadge = document.getElementById('wifiBadge') as HTMLElement | null;
-const serialStatus = document.getElementById('serialStatus') as HTMLElement;
-const serialBadge = document.getElementById(
-  'serialBadge',
-) as HTMLElement | null;
-const serialPortStatus = document.getElementById(
-  'serialPortStatus',
-) as HTMLElement;
-const hopperStatus = document.getElementById('hopperStatus') as HTMLElement;
-const hopperBadge = document.getElementById(
-  'hopperBadge',
-) as HTMLElement | null;
-const hopperPortStatus = document.getElementById(
-  'hopperPortStatus',
-) as HTMLElement;
-const hopperLastStatus = document.getElementById(
-  'hopperLastStatus',
-) as HTMLElement;
 
 const printerStatus = document.getElementById('printerStatus') as HTMLElement;
 const printerBadge = document.getElementById(
   'printerBadge',
 ) as HTMLElement | null;
 const printerNameEl = document.getElementById('printerName') as HTMLElement;
-const inkGrid = document.getElementById('inkGrid') as HTMLElement;
 
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
-const selfTestBtn = document.getElementById('selfTestBtn') as HTMLButtonElement;
 
 // ── New printer-detail element refs ──────────────────────────────────────────
 
@@ -255,7 +236,7 @@ function applyPrinterExt(p: PrinterTelemetryExt): void {
   }
 }
 
-// ── Existing applySystem function (unchanged except printer ext call added) ───
+// ── Apply summary data to UI ────────────────────────────────────────────────────
 
 function applySystem(summary: SummaryResponse): void {
   serverStatus.textContent = summary.status.serverRunning ? 'Running' : 'Down';
@@ -263,36 +244,13 @@ function applySystem(summary: SummaryResponse): void {
   hostStatus.textContent = summary.status.host;
   wifiStatus.textContent = summary.status.wifiActive ? 'Active' : 'Inactive';
   wifiBadge?.setAttribute('data-ok', String(summary.status.wifiActive));
-  serialStatus.textContent = summary.status.serial.connected
-    ? 'Connected'
-    : 'Disconnected';
-  serialBadge?.setAttribute('data-ok', String(summary.status.serial.connected));
-  serialPortStatus.textContent = summary.status.serial.portPath ?? '—';
 
-  const hopper = summary.status.hopper;
-  const hopperHealthy =
-    hopper.connected && !hopper.pending && !hopper.lastError;
-  hopperStatus.textContent = hopper.pending
-    ? 'Busy'
-    : hopper.connected
-      ? 'Ready'
-      : 'Unavailable';
-  hopperBadge?.setAttribute('data-ok', String(hopperHealthy));
-  hopperPortStatus.textContent = hopper.portPath ?? '—';
-  hopperLastStatus.textContent = hopper.lastError
-    ? hopper.lastError
-    : hopper.lastSuccessAt
-      ? `Last OK: ${new Date(hopper.lastSuccessAt).toLocaleString()}`
-      : 'No recent activity';
-
-  // Printer — basic fields (same as before)
   const p = summary.status.printer;
   const printerReady = isPrinterReadyForJobs(p as PrinterTelemetryExt);
   printerStatus.textContent = p.connected ? p.status : 'Not Found';
   printerBadge?.setAttribute('data-ok', String(printerReady));
   printerNameEl.textContent = p.name ?? '—';
 
-  // Printer — extended fields (opt-in; no error if fields absent)
   applyPrinterExt(p as PrinterTelemetryExt);
   const openCount =
     summary.anomalyStats.openCount > 0
@@ -300,46 +258,6 @@ function applySystem(summary: SummaryResponse): void {
       : '';
   if (openAlertBadge) openAlertBadge.textContent = openCount;
   if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
-
-  // Ink / toner levels (unchanged)
-  inkGrid.innerHTML = '';
-  if (p.ink.length === 0) {
-    inkGrid.innerHTML = `<div class="ink-empty">No supply data available</div>`;
-    return;
-  }
-
-  for (const ink of p.ink) {
-    const bar = document.createElement('div');
-    bar.className = 'ink-item';
-
-    const pct = ink.level !== null ? ink.level : 0;
-    const statusCls = `ink-bar--${ink.status}`;
-    const label =
-      ink.level !== null
-        ? `${ink.level}%`
-        : ink.status === 'unknown'
-          ? 'N/A'
-          : ink.status;
-
-    const nameSpan = document.createElement('span');
-    nameSpan.className = 'ink-item__name';
-    nameSpan.textContent = ink.name;
-
-    const barDiv = document.createElement('div');
-    barDiv.className = 'ink-bar';
-    const fillDiv = document.createElement('div');
-    fillDiv.className = `ink-bar__fill ${statusCls}`;
-    fillDiv.style.width = `${pct}%`;
-    barDiv.appendChild(fillDiv);
-
-    const labelSpan = document.createElement('span');
-    labelSpan.className = `ink-item__label ink-item__label--${ink.status}`;
-    labelSpan.textContent = label;
-
-    bar.append(nameSpan, barDiv, labelSpan);
-
-    inkGrid.appendChild(bar);
-  }
 }
 
 // ── Data loader (unchanged) ───────────────────────────────────────────────────
@@ -354,7 +272,7 @@ async function loadData(): Promise<void> {
   applySystem(summary);
 }
 
-// ── Existing button handlers (unchanged) ──────────────────────────────────────
+// ── Action handlers ─────────────────────────────────────────────────────────────
 
 refreshBtn.addEventListener('click', () => {
   setMessage('Refreshing...');
@@ -363,27 +281,6 @@ refreshBtn.addEventListener('click', () => {
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
     );
-});
-
-selfTestBtn.addEventListener('click', () => {
-  selfTestBtn.disabled = true;
-  setMessage('Running hopper self-test...');
-  void apiFetch('/api/admin/hopper/self-test', { method: 'POST' })
-    .then(async (res) => {
-      const payload = (await res.json()) as { ok: boolean; message: string };
-      if (!res.ok) {
-        setMessage(payload.message || 'Hopper self-test failed.');
-      } else {
-        setMessage(payload.message || 'Hopper self-test passed.');
-      }
-      await loadData();
-    })
-    .catch((e: unknown) => {
-      setMessage(e instanceof Error ? e.message : 'Self-test failed.');
-    })
-    .finally(() => {
-      selfTestBtn.disabled = false;
-    });
 });
 
 // ── New: Re-detect Printer ────────────────────────────────────────────────────

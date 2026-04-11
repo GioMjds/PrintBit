@@ -217,9 +217,64 @@
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
-@media (max-width: 640px) {
+@media (max-width: 860px) {
+  .topbar {
+    height: auto;
+    align-items: flex-start;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .topbar__right {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .logs-search {
+    order: 1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+  }
+
+  .logs-search__input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .logs-search .topbar-btn {
+    height: 34px;
+    padding: 0 10px;
+  }
+
   .logs-scroll {
-    max-height: calc(100vh - 60px - 40px - 40px - 40px);
+    max-height: 58dvh;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar__msg {
+    display: none;
+  }
+
+  .logs-search .topbar-btn span {
+    display: inline !important;
+  }
+
+  .logs-search .topbar-btn {
+    font-size: 11px;
+    padding: 0 9px;
+  }
+
+  .logs-search__input {
+    font-size: 11px;
+  }
+
+  .logs-scroll {
+    max-height: 52dvh;
   }
   .logs-table {
     font-size: 11px;
@@ -245,4 +300,22 @@
     font-size: 10px;
     padding: 1px 6px;
   }
+}
+
+/* ── Admin-wide command deck polish ─────────────────────────── */
+.logs-panel {
+  background:
+    linear-gradient(170deg, rgba(17, 20, 47, 0.92), rgba(11, 10, 26, 0.96));
+  border-color: rgba(125, 211, 252, 0.2);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.logs-th {
+  background: rgba(9, 12, 33, 0.94);
+}
+
+.logs-search__input {
+  border-color: rgba(125, 211, 252, 0.28);
 }

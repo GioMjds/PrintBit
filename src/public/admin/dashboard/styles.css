@@ -396,3 +396,22 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Admin-wide command deck polish ─────────────────────────── */
+.kpi,
+.panel {
+  background:
+    linear-gradient(160deg, rgba(17, 20, 47, 0.92), rgba(11, 10, 26, 0.95));
+  border-color: rgba(125, 211, 252, 0.2);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.panel__head {
+  border-bottom-color: rgba(125, 211, 252, 0.18);
+}
+
+.breakdown__track {
+  background: rgba(148, 163, 184, 0.18);
+}

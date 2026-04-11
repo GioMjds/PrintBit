@@ -218,6 +218,10 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
     filePath: path.join(PUBLIC_DIR, 'admin', 'logs', 'index.html'),
   },
   {
+    route: '/admin/transactions',
+    filePath: path.join(PUBLIC_DIR, 'admin', 'transactions', 'index.html'),
+  },
+  {
     route: '/admin/feedback',
     filePath: path.join(PUBLIC_DIR, 'admin', 'feedback', 'index.html'),
   },

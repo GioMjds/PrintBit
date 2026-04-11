@@ -14,6 +14,35 @@ import { adminLogStore } from '@/core/database/sqlite-storage';
 
 export type EarningsAnalyticsView = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type EarningsMode = 'print' | 'copy' | 'scan';
+export type TransactionLogMode = 'print' | 'copy' | 'scan';
+export type TransactionLogStatus =
+  | 'created'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'refund';
+
+export interface TransactionLogFilters {
+  transactionId?: string;
+  mode?: TransactionLogMode;
+  dateFrom?: string;
+  dateTo?: string;
+  eventType?: string;
+  status?: TransactionLogStatus;
+}
+
+const TRANSACTION_TYPE_PREFIXES = [
+  'print_',
+  'copy_',
+  'scan_',
+  'payment_',
+  'refund_',
+  'settlement_',
+] as const;
+const TRANSACTION_TYPE_EXACT = new Set([
+  'hopper_dispense_failed',
+  'trusted_time_unsynced',
+]);
 
 export interface EarningsAnalyticsBucket {
   key: string;
@@ -171,11 +200,136 @@ export class AdminService {
     return entry;
   }
 
-  listLogs(limit: number): AdminLogEntry[] {
-    const safeLimit = Number.isFinite(limit)
+  private normalizeLimit(limit: number, fallback = 200): number {
+    return Number.isFinite(limit)
       ? Math.max(1, Math.min(1000, Math.floor(limit)))
-      : 200;
-    return adminLogStore.list(safeLimit);
+      : fallback;
+  }
+
+  private normalizeTransactionMode(value: unknown): TransactionLogMode | null {
+    return value === 'print' || value === 'copy' || value === 'scan'
+      ? value
+      : null;
+  }
+
+  private inferTransactionMode(entry: AdminLogEntry): TransactionLogMode | null {
+    const mode = this.normalizeTransactionMode(entry.meta?.mode);
+    if (mode) return mode;
+
+    const lowerType = entry.type.toLowerCase();
+    if (lowerType.startsWith('print_')) return 'print';
+    if (lowerType.startsWith('copy_')) return 'copy';
+    if (lowerType.startsWith('scan_')) return 'scan';
+    return null;
+  }
+
+  private classifyTransactionStatus(entry: AdminLogEntry): TransactionLogStatus | null {
+    const lowerType = entry.type.toLowerCase();
+    const lowerMessage = entry.message.toLowerCase();
+    const hasToken = (...tokens: ReadonlyArray<string>): boolean =>
+      tokens.some(
+        (token) => lowerType.includes(token) || lowerMessage.includes(token),
+      );
+
+    if (hasToken('refund', 'reconcile')) return 'refund';
+    if (hasToken('failed', 'error', 'timeout', 'blocked', 'mismatch')) {
+      return 'failed';
+    }
+    if (hasToken('completed', 'confirmed', 'success', 'succeeded', 'charged')) {
+      return 'completed';
+    }
+    if (hasToken('created', 'started', 'queued', 'requested')) return 'created';
+    if (hasToken('dispatch', 'processing', 'monitor', 'spooler')) {
+      return 'processing';
+    }
+    return null;
+  }
+
+  isTransactionLog(entry: AdminLogEntry): boolean {
+    const transactionId = entry.meta?.transactionId;
+    if (typeof transactionId === 'string' && transactionId.trim().length > 0) {
+      return true;
+    }
+
+    if (this.inferTransactionMode(entry) !== null) {
+      return true;
+    }
+
+    const lowerType = entry.type.toLowerCase();
+    if (TRANSACTION_TYPE_EXACT.has(lowerType)) {
+      return true;
+    }
+
+    return TRANSACTION_TYPE_PREFIXES.some((prefix) =>
+      lowerType.startsWith(prefix),
+    );
+  }
+
+  private filterTransactionLogs(
+    logs: ReadonlyArray<AdminLogEntry>,
+    filters: TransactionLogFilters,
+  ): AdminLogEntry[] {
+    const transactionId = filters.transactionId?.trim();
+    const dateFromMs =
+      typeof filters.dateFrom === 'string' ? Date.parse(filters.dateFrom) : NaN;
+    const dateToMs =
+      typeof filters.dateTo === 'string' ? Date.parse(filters.dateTo) : NaN;
+
+    return logs.filter((entry) => {
+      if (transactionId) {
+        const metaTransactionId = entry.meta?.transactionId;
+        const matchedByMeta =
+          typeof metaTransactionId === 'string' && metaTransactionId === transactionId;
+        const matchedByMessage = entry.message.includes(transactionId);
+        if (!matchedByMeta && !matchedByMessage) return false;
+      }
+
+      if (filters.mode) {
+        const inferredMode = this.inferTransactionMode(entry);
+        if (inferredMode !== filters.mode) return false;
+      }
+
+      if (filters.eventType && entry.type !== filters.eventType) {
+        return false;
+      }
+
+      if (filters.status) {
+        const status = this.classifyTransactionStatus(entry);
+        if (status !== filters.status) return false;
+      }
+
+      if (Number.isFinite(dateFromMs) || Number.isFinite(dateToMs)) {
+        const timestampMs = Date.parse(entry.timestamp);
+        if (!Number.isFinite(timestampMs)) return false;
+        if (Number.isFinite(dateFromMs) && timestampMs < dateFromMs) return false;
+        if (Number.isFinite(dateToMs) && timestampMs > dateToMs) return false;
+      }
+
+      return true;
+    });
+  }
+
+  listSystemLogs(limit: number): AdminLogEntry[] {
+    return this.listAllSystemLogs().slice(0, this.normalizeLimit(limit));
+  }
+
+  listAllSystemLogs(): AdminLogEntry[] {
+    return this.listAllLogs().filter((entry) => !this.isTransactionLog(entry));
+  }
+
+  listTransactionLogs(limit: number, filters: TransactionLogFilters): AdminLogEntry[] {
+    return this.listAllTransactionLogs(filters).slice(0, this.normalizeLimit(limit));
+  }
+
+  listAllTransactionLogs(filters: TransactionLogFilters): AdminLogEntry[] {
+    return this.filterTransactionLogs(
+      this.listAllLogs().filter((entry) => this.isTransactionLog(entry)),
+      filters,
+    );
+  }
+
+  listLogs(limit: number): AdminLogEntry[] {
+    return this.listSystemLogs(limit);
   }
 
   listAllLogs(): AdminLogEntry[] {
@@ -194,6 +348,18 @@ export class AdminService {
 
   clearLogs(): void {
     adminLogStore.clear();
+  }
+
+  clearSystemLogs(): number {
+    return adminLogStore.deleteByIds(
+      this.listAllSystemLogs().map((entry) => entry.id),
+    );
+  }
+
+  clearTransactionLogs(): number {
+    return adminLogStore.deleteByIds(
+      this.listAllTransactionLogs({}).map((entry) => entry.id),
+    );
   }
 
   async incrementCoinStats(coinValue: number): Promise<void> {

@@ -1,316 +1,468 @@
-/* ─────────────────────────────────────────────────────────────────────────────
-   EXISTING RULES — unchanged
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.sys-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
+.page {
+  gap: 16px;
 }
 
-.sys-card {
+.system-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 24px 24px 22px;
+  border: 1.5px solid rgba(167, 170, 225, 0.18);
+  background:
+    radial-gradient(
+      120% 140% at 0% 0%,
+      rgba(99, 102, 241, 0.26) 0%,
+      rgba(99, 102, 241, 0) 55%
+    ),
+    radial-gradient(
+      120% 120% at 100% 100%,
+      rgba(20, 184, 166, 0.14) 0%,
+      rgba(20, 184, 166, 0) 60%
+    ),
+    linear-gradient(145deg, rgba(20, 17, 44, 0.96), rgba(11, 10, 26, 0.96));
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.system-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.04) 1px,
+    transparent 1px
+  );
+  background-size: 24px 100%;
+  mix-blend-mode: overlay;
+  opacity: 0.15;
+}
+
+.system-hero__eyebrow {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 222, 128, 0.28);
+  background: rgba(74, 222, 128, 0.14);
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.system-hero__title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: clamp(22px, 2.9vw, 32px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.7px;
+  color: var(--white);
+}
+
+.system-hero__lead {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 0;
+  max-width: 54ch;
+  color: rgba(225, 227, 252, 0.82);
+  font-size: 13px;
+}
+
+.system-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  gap: 16px;
+}
+
+.system-main-stack,
+.system-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.status-card {
+  padding: 14px 14px 12px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.065),
+    rgba(255, 255, 255, 0.03)
+  );
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.status-card--mono .status-card__value {
+  font-family: "Courier New", monospace;
+  font-size: 14px;
+  letter-spacing: 0.35px;
+}
+
+.status-card__head {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 18px 16px;
-  border-radius: 16px;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  transition:
-    border-color 200ms,
-    transform 200ms;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
-.sys-card__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: grid;
+.status-card__label {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(167, 170, 225, 0.82);
+  letter-spacing: 0.95px;
+  text-transform: uppercase;
+}
+
+.status-card__value {
+  margin: 0;
+  color: var(--white);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  min-height: 24px;
+}
+
+.status-sigil {
+  display: inline-grid;
   place-items: center;
-  flex-shrink: 0;
-  transition:
-    background 250ms,
-    color 250ms;
-}
-.sys-card__icon svg {
-  width: 18px;
-  height: 18px;
-}
-.sys-card__icon--server {
-  background: rgba(74, 222, 128, 0.12);
-  color: var(--green);
-}
-.sys-card__icon--host {
-  background: rgba(105, 111, 199, 0.15);
-  color: var(--lavender);
-}
-.sys-card__icon--wifi {
-  background: rgba(245, 211, 196, 0.12);
-  color: var(--peach);
-}
-.sys-card__icon--serial {
-  background: rgba(251, 191, 36, 0.12);
-  color: var(--amber);
-}
-.sys-card__icon--printer {
-  background: rgba(105, 111, 199, 0.15);
-  color: var(--lavender);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.sys-card__info {
-  flex: 1;
+.status-sigil__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+[data-ok="true"] .status-sigil__dot {
+  background: var(--green);
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+}
+
+[data-ok="false"] .status-sigil__dot {
+  background: var(--red);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.56);
+}
+
+.printer-spotlight {
+  border-radius: 18px;
+  border: 1.5px solid rgba(167, 170, 225, 0.16);
+  background:
+    radial-gradient(
+      110% 120% at 8% 8%,
+      rgba(96, 165, 250, 0.12) 0%,
+      rgba(96, 165, 250, 0) 52%
+    ),
+    linear-gradient(180deg, rgba(18, 16, 39, 0.94), rgba(12, 11, 29, 0.94));
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.printer-spotlight__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 18px 14px;
+}
+
+.printer-spotlight__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   min-width: 0;
 }
-.sys-card__name {
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--ink-muted);
-  margin-bottom: 2px;
-}
-.sys-card__val {
-  display: block;
-  font-size: 16px;
-  font-weight: 700;
-}
-.sys-card__sub {
-  display: block;
-  font-size: 12px;
-  color: var(--ink-muted);
-  margin-top: 1px;
-}
-.sys-card__val--mono {
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  color: var(--lavender);
-  opacity: 0.85;
-}
 
-.sys-card__indicator {
+.printer-spotlight__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   flex-shrink: 0;
-}
-.sys-card__dot {
-  display: block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  transition: background 200ms;
-}
-[data-ok='true'] .sys-card__dot {
-  background: var(--green);
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
-}
-[data-ok='false'] .sys-card__dot {
-  background: var(--red);
-  box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(99, 102, 241, 0.34);
+  background: rgba(99, 102, 241, 0.14);
+  color: #adb4ff;
 }
 
-@media (max-width: 640px) {
-  .sys-grid {
-    grid-template-columns: 1fr;
-  }
+.printer-spotlight__icon svg {
+  width: 20px;
+  height: 20px;
 }
 
-/* ── Ink / Toner section ──────────────────────────────────────── */
-
-.ink-section {
-  margin-top: 20px;
-  padding: 20px 18px;
-  border-radius: 16px;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
+.printer-spotlight__icon[data-connected="true"] {
+  border-color: rgba(74, 222, 128, 0.38);
+  background: rgba(74, 222, 128, 0.14);
+  color: var(--green);
 }
-.ink-section__title {
-  font-size: 13px;
+
+.printer-spotlight__icon[data-connected="false"] {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.13);
+  color: var(--red);
+}
+
+.printer-spotlight__eyebrow {
+  margin: 0;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.9px;
   text-transform: uppercase;
-  color: var(--ink-muted);
-  margin: 0 0 14px;
+  color: rgba(167, 170, 225, 0.74);
 }
 
-.ink-grid {
+.printer-spotlight__status {
+  margin: 2px 0 0;
+  color: var(--white);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.35px;
+  line-height: 1.2;
+}
+
+.printer-spotlight__meta {
+  margin: 6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: rgba(225, 227, 252, 0.78);
+  font-size: 12px;
+}
+
+#printerName {
+  font-family: "Courier New", monospace;
+}
+
+.printer-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.printer-facts__item {
+  margin: 0;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(167, 170, 225, 0.16);
+  background: rgba(255, 255, 255, 0.025);
+  min-width: 0;
+}
+
+.printer-facts__item--wide {
+  grid-column: span 2;
+}
+
+.printer-facts__item dt {
+  margin: 0 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.88px;
+  color: rgba(167, 170, 225, 0.72);
+}
+
+.printer-facts__item dd {
+  margin: 0;
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+#printerDriver,
+#printerPort {
+  font-family: "Courier New", monospace;
+  color: #cfd3ff;
+}
+
+.system-panel {
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.055),
+    rgba(255, 255, 255, 0.025)
+  );
+  overflow: hidden;
+}
+
+.system-panel__head {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.system-panel__title {
+  margin: 0;
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.system-panel__desc {
+  margin: 3px 0 0;
+  color: rgba(225, 227, 252, 0.72);
+  font-size: 12px;
+}
+
+.system-panel__body {
+  padding: 12px 14px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.ink-empty {
-  font-size: 13px;
-  color: var(--ink-muted);
-  text-align: center;
-  padding: 12px 0;
-}
 
-.ink-item {
+.ctrl-btn {
+  width: 100%;
   display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.ink-item__name {
-  flex: 0 0 90px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 11px;
+  border: 1.5px solid transparent;
+  font-family: "Plus Jakarta Sans", sans-serif;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-muted);
-  text-transform: capitalize;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ink-bar {
-  flex: 1;
-  height: 10px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-.ink-bar__fill {
-  height: 100%;
-  border-radius: 5px;
-  transition: width 400ms ease;
-}
-.ink-bar--ok {
-  background: var(--green);
-}
-.ink-bar--low {
-  background: var(--amber);
-}
-.ink-bar--empty {
-  background: var(--red);
-}
-.ink-bar--unknown {
-  background: rgba(255, 255, 255, 0.12);
-  width: 100% !important;
-}
-
-.ink-item__label {
-  flex: 0 0 44px;
-  font-size: 12px;
   font-weight: 700;
-  text-align: right;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 130ms ease,
+    background 130ms ease,
+    transform 90ms ease;
 }
-.ink-item__label--ok {
-  color: var(--green);
+
+.ctrl-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
-.ink-item__label--low {
+
+.ctrl-btn__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.74;
+  font-weight: 500;
+}
+
+.ctrl-btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.ctrl-btn:not(:disabled):active {
+  transform: scale(0.985);
+}
+
+.ctrl-btn--amber {
   color: var(--amber);
-}
-.ink-item__label--empty {
-  color: var(--red);
-}
-.ink-item__label--unknown {
-  color: var(--ink-muted);
+  background: rgba(251, 191, 36, 0.11);
+  border-color: rgba(251, 191, 36, 0.24);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   NEW — Printer card enhancements
-   ───────────────────────────────────────────────────────────────────────────── */
-
-/* Full-width printer card spans both grid columns */
-.sys-card--printer-full {
-  grid-column: span 2;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 18px 20px;
+.ctrl-btn--amber:not(:disabled):hover {
+  background: rgba(251, 191, 36, 0.18);
+  border-color: rgba(251, 191, 36, 0.38);
 }
 
-@media (max-width: 640px) {
-  .sys-card--printer-full {
-    grid-column: span 1;
-    flex-direction: column;
-  }
-}
-
-/* Left cluster: icon + status text */
-.sys-card__printer-left {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  flex: 1;
-  min-width: 0;
-}
-
-/* Icon colours driven by data-connected attribute */
-.sys-card__icon--printer[data-connected='true'] {
-  background: rgba(74, 222, 128, 0.12);
+.ctrl-btn--green {
   color: var(--green);
-}
-.sys-card__icon--printer[data-connected='false'] {
-  background: rgba(248, 113, 113, 0.1);
-  color: var(--red);
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.24);
 }
 
-/* Detail grid: Driver / Port / Connection */
-.printer-detail-grid {
+.ctrl-btn--green:not(:disabled):hover {
+  background: rgba(74, 222, 128, 0.16);
+  border-color: rgba(74, 222, 128, 0.36);
+}
+
+.sop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  flex: 1;
-  min-width: 180px;
-  align-self: stretch;
+  gap: 12px;
 }
 
-.printer-detail-row {
-  display: grid;
-  grid-template-columns: 94px 1fr;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  align-items: baseline;
+.sop-list__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 }
 
-.printer-detail-row:last-child {
-  border-bottom: none;
-}
-
-.printer-detail-row__key {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--lavender);
-  opacity: 0.55;
-  white-space: nowrap;
-}
-
-.printer-detail-row__val {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--white);
-  word-break: break-all;
-}
-
-.printer-detail-row__val--mono {
-  font-family: 'Courier New', monospace;
+.sop-list__num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(167, 170, 225, 0.38);
+  background: rgba(99, 102, 241, 0.16);
+  color: #c3c9ff;
   font-size: 11px;
-  color: var(--lavender);
-  opacity: 0.85;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   NEW — Spooler failure alert banner
-   ───────────────────────────────────────────────────────────────────────────── */
+.sop-list__step {
+  display: block;
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.34;
+}
+
+.sop-list__step strong {
+  color: #c4caff;
+}
+
+.sop-list__note {
+  display: block;
+  margin-top: 1px;
+  color: rgba(225, 227, 252, 0.68);
+  font-size: 11px;
+  line-height: 1.38;
+}
 
 .alert-banner {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: rgba(248, 113, 113, 0.1);
-  border: 1.5px solid rgba(248, 113, 113, 0.28);
+  padding: 12px 13px;
+  border-radius: 13px;
+  border: 1.5px solid rgba(248, 113, 113, 0.32);
+  background: rgba(248, 113, 113, 0.12);
   color: var(--red);
-  animation: fade-up 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-/* Use the shared .hidden class — no extra toggle class needed */
 
 .alert-banner > svg {
   width: 18px;
@@ -321,44 +473,34 @@
 
 .alert-banner__body {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
   min-width: 0;
 }
 
 .alert-banner__title {
+  display: block;
   font-size: 13px;
   font-weight: 700;
 }
 
 .alert-banner__msg {
+  display: block;
+  margin-top: 1px;
+  color: rgba(255, 192, 192, 0.94);
   font-size: 12px;
-  font-weight: 500;
-  color: rgba(248, 113, 113, 0.8);
-  line-height: 1.5;
+  line-height: 1.43;
 }
 
 .alert-banner__dismiss {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  border-radius: 6px;
-  opacity: 0.65;
-  transition:
-    opacity 130ms,
-    background 130ms;
-}
-
-.alert-banner__dismiss:hover {
-  opacity: 1;
-  background: rgba(248, 113, 113, 0.15);
+  opacity: 0.72;
 }
 
 .alert-banner__dismiss svg {
@@ -366,175 +508,48 @@
   height: 14px;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   NEW — Printer Controls + SOP row
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.printer-actions-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+.alert-banner__dismiss:hover {
+  opacity: 1;
+  background: rgba(248, 113, 113, 0.16);
 }
 
-@media (max-width: 640px) {
-  .printer-actions-row {
+@media (max-width: 1120px) {
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .status-card--mono {
+    grid-column: span 2;
+  }
+
+  .system-layout {
     grid-template-columns: 1fr;
   }
 }
 
-.printer-actions-panel {
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.printer-actions-panel__head {
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-}
-
-.printer-actions-panel__title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.1px;
-  color: var(--white);
-}
-
-.printer-actions-panel__body {
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* ── Control buttons ──────────────────────────────────────────── */
-
-.ctrl-btn {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1.5px solid transparent;
-  cursor: pointer;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-  text-align: left;
-  transition:
-    background 130ms,
-    border-color 130ms,
-    transform 100ms;
-}
-
-.ctrl-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
-}
-
-.ctrl-btn svg {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.ctrl-btn__sub {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0.65;
-  margin-top: 1px;
-}
-
-.ctrl-btn--amber {
-  background: var(--amber-dim);
-  border-color: rgba(251, 191, 36, 0.25);
-  color: var(--amber);
-}
-.ctrl-btn--amber:not(:disabled):hover {
-  background: rgba(251, 191, 36, 0.18);
-  border-color: rgba(251, 191, 36, 0.4);
-}
-
-.ctrl-btn--green {
-  background: var(--green-dim);
-  border-color: rgba(74, 222, 128, 0.25);
-  color: var(--green);
-}
-.ctrl-btn--green:not(:disabled):hover {
-  background: rgba(74, 222, 128, 0.2);
-  border-color: rgba(74, 222, 128, 0.4);
-}
-
-.ctrl-btn:not(:disabled):active {
-  transform: scale(0.98);
-}
-
-/* ── Replacement SOP list ──────────────────────────────────────── */
-
-.sop-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.sop-list__item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.sop-list__num {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: rgba(105, 111, 199, 0.15);
-  border: 1.5px solid rgba(105, 111, 199, 0.25);
-  color: var(--lavender);
-  font-size: 11px;
-  font-weight: 800;
-  display: grid;
-  place-items: center;
-  margin-top: 1px;
-}
-
-.sop-list__step {
-  display: block;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--white);
-  margin-bottom: 2px;
-  line-height: 1.4;
-}
-
-.sop-list__step strong {
-  color: var(--lavender);
-}
-
-.sop-list__note {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--lavender);
-  opacity: 0.55;
-  line-height: 1.5;
-}
-
-/* ── Keyframe reuse (defined in shared.css, referenced here for clarity) ── */
-
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+@media (max-width: 760px) {
+  .system-hero {
+    padding: 20px 18px 18px;
   }
-  to {
-    opacity: 1;
-    transform: none;
+
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-card--mono {
+    grid-column: span 1;
+  }
+
+  .printer-spotlight__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .printer-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .printer-facts__item--wide {
+    grid-column: span 1;
   }
 }

@@ -135,7 +135,10 @@ function parseJsonValue<T>(value: unknown): T | undefined {
   }
 }
 
-function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+function parsePositiveIntEnv(
+  value: string | undefined,
+  fallback: number,
+): number {
   if (typeof value !== 'string') return fallback;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -148,9 +151,11 @@ function normalizeTrustedTimestampMeta(
   if (typeof value !== 'object' || value === null) return undefined;
   const candidate = value as Record<string, unknown>;
   const source = candidate.source === 'ntp' ? 'ntp' : 'system';
-  const synced = typeof candidate.synced === 'boolean' ? candidate.synced : false;
+  const synced =
+    typeof candidate.synced === 'boolean' ? candidate.synced : false;
   const offsetMs =
-    typeof candidate.offsetMs === 'number' && Number.isFinite(candidate.offsetMs)
+    typeof candidate.offsetMs === 'number' &&
+    Number.isFinite(candidate.offsetMs)
       ? candidate.offsetMs
       : null;
   const detail = typeof candidate.detail === 'string' ? candidate.detail : null;
@@ -603,6 +608,30 @@ export class AdminLogSqliteStore {
     getSqliteDb().exec('DELETE FROM admin_logs');
   }
 
+  deleteByIds(ids: ReadonlyArray<string>): number {
+    const normalizedIds = Array.from(
+      new Set(
+        ids.map((value) => value.trim()).filter((value) => value.length > 0),
+      ),
+    );
+    if (normalizedIds.length === 0) return 0;
+
+    return withTransaction(() => {
+      const db = getSqliteDb();
+      let deleted = 0;
+      const chunkSize = 400;
+      for (let index = 0; index < normalizedIds.length; index += chunkSize) {
+        const chunk = normalizedIds.slice(index, index + chunkSize);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const result = db
+          .prepare(`DELETE FROM admin_logs WHERE id IN (${placeholders})`)
+          .run(...chunk);
+        deleted += changesFromRun(result);
+      }
+      return deleted;
+    });
+  }
+
   private toLogEntry(row: Record<string, unknown>): AdminLogEntry {
     const timestampMeta = normalizeTrustedTimestampMeta(
       parseJsonValue<unknown>(row.timestamp_meta_json),
@@ -724,7 +753,10 @@ export class FeedbackSqliteStore {
       .run(submittedAt, sessionId);
   }
 
-  listFeedback(options: ListFeedbackOptions): { total: number; items: FeedbackEntry[] } {
+  listFeedback(options: ListFeedbackOptions): {
+    total: number;
+    items: FeedbackEntry[];
+  } {
     const db = getSqliteDb();
     const status = options.status;
     const limit = Math.max(1, Math.floor(options.limit));
@@ -758,7 +790,9 @@ export class FeedbackSqliteStore {
     }
 
     const totalRow = db
-      .prepare('SELECT COUNT(*) AS total FROM feedback_entries WHERE status = ?')
+      .prepare(
+        'SELECT COUNT(*) AS total FROM feedback_entries WHERE status = ?',
+      )
       .get(status) as { total?: unknown };
     const rows = db
       .prepare(
@@ -807,7 +841,10 @@ export class FeedbackSqliteStore {
     return this.toFeedbackEntry(row);
   }
 
-  updateFeedbackResolved(feedbackId: string, resolved: boolean): FeedbackEntry | null {
+  updateFeedbackResolved(
+    feedbackId: string,
+    resolved: boolean,
+  ): FeedbackEntry | null {
     const resolvedAt = resolved ? toIsoDate(new Date()) : null;
     const status: FeedbackEntry['status'] = resolved ? 'resolved' : 'open';
 
@@ -854,10 +891,7 @@ export class FeedbackSqliteStore {
     return rows.map((row) => this.toFeedbackEntry(row));
   }
 
-  cleanupExpiredSessions(
-    now: Date,
-    retentionMs: number,
-  ): boolean {
+  cleanupExpiredSessions(now: Date, retentionMs: number): boolean {
     const nowMs = now.getTime();
     const nowIso = now.toISOString();
     const retentionCutoff = nowMs - retentionMs;
@@ -865,7 +899,7 @@ export class FeedbackSqliteStore {
     // Delete sessions with invalid or missing expires_at
     const invalidExpiresStmt = getSqliteDb().prepare(
       `DELETE FROM feedback_sessions 
-       WHERE expires_at IS NULL OR expires_at = ''`
+       WHERE expires_at IS NULL OR expires_at = ''`,
     );
     const invalidExpiresResult = invalidExpiresStmt.run();
 
@@ -873,11 +907,15 @@ export class FeedbackSqliteStore {
     const expiredStmt = getSqliteDb().prepare(
       `DELETE FROM feedback_sessions 
        WHERE expires_at < ?
-         AND (created_at IS NULL OR created_at = '' OR created_at < ?)`
+         AND (created_at IS NULL OR created_at = '' OR created_at < ?)`,
     );
-    const expiredResult = expiredStmt.run(nowIso, new Date(retentionCutoff).toISOString());
+    const expiredResult = expiredStmt.run(
+      nowIso,
+      new Date(retentionCutoff).toISOString(),
+    );
 
-    const totalChanges = Number(invalidExpiresResult.changes) + Number(expiredResult.changes);
+    const totalChanges =
+      Number(invalidExpiresResult.changes) + Number(expiredResult.changes);
     return totalChanges > 0;
   }
 
@@ -903,8 +941,7 @@ export class FeedbackSqliteStore {
       typeof row.rating === 'number' && Number.isFinite(row.rating)
         ? row.rating
         : null;
-    const statusValue =
-      row.status === 'resolved' ? 'resolved' : 'open';
+    const statusValue = row.status === 'resolved' ? 'resolved' : 'open';
 
     return {
       id: String(row.id ?? ''),
@@ -914,8 +951,7 @@ export class FeedbackSqliteStore {
       category: categoryValue as FeedbackEntry['category'],
       rating: ratingValue,
       status: statusValue,
-      resolvedAt:
-        typeof row.resolved_at === 'string' ? row.resolved_at : null,
+      resolvedAt: typeof row.resolved_at === 'string' ? row.resolved_at : null,
       meta: parsedMeta,
     };
   }
@@ -1102,14 +1138,19 @@ export class ReportIssueSqliteStore {
   createSessionIssueWithAttachments(entry: ReportIssueEntry): void {
     withTransaction(() => {
       this.createReportIssue(entry);
-      this.assignAttachmentsToIssue(entry.attachmentIds, entry.id, entry.sessionId);
+      this.assignAttachmentsToIssue(
+        entry.attachmentIds,
+        entry.id,
+        entry.sessionId,
+      );
       this.markSessionSubmitted(entry.sessionId, entry.timestamp);
     });
   }
 
-  listReportIssues(
-    options: ListReportIssueOptions,
-  ): { total: number; items: ReportIssueEntry[] } {
+  listReportIssues(options: ListReportIssueOptions): {
+    total: number;
+    items: ReportIssueEntry[];
+  } {
     const db = getSqliteDb();
     const limit = Math.max(1, Math.floor(options.limit));
     const offset = Math.max(0, Math.floor(options.offset));
@@ -1181,7 +1222,9 @@ export class ReportIssueSqliteStore {
     return this.toIssueEntry(row);
   }
 
-  listAttachmentsForReport(reportIssueId: string): ReportIssueAttachmentEntry[] {
+  listAttachmentsForReport(
+    reportIssueId: string,
+  ): ReportIssueAttachmentEntry[] {
     const rows = getSqliteDb()
       .prepare(
         `SELECT
@@ -1243,7 +1286,10 @@ export class ReportIssueSqliteStore {
     return this.getReportIssueById(issueId);
   }
 
-  cleanupExpiredSessions(now: Date, retentionMs: number): ReportSessionCleanupResult {
+  cleanupExpiredSessions(
+    now: Date,
+    retentionMs: number,
+  ): ReportSessionCleanupResult {
     const nowMs = now.getTime();
     const retentionCutoff = nowMs - retentionMs;
     const sessionRows = getSqliteDb()
@@ -1254,8 +1300,10 @@ export class ReportIssueSqliteStore {
     for (const row of sessionRows) {
       const id = typeof row.id === 'string' ? row.id : '';
       if (!id) continue;
-      const expiresAt = typeof row.expires_at === 'string' ? row.expires_at : '';
-      const createdAt = typeof row.created_at === 'string' ? row.created_at : '';
+      const expiresAt =
+        typeof row.expires_at === 'string' ? row.expires_at : '';
+      const createdAt =
+        typeof row.created_at === 'string' ? row.created_at : '';
       const expiresAtMs = dateMs(expiresAt);
       const createdAtMs = dateMs(createdAt);
 
@@ -1300,17 +1348,23 @@ export class ReportIssueSqliteStore {
         .run(...removedSessionIds);
 
       getSqliteDb()
-        .prepare(`DELETE FROM report_issue_sessions WHERE id IN (${placeholders})`)
+        .prepare(
+          `DELETE FROM report_issue_sessions WHERE id IN (${placeholders})`,
+        )
         .run(...removedSessionIds);
     });
 
     return {
       changed: true,
-      orphanedAttachments: orphanedRows.map((row) => this.toAttachmentEntry(row)),
+      orphanedAttachments: orphanedRows.map((row) =>
+        this.toAttachmentEntry(row),
+      ),
     };
   }
 
-  private toSessionEntry(row: Record<string, unknown>): ReportIssueSessionEntry {
+  private toSessionEntry(
+    row: Record<string, unknown>,
+  ): ReportIssueSessionEntry {
     return {
       id: String(row.id ?? ''),
       token: String(row.token ?? ''),
@@ -1327,7 +1381,9 @@ export class ReportIssueSqliteStore {
     const parsedAttachmentIds =
       parseJsonValue<unknown>(row.attachment_ids_json) ?? [];
     const attachmentIds = Array.isArray(parsedAttachmentIds)
-      ? parsedAttachmentIds.filter((item): item is string => typeof item === 'string')
+      ? parsedAttachmentIds.filter(
+          (item): item is string => typeof item === 'string',
+        )
       : [];
 
     return {
@@ -1501,9 +1557,9 @@ export class ConsumablesSqliteStore {
     ).toISOString();
     try {
       const db = getSqliteDb();
-      db.prepare(
-        'DELETE FROM consumable_usage_events WHERE timestamp < ?',
-      ).run(cutoffIso);
+      db.prepare('DELETE FROM consumable_usage_events WHERE timestamp < ?').run(
+        cutoffIso,
+      );
       db.prepare(
         'DELETE FROM consumable_ink_snapshots WHERE timestamp < ?',
       ).run(cutoffIso);
@@ -1560,7 +1616,9 @@ export class ConsumablesSqliteStore {
               status,
             } as ConsumableInkSnapshotSupply;
           })
-          .filter((value): value is ConsumableInkSnapshotSupply => value !== null)
+          .filter(
+            (value): value is ConsumableInkSnapshotSupply => value !== null,
+          )
       : [];
     const detectionMethod =
       row.ink_detection_method === 'snmp' ||
@@ -1686,8 +1744,9 @@ export function importLowDbSnapshotIfNeeded(
     const feedbackSessionIds = new Set<string>();
     for (const session of snapshot.feedbackSessions) {
       attempted.feedbackSessions += 1;
-      const result = db.prepare(
-        `INSERT OR IGNORE INTO feedback_sessions (
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO feedback_sessions (
           id,
           token,
           feedback_url,
@@ -1695,10 +1754,11 @@ export function importLowDbSnapshotIfNeeded(
           expires_at,
           submitted_at
         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(
-        session.id,
-        session.token,
-        session.feedbackUrl,
+        )
+        .run(
+          session.id,
+          session.token,
+          session.feedbackUrl,
           session.createdAt,
           session.expiresAt,
           session.submittedAt,
@@ -1713,8 +1773,9 @@ export function importLowDbSnapshotIfNeeded(
         skippedOrphans.feedback += 1;
         continue;
       }
-      const result = db.prepare(
-        `INSERT OR IGNORE INTO feedback_entries (
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO feedback_entries (
           id,
           session_id,
           timestamp,
@@ -1725,13 +1786,14 @@ export function importLowDbSnapshotIfNeeded(
           resolved_at,
           meta_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        entry.id,
-        entry.sessionId,
-        entry.timestamp,
-        entry.comment,
-        entry.category,
-        entry.rating,
+        )
+        .run(
+          entry.id,
+          entry.sessionId,
+          entry.timestamp,
+          entry.comment,
+          entry.category,
+          entry.rating,
           entry.status,
           entry.resolvedAt ?? null,
           jsonOrNull(entry.meta),
@@ -1742,8 +1804,9 @@ export function importLowDbSnapshotIfNeeded(
     const reportSessionIds = new Set<string>();
     for (const session of snapshot.reportIssueSessions) {
       attempted.reportIssueSessions += 1;
-      const result = db.prepare(
-        `INSERT OR IGNORE INTO report_issue_sessions (
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO report_issue_sessions (
           id,
           token,
           report_url,
@@ -1751,10 +1814,11 @@ export function importLowDbSnapshotIfNeeded(
           expires_at,
           submitted_at
         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(
-        session.id,
-        session.token,
-        session.reportUrl,
+        )
+        .run(
+          session.id,
+          session.token,
+          session.reportUrl,
           session.createdAt,
           session.expiresAt,
           session.submittedAt,
@@ -1770,8 +1834,9 @@ export function importLowDbSnapshotIfNeeded(
         skippedOrphans.reportIssues += 1;
         continue;
       }
-      const result = db.prepare(
-        `INSERT OR IGNORE INTO report_issue_entries (
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO report_issue_entries (
           id,
           session_id,
           timestamp,
@@ -1784,15 +1849,16 @@ export function importLowDbSnapshotIfNeeded(
           resolved_at,
           meta_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        issue.id,
-        issue.sessionId,
-        issue.timestamp,
-        issue.title,
-        issue.description,
-        issue.category,
-        issue.status,
-        JSON.stringify(issue.attachmentIds),
+        )
+        .run(
+          issue.id,
+          issue.sessionId,
+          issue.timestamp,
+          issue.title,
+          issue.description,
+          issue.category,
+          issue.status,
+          JSON.stringify(issue.attachmentIds),
           issue.acknowledgedAt,
           issue.resolvedAt,
           jsonOrNull(issue.meta),
@@ -1811,8 +1877,9 @@ export function importLowDbSnapshotIfNeeded(
         attachment.reportIssueId && reportIssueIds.has(attachment.reportIssueId)
           ? attachment.reportIssueId
           : null;
-      const result = db.prepare(
-        `INSERT OR IGNORE INTO report_issue_attachments (
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO report_issue_attachments (
           id,
           session_id,
           report_issue_id,
@@ -1823,13 +1890,14 @@ export function importLowDbSnapshotIfNeeded(
           size_bytes,
           file_path
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        attachment.id,
-        attachment.sessionId,
-        reportIssueId,
-        attachment.timestamp,
-        attachment.originalName,
-        attachment.storedName,
+        )
+        .run(
+          attachment.id,
+          attachment.sessionId,
+          reportIssueId,
+          attachment.timestamp,
+          attachment.originalName,
+          attachment.storedName,
           attachment.contentType,
           attachment.sizeBytes,
           attachment.filePath,
@@ -1839,8 +1907,9 @@ export function importLowDbSnapshotIfNeeded(
 
     for (const log of snapshot.logs) {
       attempted.logs += 1;
-      const result = db.prepare(
-        `INSERT OR IGNORE INTO admin_logs (
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO admin_logs (
           id,
           timestamp,
           timestamp_meta_json,
@@ -1848,10 +1917,11 @@ export function importLowDbSnapshotIfNeeded(
           message,
           meta_json
         ) VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(
-        log.id,
-        log.timestamp,
-        jsonOrNull(log.timestampMeta),
+        )
+        .run(
+          log.id,
+          log.timestamp,
+          jsonOrNull(log.timestampMeta),
           log.type,
           log.message,
           jsonOrNull(log.meta),

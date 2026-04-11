@@ -575,17 +575,47 @@ Response includes dispatch timing metadata:
 - `timing.dispatchEngine` — selected engine (`sumatra`, `pdftoprinter`, `ghostscript`, `libreoffice`)
 - `timing.dispatchAttempts` — number of dispatch attempts in the fallback chain
 
-### `GET /api/admin/logs`
+### `GET /api/admin/logs/system`
 
-Returns logs (`?limit=1..1000`, default 200).
+Returns **system-only** logs (`?limit=1..1000`, default 200). Transaction-context
+entries are excluded.
 
-### `GET /api/admin/logs/export.csv`
+Legacy alias: `GET /api/admin/logs` points to the same system dataset.
 
-Exports logs as CSV.
+### `GET /api/admin/logs/system/export.csv`
 
-### `DELETE /api/admin/logs`
+Exports system-only logs as CSV.
 
-Clears logs.
+Legacy alias: `GET /api/admin/logs/export.csv` exports system-only logs.
+
+### `DELETE /api/admin/logs/system`
+
+Clears only system logs.
+
+Legacy alias: `DELETE /api/admin/logs` clears system logs.
+
+### `GET /api/admin/logs/transactions`
+
+Returns transaction logs for print/copy/scan lifecycle events.
+
+Query parameters:
+
+- `limit` (`1..1000`, default `200`)
+- `transactionId` (exact transaction ID match; message fallback match)
+- `mode` (`print|copy|scan`)
+- `dateFrom` (ISO timestamp)
+- `dateTo` (ISO timestamp)
+- `eventType` (exact log type match)
+- `status` (`created|processing|completed|failed|refund`)
+
+### `GET /api/admin/logs/transactions/export.csv`
+
+Exports transaction logs as CSV (supports the same filters as
+`GET /api/admin/logs/transactions`).
+
+### `DELETE /api/admin/logs/transactions`
+
+Clears only transaction logs.
 
 ### `POST /api/admin/balance/reset`
 

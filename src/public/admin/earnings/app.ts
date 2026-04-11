@@ -46,9 +46,14 @@ const calendarToggleBtn = document.getElementById(
 const viewButtons = Array.from(
   viewSwitch.querySelectorAll<HTMLButtonElement>('.view-switch__btn'),
 );
-let refreshTimer: number | null = null;
+let summaryRefreshTimer: number | null = null;
+let analyticsRefreshTimer: number | null = null;
 let currentView: EarningsAnalyticsView = 'daily';
 let anchorDate = new Date();
+let summaryInFlight: Promise<void> | null = null;
+let analyticsInFlight: Promise<void> | null = null;
+let analyticsInFlightKey: string | null = null;
+let analyticsRequestSeq = 0;
 
 // ── Flatpickr instance ──────────────────────────────────────────────────────
 let picker: FlatpickrInstance;
@@ -156,27 +161,57 @@ function renderTrend(analytics: EarningsAnalyticsResponse): void {
     : 'N/A';
 }
 
+function getAnalyticsRequestKey(): string {
+  return `${currentView}:${anchorDate.toISOString()}`;
+}
+
 // ── API ──────────────────────────────────────────────────────────────────────
 async function loadSummaryData(): Promise<void> {
-  const summaryRes = await apiFetch('/api/admin/summary');
-  if (!summaryRes.ok) {
-    if (summaryRes.status === 401) throw new Error('Invalid admin PIN.');
-    throw new Error('Failed to load earnings data.');
-  }
-  const summary = (await summaryRes.json()) as SummaryResponse;
-  applyEarnings(summary);
+  if (summaryInFlight) return summaryInFlight;
+  summaryInFlight = (async () => {
+    const summaryRes = await apiFetch('/api/admin/summary');
+    if (!summaryRes.ok) {
+      if (summaryRes.status === 401) throw new Error('Invalid admin PIN.');
+      throw new Error('Failed to load earnings data.');
+    }
+    const summary = (await summaryRes.json()) as SummaryResponse;
+    applyEarnings(summary);
+  })().finally(() => {
+    summaryInFlight = null;
+  });
+  return summaryInFlight;
 }
 
 async function loadAnalyticsData(): Promise<void> {
+  const requestKey = getAnalyticsRequestKey();
+  if (analyticsInFlight && analyticsInFlightKey === requestKey) {
+    return analyticsInFlight;
+  }
+  const requestSeq = ++analyticsRequestSeq;
+
+  let requestPromise: Promise<void>;
+  requestPromise = (async () => {
   const analyticsRes = await apiFetch(
     `/api/admin/earnings/analytics?view=${encodeURIComponent(currentView)}&anchor=${encodeURIComponent(anchorDate.toISOString())}`,
   );
-  if (!analyticsRes.ok) {
-    if (analyticsRes.status === 401) throw new Error('Invalid admin PIN.');
-    throw new Error('Failed to load earnings analytics.');
-  }
-  const analytics = (await analyticsRes.json()) as EarningsAnalyticsResponse;
-  renderTrend(analytics);
+    if (!analyticsRes.ok) {
+      if (analyticsRes.status === 401) throw new Error('Invalid admin PIN.');
+      throw new Error('Failed to load earnings analytics.');
+    }
+    const analytics = (await analyticsRes.json()) as EarningsAnalyticsResponse;
+    // Drop stale responses when users change view/date quickly.
+    if (requestSeq !== analyticsRequestSeq) return;
+    renderTrend(analytics);
+  })().finally(() => {
+    if (analyticsInFlight === requestPromise) {
+      analyticsInFlight = null;
+      analyticsInFlightKey = null;
+    }
+  });
+
+  analyticsInFlight = requestPromise;
+  analyticsInFlightKey = requestKey;
+  return requestPromise;
 }
 
 async function loadData(): Promise<void> {
@@ -224,6 +259,17 @@ initAuth(async () => {
   initCalendar();
   picker?.setDate(anchorDate, false);
   await loadData();
-  if (refreshTimer !== null) window.clearInterval(refreshTimer);
-  refreshTimer = window.setInterval(() => void loadData(), 10_000);
+  if (summaryRefreshTimer !== null) window.clearInterval(summaryRefreshTimer);
+  if (analyticsRefreshTimer !== null)
+    window.clearInterval(analyticsRefreshTimer);
+  summaryRefreshTimer = window.setInterval(() => void loadSummaryData(), 10_000);
+  analyticsRefreshTimer = window.setInterval(
+    () => void loadAnalyticsData(),
+    60_000,
+  );
+});
+
+window.addEventListener('pagehide', () => {
+  if (summaryRefreshTimer !== null) window.clearInterval(summaryRefreshTimer);
+  if (analyticsRefreshTimer !== null) window.clearInterval(analyticsRefreshTimer);
 });

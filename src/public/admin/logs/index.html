@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Logs · Admin · PrintBit</title>
+    <title>System Logs · Admin · PrintBit</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/logs/styles.css" />
@@ -231,7 +231,15 @@
                 clip-rule="evenodd"
               />
             </svg>
-            <span>Logs</span>
+            <span>System Logs</span>
+          </a>
+          <a href="/admin/transactions/" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
+              />
+            </svg>
+            <span>Transaction Logs</span>
           </a>
           <a href="/admin/feedback/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -292,33 +300,9 @@
       <div class="main">
         <header class="topbar">
           <div class="topbar__left">
-            <h2 class="topbar__title">Logs</h2>
+            <h2 class="topbar__title">System Logs</h2>
           </div>
           <div class="topbar__right">
-            <div class="logs-search">
-              <input
-                id="transactionSearchInput"
-                class="logs-search__input"
-                type="text"
-                inputmode="text"
-                placeholder="Search transaction ID"
-                aria-label="Search logs by transaction ID"
-              />
-              <button
-                id="transactionSearchBtn"
-                class="topbar-btn"
-                type="button"
-              >
-                <span>Search</span>
-              </button>
-              <button
-                id="transactionSearchClearBtn"
-                class="topbar-btn"
-                type="button"
-              >
-                <span>Clear</span>
-              </button>
-            </div>
             <p
               id="adminMessage"
               class="topbar__msg"
@@ -343,7 +327,7 @@
                   clip-rule="evenodd"
                 />
               </svg>
-              <span>Export CSV</span>
+              <span>Export System CSV</span>
             </button>
             <button id="clearLogsBtn" class="topbar-btn topbar-btn--danger">
               <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -353,29 +337,31 @@
                   clip-rule="evenodd"
                 />
               </svg>
-              <span>Clear All</span>
+              <span>Clear System Logs</span>
             </button>
           </div>
         </header>
 
         <div class="content">
           <section class="page">
-            <div class="logs-panel">
-              <div
-                id="transactionLookupResult"
-                class="logs-lookup-result"
-                hidden
-                aria-live="polite"
-              ></div>
-              <div class="logs-scroll">
-                <table class="logs-table">
-                  <thead>
-                    <tr>
-                      <th class="logs-th logs-th--ts">Timestamp</th>
-                      <th class="logs-th">Message</th>
-                      <th class="logs-th logs-th--action"></th>
-                    </tr>
-                  </thead>
+            <section class="admin-page-hero">
+               <p class="admin-page-hero__kicker">Operations</p>
+               <h3 class="admin-page-hero__title">System Event Logs</h3>
+               <p class="admin-page-hero__desc">
+                 View kiosk/system runtime events only. Transaction lifecycle
+                 entries are separated into the Transaction Logs page.
+               </p>
+             </section>
+
+             <div class="logs-panel">
+               <div class="logs-scroll">
+                 <table class="logs-table">
+                   <thead>
+                     <tr>
+                       <th class="logs-th logs-th--ts">Timestamp</th>
+                       <th class="logs-th">Message</th>
+                     </tr>
+                   </thead>
                   <tbody id="logsBody"></tbody>
                 </table>
               </div>

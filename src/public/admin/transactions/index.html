@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Anomaly Alerts · Admin · PrintBit</title>
+    <title>Transaction Logs · Admin · PrintBit</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
-    <link rel="stylesheet" href="/admin/alerts/styles.css" />
+    <link rel="stylesheet" href="/admin/transactions/styles.css" />
   </head>
   <body>
     <div id="adminAuthView" class="auth-gate">
@@ -59,10 +59,12 @@
             <div class="auth-card__tag">Admin Console</div>
           </div>
         </div>
+
         <h1 class="auth-card__heading">Secure Access</h1>
         <p class="auth-card__desc">
           Enter your administrator PIN to unlock machine controls and analytics.
         </p>
+
         <form
           id="adminAuthForm"
           class="auth-form"
@@ -74,7 +76,9 @@
               <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path
                   fill-rule="evenodd"
-                  d="M5 7V5a3 3 0 016 0v2h.5A1.5 1.5 0 0113 8.5v5A1.5 1.5 0 0111.5 15h-7A1.5 1.5 0 013 13.5v-5A1.5 1.5 0 014.5 7H5zm2-2a1 1 0 112 0v2H7V5z"
+                  d="M5 7V5a3 3 0 016 0v2h.5A1.5 1.5 0 0113
+              8.5v5A1.5 1.5 0 0111.5 15h-7A1.5 1.5 0 013 13.5v-5A1.5 1.5 0 014.5 7H5zm2-2a1
+              1 0 112 0v2H7V5z"
                   clip-rule="evenodd"
                 />
               </svg>
@@ -91,8 +95,20 @@
               aria-describedby="adminMessage"
             />
           </div>
-          <button type="submit" class="auth-btn">Unlock Panel</button>
+          <button type="submit" class="auth-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1
+            1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012
+            2 1 1 0 102 0 4 4 0 00-4-4z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            Unlock Panel
+          </button>
         </form>
+
         <p
           id="adminMessage"
           class="auth-msg"
@@ -151,57 +167,71 @@
             <div class="sidebar__env">Admin Console</div>
           </div>
         </div>
+
         <nav class="sidebar__nav">
-          <a href="/admin/dashboard" class="nav-btn">
+          <a href="/admin/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
-                d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"
+                d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1
+            1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0
+            011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"
               />
             </svg>
             <span>Overview</span>
           </a>
-          <a href="/admin/earnings" class="nav-btn">
+          <a href="/admin/earnings/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 6a1 1 0 000 2h1v1H7a1 1 0 100 2h1v3a1 1 0 102 0v-3h.5a2.5 2.5 0 000-5H10V6a1 1 0 00-1-1H7z"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 6a1 1 0 000
+            2h1v1H7a1 1 0 100 2h1v3a1 1 0 102 0v-3h.5a2.5 2.5 0 000-5H10V6a1 1 0
+            00-1-1H7z"
                 clip-rule="evenodd"
               />
             </svg>
             <span>Earnings</span>
           </a>
-
-          <a href="/admin/system" class="nav-btn">
+          <a href="/admin/system/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
-                d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 1a1 1 0 11-2 0 1 1 0 012 0zM2 13a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zm14 1a1 1 0 11-2 0 1 1 0 012 0z"
+                d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2
+            2H4a2 2 0 01-2-2V5zm14 1a1 1 0 11-2 0 1 1 0 012 0zM2 13a2 2 0 012-2h12a2 2
+            0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zm14 1a1 1 0 11-2 0 1 1 0 012 0z"
                 clip-rule="evenodd"
               />
             </svg>
             <span>System</span>
           </a>
-          <a href="/admin/settings" class="nav-btn">
+          <a href="/admin/settings/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
-                d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532
+            1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947
+            2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734
+            2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533
+            1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379
+            1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532
+            1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
                 clip-rule="evenodd"
               />
             </svg>
             <span>Settings</span>
           </a>
-          <a href="/admin/logs" class="nav-btn">
+          <a href="/admin/logs/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
-                d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h6a1 1 0 010 2H4a1 1 0 01-1-1z"
+                d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1
+            1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0
+            01-1-1v-2zm0 6a1 1 0 011-1h6a1 1 0 010 2H4a1 1 0 01-1-1z"
                 clip-rule="evenodd"
               />
             </svg>
             <span>System Logs</span>
           </a>
-          <a href="/admin/transactions" class="nav-btn">
+          <a href="/admin/transactions/" class="nav-btn nav-btn--active">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
@@ -234,7 +264,7 @@
             </svg>
             <span>Reports</span>
           </a>
-          <a href="/admin/alerts" class="nav-btn nav-btn--active">
+          <a href="/admin/alerts" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"
@@ -248,15 +278,18 @@
             ></span>
           </a>
         </nav>
+
         <div class="sidebar__foot">
           <button id="logoutBtn" class="lock-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
-                d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2
+            2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
                 clip-rule="evenodd"
-              /></svg
-            ><span>Lock Panel</span>
+              />
+            </svg>
+            <span>Lock Panel</span>
           </button>
         </div>
       </aside>
@@ -264,7 +297,7 @@
       <div class="main">
         <header class="topbar">
           <div class="topbar__left">
-            <h2 class="topbar__title">Anomaly Alerts</h2>
+            <h2 class="topbar__title">Transaction Logs</h2>
           </div>
           <div class="topbar__right">
             <p
@@ -273,106 +306,139 @@
               role="alert"
               aria-live="polite"
             ></p>
-            <button id="refreshBtn" class="topbar-btn">Refresh</button>
+            <button id="refreshBtn" class="topbar-btn">
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span>Refresh</span>
+            </button>
+            <button id="exportLogsBtn" class="topbar-btn topbar-btn--accent">
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span>Export Transaction CSV</span>
+            </button>
+            <button id="clearLogsBtn" class="topbar-btn topbar-btn--danger">
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                  clip-rule="evenodd"
+                />
+              </svg>
+              <span>Clear Transaction Logs</span>
+            </button>
           </div>
         </header>
 
         <div class="content">
           <section class="page">
             <section class="admin-page-hero">
-              <p class="admin-page-hero__kicker">Monitoring</p>
-              <h3 class="admin-page-hero__title">Anomaly Alert Desk</h3>
+              <p class="admin-page-hero__kicker">Auditing</p>
+              <h3 class="admin-page-hero__title">Print/Copy/Scan Transactions</h3>
               <p class="admin-page-hero__desc">
-                Keep track of warnings and critical incidents, acknowledge quickly,
-                and drive fast operational resolution.
+                Filter transaction lifecycle events across print, copy, and scan
+                by ID, mode, date range, event type, and status.
               </p>
             </section>
 
-            <div class="ri-stats-row">
-              <div class="ri-stat">
-                <div class="ri-stat__value" id="statTotal">0</div>
-                <div class="ri-stat__label">Total</div>
+            <section class="tx-filters-panel">
+              <div class="tx-filters-grid">
+                <label class="tx-filter-field">
+                  <span>Transaction ID</span>
+                  <input
+                    id="transactionIdInput"
+                    class="tx-input"
+                    type="text"
+                    placeholder="e.g. tx-123..."
+                  />
+                </label>
+                <label class="tx-filter-field">
+                  <span>Mode</span>
+                  <select id="modeFilter" class="tx-select">
+                    <option value="">All</option>
+                    <option value="print">Print</option>
+                    <option value="copy">Copy</option>
+                    <option value="scan">Scan</option>
+                  </select>
+                </label>
+                <label class="tx-filter-field">
+                  <span>Status</span>
+                  <select id="statusFilter" class="tx-select">
+                    <option value="">All</option>
+                    <option value="created">Created</option>
+                    <option value="processing">Processing</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                    <option value="refund">Refund</option>
+                  </select>
+                </label>
+                <label class="tx-filter-field">
+                  <span>Event type</span>
+                  <input
+                    id="eventTypeInput"
+                    class="tx-input"
+                    type="text"
+                    placeholder="Exact type (optional)"
+                  />
+                </label>
+                <label class="tx-filter-field">
+                  <span>Date from</span>
+                  <input id="dateFromInput" class="tx-input" type="datetime-local" />
+                </label>
+                <label class="tx-filter-field">
+                  <span>Date to</span>
+                  <input id="dateToInput" class="tx-input" type="datetime-local" />
+                </label>
               </div>
-              <div class="ri-stat ri-stat--open">
-                <div class="ri-stat__value" id="statOpen">0</div>
-                <div class="ri-stat__label">Open</div>
+              <div class="tx-filter-actions">
+                <button id="applyFiltersBtn" class="topbar-btn topbar-btn--accent">
+                  Apply Filters
+                </button>
+                <button id="clearFiltersBtn" class="topbar-btn">Reset Filters</button>
               </div>
-              <div class="ri-stat ri-stat--ack">
-                <div class="ri-stat__value" id="statAck">0</div>
-                <div class="ri-stat__label">Acknowledged</div>
+            </section>
+
+            <div class="logs-panel">
+              <div class="logs-scroll">
+                <table class="logs-table">
+                  <thead>
+                    <tr>
+                      <th class="logs-th logs-th--ts">Timestamp</th>
+                      <th class="logs-th logs-th--id">Transaction ID</th>
+                      <th class="logs-th logs-th--mode">Mode</th>
+                      <th class="logs-th logs-th--type">Type</th>
+                      <th class="logs-th">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logsBody"></tbody>
+                </table>
               </div>
-              <div class="ri-stat ri-stat--resolved">
-                <div class="ri-stat__value" id="statResolved">0</div>
-                <div class="ri-stat__label">Resolved</div>
+              <div class="logs-pagination">
+                <button id="prevPageBtn" class="logs-pagination__btn" disabled>
+                  ← Prev
+                </button>
+                <span id="pageInfo" class="logs-pagination__info"
+                  >Page 1 of 1</span
+                >
+                <button id="nextPageBtn" class="logs-pagination__btn" disabled>
+                  Next →
+                </button>
               </div>
             </div>
-
-            <div class="ri-toolbar">
-              <div id="filterBar" class="ri-filters" role="group">
-                <button class="filter-btn filter-btn--active" data-filter="all">
-                  All
-                </button>
-                <button class="filter-btn" data-filter="open">Open</button>
-                <button class="filter-btn" data-filter="acknowledged">
-                  Acknowledged
-                </button>
-                <button class="filter-btn" data-filter="resolved">
-                  Resolved
-                </button>
-              </div>
-              <div class="ri-pagination">
-                <button id="prevPageBtn" class="page-btn" disabled>
-                  ‹ Prev
-                </button>
-                <span id="pageInfo" class="page-info">Page 1 of 1</span>
-                <button id="nextPageBtn" class="page-btn" disabled>
-                  Next ›
-                </button>
-              </div>
-            </div>
-
-            <div id="incidentList" class="ri-list"></div>
           </section>
         </div>
       </div>
     </div>
 
-    <div
-      id="detailOverlay"
-      class="ri-overlay hidden"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="detailTitle"
-    >
-      <div class="ri-modal">
-        <div class="ri-modal__header">
-          <h3 id="detailTitle" class="ri-modal__title">Incident Details</h3>
-          <button id="closeDetail" class="ri-modal__close" aria-label="Close">
-            &times;
-          </button>
-        </div>
-        <div id="detailBody" class="ri-modal__body"></div>
-        <div class="ri-modal__actions">
-          <button id="detailAckBtn" class="ri-action-btn ri-action-btn--ack">
-            Acknowledge
-          </button>
-          <button
-            id="detailResolveBtn"
-            class="ri-action-btn ri-action-btn--resolve"
-          >
-            Resolve
-          </button>
-          <button
-            id="detailReopenBtn"
-            class="ri-action-btn ri-action-btn--view"
-          >
-            Reopen
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="/admin/alerts/app.js"></script>
+    <script src="/admin/transactions/app.js"></script>
   </body>
 </html>

@@ -267,3 +267,18 @@
     font-size: 11px;
   }
 }
+
+/* ── Admin-wide command deck polish ─────────────────────────── */
+.sg {
+  background:
+    linear-gradient(165deg, rgba(17, 20, 47, 0.92), rgba(11, 10, 26, 0.96));
+  border-color: rgba(125, 211, 252, 0.2);
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.field__input,
+.field__affix {
+  border-color: rgba(125, 211, 252, 0.24);
+}

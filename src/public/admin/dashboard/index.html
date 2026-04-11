@@ -177,7 +177,7 @@
             </svg>
             <span>Earnings</span>
           </a>
-          
+
           <a href="/admin/system" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
@@ -206,7 +206,15 @@
                 clip-rule="evenodd"
               />
             </svg>
-            <span>Logs</span>
+            <span>System Logs</span>
+          </a>
+          <a href="/admin/transactions" class="nav-btn">
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
+              />
+            </svg>
+            <span>Transaction Logs</span>
           </a>
           <a href="/admin/feedback/" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -288,6 +296,15 @@
 
         <div class="content">
           <section class="page" id="section-overview">
+            <section class="admin-page-hero">
+              <p class="admin-page-hero__kicker">Overview</p>
+              <h3 class="admin-page-hero__title">Operations Snapshot</h3>
+              <p class="admin-page-hero__desc">
+                Real-time performance across earnings, jobs, storage, and
+                machine controls in one command view.
+              </p>
+            </section>
+
             <div class="kpi-row">
               <div class="kpi kpi--today">
                 <div class="kpi__glow" aria-hidden="true"></div>
@@ -453,38 +470,6 @@
                       >Deletes all uploaded files</span
                     >
                   </button>
-                </div>
-              </div>
-              <div class="panel">
-                <div class="panel__head">
-                  <h3 class="panel__title">Consumables Forecast</h3>
-                </div>
-                <div class="panel__body">
-                  <div class="consumables">
-                    <div class="consumables-paper">
-                      <div class="consumables-paper__days" id="forecastPaperDays">
-                        --
-                      </div>
-                      <div class="consumables-paper__label">Paper remaining</div>
-                      <div class="consumables-paper__stock" id="forecastPaperStock">
-                        --
-                      </div>
-                      <div
-                        class="consumables-paper__status"
-                        id="forecastPaperStatus"
-                      >
-                        Unavailable
-                      </div>
-                    </div>
-                    <p class="consumables-alert" id="forecastAlert">
-                      Consumables forecast is loading.
-                    </p>
-                    <ul class="consumables-list" id="forecastInkList">
-                      <li class="consumables-item consumables-item--muted">
-                        Loading ink forecast...
-                      </li>
-                    </ul>
-                  </div>
                 </div>
               </div>
             </div>
