@@ -8,6 +8,7 @@ $ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Split-Path -Parent $ScriptsDir
 $LogDir = Join-Path $ProjectDir "uploads\logs"
 $LogPath = Join-Path $LogDir "kiosk-server-startup.log"
+$ServerBundlePath = Join-Path $ProjectDir "dist\server.js"
 
 if (-not (Test-Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
@@ -19,30 +20,49 @@ function Write-StartupLog {
     Add-Content -Path $LogPath -Value "[$timestamp] $Message"
 }
 
-function Get-DevCommandCandidates {
+function Get-NodeExecutableCandidates {
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($name in @("node.exe", "node")) {
+        $resolved = Get-Command $name -ErrorAction SilentlyContinue
+        if ($null -eq $resolved) { continue }
+        $path = [string]$resolved.Source
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        if ($seen.Add($path)) {
+            $candidates.Add($path) | Out-Null
+        }
+    }
+
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ([string]::IsNullOrWhiteSpace($root)) { continue }
+        $candidate = Join-Path $root "nodejs\node.exe"
+        if ((Test-Path $candidate) -and $seen.Add($candidate)) {
+            $candidates.Add($candidate) | Out-Null
+        }
+    }
+
+    return [string[]]$candidates
+}
+
+function Get-BuildCommandCandidates {
     $candidates = [System.Collections.Generic.List[object]]::new()
     $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     $commands = @(
-        @{ Name = "pnpm.cmd"; Args = @("run", "dev") },
-        @{ Name = "pnpm"; Args = @("run", "dev") },
-        @{ Name = "corepack.cmd"; Args = @("pnpm", "run", "dev") },
-        @{ Name = "corepack"; Args = @("pnpm", "run", "dev") }
+        @{ Name = "pnpm.cmd"; Args = @("run", "build:server") },
+        @{ Name = "pnpm"; Args = @("run", "build:server") },
+        @{ Name = "corepack.cmd"; Args = @("pnpm", "run", "build:server") },
+        @{ Name = "corepack"; Args = @("pnpm", "run", "build:server") }
     )
 
     foreach ($entry in $commands) {
         $resolved = Get-Command $entry.Name -ErrorAction SilentlyContinue
-        if ($null -eq $resolved) {
-            continue
-        }
+        if ($null -eq $resolved) { continue }
         $path = [string]$resolved.Source
-        if ([string]::IsNullOrWhiteSpace($path)) {
-            continue
-        }
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
         $key = "$path|$($entry.Args -join ' ')"
-        if (-not $seen.Add($key)) {
-            continue
-        }
+        if (-not $seen.Add($key)) { continue }
         $candidates.Add([pscustomobject]@{
             Label = $entry.Name
             Path = $path
@@ -51,21 +71,15 @@ function Get-DevCommandCandidates {
     }
 
     foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-        if ([string]::IsNullOrWhiteSpace($root)) {
-            continue
-        }
+        if ([string]::IsNullOrWhiteSpace($root)) { continue }
         foreach ($entry in @(
-            @{ Relative = "nodejs\pnpm.cmd"; Label = "programfiles-pnpm.cmd"; Args = @("run", "dev") },
-            @{ Relative = "nodejs\corepack.cmd"; Label = "programfiles-corepack.cmd"; Args = @("pnpm", "run", "dev") }
+            @{ Relative = "nodejs\pnpm.cmd"; Label = "programfiles-pnpm.cmd"; Args = @("run", "build:server") },
+            @{ Relative = "nodejs\corepack.cmd"; Label = "programfiles-corepack.cmd"; Args = @("pnpm", "run", "build:server") }
         )) {
             $path = Join-Path $root $entry.Relative
-            if (-not (Test-Path $path)) {
-                continue
-            }
+            if (-not (Test-Path $path)) { continue }
             $key = "$path|$($entry.Args -join ' ')"
-            if (-not $seen.Add($key)) {
-                continue
-            }
+            if (-not $seen.Add($key)) { continue }
             $candidates.Add([pscustomobject]@{
                 Label = $entry.Label
                 Path = $path
@@ -77,6 +91,38 @@ function Get-DevCommandCandidates {
     return $candidates
 }
 
+function Ensure-ServerBundle {
+    if (Test-Path $ServerBundlePath) {
+        Write-StartupLog "Server bundle detected: $ServerBundlePath"
+        return
+    }
+
+    Write-StartupLog "Server bundle missing at $ServerBundlePath. Attempting build:server."
+    $candidates = Get-BuildCommandCandidates
+    if ($candidates.Count -eq 0) {
+        throw "[PrintBit] Missing dist\server.js and no pnpm/corepack build command is available."
+    }
+
+    Set-Location -Path $ProjectDir
+    foreach ($candidate in $candidates) {
+        $display = "$($candidate.Path) $($candidate.Args -join ' ')"
+        Write-StartupLog "Attempting build with: $display"
+        try {
+            & $candidate.Path @($candidate.Args) 2>&1 | Tee-Object -FilePath $LogPath -Append
+            $exitCode = $LASTEXITCODE
+            if (($null -eq $exitCode -or $exitCode -eq 0) -and (Test-Path $ServerBundlePath)) {
+                Write-StartupLog "Build succeeded with: $display"
+                return
+            }
+            Write-StartupLog "Build failed with exit code ${exitCode}: $display"
+        } catch {
+            Write-StartupLog "Build command failed: $display :: $($_.Exception.Message)"
+        }
+    }
+
+    throw "[PrintBit] Unable to create dist\server.js. Run 'pnpm run build:server' from project root and retry."
+}
+
 Set-Location -Path $ProjectDir
 
 if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_KIOSK_LOCKDOWN)) {
@@ -85,42 +131,35 @@ if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_KIOSK_LOCKDOWN)) {
 if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_USB_EXPORT_ENABLED)) {
     $env:PRINTBIT_USB_EXPORT_ENABLED = "false"
 }
+if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_SKIP_EDGE_LAUNCH)) {
+    $env:PRINTBIT_SKIP_EDGE_LAUNCH = "true"
+}
 
 Write-StartupLog "Starting kiosk server task. user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name) projectDir=$ProjectDir"
-Write-StartupLog "Environment PRINTBIT_KIOSK_LOCKDOWN=$($env:PRINTBIT_KIOSK_LOCKDOWN) PRINTBIT_USB_EXPORT_ENABLED=$($env:PRINTBIT_USB_EXPORT_ENABLED)"
+Write-StartupLog "Environment PRINTBIT_KIOSK_LOCKDOWN=$($env:PRINTBIT_KIOSK_LOCKDOWN) PRINTBIT_USB_EXPORT_ENABLED=$($env:PRINTBIT_USB_EXPORT_ENABLED) PRINTBIT_SKIP_EDGE_LAUNCH=$($env:PRINTBIT_SKIP_EDGE_LAUNCH)"
 
-$candidates = Get-DevCommandCandidates
-if ($candidates.Count -eq 0) {
-    $message = "[PrintBit] No pnpm/corepack command is available for this account. Install Node.js (with corepack) for all users."
+Ensure-ServerBundle
+
+$nodeCandidates = Get-NodeExecutableCandidates
+if ($nodeCandidates.Count -eq 0) {
+    $message = "[PrintBit] Node.js executable not found for this account. Install Node.js for all users."
     Write-StartupLog $message
     throw $message
 }
 
-$attemptLabels = [string[]]($candidates | ForEach-Object { $_.Label })
-Write-StartupLog "Command candidates: $($attemptLabels -join ', ')"
+$nodePath = $nodeCandidates[0]
+Write-StartupLog "Launching compiled server: $nodePath `"$ServerBundlePath`""
 
-$errors = [System.Collections.Generic.List[string]]::new()
-foreach ($candidate in $candidates) {
-    $display = "$($candidate.Path) $($candidate.Args -join ' ')"
-    Write-StartupLog "Attempting: $display"
-    try {
-        & $candidate.Path @($candidate.Args) 2>&1 | Tee-Object -FilePath $LogPath -Append
-        $exitCode = $LASTEXITCODE
-        if ($null -eq $exitCode -or $exitCode -eq 0) {
-            Write-StartupLog "Process exited successfully for: $display"
-            exit 0
-        }
-        $failure = "Command exited with code ${exitCode}: $display"
-        $errors.Add($failure) | Out-Null
-        Write-StartupLog $failure
-    } catch {
-        $failure = "Command failed: $display :: $($_.Exception.Message)"
-        $errors.Add($failure) | Out-Null
-        Write-StartupLog $failure
+try {
+    & $nodePath $ServerBundlePath 2>&1 | Tee-Object -FilePath $LogPath -Append
+    $exitCode = $LASTEXITCODE
+    if ($null -ne $exitCode -and $exitCode -ne 0) {
+        $message = "[PrintBit] Compiled server exited with code $exitCode."
+        Write-StartupLog $message
+        throw $message
     }
+} catch {
+    $message = "[PrintBit] Failed to launch compiled server: $($_.Exception.Message)"
+    Write-StartupLog $message
+    throw $message
 }
-
-$errorSummary = if ($errors.Count -gt 0) { ([string[]]$errors) -join " | " } else { "unknown" }
-$finalMessage = "[PrintBit] Unable to start kiosk server. Tried: $($attemptLabels -join ', '). Errors: $errorSummary"
-Write-StartupLog $finalMessage
-throw $finalMessage

@@ -59,9 +59,9 @@ Write-Host "[PrintBit] USB Export Enabled : $usbExportEnabled" -ForegroundColor 
 Write-Host ""
 
 # ── 3. VERIFY DEPENDENCIES ───────────────────────────────────────────────────
-if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Write-Host "[PrintBit] ERROR: pnpm not found." -ForegroundColor Red
-    Write-Host "           Install it with: npm install -g pnpm" -ForegroundColor Yellow
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host "[PrintBit] ERROR: node not found." -ForegroundColor Red
+    Write-Host "           Install Node.js for this machine." -ForegroundColor Yellow
     Read-Host  "           Press Enter to exit"
     exit 1
 }
@@ -74,6 +74,31 @@ if (-not (Test-Path $edgePath)) {
     Write-Host "[PrintBit] ERROR: Microsoft Edge not found." -ForegroundColor Red
     Read-Host  "           Press Enter to exit"
     exit 1
+}
+
+$serverBundlePath = Join-Path $ProjectDir "dist\server.js"
+if (-not (Test-Path $serverBundlePath)) {
+    Write-Host "[PrintBit] Compiled server bundle missing. Building dist\server.js..." -ForegroundColor Yellow
+    $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+    if (-not $pnpm) {
+        Write-Host "[PrintBit] ERROR: pnpm is required to build dist\server.js." -ForegroundColor Red
+        Write-Host "           Run 'pnpm run build:server' once from project root." -ForegroundColor Yellow
+        Read-Host  "           Press Enter to exit"
+        exit 1
+    }
+    try {
+        Push-Location $ProjectDir
+        & $pnpm.Source run build:server
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $serverBundlePath)) {
+            throw "build:server did not produce dist\server.js"
+        }
+    } catch {
+        Write-Host "[PrintBit] ERROR: build:server failed: $($_.Exception.Message)" -ForegroundColor Red
+        Read-Host  "           Press Enter to exit"
+        exit 1
+    } finally {
+        Pop-Location
+    }
 }
 
 # ── 4. VERIFY WINDOWS TIME (W32Time / NTP) ───────────────────────────────────
@@ -109,12 +134,28 @@ if (-not $timeService) {
 }
 
 # ── 5. START PRINTBIT SERVER ─────────────────────────────────────────────────
-Write-Host "[PrintBit] Starting server (pnpm run dev)..." -ForegroundColor Green
+Write-Host "[PrintBit] Starting compiled server (node dist\server.js)..." -ForegroundColor Green
 
-$serverProc = Start-Process cmd.exe `
-    -ArgumentList "/c cd /d `"$ProjectDir`" && set PRINTBIT_KIOSK_LOCKDOWN=$kioskLockdown && set PRINTBIT_USB_EXPORT_ENABLED=$usbExportEnabled && pnpm run dev" `
-    -WindowStyle Minimized `
-    -PassThru
+$existingListener = Get-NetTCPConnection -State Listen -LocalPort ([int]$Port) -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($existingListener) {
+    Write-Host "[PrintBit] Server already listening on port $Port (PID $($existingListener.OwningProcess)). Skipping launch." -ForegroundColor Yellow
+    $serverProc = Get-Process -Id $existingListener.OwningProcess -ErrorAction SilentlyContinue
+} else {
+    $prevLockdown = $env:PRINTBIT_KIOSK_LOCKDOWN
+    $prevUsb = $env:PRINTBIT_USB_EXPORT_ENABLED
+    try {
+        $env:PRINTBIT_KIOSK_LOCKDOWN = $kioskLockdown
+        $env:PRINTBIT_USB_EXPORT_ENABLED = $usbExportEnabled
+        $serverProc = Start-Process node `
+            -ArgumentList "dist/server.js" `
+            -WorkingDirectory $ProjectDir `
+            -WindowStyle Minimized `
+            -PassThru
+    } finally {
+        $env:PRINTBIT_KIOSK_LOCKDOWN = $prevLockdown
+        $env:PRINTBIT_USB_EXPORT_ENABLED = $prevUsb
+    }
+}
 
 Write-Host "[PrintBit] Server PID: $($serverProc.Id)" -ForegroundColor Gray
 
@@ -171,13 +212,34 @@ if ($networkProvider -eq "esp32") {
     $localIP = if ($preferred) { $preferred.IPAddress } else { $null }
 }
 
-$kioskUrl = if ($localIP) { "http://${localIP}:${Port}" } else { "http://localhost:${Port}" }
+$kioskUrl = if ($localIP) { "http://${localIP}:${Port}/loading" } else { "http://localhost:${Port}/loading" }
 Write-Host "[PrintBit] Kiosk URL: $kioskUrl" -ForegroundColor Cyan
 
 # ── 8. LAUNCH EDGE IN KIOSK MODE ─────────────────────────────────────────────
-if ($isSystemAccount) {
-    Write-Host "[PrintBit] Running as SYSTEM. Skipping Edge launch in Session 0." -ForegroundColor Yellow
-    Write-Host "[PrintBit] Assigned Access should open Edge for the kiosk user at http://localhost:$Port." -ForegroundColor Yellow
+function Is-Truthy {
+    param([string]$RawValue)
+    if ([string]::IsNullOrWhiteSpace($RawValue)) { return $false }
+    return @("1", "true", "yes", "on") -contains $RawValue.Trim().ToLowerInvariant()
+}
+
+$skipEdgeLaunch = Is-Truthy -RawValue ([Environment]::GetEnvironmentVariable("PRINTBIT_SKIP_EDGE_LAUNCH"))
+$configuredKioskUser = [Environment]::GetEnvironmentVariable("PRINTBIT_KIOSK_USER")
+if (-not [string]::IsNullOrWhiteSpace($configuredKioskUser)) {
+    $kioskShort = $configuredKioskUser.Trim() -replace '^[^\\]+\\', ''
+    $currentShort = [Security.Principal.WindowsIdentity]::GetCurrent().Name -replace '^[^\\]+\\', ''
+    if ($kioskShort -eq $currentShort) {
+        $skipEdgeLaunch = $true
+    }
+}
+
+if ($isSystemAccount -or $skipEdgeLaunch) {
+    $assignedAccessHost = if ($networkProvider -eq "esp32") { $esp32KioskIp } elseif ($localIP) { $localIP } else { "localhost" }
+    if ($isSystemAccount) {
+        Write-Host "[PrintBit] Running as SYSTEM. Skipping Edge launch in Session 0." -ForegroundColor Yellow
+    } else {
+        Write-Host "[PrintBit] Assigned Access kiosk session detected. Skipping managed Edge launch." -ForegroundColor Yellow
+    }
+    Write-Host "[PrintBit] Assigned Access should open Edge at http://${assignedAccessHost}:$Port/loading." -ForegroundColor Yellow
 } else {
     Write-Host "[PrintBit] Launching Edge in kiosk mode..." -ForegroundColor Green
     Start-Process $edgePath -ArgumentList @(

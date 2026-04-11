@@ -58,7 +58,7 @@ From the project root:
 
 ```powershell
 pnpm install
-pnpm run build
+pnpm run build:kiosk
 pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 
@@ -78,13 +78,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartu
 
 This installs the scheduled task `PrintBit Kiosk` for machine-start auto-run using the SYSTEM principal (recommended when kiosk and admin users differ).
 
-If kiosk login still cannot load localhost reliably, you can re-register startup specifically for the kiosk user token:
+If kiosk login still cannot load `http://192.168.4.2:3000/loading` reliably, you can re-register startup specifically for the kiosk user token:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
 ```
 
-This kiosk-user mode starts the server through `scripts\start-kiosk-server.ps1` (runtime pnpm/corepack detection per account). If it does not come up, check `uploads\logs\kiosk-server-startup.log` for the startup failure reason.
+This kiosk-user mode starts the server through `scripts\start-kiosk-server.ps1` (compiled runtime via `node dist\server.js`; `build:server` fallback if bundle is missing). If it does not come up, check `uploads\logs\kiosk-server-startup.log` for the startup failure reason.
 
 ## 5) Lockdown policy target (planned profile)
 
