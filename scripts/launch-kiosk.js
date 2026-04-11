@@ -28,7 +28,7 @@ const esp32KioskIp = (process.env.PRINTBIT_ESP32_KIOSK_IP || '192.168.4.2').trim
 const host =
   networkProvider === 'esp32' ? esp32KioskIp : getLocalIPv4() || 'localhost';
 const port = process.env.PORT || '3000';
-const url = `http://${host}:${port}`;
+const url = `http://${host}:${port}/loading`;
 const args = ['--kiosk', url, '--edge-kiosk-type=fullscreen'];
 
 // detach so Edge keeps running after this process exits

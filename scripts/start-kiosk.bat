@@ -1,8 +1,8 @@
 @echo off
 :: ─────────────────────────────────────────────────────────────────
 :: PrintBit Kiosk Startup Script
-:: Starts the PrintBit server (which auto-launches MyPublicWiFi)
-:: and opens Edge in kiosk mode using dynamic local IP.
+:: Starts the compiled PrintBit server and opens Edge in kiosk mode
+:: using dynamic local IP with /loading startup route.
 ::
 :: This script self-elevates to Administrator if needed.
 :: ─────────────────────────────────────────────────────────────────
@@ -41,19 +41,39 @@ if not "%PROJECT_DIR%"=="!PROJECT_DIR_SANITIZED!" (
 )
 endlocal & set "PROJECT_DIR=%PROJECT_DIR_SANITIZED%"
 
-:: Ensure pnpm is available
-where pnpm >nul 2>&1
+:: Ensure node is available
+where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [PrintBit] ERROR: pnpm not found. Install it with: npm install -g pnpm
+    echo [PrintBit] ERROR: node not found. Install Node.js for this machine.
     pause
     exit /b 1
 )
 
 if "%PORT%"=="" set "PORT=3000"
 
+if not exist "%PROJECT_DIR%\dist\server.js" (
+    echo [PrintBit] Compiled server bundle missing. Building dist\server.js...
+    where pnpm >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [PrintBit] ERROR: pnpm is required to build dist\server.js.
+        echo [PrintBit]        Run "pnpm run build:server" once from project root.
+        pause
+        exit /b 1
+    )
+    pushd "%PROJECT_DIR%"
+    call pnpm run build:server
+    if %errorlevel% neq 0 (
+        popd
+        echo [PrintBit] ERROR: build:server failed.
+        pause
+        exit /b 1
+    )
+    popd
+)
+
 :: Start PrintBit server
-echo [PrintBit] Starting server...
-start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && pnpm run dev"
+echo [PrintBit] Starting compiled server...
+start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && node dist\server.js"
 
 set "NETWORK_PROVIDER=%PRINTBIT_NETWORK_PROVIDER%"
 
@@ -87,12 +107,24 @@ if /I "%NETWORK_PROVIDER%"=="esp32" (
     )
 )
 
-set "KIOSK_URL=http://%LOCAL_IP%:%PORT%"
+set "KIOSK_URL=http://%LOCAL_IP%:%PORT%/loading"
 echo [PrintBit] Kiosk URL: %KIOSK_URL%
+
+set "SKIP_EDGE=0"
+if /I "%PRINTBIT_SKIP_EDGE_LAUNCH%"=="1" set "SKIP_EDGE=1"
+if /I "%PRINTBIT_SKIP_EDGE_LAUNCH%"=="true" set "SKIP_EDGE=1"
+if /I "%PRINTBIT_SKIP_EDGE_LAUNCH%"=="yes" set "SKIP_EDGE=1"
+if /I "%PRINTBIT_SKIP_EDGE_LAUNCH%"=="on" set "SKIP_EDGE=1"
 
 if /I "%USERNAME%"=="SYSTEM" (
     echo [PrintBit] Running as SYSTEM. Skipping Edge launch in Session 0.
-    echo [PrintBit] Assigned Access should open Edge for kiosk user at http://localhost:%PORT%.
+    echo [PrintBit] Assigned Access should open Edge for kiosk user at %KIOSK_URL%.
+    goto :eof
+)
+
+if "%SKIP_EDGE%"=="1" (
+    echo [PrintBit] Assigned Access kiosk session detected. Skipping managed Edge launch.
+    echo [PrintBit] Assigned Access should open Edge for kiosk user at %KIOSK_URL%.
     goto :eof
 )
 

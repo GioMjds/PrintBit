@@ -13,6 +13,7 @@ $ProjectDir = Split-Path -Parent $ScriptsDir
 $StateDir = Join-Path $ProjectDir "uploads\watchdog"
 $StatePath = Join-Path $StateDir "state.json"
 $HeartbeatPath = Join-Path $StateDir "watchdog-heartbeat.json"
+$ServerBundlePath = Join-Path $ProjectDir "dist\server.js"
 
 function Get-EnvInt {
     param(
@@ -37,27 +38,24 @@ $Port = Get-EnvInt -Name "PRINTBIT_WATCHDOG_PORT" -Default 3000
 $HealthUrl = "http://127.0.0.1:$Port/api/watchdog/health"
 $ReportUrl = "http://127.0.0.1:$Port/api/watchdog/report"
 
-function Resolve-PnpmRunDevCommand {
-    $pnpmCmd = Get-Command "pnpm.cmd" -ErrorAction SilentlyContinue
-    if ($pnpmCmd) {
-        return "`"$($pnpmCmd.Source)`" run dev"
+function Resolve-NodeExecutablePath {
+    foreach ($name in @("node.exe", "node")) {
+        $resolved = Get-Command $name -ErrorAction SilentlyContinue
+        if ($resolved -and -not [string]::IsNullOrWhiteSpace([string]$resolved.Source)) {
+            return [string]$resolved.Source
+        }
     }
-    $pnpm = Get-Command "pnpm" -ErrorAction SilentlyContinue
-    if ($pnpm) {
-        return "`"$($pnpm.Source)`" run dev"
-    }
-    $corepackCmd = Get-Command "corepack.cmd" -ErrorAction SilentlyContinue
-    if ($corepackCmd) {
-        return "`"$($corepackCmd.Source)`" pnpm run dev"
-    }
-    $corepack = Get-Command "corepack" -ErrorAction SilentlyContinue
-    if ($corepack) {
-        return "`"$($corepack.Source)`" pnpm run dev"
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ([string]::IsNullOrWhiteSpace($root)) { continue }
+        $candidate = Join-Path $root "nodejs\node.exe"
+        if (Test-Path $candidate) {
+            return $candidate
+        }
     }
     return $null
 }
 
-$PnpmRunDevCommand = Resolve-PnpmRunDevCommand
+$NodeExecutablePath = Resolve-NodeExecutablePath
 
 function Get-NetworkProvider {
     $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
@@ -76,6 +74,14 @@ function Get-Esp32KioskIp {
 }
 
 function Should-ManageEdge {
+    $skipEdgeLaunchRaw = [Environment]::GetEnvironmentVariable("PRINTBIT_SKIP_EDGE_LAUNCH")
+    if (-not [string]::IsNullOrWhiteSpace($skipEdgeLaunchRaw)) {
+        $enabledTokens = @("1", "true", "yes", "on")
+        if ($enabledTokens -contains $skipEdgeLaunchRaw.Trim().ToLowerInvariant()) {
+            return $false
+        }
+    }
+
     $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_WATCHDOG_MANAGE_EDGE")
     if (-not [string]::IsNullOrWhiteSpace($raw)) {
         $disabledTokens = @("0", "false", "no", "off")
@@ -88,19 +94,16 @@ function Should-ManageEdge {
         if ($null -ne $currentIdentity -and $currentIdentity.Name -eq "NT AUTHORITY\SYSTEM") {
             return $false
         }
-        # When a specific kiosk account is configured, only manage Edge from within
-        # that account's interactive session — not from any other elevated context.
+        # In Assigned Access deployments, kiosk-user sessions should not manage Edge.
+        # Assigned Access already owns browser lifecycle and watchdog should only
+        # recover server-side availability.
         $effectiveKioskUser = if (-not [string]::IsNullOrWhiteSpace($KioskUser)) {
             $KioskUser.Trim()
         } else {
             [Environment]::GetEnvironmentVariable("PRINTBIT_KIOSK_USER")
         }
         if (-not [string]::IsNullOrWhiteSpace($effectiveKioskUser)) {
-            $kioskShort   = $effectiveKioskUser -replace '^[^\\]+\\', ''
-            $currentShort = $currentIdentity.Name -replace '^[^\\]+\\', ''
-            if ($kioskShort -ne $currentShort) {
-                return $false
-            }
+            return $false
         }
     } catch {
         return $false
@@ -258,17 +261,22 @@ function Ensure-ServerRunning {
         return $false
     }
 
-    if ([string]::IsNullOrWhiteSpace($PnpmRunDevCommand)) {
+    if ([string]::IsNullOrWhiteSpace($NodeExecutablePath)) {
         $State.lastAction = "server_start_failed"
-        $State.lastError = "pnpm/corepack is not available in PATH for the watchdog task account."
+        $State.lastError = "Node.js executable is not available in PATH for the watchdog task account."
+        return $false
+    }
+
+    if (-not (Test-Path $ServerBundlePath)) {
+        $State.lastAction = "server_start_failed"
+        $State.lastError = "Missing dist\server.js. Run 'pnpm run build:server' before kiosk deployment."
         return $false
     }
 
     try {
-        $runCommand = "/c cd /d `"$ProjectDir`" && $PnpmRunDevCommand"
         $proc = Start-Process `
-            -FilePath "cmd.exe" `
-            -ArgumentList $runCommand `
+            -FilePath $NodeExecutablePath `
+            -ArgumentList @($ServerBundlePath) `
             -WorkingDirectory $ProjectDir `
             -WindowStyle Hidden `
             -PassThru
@@ -297,7 +305,7 @@ function Ensure-EdgeRunning {
     param(
         [pscustomobject]$State
     )
-    $currentKioskUrl = "http://$(Get-KioskLocalIp):$Port"
+    $currentKioskUrl = "http://$(Get-KioskLocalIp):$Port/loading"
     try {
         $escapedUrl = [Regex]::Escape($currentKioskUrl)
         $kioskEdges = @(
