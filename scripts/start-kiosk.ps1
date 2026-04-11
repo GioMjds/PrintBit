@@ -136,10 +136,26 @@ if (-not $timeService) {
 # ── 5. START PRINTBIT SERVER ─────────────────────────────────────────────────
 Write-Host "[PrintBit] Starting compiled server (node dist\server.js)..." -ForegroundColor Green
 
-$serverProc = Start-Process cmd.exe `
-    -ArgumentList "/c cd /d `"$ProjectDir`" && set PRINTBIT_KIOSK_LOCKDOWN=$kioskLockdown && set PRINTBIT_USB_EXPORT_ENABLED=$usbExportEnabled && node dist\server.js" `
-    -WindowStyle Minimized `
-    -PassThru
+$existingListener = Get-NetTCPConnection -State Listen -LocalPort ([int]$Port) -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($existingListener) {
+    Write-Host "[PrintBit] Server already listening on port $Port (PID $($existingListener.OwningProcess)). Skipping launch." -ForegroundColor Yellow
+    $serverProc = Get-Process -Id $existingListener.OwningProcess -ErrorAction SilentlyContinue
+} else {
+    $prevLockdown = $env:PRINTBIT_KIOSK_LOCKDOWN
+    $prevUsb = $env:PRINTBIT_USB_EXPORT_ENABLED
+    try {
+        $env:PRINTBIT_KIOSK_LOCKDOWN = $kioskLockdown
+        $env:PRINTBIT_USB_EXPORT_ENABLED = $usbExportEnabled
+        $serverProc = Start-Process node `
+            -ArgumentList "dist/server.js" `
+            -WorkingDirectory $ProjectDir `
+            -WindowStyle Minimized `
+            -PassThru
+    } finally {
+        $env:PRINTBIT_KIOSK_LOCKDOWN = $prevLockdown
+        $env:PRINTBIT_USB_EXPORT_ENABLED = $prevUsb
+    }
+}
 
 Write-Host "[PrintBit] Server PID: $($serverProc.Id)" -ForegroundColor Gray
 

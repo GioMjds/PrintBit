@@ -273,6 +273,12 @@ function Ensure-ServerRunning {
         return $false
     }
 
+    if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_KIOSK_LOCKDOWN)) {
+        $env:PRINTBIT_KIOSK_LOCKDOWN = "true"
+    }
+    if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_USB_EXPORT_ENABLED)) {
+        $env:PRINTBIT_USB_EXPORT_ENABLED = "false"
+    }
     try {
         $proc = Start-Process `
             -FilePath $NodeExecutablePath `

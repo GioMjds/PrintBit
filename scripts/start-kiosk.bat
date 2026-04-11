@@ -73,8 +73,12 @@ if not exist "%PROJECT_DIR%\dist\server.js" (
 
 :: Start PrintBit server
 echo [PrintBit] Starting compiled server...
-start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && node dist\server.js"
-
+for /f %%P in ('powershell -NoProfile -Command "$c = Get-NetTCPConnection -State Listen -LocalPort %PORT% -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.OwningProcess }"') do set "EXISTING_SERVER_PID=%%P"
+if defined EXISTING_SERVER_PID (
+    echo [PrintBit] Server already listening on port %PORT% (PID %EXISTING_SERVER_PID%). Skipping new launch.
+) else (
+    start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && node dist\server.js"
+)
 set "NETWORK_PROVIDER=%PRINTBIT_NETWORK_PROVIDER%"
 
 :: Wait for server + hotspot to come up before selecting kiosk IP
