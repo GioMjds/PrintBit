@@ -110,6 +110,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUse
 Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`, watchdog Edge recovery) now honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
 `install-startup.ps1 -AtStartup` now also uses **SYSTEM** principal for cross-account kiosk deployments; when running as SYSTEM it starts/restarts the server and intentionally skips visible Edge launch in Session 0.
 `install-startup.ps1 -KioskUser <user>` creates a **kiosk-user logon** task that starts only the server under that user's interactive token via `scripts\start-kiosk-server.ps1` (compiled runtime via `node dist\server.js`, with `build:server` fallback if needed).
+`watchdog.ps1` is compatible with both **PowerShell 7** and **Windows PowerShell 5.1** task hosts for `/api/watchdog/health` polling.
+By default, watchdog restart-on-unhealthy is disabled to avoid disrupting active upload/print sessions (`PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=false`). The watchdog still restarts the server when the health endpoint is unreachable.
 If startup still fails, inspect `uploads\logs\kiosk-server-startup.log` from the project root for the exact command/error.
 
 What this gives you:

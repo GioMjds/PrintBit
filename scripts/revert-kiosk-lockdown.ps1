@@ -29,6 +29,7 @@ function Remove-RegistryValueIfExists {
 }
 
 $policyExplorer   = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
+$policyEdgeUi     = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
 $policySystem     = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
 $legacyExplorer   = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
 $legacySystem     = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -42,6 +43,7 @@ Write-Host "[PrintBit] Reverting kiosk lockdown policy..." -ForegroundColor Cyan
 Remove-RegistryValueIfExists -Path $policyExplorer -Name 'DisableNotificationCenter'
 Remove-RegistryValueIfExists -Path $policyExplorer -Name 'NoTrayContextMenu'
 Remove-RegistryValueIfExists -Path $policyExplorer -Name 'NoTrayItemsDisplay'
+Remove-RegistryValueIfExists -Path $policyEdgeUi   -Name 'AllowEdgeSwipe'
 Remove-RegistryValueIfExists -Path $legacyExplorer -Name 'NoControlPanel'
 Remove-RegistryValueIfExists -Path $legacyExplorer -Name 'NoWinKeys'
 Remove-RegistryValueIfExists -Path $legacyExplorer -Name 'NoAltTab'

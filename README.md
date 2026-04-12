@@ -152,6 +152,10 @@ printbit.sqlite             # Runtime persisted machine state (SQLite)
 - `PRINTBIT_SUMATRA_PATH` (or `SUMATRA_PATH`) optional Sumatra fallback path
 - `PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS` (default `60000`)
 - `PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS` (default `120000`, minimum 10s)
+- `PRINTBIT_PRINT_SPOOLER_MONITOR_WINDOW_MS` (default `180000`, minimum `30000`)
+- `PRINTBIT_PRINT_SPOOLER_POLL_INTERVAL_MS` (default `1500`, minimum `250`)
+- `PRINTBIT_PRINT_SPOOLER_LOOKBACK_MINUTES` (default `3`, minimum `1`)
+- `PRINTBIT_PRINT_SPOOLER_QUERY_TIMEOUT_MS` (default `20000`, minimum `5000`)
 
 ## Mobile and network matrix
 

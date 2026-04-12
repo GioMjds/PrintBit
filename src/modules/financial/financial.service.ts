@@ -26,6 +26,7 @@ import {
   ESP32_COIN_BRIDGE_RELAXED_MODE,
   ESP32_COIN_BRIDGE_SOURCE,
   ESP32_ALWAYS_ACCEPT_COINS,
+  PRINT_SPOOLER_MONITOR_WINDOW_MS,
 } from '@/config/http.config';
 import {
   getSqliteDb,
@@ -1818,6 +1819,7 @@ export class FinancialService {
               dispatchMode: dispatchResult?.mode ?? null,
               dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
               dispatchDurationMs: dispatchResult?.durationMs ?? null,
+              monitorWindowMs: PRINT_SPOOLER_MONITOR_WINDOW_MS,
             }
           : undefined,
     });

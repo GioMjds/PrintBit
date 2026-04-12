@@ -10,17 +10,23 @@ import { checkpointRecoverySession } from './recovery';
 import { persistAndEmitPrintLifecycleState } from './print-lifecycle-state';
 import { setPrinterFaultLock } from './printer-fault-lock';
 import { anomalyService, buildAnomalyFingerprint } from './anomaly';
+import {
+  PRINT_SPOOLER_LOOKBACK_MINUTES,
+  PRINT_SPOOLER_MONITOR_WINDOW_MS,
+  PRINT_SPOOLER_POLL_INTERVAL_MS,
+  PRINT_SPOOLER_QUERY_TIMEOUT_MS,
+} from '@/config';
 
 /** Polling interval for checking spooler status */
-const POLL_INTERVAL_MS = 1_500;
+const POLL_INTERVAL_MS = PRINT_SPOOLER_POLL_INTERVAL_MS;
 /** Total window to watch the spooler before giving up */
-const MONITOR_WINDOW_MS = 3 * 60 * 1_000; // 3 minutes
+const MONITOR_WINDOW_MS = PRINT_SPOOLER_MONITOR_WINDOW_MS;
 /** How far back (in minutes) to look for print jobs when querying the spooler */
-const JOB_LOOKBACK_MINUTES = 3;
+const JOB_LOOKBACK_MINUTES = PRINT_SPOOLER_LOOKBACK_MINUTES;
 /** Allowed clock skew between app dispatch time and spooler submitted time */
 const JOB_SUBMITTED_TIME_SKEW_MS = 5_000;
 /** Timeout per individual PowerShell query */
-const SPOOLER_QUERY_TIMEOUT_MS = 20_000;
+const SPOOLER_QUERY_TIMEOUT_MS = PRINT_SPOOLER_QUERY_TIMEOUT_MS;
 /** Stop monitoring when spooler queries repeatedly fail */
 const MAX_CONSECUTIVE_QUERY_FAILURES = 3;
 
@@ -786,6 +792,7 @@ export async function monitorSpoolerJob(
           spoolerJobId: trackedJobId,
           monitorStartedAt: startedAtIso,
           monitorElapsedMs: Date.now() - startedAtMs,
+          monitorWindowMs: MONITOR_WINDOW_MS,
           handoffLatencyMs,
           pollCount,
         });

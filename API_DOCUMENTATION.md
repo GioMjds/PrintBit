@@ -167,13 +167,15 @@ Response:
   "print": {
     "state": "awaiting_spooler_terminal",
     "spoolerCorrelationKey": "uuid",
-    "jobDispatchedAt": "2026-01-01T00:00:00.000Z"
+    "jobDispatchedAt": "2026-01-01T00:00:00.000Z",
+    "monitorWindowMs": 180000
   }
 }
 ```
 
 The `change` object is always present. `state` is one of `"none"`, `"dispensed"`, or `"failed"`. When `state` is `"failed"`, an `owedChangeId` and `message` are included — the owed change is recorded for admin resolution.
 For print mode, `print.state: "awaiting_spooler_terminal"` means payment settled but terminal print success is still pending spooler confirmation.
+`print.monitorWindowMs` reflects the backend spooler-monitor timeout window currently applied for that run.
 `transactionId` is the canonical customer/admin reference ID for support and refund follow-up.
 For `mode: "print"` in the modern flow, uploaded file deletion is finalized after spooler terminal success (not immediately at settlement).
 

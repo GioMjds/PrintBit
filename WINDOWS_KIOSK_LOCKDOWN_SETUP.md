@@ -92,6 +92,7 @@ For Issue #38, target these controls:
 
 - Use **Assigned Access (single-app kiosk)** as primary shell restriction
 - Disable escape vectors (task switching/start/task manager/settings/system tray where policy allows)
+- Disable screen-edge swipe gestures (`AllowEdgeSwipe=0`) to reduce kiosk bypass paths
 - Suppress notifications/action center popups
 - Block USB mass storage at OS level
 - Keep PrintBit scan delivery on wireless/QR path (USB export disabled in lockdown)
@@ -192,6 +193,7 @@ Run a rehearsal on a Windows dev machine:
 - Kiosk auto-start works after reboot
 - PrintBit reachable in kiosk mode
 - Alt+Tab/Win-key/task switching vectors blocked (as supported by edition/policy)
+- Screen-edge swipe gestures blocked (`AllowEdgeSwipe=0`)
 - Notifications do not disrupt kiosk flow
 - Settings/Task Manager inaccessible for kiosk user
 - USB storage blocked

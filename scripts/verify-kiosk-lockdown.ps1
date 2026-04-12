@@ -41,6 +41,7 @@ function Write-Check {
 $checks = @()
 
 $policyExplorer  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
+$policyEdgeUi    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
 $policySystem    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
 $legacyExplorer  = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
 $legacySystem    = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -51,6 +52,7 @@ $printBitState   = 'HKLM:\SOFTWARE\PrintBit\KioskLockdown'
 $disableNotificationCenter = Get-DwordOrNull -Path $policyExplorer  -Name 'DisableNotificationCenter'
 $noTrayContextMenu         = Get-DwordOrNull -Path $policyExplorer  -Name 'NoTrayContextMenu'
 $noTrayItemsDisplay        = Get-DwordOrNull -Path $policyExplorer  -Name 'NoTrayItemsDisplay'
+$allowEdgeSwipe            = Get-DwordOrNull -Path $policyEdgeUi    -Name 'AllowEdgeSwipe'
 $noControlPanel            = Get-DwordOrNull -Path $legacyExplorer  -Name 'NoControlPanel'
 $noWinKeys                 = Get-DwordOrNull -Path $legacyExplorer  -Name 'NoWinKeys'
 $noAltTab                  = Get-DwordOrNull -Path $legacyExplorer  -Name 'NoAltTab'
@@ -63,6 +65,7 @@ $applied                   = Get-DwordOrNull -Path $printBitState   -Name 'Appli
 $checks += [pscustomobject]@{ Name = 'Notifications disabled';        Passed = ($disableNotificationCenter -eq 1); Detail = "DisableNotificationCenter=$disableNotificationCenter" }
 $checks += [pscustomobject]@{ Name = 'Tray context blocked';          Passed = ($noTrayContextMenu -eq 1);         Detail = "NoTrayContextMenu=$noTrayContextMenu" }
 $checks += [pscustomobject]@{ Name = 'Tray items hidden';             Passed = ($noTrayItemsDisplay -eq 1);        Detail = "NoTrayItemsDisplay=$noTrayItemsDisplay" }
+$checks += [pscustomobject]@{ Name = 'Edge swipe gestures blocked';   Passed = ($allowEdgeSwipe -eq 0);            Detail = "AllowEdgeSwipe=$allowEdgeSwipe" }
 $checks += [pscustomobject]@{ Name = 'Settings/Control Panel blocked';Passed = ($noControlPanel -eq 1);           Detail = "NoControlPanel=$noControlPanel" }
 $checks += [pscustomobject]@{ Name = 'Windows shortcut keys blocked'; Passed = ($noWinKeys -eq 1);                Detail = "NoWinKeys=$noWinKeys" }
 $checks += [pscustomobject]@{ Name = 'Alt+Tab blocked';               Passed = ($noAltTab -eq 1);                 Detail = "NoAltTab=$noAltTab" }

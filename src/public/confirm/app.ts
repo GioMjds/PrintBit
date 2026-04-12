@@ -813,6 +813,10 @@ let spoolerTimedOut = false;
 const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
 const COPY_JOB_POLL_INTERVAL_MS = 1_500;
 const COPY_JOB_POLL_TIMEOUT_MS = 5 * 60 * 1_000;
+const DEFAULT_SPOOLER_MONITOR_WINDOW_MS = 3 * 60 * 1_000;
+const MIN_SPOOLER_FINALIZATION_TIMEOUT_MS = 45_000;
+const MAX_SPOOLER_FINALIZATION_TIMEOUT_MS = 120_000;
+const SPOOLER_FINALIZATION_TIMEOUT_RATIO = 0.5;
 let spoolerFinalizationTimer: number | null = null;
 let currentTransactionId: string | null = null;
 
@@ -945,6 +949,50 @@ function clearSpoolerFinalizationTimer(): void {
     window.clearTimeout(spoolerFinalizationTimer);
     spoolerFinalizationTimer = null;
   }
+}
+
+function resolveSpoolerFinalizationTimeoutMs(
+  monitorWindowMs: number | null | undefined,
+): number {
+  const normalizedMonitorWindow =
+    typeof monitorWindowMs === 'number' &&
+    Number.isFinite(monitorWindowMs) &&
+    monitorWindowMs > 0
+      ? monitorWindowMs
+      : DEFAULT_SPOOLER_MONITOR_WINDOW_MS;
+  const scaledTimeout = Math.floor(
+    normalizedMonitorWindow * SPOOLER_FINALIZATION_TIMEOUT_RATIO,
+  );
+  return Math.max(
+    MIN_SPOOLER_FINALIZATION_TIMEOUT_MS,
+    Math.min(MAX_SPOOLER_FINALIZATION_TIMEOUT_MS, scaledTimeout),
+  );
+}
+
+function scheduleSpoolerFinalizationTimeout(
+  spoolerCorrelationKey: string,
+  monitorWindowMs: number | null | undefined,
+): void {
+  const timeoutMs = resolveSpoolerFinalizationTimeoutMs(monitorWindowMs);
+  clearSpoolerFinalizationTimer();
+  spoolerFinalizationTimer = window.setTimeout(() => {
+    if (spoolerTimedOut) return;
+    if (lastSpoolerCorrelationKey !== spoolerCorrelationKey) return;
+
+    activeSpoolerCorrelationKey = null;
+    spoolerTimedOut = true;
+    setPrintingPhase('manual-review');
+    const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1_000));
+    if (statusMessage) {
+      statusMessage.textContent =
+        `Printer confirmation is taking longer than expected (${timeoutSeconds}s+). ` +
+        'Keep this screen open while staff verifies completion.';
+    }
+    if (printingHint) {
+      printingHint.textContent =
+        'If pages are still printing, do not power off the kiosk.';
+    }
+  }, timeoutMs);
 }
 
 function matchesCurrentPrintHandoff(spoolerCorrelationKey: string | null): boolean {
@@ -1475,6 +1523,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           state?: 'awaiting_spooler_terminal';
           spoolerCorrelationKey?: string | null;
           jobDispatchedAt?: string | null;
+          monitorWindowMs?: number | null;
         };
       };
       setTransactionReference(
@@ -1517,6 +1566,13 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (awaitingSpoolerTerminal && statusMessage) {
         statusMessage.textContent =
           'Waiting for printer spooler confirmation...';
+      }
+
+      if (awaitingSpoolerTerminal) {
+        scheduleSpoolerFinalizationTimeout(
+          spoolerCorrelationKey,
+          payload.print?.monitorWindowMs,
+        );
       }
     } catch (error) {
       clearSpoolerFinalizationTimer();
@@ -1889,13 +1945,21 @@ if (typeof ioFactory === 'function') {
       typeof (payload as { printerName: unknown }).printerName === 'string'
         ? (payload as { printerName: string }).printerName
         : null;
+    const monitorWindowMs =
+      payload &&
+      typeof payload === 'object' &&
+      'monitorWindowMs' in payload &&
+      typeof (payload as { monitorWindowMs: unknown }).monitorWindowMs ===
+        'number'
+        ? (payload as { monitorWindowMs: number }).monitorWindowMs
+        : null;
 
     if (statusMessage) {
       statusMessage.textContent = printerName
         ? `Print job handoff detected on "${printerName}". Waiting for terminal confirmation...`
         : 'Print job handoff detected. Waiting for terminal confirmation...';
     }
-    clearSpoolerFinalizationTimer();
+    scheduleSpoolerFinalizationTimeout(spoolerCorrelationKey, monitorWindowMs);
     spoolerTimedOut = false;
     activeSpoolerCorrelationKey = null;
     setPrintingPhase('printing');

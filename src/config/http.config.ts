@@ -77,9 +77,8 @@ const alwaysAcceptCoinTokens = new Set(['1', 'true', 'yes', 'on']);
 const defaultAlwaysAcceptCoinsToken =
   NETWORK_PROVIDER === 'esp32' ? 'true' : 'false';
 export const ESP32_ALWAYS_ACCEPT_COINS = alwaysAcceptCoinTokens.has(
-  process.env.PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS
-    ?.trim()
-    .toLowerCase() ?? defaultAlwaysAcceptCoinsToken,
+  process.env.PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS?.trim().toLowerCase() ??
+    defaultAlwaysAcceptCoinsToken,
 );
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
@@ -181,6 +180,30 @@ export const PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS = readPositiveIntEnv(
   process.env.PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS?.trim(),
   120_000,
   10_000,
+);
+
+export const PRINT_SPOOLER_MONITOR_WINDOW_MS = readPositiveIntEnv(
+  process.env.PRINTBIT_PRINT_SPOOLER_MONITOR_WINDOW_MS?.trim(),
+  3 * 60 * 1_000,
+  30_000,
+);
+
+export const PRINT_SPOOLER_POLL_INTERVAL_MS = readPositiveIntEnv(
+  process.env.PRINTBIT_PRINT_SPOOLER_POLL_INTERVAL_MS?.trim(),
+  1_500,
+  250,
+);
+
+export const PRINT_SPOOLER_LOOKBACK_MINUTES = readPositiveIntEnv(
+  process.env.PRINTBIT_PRINT_SPOOLER_LOOKBACK_MINUTES?.trim(),
+  3,
+  1,
+);
+
+export const PRINT_SPOOLER_QUERY_TIMEOUT_MS = readPositiveIntEnv(
+  process.env.PRINTBIT_PRINT_SPOOLER_QUERY_TIMEOUT_MS?.trim(),
+  20_000,
+  5_000,
 );
 
 export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [

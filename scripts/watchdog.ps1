@@ -29,14 +29,102 @@ function Get-EnvInt {
     return $Default
 }
 
+function Get-EnvBool {
+    param(
+        [string]$Name,
+        [bool]$Default
+    )
+    $raw = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $Default }
+    $normalized = $raw.Trim().ToLowerInvariant()
+    if (@("1", "true", "yes", "on") -contains $normalized) { return $true }
+    if (@("0", "false", "no", "off") -contains $normalized) { return $false }
+    return $Default
+}
+
 $PollIntervalMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_POLL_INTERVAL_MS" -Default 5000
 $RequestTimeoutMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS" -Default 3000
 $RestartBaseDelayMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_RESTART_BASE_DELAY_MS" -Default 2000
 $RestartMaxDelayMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_RESTART_MAX_DELAY_MS" -Default 60000
 $FailureThreshold = Get-EnvInt -Name "PRINTBIT_WATCHDOG_FAILURE_ALERT_THRESHOLD" -Default 5
+$RestartOnUnhealthy = Get-EnvBool -Name "PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY" -Default $false
 $Port = Get-EnvInt -Name "PRINTBIT_WATCHDOG_PORT" -Default 3000
 $HealthUrl = "http://127.0.0.1:$Port/api/watchdog/health"
 $ReportUrl = "http://127.0.0.1:$Port/api/watchdog/report"
+$SupportsSkipHttpErrorCheck = (Get-Command Invoke-RestMethod).Parameters.ContainsKey("SkipHttpErrorCheck")
+
+function Read-WebExceptionJsonBody {
+    param([object]$Response)
+
+    if ($null -eq $Response) { return $null }
+    try {
+        $stream = $Response.GetResponseStream()
+        if ($null -eq $stream) { return $null }
+        try {
+            $reader = New-Object System.IO.StreamReader($stream)
+            try {
+                $raw = $reader.ReadToEnd()
+            } finally {
+                $reader.Dispose()
+            }
+        } finally {
+            $stream.Dispose()
+        }
+        if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return ($raw | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+function Get-WatchdogHealth {
+    $timeoutSec = [Math]::Max(1, [int]([Math]::Ceiling($RequestTimeoutMs / 1000.0)))
+    $invokeParams = @{
+        Method = "Get"
+        Uri = $HealthUrl
+        TimeoutSec = $timeoutSec
+    }
+    if ($SupportsSkipHttpErrorCheck) {
+        $invokeParams["SkipHttpErrorCheck"] = $true
+    }
+
+    try {
+        $health = Invoke-RestMethod @invokeParams
+        return [pscustomobject]@{
+            healthOk = $true
+            health = $health
+            healthError = $null
+        }
+    } catch {
+        if (-not $SupportsSkipHttpErrorCheck) {
+            $response = $_.Exception.Response
+            $statusCode = $null
+            try {
+                if ($null -ne $response) {
+                    $statusCode = [int]$response.StatusCode
+                }
+            } catch {
+                $statusCode = $null
+            }
+            if ($statusCode -eq 503) {
+                $parsedHealth = Read-WebExceptionJsonBody -Response $response
+                if ($null -ne $parsedHealth) {
+                    return [pscustomobject]@{
+                        healthOk = $true
+                        health = $parsedHealth
+                        healthError = $null
+                    }
+                }
+            }
+        }
+
+        return [pscustomobject]@{
+            healthOk = $false
+            health = $null
+            healthError = $_.Exception.Message
+        }
+    }
+}
 
 function Resolve-NodeExecutablePath {
     foreach ($name in @("node.exe", "node")) {
@@ -367,6 +455,10 @@ if (-not [string]::IsNullOrWhiteSpace($KioskUser)) {
 $state = Read-State
 $state.running = $true
 $state.watchdogPid = $PID
+$state.consecutiveFailures = 0
+$state.recoveryAttempts = 0
+$state.backoffDelayMs = 0
+$state.nextRecoveryAt = $null
 $state.lastAction = "watchdog_started"
 $state.lastError = $null
 Write-State -State $state
@@ -376,46 +468,50 @@ Send-WatchdogReport -State $state
 if (-not $ManageEdge) {
     Write-Host "[Watchdog] Edge management disabled for this execution context."
 }
+if (-not $RestartOnUnhealthy) {
+    Write-Host "[Watchdog] Restart-on-unhealthy disabled (set PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=true to enable)." -ForegroundColor Yellow
+}
 
 while ($true) {
-    $health = $null
-    $healthOk = $false
-    $healthError = $null
-
-    try {
-        $health = Invoke-RestMethod -Method Get -Uri $HealthUrl -SkipHttpErrorCheck -TimeoutSec ([Math]::Max(1, [int]([Math]::Ceiling($RequestTimeoutMs / 1000.0))))
-        $healthOk = $true
-    } catch {
-        $healthError = $_.Exception.Message
-        $healthOk = $false
-    }
+    $healthResult = Get-WatchdogHealth
+    $health = $healthResult.health
+    $healthOk = [bool]$healthResult.healthOk
+    $healthError = $healthResult.healthError
 
     $didRecovery = $false
     if ($healthOk) {
         $isUnhealthy = ([string]$health.status -eq "unhealthy")
         if ($isUnhealthy) {
-            $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
-            $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
-            $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
-            $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
-            $state.lastAction = "health_unhealthy_detected"
-            $state.lastError = "Health endpoint returned unhealthy."
-            Write-State -State $state
-            Send-WatchdogReport -State $state
+            if ($RestartOnUnhealthy) {
+                $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
+                $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
+                $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
+                $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
+                $state.lastAction = "health_unhealthy_detected"
+                $state.lastError = "Health endpoint returned unhealthy."
+                Write-State -State $state
+                Send-WatchdogReport -State $state
 
-            if ($state.backoffDelayMs -gt 0) {
-                Start-Sleep -Milliseconds $state.backoffDelayMs
-            }
+                if ($state.backoffDelayMs -gt 0) {
+                    Start-Sleep -Milliseconds $state.backoffDelayMs
+                }
 
-            $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
-            if ($ManageEdge) {
-                $null = Ensure-EdgeRunning -State $state
-            }
-            if ($didRecovery) {
-                $state.lastAction = "recovery_restart_performed"
-                $state.lastError = $null
+                $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
+                if ($ManageEdge) {
+                    $null = Ensure-EdgeRunning -State $state
+                }
+                if ($didRecovery) {
+                    $state.lastAction = "recovery_restart_performed"
+                    $state.lastError = $null
+                } else {
+                    $state.lastAction = "recovery_restart_skipped_or_failed"
+                }
             } else {
-                $state.lastAction = "recovery_restart_skipped_or_failed"
+                $state.consecutiveFailures = 0
+                $state.backoffDelayMs = 0
+                $state.nextRecoveryAt = $null
+                $state.lastAction = "health_unhealthy_no_restart"
+                $state.lastError = "Health endpoint returned unhealthy; restart-on-unhealthy is disabled."
             }
         } else {
             $state.consecutiveFailures = 0

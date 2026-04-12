@@ -6,6 +6,7 @@
 .DESCRIPTION
   Enables OS-level restrictions for kiosk deployments:
   - Disable notifications and tray interactions
+  - Disable screen-edge swipe gestures
   - Restrict Settings/Control Panel and Task Manager
   - Block common escape shortcuts where policy supports it
   - Block USB mass storage access
@@ -52,6 +53,7 @@ function Set-BinaryValue {
 }
 
 $policyExplorer    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
+$policyEdgeUi      = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
 $policySystem      = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
 $legacyExplorer    = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
 $legacySystem      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -66,6 +68,7 @@ Write-Host "[PrintBit] Applying kiosk lockdown policy..." -ForegroundColor Cyan
 Set-DwordValue -Path $policyExplorer -Name 'DisableNotificationCenter' -Value 1
 Set-DwordValue -Path $policyExplorer -Name 'NoTrayContextMenu'         -Value 1
 Set-DwordValue -Path $policyExplorer -Name 'NoTrayItemsDisplay'        -Value 1
+Set-DwordValue -Path $policyEdgeUi   -Name 'AllowEdgeSwipe'            -Value 0
 
 # Settings / shell / shortcut hardening
 Set-DwordValue -Path $legacyExplorer -Name 'NoControlPanel' -Value 1
@@ -102,7 +105,7 @@ if ($DisableWinKeys) {
 Ensure-RegistryKey -Path $printBitState
 Set-DwordValue -Path $printBitState -Name 'Applied' -Value 1
 New-ItemProperty -Path $printBitState -Name 'AppliedAtUtc' -Value ([DateTime]::UtcNow.ToString('o')) -PropertyType String -Force | Out-Null
-New-ItemProperty -Path $printBitState -Name 'Version'      -Value '1' -PropertyType String -Force | Out-Null
+New-ItemProperty -Path $printBitState -Name 'Version'      -Value '2' -PropertyType String -Force | Out-Null
 
 Write-Host ""
 Write-Host "[PrintBit] [OK] Lockdown policies applied."  -ForegroundColor Green
