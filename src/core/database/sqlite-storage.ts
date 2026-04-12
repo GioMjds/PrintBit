@@ -247,6 +247,34 @@ function ensureSchema(db: DatabaseSync): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS wireless_sessions (
+      session_id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_activity_at TEXT NOT NULL,
+      owner_client_id TEXT,
+      owner_claimed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_wireless_sessions_last_activity
+      ON wireless_sessions(last_activity_at DESC);
+
+    CREATE TABLE IF NOT EXISTS wireless_session_documents (
+      document_id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      uploaded_at TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      analysis_json TEXT,
+      FOREIGN KEY(session_id) REFERENCES wireless_sessions(session_id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wireless_session_documents_session_id
+      ON wireless_session_documents(session_id);
+
     CREATE TABLE IF NOT EXISTS admin_logs (
       id TEXT PRIMARY KEY,
       timestamp TEXT NOT NULL,
@@ -481,6 +509,216 @@ export function getSqliteDb(): DatabaseSync {
     throw new Error('SQLite database is not initialized.');
   }
   return sqliteDb;
+}
+
+export interface WirelessSessionStorageEntry {
+  sessionId: string;
+  token: string;
+  status: 'pending' | 'uploaded';
+  createdAt: string;
+  lastActivityAt: string;
+  ownerClientId: string | null;
+  ownerClaimedAt: string | null;
+}
+
+export interface WirelessSessionDocumentStorageEntry {
+  documentId: string;
+  sessionId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  filePath: string;
+  analysisJson: string | null;
+}
+
+export interface WirelessSessionSnapshotStorageEntry {
+  session: WirelessSessionStorageEntry;
+  documents: WirelessSessionDocumentStorageEntry[];
+}
+
+export class WirelessSessionSqliteStore {
+  listSessionSnapshots(): WirelessSessionSnapshotStorageEntry[] {
+    const db = getSqliteDb();
+    const sessionRows = db.prepare(
+      `SELECT
+        session_id,
+        token,
+        status,
+        created_at,
+        last_activity_at,
+        owner_client_id,
+        owner_claimed_at
+       FROM wireless_sessions
+       ORDER BY created_at DESC`,
+    ).all() as Array<Record<string, unknown>>;
+
+    if (sessionRows.length === 0) return [];
+
+    const documentRows = db.prepare(
+      `SELECT
+        document_id,
+        session_id,
+        filename,
+        content_type,
+        size_bytes,
+        uploaded_at,
+        file_path,
+        analysis_json
+       FROM wireless_session_documents
+       ORDER BY uploaded_at ASC`,
+    ).all() as Array<Record<string, unknown>>;
+
+    const documentsBySessionId = new Map<
+      string,
+      WirelessSessionDocumentStorageEntry[]
+    >();
+    for (const row of documentRows) {
+      const parsed = this.toDocumentEntry(row);
+      const bucket = documentsBySessionId.get(parsed.sessionId);
+      if (bucket) {
+        bucket.push(parsed);
+      } else {
+        documentsBySessionId.set(parsed.sessionId, [parsed]);
+      }
+    }
+
+    return sessionRows.map((row) => {
+      const parsedSession = this.toSessionEntry(row);
+      return {
+        session: parsedSession,
+        documents: documentsBySessionId.get(parsedSession.sessionId) ?? [],
+      };
+    });
+  }
+
+  saveSessionSnapshot(snapshot: WirelessSessionSnapshotStorageEntry): void {
+    withTransaction(() => {
+      const db = getSqliteDb();
+      this.upsertSession(snapshot.session);
+      db.prepare(
+        `DELETE FROM wireless_session_documents
+         WHERE session_id = ?`,
+      ).run(snapshot.session.sessionId);
+
+      if (snapshot.documents.length === 0) return;
+      const insertDocument = db.prepare(
+        `INSERT INTO wireless_session_documents (
+          document_id,
+          session_id,
+          filename,
+          content_type,
+          size_bytes,
+          uploaded_at,
+          file_path,
+          analysis_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      for (const doc of snapshot.documents) {
+        insertDocument.run(
+          doc.documentId,
+          doc.sessionId,
+          doc.filename,
+          doc.contentType,
+          Math.max(0, Math.floor(doc.sizeBytes)),
+          doc.uploadedAt,
+          doc.filePath,
+          doc.analysisJson,
+        );
+      }
+    });
+  }
+
+  upsertSession(entry: WirelessSessionStorageEntry): void {
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO wireless_sessions (
+          session_id,
+          token,
+          status,
+          created_at,
+          last_activity_at,
+          owner_client_id,
+          owner_claimed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+          token = excluded.token,
+          status = excluded.status,
+          created_at = excluded.created_at,
+          last_activity_at = excluded.last_activity_at,
+          owner_client_id = excluded.owner_client_id,
+          owner_claimed_at = excluded.owner_claimed_at`,
+      )
+      .run(
+        entry.sessionId,
+        entry.token,
+        entry.status,
+        entry.createdAt,
+        entry.lastActivityAt,
+        entry.ownerClientId,
+        entry.ownerClaimedAt,
+      );
+  }
+
+  touchSession(sessionId: string, lastActivityAt: string): void {
+    getSqliteDb()
+      .prepare(
+        `UPDATE wireless_sessions
+         SET last_activity_at = ?
+         WHERE session_id = ?`,
+      )
+      .run(lastActivityAt, sessionId);
+  }
+
+  deleteSession(sessionId: string): void {
+    withTransaction(() => {
+      const db = getSqliteDb();
+      db.prepare(
+        `DELETE FROM wireless_session_documents
+         WHERE session_id = ?`,
+      ).run(sessionId);
+      db.prepare(
+        `DELETE FROM wireless_sessions
+         WHERE session_id = ?`,
+      ).run(sessionId);
+    });
+  }
+
+  private toSessionEntry(
+    row: Record<string, unknown>,
+  ): WirelessSessionStorageEntry {
+    const status = row.status === 'uploaded' ? 'uploaded' : 'pending';
+    return {
+      sessionId: String(row.session_id ?? ''),
+      token: String(row.token ?? ''),
+      status,
+      createdAt: String(row.created_at ?? ''),
+      lastActivityAt: String(row.last_activity_at ?? ''),
+      ownerClientId:
+        typeof row.owner_client_id === 'string' ? row.owner_client_id : null,
+      ownerClaimedAt:
+        typeof row.owner_claimed_at === 'string' ? row.owner_claimed_at : null,
+    };
+  }
+
+  private toDocumentEntry(
+    row: Record<string, unknown>,
+  ): WirelessSessionDocumentStorageEntry {
+    return {
+      documentId: String(row.document_id ?? ''),
+      sessionId: String(row.session_id ?? ''),
+      filename: String(row.filename ?? ''),
+      contentType: String(row.content_type ?? ''),
+      sizeBytes:
+        typeof row.size_bytes === 'number' && Number.isFinite(row.size_bytes)
+          ? Math.max(0, Math.floor(row.size_bytes))
+          : 0,
+      uploadedAt: String(row.uploaded_at ?? ''),
+      filePath: String(row.file_path ?? ''),
+      analysisJson:
+        typeof row.analysis_json === 'string' ? row.analysis_json : null,
+    };
+  }
 }
 
 export class AdminLogSqliteStore {
@@ -1648,6 +1886,7 @@ export const adminLogStore = new AdminLogSqliteStore();
 export const feedbackStore = new FeedbackSqliteStore();
 export const reportIssueStore = new ReportIssueSqliteStore();
 export const consumablesStore = new ConsumablesSqliteStore();
+export const wirelessSessionStore = new WirelessSessionSqliteStore();
 
 export function importLowDbSnapshotIfNeeded(
   snapshot: LowDbImportSnapshot,

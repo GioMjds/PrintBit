@@ -537,7 +537,9 @@ export class WirelessSessionService {
           errorCode: result.errorCode ?? null,
         },
       );
-      res.status(400).json({
+      const statusCode =
+        result.errorCode === 'SESSION_PERSIST_FAILED' ? 500 : 400;
+      res.status(statusCode).json({
         code: result.errorCode ?? 'UPLOAD_FAILED',
         error: result.errorMsg ?? 'Upload failed.',
       });
@@ -623,6 +625,8 @@ export class WirelessSessionService {
           ? 404
           : result.errorCode === 'SESSION_EXPIRED'
             ? 410
+            : result.errorCode === 'SESSION_PERSIST_FAILED'
+              ? 500
             : 404;
 
       await adminService.appendAdminLog(
@@ -640,6 +644,8 @@ export class WirelessSessionService {
             ? 'Document not found in session.'
             : result.errorCode === 'SESSION_EXPIRED'
               ? 'Session has expired.'
+              : result.errorCode === 'SESSION_PERSIST_FAILED'
+                ? 'Failed to persist session changes while deleting document.'
               : 'Session not found.',
       });
       return;
@@ -678,10 +684,15 @@ export class WirelessSessionService {
         'Failed to cancel session: session not found or already expired.',
         {
           sessionId,
+          errorCode: result.errorCode ?? null,
         },
       );
-      res.status(404).json({
-        error: 'Session not found or already expired.',
+      const status = result.errorCode === 'SESSION_PERSIST_FAILED' ? 500 : 404;
+      res.status(status).json({
+        error:
+          result.errorCode === 'SESSION_PERSIST_FAILED'
+            ? 'Failed to persist session cancellation.'
+            : 'Session not found or already expired.',
         sessionId,
       });
       return;

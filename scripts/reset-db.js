@@ -17,6 +17,7 @@ What it resets:
 - Coin/job statistics
 - Hopper runtime stats
 - Owed change, pending refund, anomaly, ledger, ink history, recovery sessions
+- Wireless print sessions/documents metadata
 - Admin logs, feedback entries/sessions, report issue entries/sessions/attachments
 
 What it preserves:
@@ -99,6 +100,8 @@ function buildResetState(current) {
 }
 
 const ALLOWED_TABLES = new Set([
+  'wireless_sessions',
+  'wireless_session_documents',
   'admin_logs',
   'feedback_entries',
   'feedback_sessions',
@@ -124,7 +127,9 @@ function clearSqliteOperationalTables(sqliteDb) {
   try {
     // These tables contain runtime/admin event data and can be safely regenerated after reset.
     sqliteDb.exec(
-      `DELETE FROM admin_logs;
+      `DELETE FROM wireless_session_documents;
+       DELETE FROM wireless_sessions;
+       DELETE FROM admin_logs;
        DELETE FROM feedback_entries;
        DELETE FROM feedback_sessions;
        DELETE FROM report_issue_attachments;
@@ -157,6 +162,8 @@ async function main() {
 
   // Capture a before snapshot so operators can confirm what will be reset.
   const before = {
+    wireless_sessions: countRows(sqliteDb, 'wireless_sessions'),
+    wireless_session_documents: countRows(sqliteDb, 'wireless_session_documents'),
     admin_logs: countRows(sqliteDb, 'admin_logs'),
     feedback_entries: countRows(sqliteDb, 'feedback_entries'),
     feedback_sessions: countRows(sqliteDb, 'feedback_sessions'),
@@ -183,6 +190,8 @@ async function main() {
 
   // Capture an after snapshot to verify reset effects immediately.
   const after = {
+    wireless_sessions: countRows(sqliteDb, 'wireless_sessions'),
+    wireless_session_documents: countRows(sqliteDb, 'wireless_session_documents'),
     admin_logs: countRows(sqliteDb, 'admin_logs'),
     feedback_entries: countRows(sqliteDb, 'feedback_entries'),
     feedback_sessions: countRows(sqliteDb, 'feedback_sessions'),

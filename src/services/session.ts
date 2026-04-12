@@ -10,6 +10,11 @@ import {
   ESP32_KIOSK_IP,
   PORT,
 } from '@/config/http.config';
+import {
+  wirelessSessionStore,
+  type WirelessSessionDocumentStorageEntry,
+  type WirelessSessionStorageEntry,
+} from '@/core/database/sqlite-storage';
 
 export interface DocumentPageAnalysis {
   index: number;
@@ -76,7 +81,11 @@ export interface StoreUploadResult {
 
 export interface RemoveDocumentResult {
   success: boolean;
-  errorCode?: 'SESSION_NOT_FOUND' | 'SESSION_EXPIRED' | 'DOCUMENT_NOT_FOUND';
+  errorCode?:
+    | 'SESSION_NOT_FOUND'
+    | 'SESSION_EXPIRED'
+    | 'DOCUMENT_NOT_FOUND'
+    | 'SESSION_PERSIST_FAILED';
   removedDocumentId?: string;
   remainingCount: number;
   deletedFile: boolean;
@@ -127,6 +136,17 @@ const MAX_CUMULATIVE_BYTES = 50 * 1024 * 1024; // 50MB total per session
 const CLEANUP_INTERVAL_MS = 2 * 60 * 1000; // run cleanup every 2 minutes
 const CLEANUP_RETRY_DELAY_MS = 30 * 1000;
 const MAX_CLEANUP_ATTEMPTS = 3;
+const DOCUMENT_ANALYSIS_FILE_TYPES = new Set<DocumentAnalysis['fileType']>([
+  'pdf',
+  'docx',
+  'doc',
+  'xlsx',
+  'xls',
+  'pptx',
+  'ppt',
+  'image',
+  'unknown',
+]);
 
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
@@ -143,6 +163,7 @@ export class SessionStore {
     this.uploadDir = uploadDir;
     fs.mkdirSync(uploadDir, { recursive: true });
     this.expiryEnabled = options?.expiryEnabled ?? DEFAULT_SESSION_EXPIRY_ENABLED;
+    this.restorePersistedSessions();
     if (this.expiryEnabled) {
       this.cleanupTimer = setInterval(
         () => this.cleanupExpired(),
@@ -205,6 +226,7 @@ export class SessionStore {
 
     this.sessions.set(sessionId, session);
     this.byToken.set(token, sessionId);
+    this.persistSessionSnapshot(session);
     return session;
   }
 
@@ -325,11 +347,42 @@ export class SessionStore {
       : session.document
         ? [session.document]
         : [];
+    const previousStatus = session.status;
+    const previousCurrentDocument = session.document;
 
     documents.push(document);
     session.documents = documents;
     session.status = 'uploaded';
     session.document = document;
+    try {
+      this.persistSessionSnapshot(session);
+    } catch (error) {
+      session.documents = documents.slice(0, -1);
+      session.status = previousStatus;
+      if (previousCurrentDocument) {
+        session.document = previousCurrentDocument;
+      } else {
+        delete session.document;
+      }
+      await fs.promises.unlink(destPath).catch((unlinkError) => {
+        console.error(
+          '[session-store] Failed to rollback uploaded file after persistence error.',
+          {
+            sessionId,
+            filePath: destPath,
+            error:
+              unlinkError instanceof Error
+                ? unlinkError.message
+                : String(unlinkError),
+          },
+        );
+      });
+      return {
+        isSuccess: false,
+        errorMsg: 'Failed to persist uploaded document session state.',
+        errorCode: 'SESSION_PERSIST_FAILED',
+      };
+    }
 
     return { isSuccess: true, document, errorCode: '', errorMsg: '' };
   }
@@ -361,7 +414,8 @@ export class SessionStore {
       session.document.analysis = stamped;
     }
 
-    this.touchSession(sessionId);
+    session.lastActivityAt = new Date();
+    this.persistSessionSnapshot(session);
     return stamped;
   }
 
@@ -404,14 +458,8 @@ export class SessionStore {
     }
 
     const [removed] = docs.splice(index, 1);
-    let deletedFile = true;
-    try {
-      await fs.promises.unlink(removed.filePath);
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code !== 'ENOENT') deletedFile = false;
-    }
-
+    const previousStatus = session.status;
+    const previousCurrentDocument = session.document;
     session.documents = docs;
     if (docs.length > 0) {
       session.document = docs[docs.length - 1];
@@ -420,7 +468,32 @@ export class SessionStore {
       delete session.document;
       session.status = 'pending';
     }
-    this.touchSession(sessionId);
+    session.lastActivityAt = new Date();
+    try {
+      this.persistSessionSnapshot(session);
+    } catch (error) {
+      session.documents = [...docs, removed];
+      session.status = previousStatus;
+      if (previousCurrentDocument) {
+        session.document = previousCurrentDocument;
+      } else {
+        delete session.document;
+      }
+      return {
+        success: false,
+        errorCode: 'SESSION_PERSIST_FAILED',
+        remainingCount: docs.length + 1,
+        deletedFile: false,
+      };
+    }
+
+    let deletedFile = true;
+    try {
+      await fs.promises.unlink(removed.filePath);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== 'ENOENT') deletedFile = false;
+    }
 
     return {
       success: true,
@@ -428,6 +501,289 @@ export class SessionStore {
       remainingCount: docs.length,
       deletedFile,
     };
+  }
+
+  private restorePersistedSessions(): void {
+    let snapshots: Array<{
+      session: WirelessSessionStorageEntry;
+      documents: WirelessSessionDocumentStorageEntry[];
+    }> = [];
+    try {
+      snapshots = wirelessSessionStore.listSessionSnapshots();
+    } catch (error) {
+      console.error('[session-store] Failed to load persisted sessions.', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    for (const snapshot of snapshots) {
+      const { session } = snapshot;
+      try {
+        const hydratedSession = this.fromStorageSnapshot(
+          snapshot.session,
+          snapshot.documents,
+        );
+        this.sessions.set(hydratedSession.sessionId, hydratedSession);
+        this.byToken.set(hydratedSession.token, hydratedSession.sessionId);
+        if (this.isSessionExpired(hydratedSession)) {
+          void this.pruneExpiredSession(
+            hydratedSession.sessionId,
+            hydratedSession,
+          );
+        }
+      } catch (error) {
+        console.error(
+          '[session-store] Dropping malformed persisted wireless session row.',
+          {
+            sessionId: session.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        try {
+          wirelessSessionStore.deleteSession(session.sessionId);
+        } catch (deleteError) {
+          console.error(
+            '[session-store] Failed to delete malformed persisted session.',
+            {
+              sessionId: session.sessionId,
+              error:
+                deleteError instanceof Error
+                  ? deleteError.message
+                  : String(deleteError),
+            },
+          );
+        }
+      }
+    }
+  }
+
+  private fromStorageSnapshot(
+    sessionEntry: WirelessSessionStorageEntry,
+    documentEntries: WirelessSessionDocumentStorageEntry[],
+  ): Session {
+    const createdAt = this.parseRequiredDate(
+      sessionEntry.createdAt,
+      'createdAt',
+      sessionEntry.sessionId,
+    );
+    const lastActivityAt = this.parseRequiredDate(
+      sessionEntry.lastActivityAt,
+      'lastActivityAt',
+      sessionEntry.sessionId,
+    );
+    const uploadUrl = buildUploadUrl(
+      new URL(`http://localhost:${PORT}`),
+      sessionEntry.token,
+    );
+    const publicUploadUrl = buildPublicUploadUrl(sessionEntry.token);
+
+    const documents = documentEntries.map((entry) =>
+      this.fromStorageDocument(entry),
+    );
+    const status = documents.length > 0 ? 'uploaded' : 'pending';
+    const latestDocument =
+      documents.length > 0 ? documents[documents.length - 1] : undefined;
+
+    const session: Session = {
+      sessionId: sessionEntry.sessionId,
+      token: sessionEntry.token,
+      uploadUrl,
+      ...(publicUploadUrl ? { publicUploadUrl } : {}),
+      status,
+      createdAt,
+      lastActivityAt,
+      ...(documents.length > 0 ? { documents } : {}),
+      ...(latestDocument ? { document: latestDocument } : {}),
+    };
+
+    if (sessionEntry.ownerClientId) {
+      session.ownerClientId = sessionEntry.ownerClientId;
+    }
+    if (sessionEntry.ownerClaimedAt) {
+      session.ownerClaimedAt = this.parseRequiredDate(
+        sessionEntry.ownerClaimedAt,
+        'ownerClaimedAt',
+        sessionEntry.sessionId,
+      );
+    }
+
+    return session;
+  }
+
+  private fromStorageDocument(
+    entry: WirelessSessionDocumentStorageEntry,
+  ): UploadedDocument {
+    const uploadedAt = this.parseRequiredDate(
+      entry.uploadedAt,
+      'uploadedAt',
+      entry.sessionId,
+    );
+
+    const document: UploadedDocument = {
+      documentId: entry.documentId,
+      sessionId: entry.sessionId,
+      filename: entry.filename,
+      contentType: entry.contentType,
+      sizeBytes: Math.max(0, Math.floor(entry.sizeBytes)),
+      uploadedAt,
+      filePath: entry.filePath,
+    };
+    if (entry.analysisJson) {
+      document.analysis = this.parseDocumentAnalysis(
+        entry.analysisJson,
+        entry.sessionId,
+        entry.documentId,
+      );
+    }
+    return document;
+  }
+
+  private parseRequiredDate(
+    rawValue: string,
+    fieldName: string,
+    sessionId: string,
+  ): Date {
+    const parsed = new Date(rawValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(
+        `Invalid persisted ${fieldName} for session ${sessionId}: "${rawValue}"`,
+      );
+    }
+    return parsed;
+  }
+
+  private parseDocumentAnalysis(
+    analysisJson: string,
+    sessionId: string,
+    documentId: string,
+  ): DocumentAnalysis {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(analysisJson) as unknown;
+    } catch (error) {
+      throw new Error(
+        `Invalid analysis JSON for ${sessionId}/${documentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error(`Malformed analysis object for ${sessionId}/${documentId}`);
+    }
+    const candidate = parsed as Record<string, unknown>;
+    const analyzedAtRaw = candidate.analyzedAt;
+    if (typeof analyzedAtRaw !== 'string') {
+      throw new Error(
+        `Missing analyzedAt string for persisted analysis ${sessionId}/${documentId}`,
+      );
+    }
+    const analyzedAt = new Date(analyzedAtRaw);
+    if (Number.isNaN(analyzedAt.getTime())) {
+      throw new Error(
+        `Invalid analyzedAt value for persisted analysis ${sessionId}/${documentId}`,
+      );
+    }
+
+    if (
+      typeof candidate.fileType !== 'string' ||
+      typeof candidate.pageCount !== 'number' ||
+      !Number.isFinite(candidate.pageCount) ||
+      typeof candidate.colorPages !== 'number' ||
+      !Number.isFinite(candidate.colorPages) ||
+      typeof candidate.bwPages !== 'number' ||
+      !Number.isFinite(candidate.bwPages) ||
+      typeof candidate.totalPages !== 'number' ||
+      !Number.isFinite(candidate.totalPages) ||
+      !Array.isArray(candidate.pages)
+    ) {
+      throw new Error(
+        `Malformed persisted analysis payload for ${sessionId}/${documentId}`,
+      );
+    }
+    if (!DOCUMENT_ANALYSIS_FILE_TYPES.has(candidate.fileType as DocumentAnalysis['fileType'])) {
+      throw new Error(
+        `Invalid fileType in persisted analysis for ${sessionId}/${documentId}`,
+      );
+    }
+
+    const pages = candidate.pages.map((page, index) => {
+      if (typeof page !== 'object' || page === null) {
+        throw new Error(
+          `Malformed page analysis at index ${index} for ${sessionId}/${documentId}`,
+        );
+      }
+      const pageCandidate = page as Record<string, unknown>;
+      if (
+        typeof pageCandidate.index !== 'number' ||
+        !Number.isFinite(pageCandidate.index) ||
+        typeof pageCandidate.isColor !== 'boolean'
+      ) {
+        throw new Error(
+          `Malformed page analysis fields at index ${index} for ${sessionId}/${documentId}`,
+        );
+      }
+      return {
+        index: Math.floor(pageCandidate.index),
+        isColor: pageCandidate.isColor,
+      };
+    });
+
+    return {
+      fileType: candidate.fileType as DocumentAnalysis['fileType'],
+      pageCount: Math.floor(candidate.pageCount),
+      pages,
+      colorPages: Math.floor(candidate.colorPages),
+      bwPages: Math.floor(candidate.bwPages),
+      totalPages: Math.floor(candidate.totalPages),
+      analyzedAt,
+    };
+  }
+
+  private serializeDocumentAnalysis(analysis: DocumentAnalysis): string {
+    return JSON.stringify({
+      ...analysis,
+      analyzedAt: analysis.analyzedAt.toISOString(),
+    });
+  }
+
+  private toStorageSession(session: Session): WirelessSessionStorageEntry {
+    return {
+      sessionId: session.sessionId,
+      token: session.token,
+      status: session.status,
+      createdAt: session.createdAt.toISOString(),
+      lastActivityAt: session.lastActivityAt.toISOString(),
+      ownerClientId: session.ownerClientId ?? null,
+      ownerClaimedAt: session.ownerClaimedAt?.toISOString() ?? null,
+    };
+  }
+
+  private toStorageDocument(
+    document: UploadedDocument,
+  ): WirelessSessionDocumentStorageEntry {
+    return {
+      documentId: document.documentId,
+      sessionId: document.sessionId,
+      filename: document.filename,
+      contentType: document.contentType,
+      sizeBytes: document.sizeBytes,
+      uploadedAt: document.uploadedAt.toISOString(),
+      filePath: document.filePath,
+      analysisJson: document.analysis
+        ? this.serializeDocumentAnalysis(document.analysis)
+        : null,
+    };
+  }
+
+  private persistSessionSnapshot(session: Session): void {
+    const documents =
+      session.documents ?? (session.document ? [session.document] : []);
+    wirelessSessionStore.saveSessionSnapshot({
+      session: this.toStorageSession(session),
+      documents: documents.map((document) => this.toStorageDocument(document)),
+    });
   }
 
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
@@ -469,6 +825,18 @@ export class SessionStore {
       return false;
     }
     session.lastActivityAt = new Date();
+    try {
+      wirelessSessionStore.touchSession(
+        sessionId,
+        session.lastActivityAt.toISOString(),
+      );
+    } catch (error) {
+      console.error('[session-store] Failed to persist session touch.', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
     return true;
   }
 
@@ -531,6 +899,7 @@ export class SessionStore {
     }
 
     session.lastActivityAt = new Date();
+    this.persistSessionSnapshot(session);
     return { ok: true };
   }
 
@@ -549,15 +918,41 @@ export class SessionStore {
   /** Cancel a session immediately and delete all uploaded files. */
   async cancelSession(
     sessionId: string,
-  ): Promise<{ success: boolean; deletedFileCount: number }> {
+  ): Promise<{
+    success: boolean;
+    deletedFileCount: number;
+    errorCode?: 'SESSION_NOT_FOUND' | 'SESSION_PERSIST_FAILED';
+  }> {
     const session = this.sessions.get(sessionId);
     if (!session) {
-      return { success: false, deletedFileCount: 0 };
+      return {
+        success: false,
+        deletedFileCount: 0,
+        errorCode: 'SESSION_NOT_FOUND',
+      };
     }
 
-    // Delete uploaded files asynchronously to avoid blocking the event loop
     const docs =
       session.documents ?? (session.document ? [session.document] : []);
+    try {
+      wirelessSessionStore.deleteSession(sessionId);
+    } catch (error) {
+      console.error('[session-store] Failed to persist session cancel.', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        success: false,
+        deletedFileCount: 0,
+        errorCode: 'SESSION_PERSIST_FAILED',
+      };
+    }
+
+    // Remove session from in-memory maps after persistence succeeds.
+    this.byToken.delete(session.token);
+    this.sessions.delete(sessionId);
+
+    // Delete uploaded files asynchronously to avoid blocking the event loop.
     const deletionResults = await Promise.allSettled(
       docs.map((doc) => fs.promises.unlink(doc.filePath)),
     );
@@ -566,10 +961,6 @@ export class SessionStore {
     const deletedCount = deletionResults.filter(
       (result) => result.status === 'fulfilled',
     ).length;
-
-    // Remove session from maps
-    this.byToken.delete(session.token);
-    this.sessions.delete(sessionId);
 
     return { success: true, deletedFileCount: deletedCount };
   }
@@ -619,11 +1010,22 @@ export class SessionStore {
     });
 
     if (failedDeletes.length === 0) {
-      this.byToken.delete(session.token);
-      this.sessions.delete(sessionId);
-      this.cleanupAttempts.delete(sessionId);
-      this.cleanupInFlight.delete(sessionId);
-      return;
+      try {
+        wirelessSessionStore.deleteSession(sessionId);
+        this.byToken.delete(session.token);
+        this.sessions.delete(sessionId);
+        this.cleanupAttempts.delete(sessionId);
+        this.cleanupInFlight.delete(sessionId);
+        return;
+      } catch (error) {
+        console.error(
+          '[session-cleanup] Failed to persist expired-session deletion.',
+          {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      }
     }
 
     for (const failed of failedDeletes) {

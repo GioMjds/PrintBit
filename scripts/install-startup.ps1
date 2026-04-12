@@ -24,7 +24,9 @@ param(
     [switch]$Uninstall,
     [switch]$AtStartup,
     [switch]$RunAsSystem,
-    [string]$KioskUser
+    [string]$KioskUser,
+    [ValidateSet('Parallel', 'Queue', 'IgnoreNew', 'StopExisting')]
+    [string]$MultipleInstances = 'IgnoreNew'
 )
 
 $TaskName = "PrintBit Kiosk"
@@ -132,6 +134,7 @@ $Trigger = if ($kioskUserNormalized) {
 $Settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
+    -MultipleInstances $MultipleInstances `
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
     -RestartCount 3 `

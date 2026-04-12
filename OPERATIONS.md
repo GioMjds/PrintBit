@@ -136,6 +136,7 @@ All sections below must pass before closing spooler handoff reliability work.
 5. For power-loss resilience, prefer startup trigger installs:
    - `powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup`
    - `powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStartup`
+6. After pulling watchdog/startup script changes, re-run both install commands so updated task settings are applied on the kiosk host.
 
 ## Power loss, reboot & crash recovery (Issue #37)
 
@@ -162,7 +163,9 @@ All sections below must pass before closing spooler handoff reliability work.
 ### Runtime behavior
 
 - Watchdog polls `/api/watchdog/health` every `PRINTBIT_WATCHDOG_POLL_INTERVAL_MS` (default 5000ms).
-- If health is unreachable or returns `unhealthy`, watchdog restarts the server and ensures Edge kiosk relaunch.
+- If health is unreachable, watchdog restarts the server (after threshold/backoff) and ensures Edge kiosk relaunch when watchdog is managing Edge.
+- If health returns `unhealthy`, restart happens only when `PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=true`; by default this is disabled to avoid disrupting active sessions.
+- Even when unhealthy-restart is enabled, restarts are skipped while a server process is still alive unless `PRINTBIT_WATCHDOG_RESTART_WHEN_PROCESS_ALIVE=true`.
 - Repeated failures use exponential backoff:
   - `PRINTBIT_WATCHDOG_RESTART_BASE_DELAY_MS` (default 2000)
   - `PRINTBIT_WATCHDOG_RESTART_MAX_DELAY_MS` (default 60000)

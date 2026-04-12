@@ -527,28 +527,37 @@ try {
             $isUnhealthy = ([string]$health.status -eq "unhealthy")
             if ($isUnhealthy) {
                 if ($RestartOnUnhealthy) {
-                    $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
-                    $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
-                    $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
-                    $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
-                    $state.lastAction = "health_unhealthy_detected"
-                    $state.lastError = "Health endpoint returned unhealthy."
-                    Write-State -State $state
-                    Send-WatchdogReport -State $state
-
-                    if ($state.backoffDelayMs -gt 0) {
-                        Start-Sleep -Milliseconds $state.backoffDelayMs
-                    }
-
-                    $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
-                    if ($ManageEdge) {
-                        $null = Ensure-EdgeRunning -State $state
-                    }
-                    if ($didRecovery) {
-                        $state.lastAction = "recovery_restart_performed"
-                        $state.lastError = $null
+                    $existingServer = Get-NodeServerProcess
+                    if ($existingServer -and -not $RestartWhenProcessAlive) {
+                        $state.consecutiveFailures = 0
+                        $state.backoffDelayMs = 0
+                        $state.nextRecoveryAt = $null
+                        $state.lastAction = "health_unhealthy_process_alive"
+                        $state.lastError = "Health endpoint returned unhealthy, but server PID $($existingServer.ProcessId) is alive; restart skipped."
                     } else {
-                        $state.lastAction = "recovery_restart_skipped_or_failed"
+                        $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
+                        $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
+                        $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
+                        $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
+                        $state.lastAction = "health_unhealthy_detected"
+                        $state.lastError = "Health endpoint returned unhealthy."
+                        Write-State -State $state
+                        Send-WatchdogReport -State $state
+
+                        if ($state.backoffDelayMs -gt 0) {
+                            Start-Sleep -Milliseconds $state.backoffDelayMs
+                        }
+
+                        $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
+                        if ($ManageEdge) {
+                            $null = Ensure-EdgeRunning -State $state
+                        }
+                        if ($didRecovery) {
+                            $state.lastAction = "recovery_restart_performed"
+                            $state.lastError = $null
+                        } else {
+                            $state.lastAction = "recovery_restart_skipped_or_failed"
+                        }
                     }
                 } else {
                     $state.consecutiveFailures = 0
