@@ -323,6 +323,9 @@ export async function monitorSpoolerJob(
   const documentId = normalizeOptionalString(jobContext.documentId);
   const normalizedPrinterName = normalizeOptionalString(printerName);
   const correlationKey = normalizeOptionalString(spoolerCorrelationKey);
+  const dispatchEngine =
+    normalizeOptionalString(jobContext.dispatchEngine)?.toLowerCase() ?? null;
+  const allowNoJobSuccessFallback = dispatchEngine === 'pdftoprinter';
   const dispatchedAtMs = Date.parse(jobDispatchedAt);
   const submittedTimeCutoffMs = Number.isFinite(dispatchedAtMs)
     ? dispatchedAtMs - JOB_SUBMITTED_TIME_SKEW_MS
@@ -462,6 +465,7 @@ export async function monitorSpoolerJob(
   let lastPagesPrinted = 0;
   let lastTotalPages = 0;
   let trackedJobId: number | null = null;
+  let emptyPollCountWithoutTrackedJob = 0;
   let warnedSubmittedTimeFallback = false;
 
   let ps = createPersistentPS();
@@ -707,6 +711,101 @@ export async function monitorSpoolerJob(
 
       const jobs = queryResult.jobs;
       if (jobs.length === 0) {
+        if (trackedJobId === null) {
+          emptyPollCountWithoutTrackedJob += 1;
+          if (
+            allowNoJobSuccessFallback &&
+            emptyPollCountWithoutTrackedJob >= 3 &&
+            correlationKey
+          ) {
+            const inferredStatus = 'DISPATCH_CONFIRMED_NO_SPOOLER_JOB';
+            await persistAndEmitPrintLifecycleState(
+              io,
+              {
+                mode: 'print',
+                state: 'printed',
+                printerName: normalizedPrinterName,
+                transactionId,
+                spoolerCorrelationKey: correlationKey,
+                spoolerJobId: null,
+                jobStatus: inferredStatus,
+                pagesPrinted: 0,
+                totalPages: 0,
+                reason:
+                  'No spooler job snapshot detected after dispatch; treating pdftoprinter synchronous dispatch as completed.',
+              },
+              {
+                requiredAmount: chargedAmount,
+                sessionId,
+                documentId,
+                meta: buildLifecycleMeta({
+                  marker: 'printed_inferred_pdftoprinter',
+                  dispatchEngine,
+                  emptyPollCountWithoutTrackedJob,
+                }),
+              },
+            );
+
+            io.emit('printerSpoolerConfirmed', {
+              jobStatus: inferredStatus,
+              pagesPrinted: 0,
+              totalPages: 0,
+              printerName: normalizedPrinterName,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: null,
+              jobDispatchedAt,
+              monitorStartedAt: startedAtIso,
+              monitorElapsedMs: Date.now() - startedAtMs,
+              handoffLatencyMs,
+              pollCount,
+              queryFailureCount,
+            });
+
+            try {
+              await adminService.appendAdminLog(
+                'print_spooler_inferred_success',
+                'No spooler job detected after pdftoprinter dispatch; marked as printed.',
+                {
+                  transactionId,
+                  spoolerCorrelationKey: correlationKey,
+                  printerName: normalizedPrinterName,
+                  dispatchEngine,
+                  emptyPollCountWithoutTrackedJob,
+                  monitorElapsedMs: Date.now() - startedAtMs,
+                },
+              );
+            } catch (error) {
+              console.error(
+                '[SPOOLER-MONITOR] Failed to append inferred-success admin log.',
+                error,
+              );
+            }
+
+            if (onConfirmed) {
+              try {
+                await onConfirmed({
+                  spoolerJobId: 0,
+                  status: inferredStatus,
+                  pagesPrinted: 0,
+                  totalPages: 0,
+                });
+              } catch (cleanupError) {
+                console.error(
+                  '[SPOOLER-MONITOR] Post-confirmed cleanup callback failed for inferred success.',
+                  cleanupError,
+                );
+              }
+            }
+
+            return {
+              detected: false,
+              jobStatus: inferredStatus,
+              pagesPrinted: 0,
+              failed: false,
+            };
+          }
+        }
         await new Promise<void>((resolve) =>
           setTimeout(resolve, POLL_INTERVAL_MS),
         );
@@ -715,6 +814,7 @@ export async function monitorSpoolerJob(
         lastQueryElapsedMs = queryResult.elapsedMs;
         continue;
       }
+      emptyPollCountWithoutTrackedJob = 0;
 
       const scopedJobs =
         submittedTimeCutoffMs === null

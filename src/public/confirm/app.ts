@@ -859,6 +859,14 @@ type SpoolerConfirmedEvent = {
   spoolerCorrelationKey: string | null;
 };
 
+type PrintLifecycleStateEvent = {
+  mode: 'print' | 'copy';
+  state: 'queued' | 'processing' | 'printed' | 'failed';
+  transactionId: string | null;
+  spoolerCorrelationKey: string | null;
+  printerName: string | null;
+};
+
 type SpoolerTimeoutEvent = {
   jobStatus: string | null;
   pagesPrinted: number;
@@ -1002,6 +1010,43 @@ function matchesCurrentPrintHandoff(spoolerCorrelationKey: string | null): boole
     spoolerCorrelationKey === activeSpoolerCorrelationKey ||
     spoolerCorrelationKey === lastSpoolerCorrelationKey
   );
+}
+
+function matchesCurrentPrintLifecycle(event: {
+  spoolerCorrelationKey: string | null;
+  transactionId: string | null;
+}): boolean {
+  if (config.mode !== 'print') return false;
+  if (matchesCurrentPrintHandoff(event.spoolerCorrelationKey)) {
+    return true;
+  }
+  return Boolean(
+    event.transactionId &&
+      currentTransactionId &&
+      event.transactionId === currentTransactionId,
+  );
+}
+
+function finalizePrintSuccess(
+  transactionId: string | null,
+  printerName: string | null,
+): void {
+  setTransactionReference(transactionId ?? currentTransactionId);
+  clearSpoolerFinalizationTimer();
+  hideOverlay(printingOverlay);
+  showOverlay(thankYouOverlay);
+  clearPendingPaymentSessionState();
+  activeSpoolerCorrelationKey = null;
+  if (statusMessage) {
+    statusMessage.textContent = printerName
+      ? `Printing complete on "${printerName}". Thank you!`
+      : 'Printing complete. Thank you!';
+  }
+  clearConfirmSessionStorage();
+  lastSpoolerCorrelationKey = null;
+  spoolerTimedOut = false;
+  isProcessingPayment = false;
+  applyConfirmGate();
 }
 
 function syncPendingPaymentSessionState(): void {
@@ -1965,6 +2010,48 @@ if (typeof ioFactory === 'function') {
     setPrintingPhase('printing');
   });
 
+  socket.on('printLifecycleState', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+
+    const event: PrintLifecycleStateEvent = {
+      mode:
+        'mode' in payload && (payload as { mode: unknown }).mode === 'copy'
+          ? 'copy'
+          : 'print',
+      state:
+        'state' in payload &&
+        typeof (payload as { state: unknown }).state === 'string'
+          ? ((payload as { state: string }).state as
+              | 'queued'
+              | 'processing'
+              | 'printed'
+              | 'failed')
+          : 'queued',
+      transactionId:
+        'transactionId' in payload &&
+        typeof (payload as { transactionId: unknown }).transactionId ===
+          'string'
+          ? (payload as { transactionId: string }).transactionId
+          : null,
+      spoolerCorrelationKey:
+        'spoolerCorrelationKey' in payload &&
+        typeof (payload as { spoolerCorrelationKey: unknown })
+          .spoolerCorrelationKey === 'string'
+          ? (payload as { spoolerCorrelationKey: string }).spoolerCorrelationKey
+          : null,
+      printerName:
+        'printerName' in payload &&
+        typeof (payload as { printerName: unknown }).printerName === 'string'
+          ? (payload as { printerName: string }).printerName
+          : null,
+    };
+
+    if (event.mode !== 'print' || event.state !== 'printed') return;
+    if (!matchesCurrentPrintLifecycle(event)) return;
+
+    finalizePrintSuccess(event.transactionId, event.printerName);
+  });
+
   socket.on('printerSpoolerConfirmed', (payload: unknown) => {
     if (!payload || typeof payload !== 'object') return;
 
@@ -2015,22 +2102,7 @@ if (typeof ioFactory === 'function') {
       return;
     }
 
-    setTransactionReference(event.transactionId ?? currentTransactionId);
-    clearSpoolerFinalizationTimer();
-    hideOverlay(printingOverlay);
-    showOverlay(thankYouOverlay);
-    clearPendingPaymentSessionState();
-    activeSpoolerCorrelationKey = null;
-    if (statusMessage) {
-      statusMessage.textContent = event.printerName
-        ? `Printing complete on "${event.printerName}". Thank you!`
-        : 'Printing complete. Thank you!';
-    }
-    clearConfirmSessionStorage();
-    lastSpoolerCorrelationKey = null;
-    spoolerTimedOut = false;
-    isProcessingPayment = false;
-    applyConfirmGate();
+    finalizePrintSuccess(event.transactionId, event.printerName);
   });
 
   socket.on('printerSpoolerFailure', (payload: unknown) => {

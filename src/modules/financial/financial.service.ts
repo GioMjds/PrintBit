@@ -1524,6 +1524,75 @@ export class FinancialService {
     let dispatchResult: PrintDispatchResult | null = null;
     let spoolerMonitorStarted = false;
     let settlementCompleted = false;
+    let spoolerConfirmedBeforeSettlement = false;
+
+    const runPostSpoolerConfirmedCallbacks = async (): Promise<void> => {
+      try {
+        appendConsumableUsageEvent('print');
+        await evaluateConsumablesForecastAlerts();
+      } catch (error) {
+        console.error(
+          '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
+          error instanceof Error ? error.message : error,
+        );
+      }
+      if (!serverFilename) return;
+      await this.cleanupPrintUploadAfterSpoolerSuccess({
+        transactionId,
+        sessionId: sessionId ?? null,
+        documentId: targetDocumentId ?? null,
+        filename: serverFilename,
+      });
+    };
+
+    const startSpoolerMonitor = (
+      chargedAmount: number,
+      monitorStartPhase: 'post_dispatch' | 'post_settlement',
+    ): void => {
+      if (mode !== 'print' || !jobDispatchedAt || !telemetry.name) return;
+      if (spoolerMonitorStarted) return;
+
+      spoolerMonitorStarted = true;
+      void monitorSpoolerJob({
+        printerName: telemetry.name,
+        chargedAmount,
+        jobDispatchedAt,
+        spoolerCorrelationKey,
+        io: this.deps.io,
+        jobContext: {
+          transactionId,
+          mode,
+          copies,
+          colorMode: printOptions?.colorMode ?? colorMode,
+          duplex: printOptions?.duplex ?? false,
+          spoolerCorrelationKey,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          filename: serverFilename ?? null,
+          pageRange: printOptions?.pageRange ?? null,
+          dispatchEngine: dispatchResult?.selectedEngine ?? null,
+          dispatchMode: dispatchResult?.mode ?? null,
+          dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
+          dispatchDurationMs: dispatchResult?.durationMs ?? null,
+          dispatchMimeType: dispatchResult?.mimeType ?? null,
+          dispatchExtension: dispatchResult?.fileExtension ?? null,
+          dispatchAttempts: dispatchResult?.attempts.length ?? null,
+          monitorStartPhase,
+        },
+        onConfirmed: async () => {
+          if (!settlementCompleted) {
+            spoolerConfirmedBeforeSettlement = true;
+            return;
+          }
+          await runPostSpoolerConfirmedCallbacks();
+        },
+      }).catch((err) => {
+        console.error(
+          '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
+          err instanceof Error ? err.message : err,
+        );
+      });
+    };
 
     if (mode === 'print' && serverFilename && printOptions) {
       if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -1656,6 +1725,10 @@ export class FinancialService {
       }
     }
 
+    if (mode === 'print' && jobDispatchedAt && telemetry.name) {
+      startSpoolerMonitor(requiredAmount, 'post_dispatch');
+    }
+
     try {
       await financialLedgerService.append({
         eventType: 'job_started',
@@ -1705,6 +1778,15 @@ export class FinancialService {
       return;
     }
     settlementCompleted = true;
+    if (spoolerConfirmedBeforeSettlement) {
+      spoolerConfirmedBeforeSettlement = false;
+      void runPostSpoolerConfirmedCallbacks().catch((error) => {
+        console.error(
+          '[CONFIRM-PAYMENT] Deferred post-confirmed cleanup failed:',
+          error instanceof Error ? error.message : error,
+        );
+      });
+    }
 
     await checkpointRecoverySession({
       transactionId,
@@ -1928,64 +2010,7 @@ export class FinancialService {
           );
         });
       } else {
-        spoolerMonitorStarted = true;
-        void monitorSpoolerJob({
-          printerName: telemetry.name,
-          chargedAmount: settledAmount,
-          jobDispatchedAt,
-          spoolerCorrelationKey,
-          io: this.deps.io,
-          jobContext: {
-            transactionId,
-            mode,
-            copies,
-            colorMode: printOptions?.colorMode ?? colorMode,
-            duplex: printOptions?.duplex ?? false,
-            spoolerCorrelationKey,
-            sessionId: sessionId ?? null,
-            documentId: targetDocumentId ?? null,
-            filename: serverFilename ?? null,
-            pageRange: printOptions?.pageRange ?? null,
-            dispatchEngine: dispatchResult?.selectedEngine ?? null,
-            dispatchMode: dispatchResult?.mode ?? null,
-            dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
-            dispatchDurationMs: dispatchResult?.durationMs ?? null,
-            dispatchMimeType: dispatchResult?.mimeType ?? null,
-            dispatchExtension: dispatchResult?.fileExtension ?? null,
-            dispatchAttempts: dispatchResult?.attempts.length ?? null,
-            monitorStartPhase: 'post_settlement',
-          },
-          onConfirmed: async () => {
-            if (!settlementCompleted) {
-              console.warn(
-                '[SPOOLER-MONITOR] Skipping post-confirmed callbacks because settlement did not complete.',
-                { transactionId, spoolerCorrelationKey },
-              );
-              return;
-            }
-            try {
-              appendConsumableUsageEvent('print');
-              await evaluateConsumablesForecastAlerts();
-            } catch (error) {
-              console.error(
-                '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
-                error instanceof Error ? error.message : error,
-              );
-            }
-            if (!serverFilename) return;
-            await this.cleanupPrintUploadAfterSpoolerSuccess({
-              transactionId,
-              sessionId: sessionId ?? null,
-              documentId: targetDocumentId ?? null,
-              filename: serverFilename,
-            });
-          },
-        }).catch((err) => {
-          console.error(
-            '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
-            err instanceof Error ? err.message : err,
-          );
-        });
+        startSpoolerMonitor(settledAmount, 'post_settlement');
       }
     } else if (mode === 'copy') {
       void reconcileFinalizedCopySession(transactionId).catch((error) => {
