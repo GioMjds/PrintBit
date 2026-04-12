@@ -129,6 +129,7 @@ $watchdogTrigger = if ($kioskUserNormalized) {
 $watchdogSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
+    -MultipleInstances IgnoreNew `
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
     -RestartCount 999 `
@@ -182,6 +183,7 @@ $verifyTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date
 $verifySettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
+    -MultipleInstances IgnoreNew `
     -StartWhenAvailable `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 5) `
     -RestartCount 3 `

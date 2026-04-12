@@ -13,6 +13,7 @@ $ProjectDir = Split-Path -Parent $ScriptsDir
 $StateDir = Join-Path $ProjectDir "uploads\watchdog"
 $StatePath = Join-Path $StateDir "state.json"
 $HeartbeatPath = Join-Path $StateDir "watchdog-heartbeat.json"
+$InstanceLockPath = Join-Path $StateDir "watchdog.instance.lock"
 $ServerBundlePath = Join-Path $ProjectDir "dist\server.js"
 
 function Get-EnvInt {
@@ -228,6 +229,38 @@ function Get-KioskLocalIp {
 
 if (-not (Test-Path $StateDir)) {
     New-Item -ItemType Directory -Path $StateDir | Out-Null
+}
+
+$script:InstanceLockStream = $null
+
+function Acquire-WatchdogInstanceLock {
+    try {
+        $script:InstanceLockStream = [System.IO.File]::Open(
+            $InstanceLockPath,
+            [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+        $owner = "pid=$PID user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name) acquiredAt=$((Get-Date).ToString('o'))"
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($owner)
+        $script:InstanceLockStream.SetLength(0)
+        $script:InstanceLockStream.Write($bytes, 0, $bytes.Length)
+        $script:InstanceLockStream.Flush()
+        return $true
+    } catch [System.IO.IOException] {
+        Write-Warning "[Watchdog] Another watchdog instance is already running. Exiting duplicate instance."
+        return $false
+    } catch {
+        Write-Warning "[Watchdog] Failed to acquire watchdog instance lock: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Release-WatchdogInstanceLock {
+    if ($null -ne $script:InstanceLockStream) {
+        $script:InstanceLockStream.Dispose()
+        $script:InstanceLockStream = $null
+    }
 }
 
 function Read-State {
@@ -450,137 +483,145 @@ function Restart-Server {
     return (Ensure-ServerRunning -State $State -Reason $Reason)
 }
 
-Write-Host "[Watchdog] Starting PrintBit watchdog loop on $HealthUrl"
-if (-not [string]::IsNullOrWhiteSpace($KioskUser)) {
-    Write-Host "[Watchdog] Kiosk account: $KioskUser"
-}
-$state = Read-State
-$state.running = $true
-$state.watchdogPid = $PID
-$state.consecutiveFailures = 0
-$state.recoveryAttempts = 0
-$state.backoffDelayMs = 0
-$state.nextRecoveryAt = $null
-$state.lastAction = "watchdog_started"
-$state.lastError = $null
-Write-State -State $state
-Update-Heartbeat -Status "running" -Message "Watchdog started."
-Send-WatchdogReport -State $state
-
-if (-not $ManageEdge) {
-    Write-Host "[Watchdog] Edge management disabled for this execution context."
-}
-if (-not $RestartOnUnhealthy) {
-    Write-Host "[Watchdog] Restart-on-unhealthy disabled (set PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=true to enable)." -ForegroundColor Yellow
-}
-Write-Host "[Watchdog] Unreachable restart threshold: $UnreachableRestartThreshold consecutive failures."
-if (-not $RestartWhenProcessAlive) {
-    Write-Host "[Watchdog] Restart when server process is alive: disabled." -ForegroundColor Yellow
+if (-not (Acquire-WatchdogInstanceLock)) {
+    exit 0
 }
 
-while ($true) {
-    $healthResult = Get-WatchdogHealth
-    $health = $healthResult.health
-    $healthOk = [bool]$healthResult.healthOk
-    $healthError = $healthResult.healthError
+try {
+    Write-Host "[Watchdog] Starting PrintBit watchdog loop on $HealthUrl"
+    if (-not [string]::IsNullOrWhiteSpace($KioskUser)) {
+        Write-Host "[Watchdog] Kiosk account: $KioskUser"
+    }
+    $state = Read-State
+    $state.running = $true
+    $state.watchdogPid = $PID
+    $state.consecutiveFailures = 0
+    $state.recoveryAttempts = 0
+    $state.backoffDelayMs = 0
+    $state.nextRecoveryAt = $null
+    $state.lastAction = "watchdog_started"
+    $state.lastError = $null
+    Write-State -State $state
+    Update-Heartbeat -Status "running" -Message "Watchdog started."
+    Send-WatchdogReport -State $state
 
-    $didRecovery = $false
-    if ($healthOk) {
-        $isUnhealthy = ([string]$health.status -eq "unhealthy")
-        if ($isUnhealthy) {
-            if ($RestartOnUnhealthy) {
-                $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
-                $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
-                $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
-                $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
-                $state.lastAction = "health_unhealthy_detected"
-                $state.lastError = "Health endpoint returned unhealthy."
-                Write-State -State $state
-                Send-WatchdogReport -State $state
+    if (-not $ManageEdge) {
+        Write-Host "[Watchdog] Edge management disabled for this execution context."
+    }
+    if (-not $RestartOnUnhealthy) {
+        Write-Host "[Watchdog] Restart-on-unhealthy disabled (set PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=true to enable)." -ForegroundColor Yellow
+    }
+    Write-Host "[Watchdog] Unreachable restart threshold: $UnreachableRestartThreshold consecutive failures."
+    if (-not $RestartWhenProcessAlive) {
+        Write-Host "[Watchdog] Restart when server process is alive: disabled." -ForegroundColor Yellow
+    }
 
-                if ($state.backoffDelayMs -gt 0) {
-                    Start-Sleep -Milliseconds $state.backoffDelayMs
-                }
+    while ($true) {
+        $healthResult = Get-WatchdogHealth
+        $health = $healthResult.health
+        $healthOk = [bool]$healthResult.healthOk
+        $healthError = $healthResult.healthError
 
-                $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
-                if ($ManageEdge) {
-                    $null = Ensure-EdgeRunning -State $state
-                }
-                if ($didRecovery) {
-                    $state.lastAction = "recovery_restart_performed"
-                    $state.lastError = $null
+        $didRecovery = $false
+        if ($healthOk) {
+            $isUnhealthy = ([string]$health.status -eq "unhealthy")
+            if ($isUnhealthy) {
+                if ($RestartOnUnhealthy) {
+                    $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
+                    $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
+                    $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
+                    $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
+                    $state.lastAction = "health_unhealthy_detected"
+                    $state.lastError = "Health endpoint returned unhealthy."
+                    Write-State -State $state
+                    Send-WatchdogReport -State $state
+
+                    if ($state.backoffDelayMs -gt 0) {
+                        Start-Sleep -Milliseconds $state.backoffDelayMs
+                    }
+
+                    $didRecovery = Restart-Server -State $state -Reason "health_unhealthy"
+                    if ($ManageEdge) {
+                        $null = Ensure-EdgeRunning -State $state
+                    }
+                    if ($didRecovery) {
+                        $state.lastAction = "recovery_restart_performed"
+                        $state.lastError = $null
+                    } else {
+                        $state.lastAction = "recovery_restart_skipped_or_failed"
+                    }
                 } else {
-                    $state.lastAction = "recovery_restart_skipped_or_failed"
+                    $state.consecutiveFailures = 0
+                    $state.backoffDelayMs = 0
+                    $state.nextRecoveryAt = $null
+                    $state.lastAction = "health_unhealthy_no_restart"
+                    $state.lastError = "Health endpoint returned unhealthy; restart-on-unhealthy is disabled."
                 }
             } else {
                 $state.consecutiveFailures = 0
                 $state.backoffDelayMs = 0
                 $state.nextRecoveryAt = $null
-                $state.lastAction = "health_unhealthy_no_restart"
-                $state.lastError = "Health endpoint returned unhealthy; restart-on-unhealthy is disabled."
-            }
-        } else {
-            $state.consecutiveFailures = 0
-            $state.backoffDelayMs = 0
-            $state.nextRecoveryAt = $null
-            $state.lastAction = "health_ok"
-            $state.lastError = $null
-            $null = Ensure-ServerRunning -State $state -Reason "health_ok_ensure"
-            if ($ManageEdge) {
-                $null = Ensure-EdgeRunning -State $state
-            }
-        }
-    } else {
-        $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
-        if ([int]$state.consecutiveFailures -lt $UnreachableRestartThreshold) {
-            $state.backoffDelayMs = 0
-            $state.nextRecoveryAt = $null
-            $state.lastAction = "health_unreachable_observed"
-            $state.lastError = "$healthError (restart deferred until $UnreachableRestartThreshold consecutive unreachable checks)"
-        } else {
-            $existingServer = Get-NodeServerProcess
-            if ($existingServer -and -not $RestartWhenProcessAlive) {
-                $state.backoffDelayMs = 0
-                $state.nextRecoveryAt = $null
-                $state.lastAction = "health_unreachable_process_alive"
-                $state.lastError = "$healthError (server PID $($existingServer.ProcessId) is still running; restart skipped)"
-            } else {
-                $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
-                $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
-                $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
-                $state.lastAction = "health_unreachable"
-                $state.lastError = $healthError
-                Write-State -State $state
-                Send-WatchdogReport -State $state
-
-                if ($state.backoffDelayMs -gt 0) {
-                    Start-Sleep -Milliseconds $state.backoffDelayMs
-                }
-
-                $didRecovery = Restart-Server -State $state -Reason "health_unreachable"
+                $state.lastAction = "health_ok"
+                $state.lastError = $null
+                $null = Ensure-ServerRunning -State $state -Reason "health_ok_ensure"
                 if ($ManageEdge) {
                     $null = Ensure-EdgeRunning -State $state
                 }
-                if ($didRecovery) {
-                    $state.lastAction = "recovery_restart_after_unreachable"
-                    $state.lastError = $null
+            }
+        } else {
+            $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
+            if ([int]$state.consecutiveFailures -lt $UnreachableRestartThreshold) {
+                $state.backoffDelayMs = 0
+                $state.nextRecoveryAt = $null
+                $state.lastAction = "health_unreachable_observed"
+                $state.lastError = "$healthError (restart deferred until $UnreachableRestartThreshold consecutive unreachable checks)"
+            } else {
+                $existingServer = Get-NodeServerProcess
+                if ($existingServer -and -not $RestartWhenProcessAlive) {
+                    $state.backoffDelayMs = 0
+                    $state.nextRecoveryAt = $null
+                    $state.lastAction = "health_unreachable_process_alive"
+                    $state.lastError = "$healthError (server PID $($existingServer.ProcessId) is still running; restart skipped)"
                 } else {
-                    $state.lastAction = "recovery_restart_failed_after_unreachable"
+                    $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
+                    $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
+                    $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
+                    $state.lastAction = "health_unreachable"
+                    $state.lastError = $healthError
+                    Write-State -State $state
+                    Send-WatchdogReport -State $state
+
+                    if ($state.backoffDelayMs -gt 0) {
+                        Start-Sleep -Milliseconds $state.backoffDelayMs
+                    }
+
+                    $didRecovery = Restart-Server -State $state -Reason "health_unreachable"
+                    if ($ManageEdge) {
+                        $null = Ensure-EdgeRunning -State $state
+                    }
+                    if ($didRecovery) {
+                        $state.lastAction = "recovery_restart_after_unreachable"
+                        $state.lastError = $null
+                    } else {
+                        $state.lastAction = "recovery_restart_failed_after_unreachable"
+                    }
                 }
             }
         }
+
+        if ([int]$state.consecutiveFailures -ge $FailureThreshold) {
+            Write-Warning "[Watchdog] Failure threshold reached: $($state.consecutiveFailures)"
+        }
+
+        Write-State -State $state
+        Update-Heartbeat -Status "running" -Message "Loop complete. action=$($state.lastAction)"
+        Send-WatchdogReport -State $state
+
+        if ($RunOnce) { break }
+        Start-Sleep -Milliseconds $PollIntervalMs
     }
 
-    if ([int]$state.consecutiveFailures -ge $FailureThreshold) {
-        Write-Warning "[Watchdog] Failure threshold reached: $($state.consecutiveFailures)"
-    }
-
-    Write-State -State $state
-    Update-Heartbeat -Status "running" -Message "Loop complete. action=$($state.lastAction)"
-    Send-WatchdogReport -State $state
-
-    if ($RunOnce) { break }
-    Start-Sleep -Milliseconds $PollIntervalMs
+    Write-Host "[Watchdog] Exiting watchdog loop."
+} finally {
+    Release-WatchdogInstanceLock
 }
-
-Write-Host "[Watchdog] Exiting watchdog loop."
