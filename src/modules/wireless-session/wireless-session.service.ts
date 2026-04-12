@@ -280,7 +280,6 @@ export class WirelessSessionService {
       return;
     }
 
-    this.deps.sessionStore.touchSession(sessionId);
     if (!this.deps.sessionStore.touchSession(sessionId)) {
       res.status(410).json({
         code: 'SESSION_EXPIRED',
@@ -404,7 +403,6 @@ export class WirelessSessionService {
       return;
     }
 
-    this.deps.sessionStore.touchSession(sessionId);
     if (!this.deps.sessionStore.touchSession(sessionId)) {
       res.status(410).json({
         code: 'SESSION_EXPIRED',
@@ -472,6 +470,17 @@ export class WirelessSessionService {
       publicBaseUrl,
     );
     if (!session) {
+      res.status(410).json({
+        code: 'SESSION_EXPIRED',
+        error: 'Session has expired. Please start a new session.',
+      });
+      return;
+    }
+
+    // Keep kiosk sessions alive while the print page is actively polling this
+    // endpoint. Without this, active kiosk flows can expire even when users
+    // are still interacting with the same session.
+    if (!this.deps.sessionStore.touchSession(sessionId)) {
       res.status(410).json({
         code: 'SESSION_EXPIRED',
         error: 'Session has expired. Please start a new session.',
