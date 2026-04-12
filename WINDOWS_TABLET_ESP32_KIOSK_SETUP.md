@@ -36,6 +36,8 @@ setx PORT 3000 /M
 setx PRINTBIT_KIOSK_LOCKDOWN true /M
 setx PRINTBIT_USB_EXPORT_ENABLED false /M
 setx PRINTBIT_SKIP_EDGE_LAUNCH true /M
+setx PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS 10000 /M
+setx PRINTBIT_WATCHDOG_UNREACHABLE_RESTART_THRESHOLD 3 /M
 ```
 
 Then reboot once so services/tasks pick up new machine env vars.

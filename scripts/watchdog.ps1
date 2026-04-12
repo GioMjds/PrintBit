@@ -43,10 +43,11 @@ function Get-EnvBool {
 }
 
 $PollIntervalMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_POLL_INTERVAL_MS" -Default 5000
-$RequestTimeoutMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS" -Default 3000
+$RequestTimeoutMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS" -Default 10000
 $RestartBaseDelayMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_RESTART_BASE_DELAY_MS" -Default 2000
 $RestartMaxDelayMs = Get-EnvInt -Name "PRINTBIT_WATCHDOG_RESTART_MAX_DELAY_MS" -Default 60000
 $FailureThreshold = Get-EnvInt -Name "PRINTBIT_WATCHDOG_FAILURE_ALERT_THRESHOLD" -Default 5
+$UnreachableRestartThreshold = Get-EnvInt -Name "PRINTBIT_WATCHDOG_UNREACHABLE_RESTART_THRESHOLD" -Default 3
 $RestartOnUnhealthy = Get-EnvBool -Name "PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY" -Default $false
 $Port = Get-EnvInt -Name "PRINTBIT_WATCHDOG_PORT" -Default 3000
 $HealthUrl = "http://127.0.0.1:$Port/api/watchdog/health"
@@ -471,6 +472,7 @@ if (-not $ManageEdge) {
 if (-not $RestartOnUnhealthy) {
     Write-Host "[Watchdog] Restart-on-unhealthy disabled (set PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=true to enable)." -ForegroundColor Yellow
 }
+Write-Host "[Watchdog] Unreachable restart threshold: $UnreachableRestartThreshold consecutive failures."
 
 while ($true) {
     $healthResult = Get-WatchdogHealth
@@ -526,27 +528,34 @@ while ($true) {
         }
     } else {
         $state.consecutiveFailures = [int]$state.consecutiveFailures + 1
-        $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
-        $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
-        $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
-        $state.lastAction = "health_unreachable"
-        $state.lastError = $healthError
-        Write-State -State $state
-        Send-WatchdogReport -State $state
-
-        if ($state.backoffDelayMs -gt 0) {
-            Start-Sleep -Milliseconds $state.backoffDelayMs
-        }
-
-        $didRecovery = Restart-Server -State $state -Reason "health_unreachable"
-        if ($ManageEdge) {
-            $null = Ensure-EdgeRunning -State $state
-        }
-        if ($didRecovery) {
-            $state.lastAction = "recovery_restart_after_unreachable"
-            $state.lastError = $null
+        if ([int]$state.consecutiveFailures -lt $UnreachableRestartThreshold) {
+            $state.backoffDelayMs = 0
+            $state.nextRecoveryAt = $null
+            $state.lastAction = "health_unreachable_observed"
+            $state.lastError = "$healthError (restart deferred until $UnreachableRestartThreshold consecutive unreachable checks)"
         } else {
-            $state.lastAction = "recovery_restart_failed_after_unreachable"
+            $state.recoveryAttempts = [int]$state.recoveryAttempts + 1
+            $state.backoffDelayMs = Get-BackoffDelayMs -ConsecutiveFailures ([int]$state.consecutiveFailures)
+            $state.nextRecoveryAt = (Get-Date).AddMilliseconds($state.backoffDelayMs).ToString("o")
+            $state.lastAction = "health_unreachable"
+            $state.lastError = $healthError
+            Write-State -State $state
+            Send-WatchdogReport -State $state
+
+            if ($state.backoffDelayMs -gt 0) {
+                Start-Sleep -Milliseconds $state.backoffDelayMs
+            }
+
+            $didRecovery = Restart-Server -State $state -Reason "health_unreachable"
+            if ($ManageEdge) {
+                $null = Ensure-EdgeRunning -State $state
+            }
+            if ($didRecovery) {
+                $state.lastAction = "recovery_restart_after_unreachable"
+                $state.lastError = $null
+            } else {
+                $state.lastAction = "recovery_restart_failed_after_unreachable"
+            }
         }
     }
 
