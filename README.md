@@ -170,13 +170,14 @@ printbit.sqlite             # Runtime persisted machine state (SQLite)
   - Existing behavior using MyPublicWiFi process management on kiosk Windows host.
 - `PRINTBIT_NETWORK_PROVIDER=esp32`
   - ESP32 provides AP + captive portal onboarding.
-  - PrintBit still serves session/upload endpoints and `/portal` bridge.
+  - PrintBit serves `/portal` as captive-safe splash, then `/upload/:token` for actual file picking/upload in full browser.
+  - Print and portal pages also expose `/u/:code` short fallback links that resolve to the same active upload session.
   - `POST /api/hotspot/start` becomes no-op orchestration (no MyPublicWiFi launch).
 
 Related env knobs:
 
 - `PRINTBIT_HOTSPOT_SSID` (default `PrintBit` in `esp32` mode, else `PrintBit-Kiosk`)
-- `PRINTBIT_HOTSPOT_PASSWORD` (default empty in `esp32` mode, else `printbit123`)
+- `PRINTBIT_HOTSPOT_PASSWORD` (default `printbit123`)
 - `PRINTBIT_HOTSPOT_AUTH_TYPE` (derived from password by default: `nopass` when empty, `WPA` otherwise)
 - `PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH` (default `/portal`)
 - `PRINTBIT_ESP32_AP_BASE_URL` (default `http://192.168.4.1`) for kiosk registration endpoint
@@ -229,9 +230,12 @@ Recommended `.ino` alignment for ESP32 mode:
 
 Troubleshooting mobile captive onboarding:
 
-- If captive page does not auto-open after joining kiosk Wi-Fi, open the fallback upload link shown on Print screen.
+- If captive page does not auto-open after joining kiosk Wi-Fi, open `/portal` manually on the kiosk host.
+- Ensure ESP32 firmware is running captive DNS hijack (`DNSServer` wildcard to AP IP), otherwise CNA probe hosts may never reach the ESP32 portal redirect.
+- If captive page opens, use **Open Upload Page** first. If browser handoff is blocked by CNA, use the short fallback URL (`/u/:code`) shown on both `/print` and `/portal`.
 - If session is expired/owned by another device, generate a new kiosk print session and scan again.
 - If logs show `no adapter IP matches 192.168.4.x`, set `PRINTBIT_ESP32_KIOSK_IP` to the kiosk's current IP on the ESP32 network (for example `192.168.4.3`).
+- `WiFiManager.h` is not required for this issue; file picker reliability is solved by splitting captive onboarding (`/portal`) from upload (`/upload/:token`), not by AP provisioning library choice.
 
 ## Important notes
 

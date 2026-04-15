@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <NetworkClient.h>
 #include <WiFiAP.h>
+#include <DNSServer.h>
 #include <HTTPClient.h>
 
 #define coinAcceptorPin 4
@@ -19,6 +20,8 @@ const char* coinBridgeApiKey = "printbit-coin-bridge-key";
 const char* hopperControlToken = "printbit-coin-bridge-key";
 
 NetworkServer server(80);
+DNSServer dnsServer;
+const uint16_t dnsPort = 53;
 
 String kioskIp = fallbackKioskIp;
 uint16_t kioskPort = fallbackKioskPort;
@@ -202,8 +205,12 @@ String readRequestBody(NetworkClient& client, int contentLength) {
 }
 
 bool isCaptiveProbePath(const String& path) {
-  return path == "/hotspot-detect.html" || path == "/generate_204" ||
-      path == "/ncsi.txt" || path == "/connecttest.txt";
+  return path == "/hotspot-detect.html" ||
+      path == "/library/test/success.html" || path == "/generate_204" ||
+      path == "/gen_204" || path == "/connecttest.txt" ||
+      path == "/ncsi.txt" || path == "/success.txt" ||
+      path == "/redirect" || path == "/canonical.html" ||
+      path == "/check_network_status.txt";
 }
 
 String buildCoinEventId() {
@@ -421,7 +428,7 @@ void handleWifiRequest(NetworkClient& client) {
     return;
   }
 
-  if (method == "GET" && isCaptiveProbePath(routePath)) {
+  if ((method == "GET" || method == "HEAD") && isCaptiveProbePath(routePath)) {
     replyRedirect(client, kioskPortalUrl);
     client.stop();
     return;
@@ -639,10 +646,13 @@ void setup() {
 
   refreshTargets();
   WiFi.softAP(ssid, password, 1, 0);
+  dnsServer.start(dnsPort, "*", WiFi.softAPIP());
 
   Serial.println("AP Started");
   Serial.print("AP_IP:");
   Serial.println(WiFi.softAPIP());
+  Serial.print("DNS hijack port:");
+  Serial.println(dnsPort);
   Serial.print("coin_target:");
   Serial.println(tabletServer);
   Serial.print("portal_target:");
@@ -698,6 +708,7 @@ void loop() {
   }
 
   // WIFI REQUEST
+  dnsServer.processNextRequest();
   NetworkClient client = server.accept();
   if (client) {
     handleWifiRequest(client);

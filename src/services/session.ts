@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import {
   PUBLIC_URL,
@@ -59,6 +59,12 @@ export interface Session {
   uploadUrl: string;
   /** Public internet URL (optional, when PRINTBIT_PUBLIC_URL is configured). */
   publicUploadUrl?: string;
+  /** Short code used by /u/:code fallback path. */
+  shortCode: string;
+  /** Full URL for the short-code upload fallback. */
+  shortUploadUrl: string;
+  /** Public internet short URL (optional, when PRINTBIT_PUBLIC_URL is configured). */
+  publicShortUploadUrl?: string;
   status: 'pending' | 'uploaded';
   documents?: UploadedDocument[];
   document?: UploadedDocument;
@@ -133,6 +139,8 @@ const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SESSION_WARNING_SECONDS = 60;
 const MAX_FILES_PER_SESSION = 10;
 const MAX_CUMULATIVE_BYTES = 50 * 1024 * 1024; // 50MB total per session
+const SHORT_CODE_LENGTH = 6;
+const SHORT_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CLEANUP_INTERVAL_MS = 2 * 60 * 1000; // run cleanup every 2 minutes
 const CLEANUP_RETRY_DELAY_MS = 30 * 1000;
 const MAX_CLEANUP_ATTEMPTS = 3;
@@ -152,6 +160,7 @@ export class SessionStore {
   private readonly sessions = new Map<string, Session>();
 
   private readonly byToken = new Map<string, string>();
+  private readonly byShortCode = new Map<string, string>();
   private readonly uploadDir: string;
   private readonly expiryEnabled: boolean;
   private retryTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -212,6 +221,9 @@ export class SessionStore {
     const token = randomUUID();
     const uploadUrl = buildUploadUrl(baseUrl, token);
     const publicUploadUrl = buildPublicUploadUrl(token);
+    const shortCode = this.allocateShortCode(token);
+    const shortUploadUrl = buildShortUploadUrl(baseUrl, shortCode);
+    const publicShortUploadUrl = buildPublicShortUploadUrl(shortCode);
     const now = new Date();
 
     const session: Session = {
@@ -219,6 +231,9 @@ export class SessionStore {
       token,
       uploadUrl,
       ...(publicUploadUrl ? { publicUploadUrl } : {}),
+      shortCode,
+      shortUploadUrl,
+      ...(publicShortUploadUrl ? { publicShortUploadUrl } : {}),
       status: 'pending',
       createdAt: now,
       lastActivityAt: now,
@@ -226,6 +241,7 @@ export class SessionStore {
 
     this.sessions.set(sessionId, session);
     this.byToken.set(token, sessionId);
+    this.byShortCode.set(shortCode, sessionId);
     this.persistSessionSnapshot(session);
     return session;
   }
@@ -242,6 +258,17 @@ export class SessionStore {
 
   tryGetSessionByToken(token: string, publicBaseUrl: URL): Session | null {
     const sessionId = this.byToken.get(token);
+    if (!sessionId) return null;
+    return this.tryGetSession(sessionId, publicBaseUrl);
+  }
+
+  tryGetSessionByShortCode(
+    shortCode: string,
+    publicBaseUrl: URL,
+  ): Session | null {
+    const normalizedCode = normalizeShortCode(shortCode);
+    if (normalizedCode.length !== SHORT_CODE_LENGTH) return null;
+    const sessionId = this.byShortCode.get(normalizedCode);
     if (!sessionId) return null;
     return this.tryGetSession(sessionId, publicBaseUrl);
   }
@@ -526,6 +553,10 @@ export class SessionStore {
         );
         this.sessions.set(hydratedSession.sessionId, hydratedSession);
         this.byToken.set(hydratedSession.token, hydratedSession.sessionId);
+        this.byShortCode.set(
+          hydratedSession.shortCode,
+          hydratedSession.sessionId,
+        );
         if (this.isSessionExpired(hydratedSession)) {
           void this.pruneExpiredSession(
             hydratedSession.sessionId,
@@ -577,6 +608,12 @@ export class SessionStore {
       sessionEntry.token,
     );
     const publicUploadUrl = buildPublicUploadUrl(sessionEntry.token);
+    const shortCode = this.allocateShortCode(sessionEntry.token);
+    const shortUploadUrl = buildShortUploadUrl(
+      new URL(`http://localhost:${PORT}`),
+      shortCode,
+    );
+    const publicShortUploadUrl = buildPublicShortUploadUrl(shortCode);
 
     const documents = documentEntries.map((entry) =>
       this.fromStorageDocument(entry),
@@ -590,6 +627,9 @@ export class SessionStore {
       token: sessionEntry.token,
       uploadUrl,
       ...(publicUploadUrl ? { publicUploadUrl } : {}),
+      shortCode,
+      shortUploadUrl,
+      ...(publicShortUploadUrl ? { publicShortUploadUrl } : {}),
       status,
       createdAt,
       lastActivityAt,
@@ -789,6 +829,13 @@ export class SessionStore {
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
     const freshUrl = buildUploadUrl(publicBaseUrl, session.token);
     const freshPublicUrl = buildPublicUploadUrl(session.token);
+    const freshShortUrl = buildShortUploadUrl(publicBaseUrl, session.shortCode);
+    const freshPublicShortUrl = buildPublicShortUploadUrl(session.shortCode);
+    const {
+      publicUploadUrl: _unusedPublicUploadUrl,
+      publicShortUploadUrl: _unusedPublicShortUploadUrl,
+      ...sessionWithoutPublicUrls
+    } = session;
     const ttlMetadata = this.expiryEnabled
       ? {
           expiresAt: new Date(this.getExpiryTimestamp(session)),
@@ -798,23 +845,26 @@ export class SessionStore {
         }
       : {};
     return {
-      ...session,
+      ...sessionWithoutPublicUrls,
       uploadUrl: freshUrl,
       ...(freshPublicUrl ? { publicUploadUrl: freshPublicUrl } : {}),
+      shortUploadUrl: freshShortUrl,
+      ...(freshPublicShortUrl
+        ? { publicShortUploadUrl: freshPublicShortUrl }
+        : {}),
       ...ttlMetadata,
     };
   }
 
   /** Return the token of the most recently created non-expired session (for captive portal redirect). */
   getActiveSessionToken(): string | null {
-    let latest: Session | null = null;
-    for (const session of this.sessions.values()) {
-      if (this.isSessionExpired(session)) continue;
-      if (!latest || session.createdAt > latest.createdAt) {
-        latest = session;
-      }
-    }
-    return latest?.token ?? null;
+    return this.getMostRecentActiveSession()?.token ?? null;
+  }
+
+  getActiveSession(publicBaseUrl: URL): Session | null {
+    const latest = this.getMostRecentActiveSession();
+    if (!latest) return null;
+    return this.withFreshUrl(latest, publicBaseUrl);
   }
 
   touchSession(sessionId: string): boolean {
@@ -950,6 +1000,7 @@ export class SessionStore {
 
     // Remove session from in-memory maps after persistence succeeds.
     this.byToken.delete(session.token);
+    this.byShortCode.delete(session.shortCode);
     this.sessions.delete(sessionId);
 
     // Delete uploaded files asynchronously to avoid blocking the event loop.
@@ -1013,6 +1064,7 @@ export class SessionStore {
       try {
         wirelessSessionStore.deleteSession(sessionId);
         this.byToken.delete(session.token);
+        this.byShortCode.delete(session.shortCode);
         this.sessions.delete(sessionId);
         this.cleanupAttempts.delete(sessionId);
         this.cleanupInFlight.delete(sessionId);
@@ -1064,6 +1116,29 @@ export class SessionStore {
       void this.pruneExpiredSession(sessionId, latest);
     }, retryDelayMs);
     this.retryTimers.add(timerId);
+  }
+
+  private getMostRecentActiveSession(): Session | null {
+    let latest: Session | null = null;
+    for (const session of this.sessions.values()) {
+      if (this.isSessionExpired(session)) continue;
+      if (!latest || session.createdAt > latest.createdAt) {
+        latest = session;
+      }
+    }
+    return latest;
+  }
+
+  private allocateShortCode(token: string): string {
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const code = generateShortCode(`${token}:${attempt}`);
+      if (!this.byShortCode.has(code)) return code;
+    }
+
+    while (true) {
+      const fallbackCode = generateShortCode(randomUUID());
+      if (!this.byShortCode.has(fallbackCode)) return fallbackCode;
+    }
   }
 
   /** Stop the cleanup timer (for graceful shutdown). */
@@ -1170,6 +1245,28 @@ function buildUploadUrl(baseUrl: URL, token: string): string {
 function buildPublicUploadUrl(token: string): string | undefined {
   if (!PUBLIC_URL) return undefined;
   return buildUploadUrl(new URL(PUBLIC_URL), token);
+}
+
+function buildShortUploadUrl(baseUrl: URL, shortCode: string): string {
+  return new URL(`/u/${encodeURIComponent(shortCode)}`, baseUrl).toString();
+}
+
+function buildPublicShortUploadUrl(shortCode: string): string | undefined {
+  if (!PUBLIC_URL) return undefined;
+  return buildShortUploadUrl(new URL(PUBLIC_URL), shortCode);
+}
+
+function normalizeShortCode(code: string): string {
+  return code.trim().toUpperCase();
+}
+
+function generateShortCode(seed: string): string {
+  const digest = createHash('sha256').update(seed).digest();
+  let code = '';
+  for (let index = 0; index < SHORT_CODE_LENGTH; index += 1) {
+    code += SHORT_CODE_ALPHABET[digest[index] % SHORT_CODE_ALPHABET.length];
+  }
+  return code;
 }
 
 function detectEsp32KioskAddress(): string | null {

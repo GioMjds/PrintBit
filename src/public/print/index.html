@@ -127,6 +127,45 @@
                   Internet
                 </button>
               </div>
+
+              <div class="manual-fallback" aria-live="polite">
+                <p class="manual-fallback__title">Manual fallback</p>
+                <p class="manual-fallback__sub">
+                  If QR scanning fails in captive mode, type this short link in
+                  your browser.
+                </p>
+                <div class="qr-link-row">
+                  <svg
+                    class="qr-link-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L10.9 4.97" />
+                    <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.83-1.83" />
+                  </svg>
+                  <a id="shortUploadLink" href="#" rel="noopener noreferrer"
+                    >Waiting for session…</a
+                  >
+                </div>
+                <div class="manual-fallback__meta">
+                  <span class="manual-fallback__code"
+                    >Code: <strong id="shortCodeText">—</strong></span
+                  >
+                  <button
+                    id="copyShortLinkBtn"
+                    type="button"
+                    class="qr-action-btn qr-action-btn--inline"
+                    disabled
+                  >
+                    Copy short link
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div class="qr-actions">

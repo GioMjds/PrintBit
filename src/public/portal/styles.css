@@ -1,0 +1,131 @@
+.portal-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: #0e0d1f;
+}
+
+.portal-card {
+  width: min(560px, 100%);
+  background: #181730;
+  border: 1px solid rgba(167, 170, 225, 0.25);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  color: #fff;
+}
+
+.portal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(75, 225, 138, 0.14);
+  border: 1px solid rgba(75, 225, 138, 0.35);
+  font-size: 0.78rem;
+  color: #8bf3b8;
+  margin-bottom: 0.75rem;
+}
+
+.portal-card h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.3rem;
+}
+
+.portal-message {
+  margin: 0 0 0.75rem;
+  color: #c7c9ef;
+  line-height: 1.45;
+}
+
+.portal-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #aeb3ec;
+}
+
+.portal-url {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+  background: #111026;
+  border: 1px solid rgba(167, 170, 225, 0.3);
+  padding: 0.65rem;
+  border-radius: 10px;
+  color: #dfe2ff;
+  margin: 0 0 0.75rem;
+}
+
+.portal-manual {
+  margin-bottom: 0.7rem;
+}
+
+.portal-manual .portal-url {
+  margin-bottom: 0.45rem;
+}
+
+.portal-code {
+  margin: 0;
+  color: #dfe2ff;
+  font-size: 0.9rem;
+}
+
+.portal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.portal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  padding: 0.65rem 0.9rem;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.portal-btn--primary {
+  background: #696fc7;
+  color: #fff;
+}
+
+.portal-btn--primary:hover {
+  background: #7d82d4;
+}
+
+.portal-btn--secondary {
+  background: transparent;
+  color: #dfe2ff;
+  border-color: rgba(167, 170, 225, 0.4);
+}
+
+.portal-btn--secondary:hover {
+  background: rgba(167, 170, 225, 0.12);
+}
+
+.portal-hint {
+  margin: 0.9rem 0 0;
+  font-size: 0.9rem;
+  color: #aeb3ec;
+}
+
+.portal-handoff {
+  margin: 0.6rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #ffe2a8;
+}
+
+.hidden {
+  display: none !important;
+}

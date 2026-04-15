@@ -122,13 +122,22 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
 
   // Keep legacy endpoint contract: /api/session/active
   app.get('/api/session/active', (req, res) => {
-    const token = deps.sessionStore.getActiveSessionToken();
-    if (token) {
-      const uploadUrl = new URL(
-        `/upload/${encodeURIComponent(token)}`,
-        deps.resolvePublicBaseUrl(req),
-      ).toString();
-      res.json({ token, uploadUrl });
+    const session = deps.sessionStore.getActiveSession(
+      deps.resolvePublicBaseUrl(req),
+    );
+    if (session) {
+      res.json({
+        token: session.token,
+        uploadUrl: session.uploadUrl,
+        ...(session.publicUploadUrl
+          ? { publicUploadUrl: session.publicUploadUrl }
+          : {}),
+        shortCode: session.shortCode,
+        shortUploadUrl: session.shortUploadUrl,
+        ...(session.publicShortUploadUrl
+          ? { publicShortUploadUrl: session.publicShortUploadUrl }
+          : {}),
+      });
       return;
     }
     res.status(404).json({ error: 'No active session' });

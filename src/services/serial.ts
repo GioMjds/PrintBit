@@ -22,7 +22,10 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
-import { NETWORK_PROVIDER, ESP32_ALWAYS_ACCEPT_COINS } from '@/config/http.config';
+import {
+  NETWORK_PROVIDER,
+  ESP32_ALWAYS_ACCEPT_COINS,
+} from '@/config/http.config';
 import { getTrustedTimeStatus } from './time-source';
 import {
   markWatchdogHeartbeat,
@@ -49,6 +52,25 @@ const SERIAL_RECONNECT_MAX_ATTEMPTS = readNonNegativeIntEnv(
 );
 const SERIAL_PORT_HINT = process.env.PRINTBIT_SERIAL_PORT?.trim() || '';
 const SERIAL_IP_LABEL_PATTERN = /^(AP_IP|KIOSK_IP):(\d{1,3}(?:\.\d{1,3}){3})$/;
+const ESP32_STATUS_PREFIXES = [
+  'AP Started',
+  'SYSTEM READY',
+  'coin_target:',
+  'portal_target:',
+  'kiosk_registered:',
+  'kiosk_register_failed:',
+  'kiosk_register_pending:',
+  'coin_sent_ok:',
+  'coin_send_failed:',
+  'hopper_start:',
+  'hopper_done:',
+];
+const ESP32_REGISTER_PENDING_TOKENS = new Set([
+  'kiosk_register_pending:waiting_for_post',
+  'waiting_for_post',
+  'or_post',
+]);
+const ESP32_REGISTER_PENDING_LOG_THROTTLE_MS = 60_000;
 
 let serialConnected = false;
 let serialPortPath: string | null = null;
@@ -120,6 +142,10 @@ function parseSerialIpLabel(
   if (!isValidIpv4(ip)) return null;
   if (label !== 'AP_IP' && label !== 'KIOSK_IP') return null;
   return { label, ip };
+}
+
+function isEsp32StatusToken(token: string): boolean {
+  return ESP32_STATUS_PREFIXES.some((prefix) => token.startsWith(prefix));
 }
 
 function clearSerialReconnectTimer(): void {
@@ -1003,6 +1029,7 @@ async function attemptSerialConnection(
         }
       };
 
+      let lastRegisterPendingLogAt = 0;
       parser.on('data', (rawLine: string) => {
         markWatchdogHeartbeat('serial', {
           connected: serialConnected,
@@ -1020,6 +1047,27 @@ async function attemptSerialConnection(
             serialKioskIp = ipLabel.ip;
             console.log(`[SERIAL] ESP32 kiosk IP detected: ${serialKioskIp}`);
           }
+          return;
+        }
+
+        if (
+          isEsp32StatusToken(token) ||
+          ESP32_REGISTER_PENDING_TOKENS.has(token)
+        ) {
+          const noisyRegisterPendingToken =
+            ESP32_REGISTER_PENDING_TOKENS.has(token) ||
+            token.includes('waiting_for_post');
+          if (noisyRegisterPendingToken) {
+            const now = Date.now();
+            if (
+              now - lastRegisterPendingLogAt <
+              ESP32_REGISTER_PENDING_LOG_THROTTLE_MS
+            ) {
+              return;
+            }
+            lastRegisterPendingLogAt = now;
+          }
+          console.log(`[SERIAL] Device status: "${token}"`);
           return;
         }
 

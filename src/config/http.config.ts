@@ -24,8 +24,7 @@ export const NETWORK_PROVIDER =
     : 'mypublicwifi';
 const DEFAULT_HOTSPOT_SSID =
   NETWORK_PROVIDER === 'esp32' ? 'PrintBit' : 'PrintBit-Kiosk';
-const DEFAULT_HOTSPOT_PASSWORD =
-  NETWORK_PROVIDER === 'esp32' ? '' : 'printbit123';
+const DEFAULT_HOTSPOT_PASSWORD = 'printbit123';
 
 /** Hotspot settings (configurable via env) */
 export const HOTSPOT_SSID =
@@ -209,6 +208,10 @@ export const PRINT_SPOOLER_QUERY_TIMEOUT_MS = readPositiveIntEnv(
 export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
   { route: '/', filePath: path.join(PUBLIC_DIR, 'index.html') },
   { route: '/print', filePath: path.join(PUBLIC_DIR, 'print', 'index.html') },
+  {
+    route: '/portal',
+    filePath: path.join(PUBLIC_DIR, 'portal', 'index.html'),
+  },
   { route: '/copy', filePath: path.join(PUBLIC_DIR, 'copy', 'index.html') },
   { route: '/config', filePath: path.join(PUBLIC_DIR, 'config', 'index.html') },
   {

@@ -241,7 +241,9 @@ Rollback path:
 - Validate end-to-end:
   - Start a new print session on kiosk (`/print`)
   - Scan QR and join ESP32 AP
-  - Phone captive portal opens and reaches PrintBit upload page
+  - Phone captive portal opens PrintBit `/portal` splash page
+  - From splash, open `/upload/:token` in full browser (Safari/Chrome)
+  - If CNA blocks browser handoff, use short fallback `/u/:code` shown on `/portal` or `/print`
   - Upload appears in kiosk file list for the active session
 
 ## Scanner preview fails

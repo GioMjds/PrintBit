@@ -27,11 +27,20 @@ Stops hotspot process.
 
 ### `GET /api/session/active`
 
-Returns currently active upload session token and URL (if available).
+Returns currently active upload session details (if available):
+
+- `token`
+- `uploadUrl` and optional `publicUploadUrl`
+- `shortCode`
+- `shortUploadUrl` and optional `publicShortUploadUrl`
 
 ### `GET /portal`
 
-Renders captive-portal bridge page for mobile users.
+Renders a captive-safe splash page.
+
+- Always returns instructional HTML (does not auto-redirect to upload).
+- If an active upload session exists, page includes actions to open/copy `/upload/:token` in a full browser plus short fallback `/u/:code`.
+- If no active session exists, page instructs user to start Print flow on kiosk and retry.
 
 ---
 
@@ -238,6 +247,13 @@ Renders upload web page for tokenized session.
 ### `GET /upload/:token/:asset`
 
 Serves upload page assets (`styles.css`, `app.js`).
+
+### `GET /u/:code`
+
+Short-link resolver route. Redirects active short code to `/upload/:token`.
+
+- Returns `302` to active upload session when valid.
+- Returns `410` with expired guidance page when missing/expired.
 
 ---
 

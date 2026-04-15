@@ -32,6 +32,9 @@ type SessionResponse = {
   status: 'pending' | 'uploaded';
   uploadUrl: string;
   publicUploadUrl?: string;
+  shortCode?: string;
+  shortUploadUrl?: string;
+  publicShortUploadUrl?: string;
   remainingSeconds?: number;
   warningThresholdSeconds?: number;
   /** Single document (legacy) */
@@ -63,6 +66,15 @@ const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
 const uploadLink = document.getElementById(
   'uploadLink',
 ) as HTMLAnchorElement | null;
+const shortUploadLink = document.getElementById(
+  'shortUploadLink',
+) as HTMLAnchorElement | null;
+const shortCodeText = document.getElementById(
+  'shortCodeText',
+) as HTMLElement | null;
+const copyShortLinkBtn = document.getElementById(
+  'copyShortLinkBtn',
+) as HTMLButtonElement | null;
 const openUploadBtn = document.getElementById(
   'openUploadBtn',
 ) as HTMLButtonElement | null;
@@ -122,6 +134,9 @@ let attachedSessionId: string | null = null;
 let hotspotConfig: HotspotConfig | null = null;
 let localUploadUrl = '';
 let publicUploadUrl = '';
+let localShortUploadUrl = '';
+let publicShortUploadUrl = '';
+let activeShortCode = '';
 let activeUploadMode: 'local' | 'internet' = 'local';
 let uploadModeManuallySelected = false;
 let sessionWarningThresholdSeconds = 60;
@@ -464,10 +479,10 @@ function renderFiles(files: UploadedFile[]): void {
 
 // ── Session management ────────────────────────────────────────────────────────
 
-function normalizeLocalUploadUrl(uploadUrl: string): string {
+function normalizeLocalRouteUrl(rawUrl: string, pathPrefix: string): string {
   try {
-    const parsed = new URL(uploadUrl);
-    if (!parsed.pathname.startsWith('/upload/')) return uploadUrl;
+    const parsed = new URL(rawUrl);
+    if (!parsed.pathname.startsWith(pathPrefix)) return rawUrl;
 
     const isLoopbackHost = (host: string): boolean => {
       const normalized = host.trim().toLowerCase();
@@ -488,8 +503,16 @@ function normalizeLocalUploadUrl(uploadUrl: string): string {
     const pathWithQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
     return new URL(pathWithQuery, window.location.origin).toString();
   } catch {
-    return uploadUrl;
+    return rawUrl;
   }
+}
+
+function normalizeLocalUploadUrl(uploadUrl: string): string {
+  return normalizeLocalRouteUrl(uploadUrl, '/upload/');
+}
+
+function normalizeLocalShortUploadUrl(shortUploadUrl: string): string {
+  return normalizeLocalRouteUrl(shortUploadUrl, '/u/');
 }
 
 function escapeWifiQrValue(value: string): string {
@@ -553,6 +576,64 @@ function deriveInternetUploadUrl(localUrl: string, providedInternetUrl?: string)
   }
 }
 
+function toNavigableHref(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const currentOrigin = window.location.origin;
+    return parsed.origin === currentOrigin ? parsed.pathname : url;
+  } catch {
+    return url;
+  }
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      return document.execCommand('copy');
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  }
+}
+
+function clearUploadTargets(): void {
+  localUploadUrl = '';
+  publicUploadUrl = '';
+  localShortUploadUrl = '';
+  publicShortUploadUrl = '';
+  activeShortCode = '';
+
+  uploadLink?.removeAttribute('href');
+  if (uploadLink) uploadLink.textContent = 'Waiting for session…';
+  shortUploadLink?.removeAttribute('href');
+  if (shortUploadLink) shortUploadLink.textContent = 'Waiting for session…';
+  if (shortCodeText) shortCodeText.textContent = '—';
+  if (copyShortLinkBtn) {
+    copyShortLinkBtn.disabled = true;
+    copyShortLinkBtn.textContent = 'Copy short link';
+  }
+  if (networkModeToggle) {
+    networkModeToggle.style.display = 'none';
+  }
+  if (modeLocalBtn) {
+    modeLocalBtn.classList.remove('is-active');
+    modeLocalBtn.disabled = true;
+  }
+  if (modeInternetBtn) {
+    modeInternetBtn.classList.remove('is-active');
+    modeInternetBtn.disabled = true;
+  }
+}
+
 function setUploadMode(
   mode: 'local' | 'internet',
   manualSelection = false,
@@ -564,20 +645,38 @@ function setUploadMode(
 
   const activeUrl =
     mode === 'internet' && publicUploadUrl ? publicUploadUrl : localUploadUrl;
-  if (!activeUrl) return;
-
-  let href: string;
-  try {
-    const parsed = new URL(activeUrl);
-    const currentOrigin = window.location.origin;
-    href = parsed.origin === currentOrigin ? parsed.pathname : activeUrl;
-  } catch {
-    href = activeUrl;
+  if (!activeUrl) {
+    clearUploadTargets();
+    return;
   }
+
+  const activeShortUrl =
+    mode === 'internet' && publicShortUploadUrl
+      ? publicShortUploadUrl
+      : localShortUploadUrl;
+  const href = toNavigableHref(activeUrl);
 
   if (uploadLink) {
     uploadLink.href = href;
     uploadLink.textContent = activeUrl;
+  }
+
+  if (shortUploadLink) {
+    if (activeShortUrl) {
+      shortUploadLink.href = toNavigableHref(activeShortUrl);
+      shortUploadLink.textContent = activeShortUrl;
+    } else {
+      shortUploadLink.removeAttribute('href');
+      shortUploadLink.textContent = 'Short link unavailable';
+    }
+  }
+
+  if (shortCodeText) {
+    shortCodeText.textContent = activeShortCode || '—';
+  }
+
+  if (copyShortLinkBtn) {
+    copyShortLinkBtn.disabled = !activeShortUrl;
   }
 
   if (openUploadBtn) {
@@ -593,7 +692,7 @@ function setUploadMode(
           : "Kiosk Wi-Fi mode: join PrintBit Wi-Fi first, then scan the upload QR.<br />If it fails, switch to Internet mode.";
     } else {
       mobileGuideTextEl.innerHTML =
-        "Join PrintBit Wi-Fi first, then scan the upload QR.<br />If scanning fails, open the Upload link below.";
+        "Join PrintBit Wi-Fi first, then scan the upload QR.<br />If scanning fails, use the short link below in your browser.";
     }
   }
 
@@ -619,9 +718,22 @@ function setUploadMode(
   }
 }
 
-function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
+function updateUploadLink(
+  uploadUrl: string,
+  internetUploadUrl?: string,
+  shortUploadUrl?: string,
+  internetShortUploadUrl?: string,
+  shortCode?: string,
+): void {
   localUploadUrl = normalizeLocalUploadUrl(uploadUrl);
   publicUploadUrl = deriveInternetUploadUrl(localUploadUrl, internetUploadUrl);
+  activeShortCode = shortCode?.trim().toUpperCase() ?? '';
+  localShortUploadUrl = shortUploadUrl
+    ? normalizeLocalShortUploadUrl(shortUploadUrl)
+    : '';
+  publicShortUploadUrl = localShortUploadUrl
+    ? deriveInternetUploadUrl(localShortUploadUrl, internetShortUploadUrl)
+    : '';
   renderStartupOnboarding();
 
   if (publicUploadUrl) {
@@ -644,6 +756,7 @@ async function createSession(): Promise<void> {
   activeSessionToken = '';
   activeUploadMode = 'local';
   uploadModeManuallySelected = false;
+  clearUploadTargets();
 
   if (!hotspotConfig) {
     try {
@@ -677,6 +790,7 @@ async function createSession(): Promise<void> {
 
   const response = await fetch('/api/wireless/sessions');
   if (!response.ok) {
+    clearUploadTargets();
     setSessionText('Failed to create session');
     if (footerHint) {
       footerHint.textContent = 'Could not create session. Please try again.';
@@ -699,7 +813,13 @@ async function createSession(): Promise<void> {
   setSessionText(session.sessionId);
   setSessionActive(true);
   updateSessionCountdown(session.remainingSeconds);
-  updateUploadLink(session.uploadUrl, session.publicUploadUrl);
+  updateUploadLink(
+    session.uploadUrl,
+    session.publicUploadUrl,
+    session.shortUploadUrl,
+    session.publicShortUploadUrl,
+    session.shortCode,
+  );
 
   attachSocket(session.sessionId);
   void checkUploadStatus();
@@ -721,6 +841,7 @@ async function checkUploadStatus(): Promise<void> {
       sessionStorage.removeItem('printbit.sessionToken');
       setSessionActive(false);
       setSessionText('Session expired');
+      clearUploadTargets();
       setWaitingForFilesState();
       if (footerHint) {
         footerHint.textContent =
@@ -736,6 +857,13 @@ async function checkUploadStatus(): Promise<void> {
   sessionWarningThresholdSeconds = session.warningThresholdSeconds ?? 60;
   sessionStorage.setItem('printbit.sessionToken', session.token);
   updateSessionCountdown(session.remainingSeconds);
+  updateUploadLink(
+    session.uploadUrl,
+    session.publicUploadUrl,
+    session.shortUploadUrl,
+    session.publicShortUploadUrl,
+    session.shortCode,
+  );
 
   // Never gate on status — session stays "uploaded" while accumulating
   // multiple files, so always read the full documents list.
@@ -951,7 +1079,13 @@ async function restoreSession(sid: string): Promise<void> {
     sessionWarningThresholdSeconds = session.warningThresholdSeconds ?? 60;
     sessionStorage.setItem('printbit.sessionToken', session.token);
     updateSessionCountdown(session.remainingSeconds);
-    updateUploadLink(session.uploadUrl, session.publicUploadUrl);
+    updateUploadLink(
+      session.uploadUrl,
+      session.publicUploadUrl,
+      session.shortUploadUrl,
+      session.publicShortUploadUrl,
+      session.shortCode,
+    );
   }
 
   if (pollHandle !== null) window.clearInterval(pollHandle);
@@ -966,6 +1100,22 @@ refreshSessionBtn?.addEventListener('click', () => {
   } else {
     void createSession();
   }
+});
+
+copyShortLinkBtn?.addEventListener('click', () => {
+  const copyButton = copyShortLinkBtn;
+  if (!copyButton) return;
+  const activeShortUrl =
+    activeUploadMode === 'internet' && publicShortUploadUrl
+      ? publicShortUploadUrl
+      : localShortUploadUrl;
+  if (!activeShortUrl) return;
+  void copyTextToClipboard(activeShortUrl).then((copied) => {
+    copyButton.textContent = copied ? 'Copied!' : 'Copy failed';
+    window.setTimeout(() => {
+      copyButton.textContent = 'Copy short link';
+    }, 1400);
+  });
 });
 
 modeLocalBtn?.addEventListener('click', () => {

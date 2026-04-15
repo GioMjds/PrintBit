@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal · PrintBit</title>
+    <link rel="stylesheet" href="/globals.css" />
+    <link rel="stylesheet" href="/portal/styles.css" />
+  </head>
+  <body>
+    <main class="portal-shell">
+      <article class="portal-card">
+        <div class="portal-badge">Connected to PrintBit Wi-Fi</div>
+        <h1>Open this in your browser</h1>
+        <p id="portalMessage" class="portal-message">
+          Checking for active upload session…
+        </p>
+        <p class="portal-label">Full upload URL</p>
+        <code id="uploadUrl" class="portal-url hidden"></code>
+        <section id="manualFallback" class="portal-manual hidden" aria-live="polite">
+          <p class="portal-label">Manual fallback</p>
+          <code id="shortUploadUrl" class="portal-url"></code>
+          <p class="portal-code">Code: <strong id="shortCode">—</strong></p>
+        </section>
+        <div class="portal-actions">
+          <a
+            id="openUploadBtn"
+            class="portal-btn portal-btn--primary hidden"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Open Upload Page</a
+          >
+          <button
+            id="copyLinkBtn"
+            class="portal-btn portal-btn--secondary hidden"
+            type="button"
+          >
+            Copy Link
+          </button>
+          <button
+            id="retryBtn"
+            class="portal-btn portal-btn--secondary"
+            type="button"
+          >
+            Retry
+          </button>
+        </div>
+        <p class="portal-hint">
+          If this is inside a captive screen, use your phone option to open in
+          Safari/Chrome.
+        </p>
+        <p id="handoffHint" class="portal-handoff hidden" role="status"></p>
+      </article>
+    </main>
+    <script src="/portal/app.js"></script>
+  </body>
+</html>
