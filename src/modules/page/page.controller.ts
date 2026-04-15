@@ -30,7 +30,7 @@ const PORTAL_WAITING_HTML = `<!DOCTYPE html>
   <article class="card">
     <h1>PrintBit upload portal</h1>
     <p>No active print upload session was found yet.</p>
-    <p>Go to the kiosk, tap <strong>Print</strong>, then scan the QR code again.</p>
+    <p>Connect to <strong>PrintBit Wi-Fi</strong>, then go to the kiosk, tap <strong>Print</strong>, and scan the latest QR code.</p>
     <a href="/portal">Retry</a>
   </article>
 </body>

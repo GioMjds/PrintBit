@@ -32,15 +32,6 @@ interface SessionResponse {
   ttlSeconds?: number;
 }
 
-interface UploadSuccessResponse {
-  documentId: string;
-  sessionId: string;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number;
-  uploadedAt: string;
-}
-
 interface UploadErrorResponse {
   code?: string;
   error?: string;
@@ -211,9 +202,9 @@ function mapError(r: UploadErrorResponse): string {
     case 'SESSION_NOT_FOUND':
       return 'Session not found. Scan a fresh kiosk QR or reopen the upload link from the kiosk.';
     case 'SESSION_EXPIRED':
-      return 'Session expired. Please scan a fresh kiosk QR or reopen the latest upload link.';
+      return 'Session expired. Stay on PrintBit Wi-Fi, then scan a fresh kiosk QR or reopen the latest upload link.';
     case 'SESSION_OWNED':
-      return 'This session is already active on another phone.';
+      return 'This session is already active on another phone. Stay on PrintBit Wi-Fi and start a new kiosk session.';
     case 'MISSING_CLIENT_ID':
       return 'Upload client identity missing. Reload this page.';
     default:
@@ -260,7 +251,7 @@ function renderSessionCountdown(remainingSeconds: number): void {
   if (!sessionId) return;
   const countdown = formatCountdown(remainingSeconds);
   setSessionUI(
-    `Session ${sessionId.slice(0, 8)}… • Expires in ${countdown}`,
+    `${sessionId}`,
     'active',
   );
 
@@ -332,13 +323,13 @@ async function refreshSessionLease(): Promise<void> {
         payload.code === 'SESSION_EXPIRED'
       ) {
         setSessionUnavailable(
-          'This session has expired. Please scan a fresh kiosk QR or reopen the latest upload link.',
+          'This session has expired. Stay on PrintBit Wi-Fi, then scan a fresh kiosk QR or reopen the latest upload link.',
         );
         return;
       }
       if (res.status === 409 || payload.code === 'SESSION_OWNED') {
         setSessionUnavailable(
-          'This session is active on another phone. Start a new kiosk session.',
+          'This session is active on another phone. Stay on PrintBit Wi-Fi and start a new kiosk session.',
         );
       }
       return;
@@ -836,7 +827,7 @@ function showOpenInBrowserBanner(): void {
       </svg>
       <div>
         <strong>File picker may be blocked</strong>
-        <p>Open this page in your browser to upload files reliably.</p>
+        <p>Open this page in your browser and stay on PrintBit Wi-Fi to upload reliably.</p>
       </div>
     </div>
     <div class="captive-banner__actions">

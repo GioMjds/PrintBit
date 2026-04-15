@@ -48,8 +48,15 @@ type DeleteDocumentResponse = {
 };
 
 type HotspotConfig = {
+  provider?: 'mypublicwifi' | 'esp32';
+  ssid?: string;
+  password?: string;
+  authType?: string;
+  captivePortalPath?: string;
   startsManagedHotspot?: boolean;
 };
+
+const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +79,9 @@ const sessionDot = document.getElementById('sessionDot') as HTMLElement | null;
 const uploadQrCanvas = document.getElementById(
   'uploadQrCanvas',
 ) as HTMLCanvasElement | null;
+const startupWifiQrCanvas = document.getElementById(
+  'startupWifiQrCanvas',
+) as HTMLCanvasElement | null;
 const filesEmpty = document.getElementById('filesEmpty') as HTMLElement | null;
 const fileList = document.getElementById('fileList') as HTMLUListElement | null;
 const filesCount = document.getElementById('filesCount') as HTMLElement | null;
@@ -79,6 +89,12 @@ const footerHint = document.getElementById('footerHint') as HTMLElement | null;
 const qrStepLabelEl = document.getElementById(
   'qrStepLabel',
 ) as HTMLElement | null;
+const startupOnboardingOverlay = document.getElementById(
+  'startupOnboardingOverlay',
+) as HTMLElement | null;
+const startupContinueBtn = document.getElementById(
+  'startupContinueBtn',
+) as HTMLButtonElement | null;
 const mobileGuideTextEl = document.getElementById(
   'mobileGuideText',
 ) as HTMLElement | null;
@@ -476,6 +492,42 @@ function normalizeLocalUploadUrl(uploadUrl: string): string {
   }
 }
 
+function escapeWifiQrValue(value: string): string {
+  return value.replace(/([\\;,:"])/g, '\\$1');
+}
+
+function buildWifiQrPayload(ssid: string, password: string): string {
+  const safeSsid = escapeWifiQrValue(ssid);
+  const safePassword = escapeWifiQrValue(password);
+  const authType = hotspotConfig?.authType?.trim().toLowerCase() ?? '';
+  const isOpenNetwork =
+    authType === 'nopass' ||
+    authType === 'open' ||
+    authType === 'none' ||
+    safePassword.length === 0;
+
+  if (isOpenNetwork) {
+    return `WIFI:T:nopass;S:${safeSsid};;`;
+  }
+  return `WIFI:T:WPA;S:${safeSsid};P:${safePassword};;`;
+}
+
+function renderStartupOnboarding(): void {
+  const configuredSsid = hotspotConfig?.ssid?.trim() ?? '';
+  const ssid = configuredSsid.length > 0 ? configuredSsid : 'PrintBit';
+  const configuredPassword = hotspotConfig?.password?.trim() ?? '';
+
+  if (startupWifiQrCanvas) {
+    const wifiPayload = buildWifiQrPayload(ssid, configuredPassword);
+    void QRCode.toCanvas(startupWifiQrCanvas, wifiPayload, {
+      width: 220,
+      margin: 1,
+      color: { dark: '#1a1a2e', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
+  }
+}
+
 function deriveInternetUploadUrl(localUrl: string, providedInternetUrl?: string): string {
   if (providedInternetUrl && providedInternetUrl.trim().length > 0) {
     return providedInternetUrl;
@@ -532,16 +584,16 @@ function setUploadMode(
     openUploadBtn.onclick = () => window.open(href, '_blank');
   }
 
-  if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan to upload file';
+  if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan upload QR';
   if (mobileGuideTextEl) {
     if (hasInternetOption) {
       mobileGuideTextEl.innerHTML =
         mode === 'internet'
-          ? "Internet mode: use this if your phone is on mobile data or different Wi-Fi.<br />If it fails, switch to Kiosk Wi-Fi mode."
-          : "Kiosk Wi-Fi mode: use this if your phone is connected to the kiosk network.<br />If it fails, switch to Internet mode.";
+          ? "Internet mode: use this if your phone is on mobile data or different Wi-Fi.<br />If it fails, switch back to Kiosk Wi-Fi mode."
+          : "Kiosk Wi-Fi mode: join PrintBit Wi-Fi first, then scan the upload QR.<br />If it fails, switch to Internet mode.";
     } else {
       mobileGuideTextEl.innerHTML =
-        "Scan the QR code with your phone's camera to upload.<br />If scanning fails, open the Upload link below.";
+        "Join PrintBit Wi-Fi first, then scan the upload QR.<br />If scanning fails, open the Upload link below.";
     }
   }
 
@@ -570,6 +622,7 @@ function setUploadMode(
 function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
   localUploadUrl = normalizeLocalUploadUrl(uploadUrl);
   publicUploadUrl = deriveInternetUploadUrl(localUploadUrl, internetUploadUrl);
+  renderStartupOnboarding();
 
   if (publicUploadUrl) {
     const preferredMode = uploadModeManuallySelected
@@ -600,6 +653,7 @@ async function createSession(): Promise<void> {
       /* non-critical */
     }
   }
+  renderStartupOnboarding();
 
   if (hotspotConfig?.startsManagedHotspot) {
     try {
@@ -797,6 +851,27 @@ function updateFileAnalysisState(
   }
 }
 
+function showStartupOnboardingModal(): void {
+  renderStartupOnboarding();
+  if (!startupOnboardingOverlay) return;
+  startupOnboardingOverlay.classList.add('is-visible');
+  startupOnboardingOverlay.setAttribute('aria-hidden', 'false');
+  startupContinueBtn?.focus();
+}
+
+function hideStartupOnboardingModal(): void {
+  if (!startupOnboardingOverlay) return;
+  startupOnboardingOverlay.classList.remove('is-visible');
+  startupOnboardingOverlay.setAttribute('aria-hidden', 'true');
+}
+
+function shouldShowStartupOnboardingModal(): boolean {
+  const shouldShow =
+    sessionStorage.getItem(PRINT_ONBOARDING_TRIGGER_KEY) === '1';
+  sessionStorage.removeItem(PRINT_ONBOARDING_TRIGGER_KEY);
+  return shouldShow;
+}
+
 // ── Idle Timeout Detection (uses shared module) ──────────────────────────────
 
 // ── New-session confirmation dialog ───────────────────────────────────────────
@@ -901,6 +976,10 @@ modeInternetBtn?.addEventListener('click', () => {
   setUploadMode('internet', true);
 });
 
+startupContinueBtn?.addEventListener('click', () => {
+  hideStartupOnboardingModal();
+});
+
 continueBtn?.addEventListener('click', () => {
   if (!activeSessionId || !selectedFilename || !selectedDocumentId) return;
   window.location.href =
@@ -909,6 +988,10 @@ continueBtn?.addEventListener('click', () => {
     `&documentId=${encodeURIComponent(selectedDocumentId)}` +
     `&token=${encodeURIComponent(activeSessionToken)}`;
 });
+
+if (shouldShowStartupOnboardingModal()) {
+  showStartupOnboardingModal();
+}
 
 const savedSessionId = sessionStorage.getItem('printbit.sessionId');
 if (savedSessionId) {
