@@ -160,7 +160,7 @@ function getCurrentSessionRemainingSeconds(): number | null {
 function renderSessionCountdown(remainingSeconds: number): void {
   if (!activeSessionId) return;
   const countdown = formatCountdown(remainingSeconds);
-  setSessionText(`${activeSessionId} • Expires in ${countdown}`);
+  // setSessionText(`${activeSessionId} • Expires in ${countdown}`);
   if (!footerHint) return;
 
   if (remainingSeconds <= sessionWarningThresholdSeconds) {
