@@ -130,6 +130,13 @@ body {
   transform: scale(0.97);
 }
 
+.back-btn.back-btn--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}
+
 .page-title-block {
   display: flex;
   align-items: center;

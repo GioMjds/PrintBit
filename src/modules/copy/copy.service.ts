@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
+import { PrintDispatchError } from '@/services/print-dispatcher';
 import { jobStore } from '@/services/job-store';
 import { printFile, type PrintJobOptions } from '@/services/printer';
 import {
@@ -27,6 +28,11 @@ import {
   isTrustedTimeError,
 } from '@/services/time-source';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
+import {
+  normalizeRotationDeg,
+  parseRotationDeg,
+  type RotationDeg,
+} from '@/services/document-rotation';
 import { consumablesStore } from '@/core/database/sqlite-storage';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 
@@ -39,6 +45,7 @@ export interface CreateCopyJobInput {
   copies?: number;
   colorMode?: string;
   orientation?: string;
+  rotationDeg?: number;
   paperSize?: string;
   amount?: number;
   previewPath?: string;
@@ -77,6 +84,7 @@ interface NormalizedCopyJobInput {
   copies: number;
   colorMode: 'colored' | 'grayscale';
   orientation: 'portrait' | 'landscape';
+  rotationDeg: RotationDeg;
   paperSize: 'A4' | 'Letter' | 'Legal';
   amount?: number;
   previewPath: string;
@@ -127,6 +135,16 @@ export class CopyService {
     idempotencyKeyClaimed: boolean,
     idempotencyKey: string,
   ): Promise<CreateCopyJobResult> {
+    if (typeof input.rotationDeg !== 'undefined' && parseRotationDeg(input.rotationDeg) === null) {
+      return {
+        statusCode: 400,
+        body: {
+          error: 'Invalid rotation. Accepted values: 0, 90, 180, 270.',
+        },
+        cacheIdempotencyResponse: idempotencyKeyClaimed,
+      };
+    }
+
     const normalized = this.normalizeInput(input);
 
     if (!normalized.previewPath) {
@@ -254,6 +272,7 @@ export class CopyService {
       copies: normalized.copies,
       colorMode: normalized.colorMode,
       orientation: normalized.orientation,
+      rotationDeg: normalized.rotationDeg,
       paperSize: normalized.paperSize,
     };
 
@@ -263,6 +282,7 @@ export class CopyService {
       copies: normalized.copies,
       colorMode: normalized.colorMode,
       orientation: normalized.orientation,
+      rotationDeg: normalized.rotationDeg,
       paperSize: normalized.paperSize,
     });
     await persistAndEmitPrintLifecycleState(
@@ -342,6 +362,7 @@ export class CopyService {
       input.paperSize && VALID_PAPER_SIZES.has(input.paperSize)
         ? (input.paperSize as 'A4' | 'Letter' | 'Legal')
         : 'A4';
+    const safeRotationDeg = normalizeRotationDeg(input.rotationDeg, 0);
     const safePreviewPath =
       typeof input.previewPath === 'string' ? input.previewPath.trim() : '';
 
@@ -349,6 +370,7 @@ export class CopyService {
       copies: safeCopies,
       colorMode: safeColorMode,
       orientation: safeOrientation,
+      rotationDeg: safeRotationDeg,
       paperSize: safePaperSize,
       amount: input.amount,
       previewPath: safePreviewPath,
@@ -461,6 +483,7 @@ export class CopyService {
           copies: normalized.copies,
           colorMode: normalized.colorMode,
           orientation: normalized.orientation,
+          rotationDeg: normalized.rotationDeg,
           paperSize: normalized.paperSize,
           printerName: telemetry.name ?? undefined,
         };
@@ -473,6 +496,7 @@ export class CopyService {
             mode: 'copy',
             copies: normalized.copies,
             colorMode: normalized.colorMode,
+            rotationDeg: normalized.rotationDeg,
             previewFilename,
           },
         });
@@ -535,6 +559,7 @@ export class CopyService {
             jobId,
             copies: normalized.copies,
             colorMode: normalized.colorMode,
+            rotationDeg: normalized.rotationDeg,
           },
         });
 
@@ -640,11 +665,14 @@ export class CopyService {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
+        const unsupportedRequestedOptions =
+          err instanceof PrintDispatchError &&
+          err.result.failureCode === 'no_capable_engine';
         jobStore.updateJobState(jobId, 'failed', {
           failure: {
             code: 'COPY_ERROR',
             message,
-            retryable: true,
+            retryable: !unsupportedRequestedOptions,
             stage: 'running',
           },
         });
@@ -669,6 +697,20 @@ export class CopyService {
           {
             jobId,
             error: message,
+            failureCode:
+              err instanceof PrintDispatchError
+                ? err.result.failureCode
+                : null,
+            requiredCapabilities:
+              err instanceof PrintDispatchError
+                ? err.result.requiredCapabilities.length > 0
+                  ? err.result.requiredCapabilities.join(',')
+                  : null
+                : null,
+            requestedOptions:
+              err instanceof PrintDispatchError
+                ? JSON.stringify(err.result.requestedOptions)
+                : null,
           },
         );
       }

@@ -64,6 +64,10 @@ import {
 } from '@/services/pending-refund';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 import { PrintDispatchError } from '@/services/print-dispatcher';
+import {
+  normalizeRotationDeg,
+  parseRotationDeg,
+} from '@/services/document-rotation';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -87,6 +91,7 @@ interface ConfirmPaymentBody {
   copies?: number;
   colorMode?: 'colored' | 'grayscale';
   orientation?: 'portrait' | 'landscape';
+  rotationDeg?: number;
   paperSize?: 'A4' | 'Letter' | 'Legal';
   pageRange?: unknown;
   duplex?: boolean;
@@ -1071,6 +1076,7 @@ export class FinancialService {
       copies: 1,
       colorMode: 'grayscale',
       orientation: 'portrait',
+      rotationDeg: 0,
       paperSize: 'A4',
     };
 
@@ -1301,6 +1307,16 @@ export class FinancialService {
       req.body?.orientation === 'landscape'
         ? req.body.orientation
         : 'portrait';
+    if (
+      typeof req.body?.rotationDeg !== 'undefined' &&
+      parseRotationDeg(req.body.rotationDeg) === null
+    ) {
+      sendResponse(400, {
+        error: 'Invalid rotation. Accepted values: 0, 90, 180, 270.',
+      });
+      return;
+    }
+    const rotationDeg = normalizeRotationDeg(req.body?.rotationDeg, 0);
     const paperSize =
       req.body?.paperSize === 'A4' ||
       req.body?.paperSize === 'Letter' ||
@@ -1462,6 +1478,7 @@ export class FinancialService {
         copies: quoteComputation.quote.copies,
         colorMode: quoteComputation.quote.effectiveColorMode,
         orientation,
+        rotationDeg,
         paperSize,
         pageRange: quoteComputation.quote.pageRange ?? undefined,
         duplex: quoteComputation.quote.duplex,
@@ -1564,6 +1581,7 @@ export class FinancialService {
           mode,
           copies,
           colorMode: printOptions?.colorMode ?? colorMode,
+          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
           duplex: printOptions?.duplex ?? false,
           spoolerCorrelationKey,
           sessionId: sessionId ?? null,
@@ -1684,6 +1702,13 @@ export class FinancialService {
       } catch (err) {
         const dispatchFailure =
           err instanceof PrintDispatchError ? err.result : null;
+        const unsupportedRequestedOptions =
+          dispatchFailure?.failureCode === 'no_capable_engine';
+        const dispatchErrorMessage =
+          err instanceof Error ? err.message : 'Unknown error';
+        const rotationConstraintError =
+          dispatchErrorMessage.startsWith('Rotation is not supported') ||
+          dispatchErrorMessage.startsWith('Failed to convert document for rotation');
         await persistAndEmitPrintLifecycleState(
           this.deps.io,
           {
@@ -1692,7 +1717,7 @@ export class FinancialService {
             printerName: telemetry.name ?? null,
             transactionId,
             spoolerCorrelationKey,
-            reason: err instanceof Error ? err.message : 'Unknown error',
+            reason: dispatchErrorMessage,
           },
           {
             requiredAmount,
@@ -1717,9 +1742,31 @@ export class FinancialService {
             transactionId,
             sessionId: sessionId ?? null,
             filename: serverFilename,
-            error: err instanceof Error ? err.message : 'Unknown error',
+            error: dispatchErrorMessage,
+            failureCode: dispatchFailure?.failureCode ?? null,
+            requiredCapabilities:
+              dispatchFailure && dispatchFailure.requiredCapabilities.length > 0
+                ? dispatchFailure.requiredCapabilities.join(',')
+                : null,
+            requestedOptions: dispatchFailure
+              ? JSON.stringify(dispatchFailure.requestedOptions)
+              : null,
           },
         );
+        if (unsupportedRequestedOptions) {
+          sendResponse(409, {
+            code: 'PRINT_OPTIONS_UNSUPPORTED',
+            error: dispatchErrorMessage,
+          });
+          return;
+        }
+        if (rotationConstraintError) {
+          sendResponse(409, {
+            code: 'ROTATION_UNSUPPORTED',
+            error: dispatchErrorMessage,
+          });
+          return;
+        }
         sendResponse(500, { error: 'Print failed. Please try again.' });
         return;
       }
@@ -1761,6 +1808,7 @@ export class FinancialService {
         mode,
         copies,
         colorMode: printOptions?.colorMode ?? colorMode,
+        rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
         duplex: printOptions?.duplex ?? false,
         spoolerCorrelationKey,
         sessionId: sessionId ?? null,
@@ -1932,6 +1980,7 @@ export class FinancialService {
           amount: requiredAmount,
           copies,
           colorMode: printOptions?.colorMode ?? colorMode,
+          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
           duplex: printOptions?.duplex ?? false,
           pageRange: printOptions?.pageRange ?? null,
           selectedPages: printQuotePages?.selectedPages ?? null,
@@ -2000,6 +2049,7 @@ export class FinancialService {
           filename: serverFilename ?? null,
           copies,
           colorMode: printOptions?.colorMode ?? colorMode,
+          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
           duplex: printOptions?.duplex ?? false,
           pageRange: printOptions?.pageRange ?? null,
           jobDispatchedAt,
@@ -2133,6 +2183,7 @@ export class FinancialService {
     filename: string | null;
     copies: number;
     colorMode: 'colored' | 'grayscale';
+    rotationDeg: number;
     duplex: boolean;
     pageRange: string | null | undefined;
     jobDispatchedAt: string;
@@ -2146,6 +2197,7 @@ export class FinancialService {
       filename,
       copies,
       colorMode,
+      rotationDeg,
       duplex,
       pageRange,
       jobDispatchedAt,
@@ -2182,6 +2234,7 @@ export class FinancialService {
           mode: 'print',
           copies,
           colorMode,
+          rotationDeg,
           duplex,
           pageRange,
           spoolerCorrelationKey,

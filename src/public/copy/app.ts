@@ -89,11 +89,33 @@ const previewPlaceholder = document.getElementById(
 const previewStatusText = document.getElementById(
   'previewStatusText',
 ) as HTMLElement | null;
+const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
 
 let previewPath: string | null = null;
 let previewReleaseToken: string | null = null;
 let previewObjectUrl: string | null = null;
 const RELEASE_TIMEOUT_MS = 1_500;
+
+function setBackNavigationLocked(locked: boolean): void {
+  if (!backBtn) return;
+  if (locked) {
+    backBtn.classList.add('back-btn--disabled');
+    backBtn.setAttribute('aria-disabled', 'true');
+    backBtn.setAttribute('tabindex', '-1');
+    return;
+  }
+
+  backBtn.classList.remove('back-btn--disabled');
+  backBtn.removeAttribute('aria-disabled');
+  backBtn.removeAttribute('tabindex');
+}
+
+backBtn?.addEventListener('click', (event) => {
+  if (backBtn.getAttribute('aria-disabled') === 'true') {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
 
 async function releaseCopyPreviewFile(
   releaseToken: string,
@@ -297,6 +319,7 @@ async function showPreview(filename: string): Promise<void> {
 
 async function checkForDocument(): Promise<void> {
   hideError();
+  setBackNavigationLocked(true);
   showOverlay(true);
   if (checkDocBtn) checkDocBtn.disabled = true;
 
@@ -328,6 +351,7 @@ async function checkForDocument(): Promise<void> {
     showOverlay(false);
     showError('Could not reach the scanner. Please try again.');
   } finally {
+    setBackNavigationLocked(false);
     if (checkDocBtn) checkDocBtn.disabled = false;
   }
 }

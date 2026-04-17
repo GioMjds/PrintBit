@@ -30,6 +30,7 @@ export interface CopyJobSettings {
   copies: number;
   colorMode: 'colored' | 'grayscale';
   orientation: 'portrait' | 'landscape';
+  rotationDeg: 0 | 90 | 180 | 270;
   paperSize: 'A4' | 'Letter' | 'Legal';
 }
 

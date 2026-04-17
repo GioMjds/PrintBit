@@ -270,7 +270,7 @@
             <h2 class="summary-panel__title">Job Summary</h2>
 
             <dl class="summary-list">
-              <div class="summary-row">
+              <div class="summary-row" id="orientationRow">
                 <dt class="summary-row__label">
                   <svg
                     viewBox="0 0 16 16"
@@ -381,6 +381,22 @@
                   Orientation
                 </dt>
                 <dd class="summary-row__value" id="orientationValue">—</dd>
+              </div>
+
+              <div class="summary-row" id="rotationRow">
+                <dt class="summary-row__label">
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M8 2a6 6 0 015.196 3H11a1 1 0 000 2h4a1 1 0 001-1V2a1 1 0 10-2 0v1.042A8 8 0 108 16a8 8 0 007.869-6.556 1 1 0 10-1.972-.332A6 6 0 118 2z"
+                    />
+                  </svg>
+                  Rotation
+                </dt>
+                <dd class="summary-row__value" id="rotationValue">—</dd>
               </div>
 
               <div class="summary-row">
@@ -524,11 +540,11 @@
             <dt>Mode</dt>
             <dd id="modalMode">—</dd>
           </div>
-          <div class="modal-summary__row">
+          <div class="modal-summary__row" id="modalColorRow">
             <dt>Color</dt>
             <dd id="modalColor">—</dd>
           </div>
-          <div class="modal-summary__row">
+          <div class="modal-summary__row" id="modalCopiesRow">
             <dt>Copies</dt>
             <dd id="modalCopies">—</dd>
           </div>
@@ -536,11 +552,15 @@
             <dt>Pages</dt>
             <dd id="modalPages">—</dd>
           </div>
-          <div class="modal-summary__row">
+          <div class="modal-summary__row" id="modalOrientationRow">
             <dt>Orientation</dt>
             <dd id="modalOrientation">—</dd>
           </div>
-          <div class="modal-summary__row">
+          <div class="modal-summary__row" id="modalRotationRow">
+            <dt>Rotation</dt>
+            <dd id="modalRotation">—</dd>
+          </div>
+          <div class="modal-summary__row" id="modalPaperRow">
             <dt>Paper</dt>
             <dd id="modalPaper">—</dd>
           </div>

@@ -69,6 +69,9 @@ const openUploadBtn = document.getElementById(
 const refreshSessionBtn = document.getElementById(
   'refreshSessionBtn',
 ) as HTMLButtonElement | null;
+const refreshSessionBtnLabel = document.getElementById(
+  'refreshSessionBtnLabel',
+) as HTMLElement | null;
 const continueBtn = document.getElementById(
   'continueBtn',
 ) as HTMLButtonElement | null;
@@ -126,9 +129,16 @@ let activeUploadMode: 'local' | 'internet' = 'local';
 let uploadModeManuallySelected = false;
 let sessionWarningThresholdSeconds = 60;
 const SESSION_COUNTDOWN_TICK_MS = 1000;
+const NEW_SESSION_COOLDOWN_MS = 15_000;
+const NEW_SESSION_COOLDOWN_STORAGE_KEY = 'printbit.newSessionCooldownUntilMs';
 let sessionCountdownBaselineSeconds: number | null = null;
 let sessionCountdownSyncedAtMs: number | null = null;
 let sessionCountdownHandle: number | null = null;
+let newSessionCooldownUntilMs = 0;
+let newSessionCooldownHandle: number | null = null;
+let createSessionInFlight = false;
+const refreshSessionDefaultLabel =
+  refreshSessionBtnLabel?.textContent?.trim() ?? 'New session';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -213,6 +223,108 @@ function updateSessionCountdown(remainingSeconds?: number): void {
   sessionCountdownSyncedAtMs = Date.now();
   renderSessionCountdown(sessionCountdownBaselineSeconds);
   startSessionCountdownTicker();
+}
+
+function getNewSessionCooldownRemainingMs(): number {
+  return Math.max(0, newSessionCooldownUntilMs - Date.now());
+}
+
+function renderRefreshSessionButtonState(): void {
+  if (!refreshSessionBtn) return;
+  const remainingMs = getNewSessionCooldownRemainingMs();
+  const inCooldown = remainingMs > 0;
+  const isDisabled = createSessionInFlight || inCooldown;
+  refreshSessionBtn.disabled = isDisabled;
+  refreshSessionBtn.setAttribute('aria-disabled', isDisabled ? 'true' : 'false');
+
+  if (!refreshSessionBtnLabel) return;
+  if (createSessionInFlight) {
+    refreshSessionBtnLabel.textContent = 'Creating session…';
+    return;
+  }
+  if (inCooldown) {
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    refreshSessionBtnLabel.textContent = `New session (${remainingSeconds}s)`;
+    return;
+  }
+  refreshSessionBtnLabel.textContent = refreshSessionDefaultLabel;
+}
+
+function stopNewSessionCooldownTicker(): void {
+  if (newSessionCooldownHandle !== null) {
+    window.clearInterval(newSessionCooldownHandle);
+    newSessionCooldownHandle = null;
+  }
+}
+
+function syncNewSessionCooldownState(): void {
+  if (getNewSessionCooldownRemainingMs() <= 0) {
+    newSessionCooldownUntilMs = 0;
+    sessionStorage.removeItem(NEW_SESSION_COOLDOWN_STORAGE_KEY);
+    stopNewSessionCooldownTicker();
+  }
+  renderRefreshSessionButtonState();
+}
+
+function ensureNewSessionCooldownTicker(): void {
+  if (newSessionCooldownHandle !== null) return;
+  newSessionCooldownHandle = window.setInterval(
+    syncNewSessionCooldownState,
+    SESSION_COUNTDOWN_TICK_MS,
+  );
+}
+
+function hydrateNewSessionCooldownState(): void {
+  const storedValue = sessionStorage.getItem(NEW_SESSION_COOLDOWN_STORAGE_KEY);
+  if (!storedValue) {
+    renderRefreshSessionButtonState();
+    return;
+  }
+
+  const parsedCooldownUntil = Number.parseInt(storedValue, 10);
+  if (!Number.isFinite(parsedCooldownUntil)) {
+    sessionStorage.removeItem(NEW_SESSION_COOLDOWN_STORAGE_KEY);
+    renderRefreshSessionButtonState();
+    return;
+  }
+
+  newSessionCooldownUntilMs = parsedCooldownUntil;
+  if (getNewSessionCooldownRemainingMs() > 0) {
+    ensureNewSessionCooldownTicker();
+  } else {
+    newSessionCooldownUntilMs = 0;
+    sessionStorage.removeItem(NEW_SESSION_COOLDOWN_STORAGE_KEY);
+  }
+  renderRefreshSessionButtonState();
+}
+
+function startNewSessionCooldown(): void {
+  newSessionCooldownUntilMs = Date.now() + NEW_SESSION_COOLDOWN_MS;
+  sessionStorage.setItem(
+    NEW_SESSION_COOLDOWN_STORAGE_KEY,
+    String(newSessionCooldownUntilMs),
+  );
+  renderRefreshSessionButtonState();
+  ensureNewSessionCooldownTicker();
+}
+
+function showNewSessionCooldownHint(): void {
+  if (!footerHint) return;
+  const remainingSeconds = Math.ceil(getNewSessionCooldownRemainingMs() / 1000);
+  if (remainingSeconds <= 0) return;
+  footerHint.textContent = `Please wait ${remainingSeconds}s before starting a new session.`;
+  footerHint.classList.remove('ready');
+}
+
+function requestNewSession(): void {
+  const remainingMs = getNewSessionCooldownRemainingMs();
+  if (remainingMs > 0) {
+    showNewSessionCooldownHint();
+    renderRefreshSessionButtonState();
+    return;
+  }
+  startNewSessionCooldown();
+  void createSession();
 }
 
 function setFilesCount(n: number): void {
@@ -635,75 +747,84 @@ function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
 }
 
 async function createSession(): Promise<void> {
-  if (pollHandle !== null) {
-    window.clearInterval(pollHandle);
-    pollHandle = null;
-  }
-  resetSessionCountdown();
-  activeSessionId = '';
-  activeSessionToken = '';
-  activeUploadMode = 'local';
-  uploadModeManuallySelected = false;
+  if (createSessionInFlight) return;
+  createSessionInFlight = true;
+  renderRefreshSessionButtonState();
 
-  if (!hotspotConfig) {
-    try {
-      const cfgRes = await fetch('/api/config/hotspot');
-      if (cfgRes.ok) hotspotConfig = (await cfgRes.json()) as HotspotConfig;
-    } catch {
-      /* non-critical */
+  try {
+    if (pollHandle !== null) {
+      window.clearInterval(pollHandle);
+      pollHandle = null;
     }
-  }
-  renderStartupOnboarding();
+    resetSessionCountdown();
+    activeSessionId = '';
+    activeSessionToken = '';
+    activeUploadMode = 'local';
+    uploadModeManuallySelected = false;
 
-  if (hotspotConfig?.startsManagedHotspot) {
-    try {
-      await fetch('/api/hotspot/start', { method: 'POST' });
-    } catch {
-      /* best-effort */
+    if (!hotspotConfig) {
+      try {
+        const cfgRes = await fetch('/api/config/hotspot');
+        if (cfgRes.ok) hotspotConfig = (await cfgRes.json()) as HotspotConfig;
+      } catch {
+        /* non-critical */
+      }
     }
-  }
+    renderStartupOnboarding();
 
-  // Reset UI
-  clearSelectedFileState();
-  knownFiles = new Set<string>();
-  deletingDocumentIds = new Set<string>();
-  setSessionActive(false);
-  setSessionText('Creating session…');
-  setWaitingForFilesState();
-
-  if (fileList) {
-    fileList.innerHTML = '';
-  }
-
-  const response = await fetch('/api/wireless/sessions');
-  if (!response.ok) {
-    setSessionText('Failed to create session');
-    if (footerHint) {
-      footerHint.textContent = 'Could not create session. Please try again.';
-      footerHint.classList.remove('ready');
+    if (hotspotConfig?.startsManagedHotspot) {
+      try {
+        await fetch('/api/hotspot/start', { method: 'POST' });
+      } catch {
+        /* best-effort */
+      }
     }
-    return;
+
+    // Reset UI
+    clearSelectedFileState();
+    knownFiles = new Set<string>();
+    deletingDocumentIds = new Set<string>();
+    setSessionActive(false);
+    setSessionText('Creating session…');
+    setWaitingForFilesState();
+
+    if (fileList) {
+      fileList.innerHTML = '';
+    }
+
+    const response = await fetch('/api/wireless/sessions');
+    if (!response.ok) {
+      setSessionText('Failed to create session');
+      if (footerHint) {
+        footerHint.textContent = 'Could not create session. Please try again.';
+        footerHint.classList.remove('ready');
+      }
+      return;
+    }
+    const session = (await response.json()) as SessionResponse;
+    activeSessionId = session.sessionId;
+    activeSessionToken = session.token;
+    sessionWarningThresholdSeconds = session.warningThresholdSeconds ?? 60;
+
+    sessionStorage.setItem('printbit.mode', 'print');
+    sessionStorage.setItem('printbit.sessionId', session.sessionId);
+    sessionStorage.setItem('printbit.sessionToken', session.token);
+    sessionStorage.removeItem('printbit.uploadedFile');
+    sessionStorage.removeItem('printbit.uploadedDocumentId');
+    sessionStorage.removeItem('printbit.uploadedFiles');
+
+    setSessionText(session.sessionId);
+    setSessionActive(true);
+    updateSessionCountdown(session.remainingSeconds);
+    updateUploadLink(session.uploadUrl, session.publicUploadUrl);
+
+    attachSocket(session.sessionId);
+    void checkUploadStatus();
+    pollHandle = window.setInterval(() => void checkUploadStatus(), 2000);
+  } finally {
+    createSessionInFlight = false;
+    renderRefreshSessionButtonState();
   }
-  const session = (await response.json()) as SessionResponse;
-  activeSessionId = session.sessionId;
-  activeSessionToken = session.token;
-  sessionWarningThresholdSeconds = session.warningThresholdSeconds ?? 60;
-
-  sessionStorage.setItem('printbit.mode', 'print');
-  sessionStorage.setItem('printbit.sessionId', session.sessionId);
-  sessionStorage.setItem('printbit.sessionToken', session.token);
-  sessionStorage.removeItem('printbit.uploadedFile');
-  sessionStorage.removeItem('printbit.uploadedDocumentId');
-  sessionStorage.removeItem('printbit.uploadedFiles');
-
-  setSessionText(session.sessionId);
-  setSessionActive(true);
-  updateSessionCountdown(session.remainingSeconds);
-  updateUploadLink(session.uploadUrl, session.publicUploadUrl);
-
-  attachSocket(session.sessionId);
-  void checkUploadStatus();
-  pollHandle = window.setInterval(() => void checkUploadStatus(), 2000);
 }
 
 async function checkUploadStatus(): Promise<void> {
@@ -923,7 +1044,7 @@ dialogOverlay?.addEventListener('click', (e) => {
 });
 dialogConfirmBtn?.addEventListener('click', () => {
   hideNewSessionDialog();
-  void createSession();
+  requestNewSession();
 });
 
 // ── Session restore ───────────────────────────────────────────────────────────
@@ -961,10 +1082,15 @@ async function restoreSession(sid: string): Promise<void> {
 // ── Events ────────────────────────────────────────────────────────────────────
 
 refreshSessionBtn?.addEventListener('click', () => {
+  if (getNewSessionCooldownRemainingMs() > 0) {
+    showNewSessionCooldownHint();
+    renderRefreshSessionButtonState();
+    return;
+  }
   if (knownFiles.size > 0) {
     showNewSessionDialog();
   } else {
-    void createSession();
+    requestNewSession();
   }
 });
 
@@ -992,6 +1118,8 @@ continueBtn?.addEventListener('click', () => {
 if (shouldShowStartupOnboardingModal()) {
   showStartupOnboardingModal();
 }
+
+hydrateNewSessionCooldownState();
 
 const savedSessionId = sessionStorage.getItem('printbit.sessionId');
 if (savedSessionId) {

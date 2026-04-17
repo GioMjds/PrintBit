@@ -39,6 +39,8 @@ void initializePageIdleTimeout({
 type ColorMode = 'colored' | 'grayscale';
 type Orientation = 'portrait' | 'landscape';
 type PaperSize = 'A4' | 'Letter' | 'Legal';
+type RotationDeg = 0 | 90 | 180 | 270;
+type WorkflowMode = 'print' | 'copy' | 'scan';
 
 type PageRangeSelection =
   | { type: 'all' }
@@ -46,10 +48,12 @@ type PageRangeSelection =
   | { type: 'single'; page: number };
 
 interface PrintConfig {
-  mode: 'print' | 'copy';
+  mode: 'print' | 'copy' | 'scan';
   sessionId: string | null;
   documentId: string | null;
   filename: string | null;
+  scanFilename?: string | null;
+  scanReleaseToken?: string | null;
   copyPreviewPath?: string | null;
   copyPreviewReleaseToken?: string | null;
   detectedColorMode?: ColorMode | null;
@@ -57,6 +61,7 @@ interface PrintConfig {
   duplex: boolean;
   copies: number;
   orientation: Orientation;
+  rotationDeg: RotationDeg;
   paperSize: PaperSize;
   pageRange: PageRangeSelection;
   totalPages: number;
@@ -86,6 +91,15 @@ interface PreviewConfig {
   colorMode: ColorMode;
   orientation: Orientation;
   paperSize: PaperSize;
+  rotationDeg: RotationDeg;
+}
+
+interface StoredConfigSeed {
+  mode?: 'print' | 'copy' | 'scan';
+  scanFilename?: string | null;
+  scanReleaseToken?: string | null;
+  orientation?: Orientation;
+  rotationDeg?: number;
 }
 
 // PDF.js types (loaded dynamically from /libs/pdfjs)
@@ -129,6 +143,20 @@ function paperPx(size: PaperSize, orientation: Orientation): [number, number] {
   let [wMM, hMM] = PAPER_MM[size];
   if (orientation === 'landscape') [wMM, hMM] = [hMM, wMM];
   return [Math.round(wMM * MM_TO_PX), Math.round(hMM * MM_TO_PX)];
+}
+
+function normalizeRotationDeg(value: unknown): RotationDeg | null {
+  if (value === 0 || value === 90 || value === 180 || value === 270) {
+    return value;
+  }
+  return null;
+}
+
+function parseWorkflowMode(value: string | null | undefined): WorkflowMode | null {
+  if (value === 'print' || value === 'copy' || value === 'scan') {
+    return value;
+  }
+  return null;
 }
 
 function previewLog(message: string, meta?: unknown): void {
@@ -254,11 +282,20 @@ class PrintPreview {
 
   applyConfig(cfg: PreviewConfig): void {
     const [w, h] = paperPx(cfg.paperSize, cfg.orientation);
+    const rotationScale =
+      cfg.rotationDeg === 90 || cfg.rotationDeg === 270
+        ? Math.min(w / h, h / w)
+        : 1;
 
     // Store natural paper dimensions for resizeSheet()
     this.naturalW = w;
     this.naturalH = h;
     this.resizeSheet();
+    this.sheet.style.setProperty('--preview-rotation', `${cfg.rotationDeg}deg`);
+    this.sheet.style.setProperty(
+      '--preview-rotation-scale',
+      rotationScale.toFixed(4),
+    );
 
     // Grayscale filter via data attribute → CSS handles the transition
     if (cfg.colorMode === 'grayscale') {
@@ -630,9 +667,22 @@ class PrintPreview {
 }
 
 const params = new URLSearchParams(window.location.search);
-const mode =
-  (params.get('mode') as 'print' | 'copy' | null) ??
-  (sessionStorage.getItem('printbit.mode') as 'print' | 'copy' | null) ??
+const rawStoredConfig = sessionStorage.getItem('printbit.config');
+let storedConfig: StoredConfigSeed | null = null;
+if (rawStoredConfig) {
+  try {
+    storedConfig = JSON.parse(rawStoredConfig) as StoredConfigSeed;
+  } catch {
+    storedConfig = null;
+  }
+}
+
+const modeFromQuery = params.get('mode');
+const modeFromStorage = sessionStorage.getItem('printbit.mode');
+const mode: WorkflowMode =
+  parseWorkflowMode(modeFromQuery) ??
+  parseWorkflowMode(modeFromStorage) ??
+  parseWorkflowMode(storedConfig?.mode) ??
   'print';
 const sessionId =
   params.get('sessionId') ?? sessionStorage.getItem('printbit.sessionId');
@@ -647,6 +697,18 @@ const copyPreviewPath = sessionStorage.getItem('printbit.copyPreviewPath');
 const copyPreviewReleaseToken = sessionStorage.getItem(
   'printbit.copyPreviewReleaseToken',
 );
+const scanFilename =
+  typeof storedConfig?.scanFilename === 'string'
+    ? storedConfig.scanFilename.trim()
+    : '';
+const scanReleaseToken =
+  typeof storedConfig?.scanReleaseToken === 'string' &&
+  storedConfig.scanReleaseToken.trim().length > 0
+    ? storedConfig.scanReleaseToken.trim()
+    : null;
+const initialOrientation: Orientation =
+  storedConfig?.orientation === 'landscape' ? 'landscape' : 'portrait';
+let rotationDeg: RotationDeg = normalizeRotationDeg(storedConfig?.rotationDeg) ?? 0;
 
 const backLink = document.getElementById(
   'backLink',
@@ -721,26 +783,69 @@ const singlePageDec = document.getElementById(
 const singlePageInc = document.getElementById(
   'singlePageInc',
 ) as HTMLButtonElement | null;
+const colorModeGroup = document.getElementById('colorModeGroup') as HTMLElement | null;
+const orientationGroup = document.getElementById(
+  'orientationGroup',
+) as HTMLElement | null;
+const rotationGroup = document.getElementById('rotationGroup') as HTMLElement | null;
+const paperSizeGroup = document.getElementById('paperSizeGroup') as HTMLElement | null;
+const copiesGroup = document.getElementById('copiesGroup') as HTMLElement | null;
+const rotateLeftBtn = document.getElementById(
+  'rotateLeftBtn',
+) as HTMLButtonElement | null;
+const rotateRightBtn = document.getElementById(
+  'rotateRightBtn',
+) as HTMLButtonElement | null;
+const rotationValue = document.getElementById('rotationValue');
+
+const initialOrientationInput = document.querySelector<HTMLInputElement>(
+  `input[name="orientation"][value="${initialOrientation}"]`,
+);
+if (initialOrientationInput) {
+  initialOrientationInput.checked = true;
+}
+
+function setContinueEnabled(canContinue: boolean): void {
+  if (!continueBtn) return;
+  continueBtn.disabled = !canContinue;
+  continueBtn.setAttribute('aria-disabled', canContinue ? 'false' : 'true');
+}
 
 if (backLink) {
-  backLink.href = mode === 'copy' ? '/copy' : '/print';
+  backLink.href = mode === 'copy' ? '/copy' : mode === 'scan' ? '/scan' : '/print';
 }
-if (filePillLabel) filePillLabel.textContent = selectedFile ?? '—';
+if (filePillLabel) {
+  filePillLabel.textContent = mode === 'scan' ? (scanFilename || '—') : (selectedFile ?? '—');
+}
 
 if (mode === 'print' && continueBtn) {
-  continueBtn.disabled = true;
-  continueBtn.setAttribute('aria-disabled', 'true');
+  setContinueEnabled(false);
 }
 
 if (mode === 'copy' && continueBtn) {
   pageRangeGroup?.classList.add('hidden');
   const hasCopyPreview = Boolean(copyPreviewPath);
-  continueBtn.disabled = !hasCopyPreview;
-  continueBtn.setAttribute('aria-disabled', hasCopyPreview ? 'false' : 'true');
+  setContinueEnabled(hasCopyPreview);
   if (footerSummary)
     footerSummary.textContent = hasCopyPreview
       ? 'Copy mode — checked document ready.'
       : 'No checked document found — go back to /copy first.';
+}
+
+if (mode === 'scan') {
+  colorModeGroup?.classList.add('hidden');
+  orientationGroup?.classList.remove('hidden');
+  rotationGroup?.classList.remove('hidden');
+  paperSizeGroup?.classList.add('hidden');
+  pageRangeGroup?.classList.add('hidden');
+  copiesGroup?.classList.add('hidden');
+  const hasScanPreview = scanFilename.length > 0;
+  setContinueEnabled(hasScanPreview);
+  if (footerSummary) {
+    footerSummary.textContent = hasScanPreview
+      ? 'Scan preview loaded — set orientation and rotation.'
+      : 'No scanned file found — go back to /scan first.';
+  }
 }
 
 let currentPrintQuote: PrintQuote | null = null;
@@ -1078,19 +1183,19 @@ function currentPreviewConfig(): PreviewConfig {
     colorMode: (getRadio('colorMode') as ColorMode) || 'colored',
     orientation: (getRadio('orientation') as Orientation) || 'portrait',
     paperSize: (getRadio('paperSize') as PaperSize) || 'A4',
+    rotationDeg,
   };
 }
 
 function setPrintContinueState(): void {
-  if (mode !== 'print' || !continueBtn) return;
+  if (mode !== 'print') return;
   const hasCustomRangeError =
     hasMultiplePages() &&
     Boolean(pageModeCustom?.checked) &&
     Boolean(pageRangeInput?.validationMessage);
   const canContinue =
     Boolean(currentPrintQuote) && !quoteLoading && !hasCustomRangeError;
-  continueBtn.disabled = !canContinue;
-  continueBtn.setAttribute('aria-disabled', canContinue ? 'false' : 'true');
+  setContinueEnabled(canContinue);
 }
 
 function waitForQuoteRetry(ms: number): Promise<void> {
@@ -1130,6 +1235,7 @@ async function refreshPrintQuote(): Promise<void> {
       copies: getCopies(),
       colorMode: cfg.colorMode,
       orientation: cfg.orientation,
+      rotationDeg: cfg.rotationDeg,
       paperSize: cfg.paperSize,
       pageRange: getPageRange(),
       duplex: false,
@@ -1217,6 +1323,14 @@ function updateSummary(): void {
   if (mode === 'copy') return;
 
   const cfg = currentPreviewConfig();
+  if (mode === 'scan') {
+    footerSummary.classList.add('ready');
+    footerSummary.textContent =
+      `Scan mode · ${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
+      `Rotate ${cfg.rotationDeg}°`;
+    return;
+  }
+
   const n = getCopies();
   const pages = pageRangeLabel(getPageRange());
   let suffix = '';
@@ -1240,11 +1354,29 @@ function updateSummary(): void {
   footerSummary.textContent =
     `${n} cop${n === 1 ? 'y' : 'ies'} · ${pages} · ${cfg.paperSize} · ` +
     `${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
+    `Rotate ${cfg.rotationDeg}° · ` +
     `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}${suffix}`;
 }
 
 const preview = new PrintPreview();
 
+function renderRotationValue(): void {
+  if (rotationValue) {
+    rotationValue.textContent = `${rotationDeg}°`;
+  }
+}
+
+function setRotation(next: number): void {
+  const normalized = normalizeRotationDeg(((next % 360) + 360) % 360);
+  rotationDeg = normalized ?? 0;
+  renderRotationValue();
+  const cfg = currentPreviewConfig();
+  preview.applyConfig(cfg);
+  updateSummary();
+  schedulePrintQuoteRefresh();
+}
+
+renderRotationValue();
 preview.applyConfig(currentPreviewConfig());
 
 document
@@ -1268,6 +1400,14 @@ document
       orientationManuallyAdjustedKeys.add(key);
     });
   });
+
+rotateLeftBtn?.addEventListener('click', () => {
+  setRotation(rotationDeg - 90);
+});
+
+rotateRightBtn?.addEventListener('click', () => {
+  setRotation(rotationDeg + 90);
+});
 
 copiesDec?.addEventListener('click', () => {
   const v = getCopies();
@@ -1343,6 +1483,26 @@ async function loadPreview(): Promise<void> {
     if (footerSummary)
       footerSummary.textContent =
         'Copy preview loaded — adjust settings above.';
+    return;
+  }
+
+  if (mode === 'scan') {
+    clearOrientationNotice();
+    detectedOrientation = null;
+    if (!scanFilename) return;
+
+    const url = `/api/scan/preview/${encodeURIComponent(scanFilename)}`;
+    try {
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (!resp.ok) return;
+      const mime = (resp.headers.get('Content-Type') ?? '').toLowerCase();
+      const buf = await resp.arrayBuffer();
+      await preview.loadFromBuffer(buf, mime || 'application/octet-stream');
+    } catch {
+      // Preview is helpful but not required for scan mode.
+    }
+
+    updateSummary();
     return;
   }
 
@@ -1473,6 +1633,7 @@ continueBtn?.addEventListener('click', () => {
   if (mode === 'print' && !sessionId) return;
   if (mode === 'print' && !currentPrintQuote) return;
   if (mode === 'copy' && !copyPreviewPath) return;
+  if (mode === 'scan' && !scanFilename) return;
   if (mode === 'print' && hasMultiplePages() && pageModeCustom?.checked) {
     syncCustomRangeValidity();
     if (pageRangeInput && !pageRangeInput.checkValidity()) {
@@ -1487,30 +1648,46 @@ continueBtn?.addEventListener('click', () => {
   const cfg = currentPreviewConfig();
   const config: PrintConfig = {
     mode,
-    sessionId,
+    sessionId: mode === 'scan' ? null : sessionId,
     documentId: mode === 'print' ? selectedDocumentId : null,
-    filename: selectedFile,
+    filename: mode === 'scan' ? scanFilename : selectedFile,
+    scanFilename: mode === 'scan' ? scanFilename : null,
+    scanReleaseToken: mode === 'scan' ? scanReleaseToken : null,
     copyPreviewPath: mode === 'copy' ? copyPreviewPath : null,
     copyPreviewReleaseToken: mode === 'copy' ? copyPreviewReleaseToken : null,
     detectedColorMode: mode === 'print' ? detectedColorMode : null,
     colorMode: cfg.colorMode,
     duplex: false,
-    copies: getCopies(),
+    copies: mode === 'scan' ? 1 : getCopies(),
     orientation: cfg.orientation,
+    rotationDeg: cfg.rotationDeg,
     paperSize: cfg.paperSize,
-    pageRange: getPageRange(),
+    pageRange: mode === 'scan' ? { type: 'all' } : getPageRange(),
     totalPages: preview.pageCount,
     quote: mode === 'print' ? (currentPrintQuote ?? undefined) : undefined,
   };
 
   sessionStorage.setItem('printbit.mode', mode);
-  if (sessionId) sessionStorage.setItem('printbit.sessionId', sessionId);
-  if (sessionToken)
+  if (sessionId) {
+    sessionStorage.setItem('printbit.sessionId', sessionId);
+  } else {
+    sessionStorage.removeItem('printbit.sessionId');
+  }
+  if (sessionToken) {
     sessionStorage.setItem('printbit.sessionToken', sessionToken);
-  if (selectedFile)
+  } else {
+    sessionStorage.removeItem('printbit.sessionToken');
+  }
+  if (selectedFile) {
     sessionStorage.setItem('printbit.uploadedFile', selectedFile);
-  if (selectedDocumentId)
+  } else {
+    sessionStorage.removeItem('printbit.uploadedFile');
+  }
+  if (selectedDocumentId) {
     sessionStorage.setItem('printbit.uploadedDocumentId', selectedDocumentId);
+  } else {
+    sessionStorage.removeItem('printbit.uploadedDocumentId');
+  }
   sessionStorage.setItem('printbit.config', JSON.stringify(config));
 
   window.location.href = '/confirm';

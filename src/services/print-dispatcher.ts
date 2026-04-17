@@ -24,6 +24,23 @@ export type PrintDispatchEngine =
   | 'ghostscript'
   | 'libreoffice';
 
+export type PrintDispatchCapability =
+  | 'copies'
+  | 'grayscale'
+  | 'landscape'
+  | 'duplex'
+  | 'page-range';
+
+export interface PrintDispatchRequestedOptions {
+  copies: number;
+  colorMode: PrintJobOptions['colorMode'];
+  orientation: PrintJobOptions['orientation'];
+  rotationDeg: number;
+  paperSize: PrintJobOptions['paperSize'];
+  duplex: boolean;
+  pageRange: string | null;
+}
+
 export interface PrintDispatchContext {
   transactionId?: string | null;
   sessionId?: string | null;
@@ -39,6 +56,8 @@ export interface PrintDispatchAttemptResult {
   success: boolean;
   skipped: boolean;
   skipReason: string | null;
+  capabilitySkipReason: string | null;
+  missingCapabilities: PrintDispatchCapability[];
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -56,17 +75,25 @@ export interface PrintDispatchResult {
   requestedMode: PrintDispatchMode;
   fileExtension: string;
   mimeType: string;
+  requestedOptions: PrintDispatchRequestedOptions;
+  requiredCapabilities: PrintDispatchCapability[];
   attempts: PrintDispatchAttemptResult[];
   durationMs: number;
+  failureCode: 'no_capable_engine' | 'all_attempts_failed' | null;
 }
 
 export class PrintDispatchError extends Error {
   readonly result: PrintDispatchResult;
+  readonly code: 'NO_CAPABLE_ENGINE' | 'ALL_ENGINES_FAILED';
 
   constructor(message: string, result: PrintDispatchResult) {
     super(message);
     this.name = 'PrintDispatchError';
     this.result = result;
+    this.code =
+      result.failureCode === 'no_capable_engine'
+        ? 'NO_CAPABLE_ENGINE'
+        : 'ALL_ENGINES_FAILED';
   }
 }
 
@@ -94,6 +121,7 @@ const SUMATRA_FALLBACK_COMPATIBLE_EXTENSIONS = new Set([
   '.jpeg',
   '.png',
 ]);
+const CAPABILITY_SKIP_REASON = 'capability_missing';
 const MIME_BY_EXTENSION: Record<string, string> = {
   '.pdf': 'application/pdf',
   '.doc': 'application/msword',
@@ -159,6 +187,102 @@ function resolvePaperSizeArg(size: PrintJobOptions['paperSize']): string {
   if (size === 'Letter') return 'letter';
   if (size === 'Legal') return 'legal';
   return 'a4';
+}
+
+const ENGINE_CAPABILITIES: Record<
+  PrintDispatchEngine,
+  ReadonlySet<PrintDispatchCapability>
+> = {
+  // Lightweight handoff utility; cannot guarantee per-job setting fidelity.
+  pdftoprinter: new Set<PrintDispatchCapability>(),
+  // GhostScript supports copies, grayscale conversion, duplex, and simple page ranges.
+  ghostscript: new Set<PrintDispatchCapability>([
+    'copies',
+    'grayscale',
+    'duplex',
+    'page-range',
+  ]),
+  // LibreOffice --pt does not expose robust per-job controls in this path.
+  libreoffice: new Set<PrintDispatchCapability>(),
+  // Sumatra can enforce orientation and broad print settings for eligible formats.
+  sumatra: new Set<PrintDispatchCapability>([
+    'copies',
+    'grayscale',
+    'landscape',
+    'duplex',
+    'page-range',
+  ]),
+};
+
+function normalizeRequestedOptions(
+  options: PrintJobOptions,
+): PrintDispatchRequestedOptions {
+  const copies = Math.max(1, Math.floor(options.copies));
+  const pageRange = options.pageRange?.trim() ?? '';
+  return {
+    copies,
+    colorMode: options.colorMode,
+    orientation: options.orientation,
+    rotationDeg: options.rotationDeg ?? 0,
+    paperSize: options.paperSize,
+    duplex: options.duplex === true,
+    pageRange: pageRange.length > 0 ? pageRange : null,
+  };
+}
+
+function deriveRequiredCapabilities(
+  options: PrintDispatchRequestedOptions,
+): PrintDispatchCapability[] {
+  const required = new Set<PrintDispatchCapability>();
+  if (options.copies > 1) required.add('copies');
+  if (options.colorMode === 'grayscale') required.add('grayscale');
+  if (options.orientation === 'landscape') required.add('landscape');
+  if (options.duplex) required.add('duplex');
+  if (options.pageRange) required.add('page-range');
+  return [...required];
+}
+
+function getMissingCapabilities(
+  engine: PrintDispatchEngine,
+  requiredCapabilities: PrintDispatchCapability[],
+): PrintDispatchCapability[] {
+  const supported = ENGINE_CAPABILITIES[engine];
+  return requiredCapabilities.filter((capability) => !supported.has(capability));
+}
+
+function describeCapability(capability: PrintDispatchCapability): string {
+  switch (capability) {
+    case 'copies':
+      return 'multiple copies';
+    case 'grayscale':
+      return 'grayscale mode';
+    case 'landscape':
+      return 'landscape orientation';
+    case 'duplex':
+      return 'duplex printing';
+    case 'page-range':
+      return 'page range selection';
+    default:
+      return capability;
+  }
+}
+
+function formatCapabilityList(
+  capabilities: PrintDispatchCapability[],
+): string | null {
+  if (capabilities.length === 0) return null;
+  return capabilities.map((capability) => describeCapability(capability)).join(', ');
+}
+
+function serializeCapabilities(
+  capabilities: PrintDispatchCapability[],
+): string | null {
+  if (capabilities.length === 0) return null;
+  return capabilities.join(',');
+}
+
+function serializeRequestedOptions(options: PrintDispatchRequestedOptions): string {
+  return JSON.stringify(options);
 }
 
 function buildSumatraSettings(options: PrintJobOptions): string {
@@ -425,7 +549,13 @@ export class PrintDispatcher {
     extension: string,
     mimeType: string,
     context: PrintDispatchContext,
+    requestedOptions: PrintDispatchRequestedOptions,
+    requiredCapabilities: PrintDispatchCapability[],
   ): Promise<void> {
+    const requiredCapabilitiesText = serializeCapabilities(requiredCapabilities);
+    const missingCapabilitiesText = serializeCapabilities(
+      attempt.missingCapabilities,
+    );
     await adminService.appendAdminLog(
       'print_dispatch_attempt',
       attempt.success
@@ -451,6 +581,10 @@ export class PrintDispatcher {
         fileExtension: extension,
         mimeType,
         stderrHash: attempt.stderrHash,
+        requestedOptions: serializeRequestedOptions(requestedOptions),
+        requiredCapabilities: requiredCapabilitiesText,
+        capabilitySkipReason: attempt.capabilitySkipReason,
+        missingCapabilities: missingCapabilitiesText,
       },
     );
   }
@@ -459,15 +593,22 @@ export class PrintDispatcher {
     engine: PrintDispatchEngine,
     filePath: string,
     options: PrintJobOptions,
+    requiredCapabilities: PrintDispatchCapability[],
   ): Promise<PrintDispatchAttemptResult> {
     const startedAt = new Date().toISOString();
     const startedMs = Date.now();
-    const skip = (skipReason: string): PrintDispatchAttemptResult => ({
+    const skip = (
+      skipReason: string,
+      missingCapabilities: PrintDispatchCapability[] = [],
+    ): PrintDispatchAttemptResult => ({
       engine,
       executablePath: null,
       success: false,
       skipped: true,
       skipReason,
+      capabilitySkipReason:
+        missingCapabilities.length > 0 ? CAPABILITY_SKIP_REASON : null,
+      missingCapabilities,
       exitCode: null,
       stdout: '',
       stderr: '',
@@ -477,6 +618,14 @@ export class PrintDispatcher {
       endedAt: new Date().toISOString(),
       timedOut: false,
     });
+
+    const missingCapabilities = getMissingCapabilities(engine, requiredCapabilities);
+    if (missingCapabilities.length > 0) {
+      return skip(
+        `${CAPABILITY_SKIP_REASON}:${missingCapabilities.join(',')}`,
+        missingCapabilities,
+      );
+    }
 
     if (engine === 'pdftoprinter') {
       const executablePath = this.resolvePdfToPrinterPath();
@@ -505,6 +654,8 @@ export class PrintDispatcher {
         success: runResult.success,
         skipped: false,
         skipReason: null,
+        capabilitySkipReason: null,
+        missingCapabilities: [],
         exitCode: runResult.exitCode,
         stdout: runResult.stdout,
         stderr: runResult.stderr,
@@ -559,6 +710,8 @@ export class PrintDispatcher {
         success: runResult.success,
         skipped: false,
         skipReason: null,
+        capabilitySkipReason: null,
+        missingCapabilities: [],
         exitCode: runResult.exitCode,
         stdout: runResult.stdout,
         stderr: runResult.stderr,
@@ -605,6 +758,8 @@ export class PrintDispatcher {
         success: runResult.success,
         skipped: false,
         skipReason: null,
+        capabilitySkipReason: null,
+        missingCapabilities: [],
         exitCode: runResult.exitCode,
         stdout: runResult.stdout,
         stderr: runResult.stderr,
@@ -641,6 +796,8 @@ export class PrintDispatcher {
       success: runResult.success,
       skipped: false,
       skipReason: null,
+      capabilitySkipReason: null,
+      missingCapabilities: [],
       exitCode: runResult.exitCode,
       stdout: runResult.stdout,
       stderr: runResult.stderr,
@@ -662,20 +819,32 @@ export class PrintDispatcher {
     const extension = path.extname(filePath).toLowerCase();
     const mimeType = this.resolveMimeFromExtension(extension);
     const engineChain = this.resolveEngineChain(extension, mode);
+    const requestedOptions = normalizeRequestedOptions(options);
+    const requiredCapabilities = deriveRequiredCapabilities(requestedOptions);
     const overallStartMs = Date.now();
     const attempts: PrintDispatchAttemptResult[] = [];
 
     for (const engine of engineChain) {
-      const attempt = await this.runAttempt(engine, filePath, options);
-      attempts.push(attempt);
-      await this.logAttempt(attempt, extension, mimeType, context).catch(
-        (error) => {
-          console.error('[PRINT_DISPATCH] Failed to write dispatch attempt log.', {
-            engine,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        },
+      const attempt = await this.runAttempt(
+        engine,
+        filePath,
+        options,
+        requiredCapabilities,
       );
+      attempts.push(attempt);
+      await this.logAttempt(
+        attempt,
+        extension,
+        mimeType,
+        context,
+        requestedOptions,
+        requiredCapabilities,
+      ).catch((error) => {
+        console.error('[PRINT_DISPATCH] Failed to write dispatch attempt log.', {
+          engine,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
       if (attempt.success) {
         const result: PrintDispatchResult = {
           success: true,
@@ -684,8 +853,11 @@ export class PrintDispatcher {
           requestedMode,
           fileExtension: extension,
           mimeType,
+          requestedOptions,
+          requiredCapabilities,
           attempts,
           durationMs: Date.now() - overallStartMs,
+          failureCode: null,
         };
         await adminService
           .appendAdminLog(
@@ -708,6 +880,9 @@ export class PrintDispatcher {
               fileExtension: extension,
               mimeType,
               fallbackUsed: attempts.length > 1,
+              requestedOptions: serializeRequestedOptions(requestedOptions),
+              requiredCapabilities: serializeCapabilities(requiredCapabilities),
+              failureCode: null,
             },
           )
           .catch((error) => {
@@ -719,6 +894,27 @@ export class PrintDispatcher {
       }
     }
 
+    const allAttemptsSkipped = attempts.length > 0 && attempts.every((attempt) => attempt.skipped);
+    const allSkippedForCapabilityMismatch =
+      requiredCapabilities.length > 0 &&
+      attempts.length > 0 &&
+      attempts.every(
+        (attempt) =>
+          attempt.skipped && attempt.capabilitySkipReason === CAPABILITY_SKIP_REASON,
+      );
+    const failureCode =
+      requiredCapabilities.length > 0 &&
+      (allSkippedForCapabilityMismatch || allAttemptsSkipped)
+      ? 'no_capable_engine'
+      : 'all_attempts_failed';
+    const capabilityList = formatCapabilityList(requiredCapabilities);
+    const failureMessage =
+      failureCode === 'no_capable_engine'
+        ? capabilityList
+          ? `Selected print settings cannot be honored by available dispatch engines (${capabilityList}).`
+          : 'Selected print settings cannot be honored by available dispatch engines.'
+        : 'Print dispatch failed across all engines.';
+
     const result: PrintDispatchResult = {
       success: false,
       selectedEngine: null,
@@ -726,8 +922,11 @@ export class PrintDispatcher {
       requestedMode,
       fileExtension: extension,
       mimeType,
+      requestedOptions,
+      requiredCapabilities,
       attempts,
       durationMs: Date.now() - overallStartMs,
+      failureCode,
     };
     await adminService
       .appendAdminLog('print_dispatch_summary', 'Print dispatch failed.', {
@@ -744,13 +943,16 @@ export class PrintDispatcher {
         durationMs: result.durationMs,
         fileExtension: extension,
         mimeType,
+        requestedOptions: serializeRequestedOptions(requestedOptions),
+        requiredCapabilities: serializeCapabilities(requiredCapabilities),
+        failureCode,
       })
       .catch((error) => {
         console.error('[PRINT_DISPATCH] Failed to write dispatch failure summary.', {
           error: error instanceof Error ? error.message : String(error),
         });
       });
-    throw new PrintDispatchError('Print dispatch failed across all engines.', result);
+    throw new PrintDispatchError(failureMessage, result);
   }
 }
 

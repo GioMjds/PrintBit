@@ -31,6 +31,12 @@ type ReleaseScanBody = {
   reason?: string;
 };
 
+type WirelessLinkBody = {
+  filename?: string;
+  orientation?: 'portrait' | 'landscape';
+  rotationDeg?: number;
+};
+
 const scanDownloadRateLimit = createRateLimit({
   keyPrefix: 'scan-download',
   windowMs: 60_000,
@@ -239,23 +245,39 @@ export class ScannerController {
     }
   };
 
-  private createWirelessLink = (req: Request, res: Response): void => {
-    const safeFilename = this.scannerService.toSafeScanFilename(req.body?.filename);
+  private createWirelessLink = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    const body = req.body as WirelessLinkBody;
+    const safeFilename = this.scannerService.toSafeScanFilename(body?.filename);
     if (!safeFilename) {
       res.status(400).json({ error: 'Invalid filename.' });
       return;
     }
 
     try {
-      const link = this.scannerService.createWirelessLink(
+      const link = await this.scannerService.createWirelessLink(
         safeFilename,
         this.deps.resolvePublicBaseUrl(req),
+        {
+          orientation: body?.orientation,
+          rotationDeg: body?.rotationDeg,
+        },
       );
       res.json(link);
     } catch (error) {
       const message = this.getErrorMessage(error, 'Failed to create link.');
       if (message === 'Scanned file not found.') {
         res.status(404).json({ error: message });
+        return;
+      }
+      if (message.startsWith('Invalid rotation')) {
+        res.status(400).json({ error: message });
+        return;
+      }
+      if (message.startsWith('Rotation is not supported')) {
+        res.status(409).json({ error: message });
         return;
       }
       res.status(500).json({ error: message });

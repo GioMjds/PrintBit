@@ -238,7 +238,7 @@
 
           <!-- Middle: scrollable options -->
           <div class="settings-scroll">
-            <fieldset class="option-group">
+            <fieldset class="option-group" id="colorModeGroup">
               <legend class="option-label">Color Mode</legend>
               <div class="option-grid">
                 <label class="option-card">
@@ -310,7 +310,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="option-group">
+            <fieldset class="option-group" id="orientationGroup">
               <legend class="option-label">Orientation</legend>
               <div class="option-grid">
                 <label class="option-card">
@@ -412,7 +412,32 @@
               </div>
             </fieldset>
 
-            <fieldset class="option-group">
+            <fieldset class="option-group" id="rotationGroup">
+              <legend class="option-label">Rotation</legend>
+              <div class="copies-control rotation-control">
+                <button
+                  type="button"
+                  id="rotateLeftBtn"
+                  class="copies-btn"
+                  aria-label="Rotate left 90 degrees"
+                >
+                  -90°
+                </button>
+                <div id="rotationValue" class="rotation-value" aria-live="polite">
+                  0°
+                </div>
+                <button
+                  type="button"
+                  id="rotateRightBtn"
+                  class="copies-btn"
+                  aria-label="Rotate right 90 degrees"
+                >
+                  +90°
+                </button>
+              </div>
+            </fieldset>
+
+            <fieldset class="option-group" id="paperSizeGroup">
               <legend class="option-label">Paper Size</legend>
               <div class="option-grid option-grid--3">
                 <label class="option-card">
@@ -681,7 +706,7 @@
               </div>
             </fieldset>
 
-            <div class="option-group">
+            <div class="option-group" id="copiesGroup">
               <span class="option-label">Copies</span>
               <div class="copies-control">
                 <button

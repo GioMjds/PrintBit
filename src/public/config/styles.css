@@ -264,6 +264,8 @@ body {
 */
 .paper-sheet {
   position: relative;
+  --preview-rotation: 0deg;
+  --preview-rotation-scale: 1;
   margin: auto;
   max-height: none;
   max-width: none;
@@ -294,6 +296,9 @@ body {
   object-fit: contain;
   position: absolute;
   inset: 0;
+  transform: rotate(var(--preview-rotation)) scale(var(--preview-rotation-scale));
+  transform-origin: center;
+  transition: transform 220ms ease;
 }
 
 /* ── Image preview ────────────────────────────────────────── */
@@ -303,6 +308,9 @@ body {
   display: grid;
   place-items: center;
   background: #fff;
+  transform: rotate(var(--preview-rotation)) scale(var(--preview-rotation-scale));
+  transform-origin: center;
+  transition: transform 220ms ease;
 }
 
 .paper-img {
@@ -312,6 +320,18 @@ body {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+
+.paper-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+  transform: rotate(var(--preview-rotation)) scale(var(--preview-rotation-scale));
+  transform-origin: center;
+  transition: transform 220ms ease;
 }
 
 /* ── Placeholder ──────────────────────────────────────────── */
@@ -674,6 +694,19 @@ body {
   border-radius: 14px;
   overflow: hidden;
   height: 52px;
+}
+
+.rotation-control .copies-btn {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rotation-value {
+  flex: 1;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--white);
 }
 .copies-btn {
   width: 52px;

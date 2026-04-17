@@ -55,6 +55,7 @@ type PageRangeSelection =
   | { type: 'all' }
   | { type: 'custom'; range: string }
   | { type: 'single'; page: number };
+type RotationDeg = 0 | 90 | 180 | 270;
 
 type ConfirmConfig = {
   mode: 'print' | 'copy' | 'scan';
@@ -69,6 +70,7 @@ type ConfirmConfig = {
   duplex?: boolean;
   copies: number;
   orientation: 'portrait' | 'landscape';
+  rotationDeg?: number;
   paperSize: 'A4' | 'Letter' | 'Legal';
   pageRange?: PageRangeSelection;
   totalPages?: number;
@@ -101,13 +103,23 @@ type PrintQuote = {
   };
 };
 
+function normalizeRotationDeg(value: unknown): RotationDeg {
+  if (value === 90 || value === 180 || value === 270) {
+    return value;
+  }
+  return 0;
+}
+
 const modeValue = document.getElementById('modeValue');
 const fileValue = document.getElementById('fileValue');
 const colorValue = document.getElementById('colorValue');
 const copiesValue = document.getElementById('copiesValue');
 const pagesValue = document.getElementById('pagesValue');
 const pagesRow = document.getElementById('pagesRow');
+const orientationRow = document.getElementById('orientationRow');
 const orientationValue = document.getElementById('orientationValue');
+const rotationRow = document.getElementById('rotationRow');
+const rotationValue = document.getElementById('rotationValue');
 const paperSizeValue = document.getElementById('paperSizeValue');
 const priceValue = document.getElementById('priceValue');
 const balanceValue = document.getElementById('balanceValue');
@@ -157,6 +169,7 @@ if (!rawConfig) {
 
 const config = JSON.parse(rawConfig ?? '{}') as ConfirmConfig;
 config.duplex = config.duplex === true;
+config.rotationDeg = normalizeRotationDeg(config.rotationDeg);
 if (typeof config.documentId !== 'string') {
   config.documentId = uploadedDocumentId;
 }
@@ -175,6 +188,7 @@ const currentPaymentFingerprint = JSON.stringify({
   colorMode: config.colorMode,
   duplex: config.duplex === true,
   orientation: config.orientation,
+  rotationDeg: config.rotationDeg,
   paperSize: config.paperSize,
   pageRange: pageRangeFingerprint(config.pageRange),
   quotedAmount: currentPrintQuote?.requiredAmount ?? null,
@@ -188,7 +202,7 @@ if (backLink) {
   if (config.mode === 'copy') {
     backLink.href = '/copy';
   } else if (config.mode === 'scan') {
-    backLink.href = '/scan';
+    backLink.href = '/config?mode=scan';
   } else if (config.sessionId) {
     backLink.href = `/config?sessionId=${encodeURIComponent(config.sessionId)}`;
   }
@@ -320,7 +334,6 @@ if (config.mode === 'copy' || config.mode === 'scan') {
 if (config.mode === 'scan') {
   colorValue?.closest('.summary-row')?.setAttribute('hidden', '');
   copiesValue?.closest('.summary-row')?.setAttribute('hidden', '');
-  orientationValue?.closest('.summary-row')?.setAttribute('hidden', '');
   paperSizeValue?.closest('.summary-row')?.setAttribute('hidden', '');
 }
 
@@ -336,6 +349,7 @@ if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
 if (orientationValue) orientationValue.textContent = config.orientation;
+if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
 if (paperSizeValue) paperSizeValue.textContent = config.paperSize;
 if (priceValue) priceValue.textContent = 'Loading...';
 
@@ -654,6 +668,7 @@ async function loadPricing(): Promise<void> {
           copies: config.copies,
           colorMode: config.colorMode,
           orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
           pageRange: config.pageRange,
           duplex: config.duplex === true,
@@ -749,11 +764,17 @@ const modalConfirmBtn = document.getElementById(
 const modalFile = document.getElementById('modalFile');
 const modalMode = document.getElementById('modalMode');
 const modalColor = document.getElementById('modalColor');
+const modalColorRow = document.getElementById('modalColorRow');
 const modalCopies = document.getElementById('modalCopies');
+const modalCopiesRow = document.getElementById('modalCopiesRow');
 const modalPages = document.getElementById('modalPages');
 const modalPagesRow = document.getElementById('modalPagesRow');
 const modalOrientation = document.getElementById('modalOrientation');
+const modalOrientationRow = document.getElementById('modalOrientationRow');
+const modalRotation = document.getElementById('modalRotation');
+const modalRotationRow = document.getElementById('modalRotationRow');
 const modalPaper = document.getElementById('modalPaper');
+const modalPaperRow = document.getElementById('modalPaperRow');
 const modalPrice = document.getElementById('modalPrice');
 const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
@@ -1101,17 +1122,32 @@ async function fetchWithTimeout(
   }
 }
 
-if (config.mode === 'copy' || config.mode === 'scan') {
-  modalPagesRow?.setAttribute('hidden', '');
-}
-
 function showModal(): void {
   if (!confirmModal) return;
+  if (config.mode === 'copy' || config.mode === 'scan') {
+    modalPagesRow?.setAttribute('hidden', '');
+  } else {
+    modalPagesRow?.removeAttribute('hidden');
+  }
+  if (config.mode === 'scan') {
+    modalColorRow?.setAttribute('hidden', '');
+    modalCopiesRow?.setAttribute('hidden', '');
+    modalPaperRow?.setAttribute('hidden', '');
+  } else {
+    modalColorRow?.removeAttribute('hidden');
+    modalCopiesRow?.removeAttribute('hidden');
+    modalPaperRow?.removeAttribute('hidden');
+  }
+  modalOrientationRow?.removeAttribute('hidden');
+  modalRotationRow?.removeAttribute('hidden');
+
   if (modalFile)
     modalFile.textContent =
       config.mode === 'print'
         ? (uploadedFile ?? 'No file')
-        : 'Physical document copy';
+        : config.mode === 'copy'
+          ? 'Physical document copy'
+          : (config.scanFilename ?? 'Scanned document');
   if (modalMode) modalMode.textContent = config.mode.toUpperCase();
   if (modalColor) modalColor.textContent = getColorModeSummaryLabel();
   if (modalCopies) modalCopies.textContent = String(config.copies);
@@ -1124,6 +1160,7 @@ function showModal(): void {
     }
   }
   if (modalOrientation) modalOrientation.textContent = config.orientation;
+  if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
   if (modalPaper) modalPaper.textContent = config.paperSize;
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
   const change = currentBalance - totalPrice;
@@ -1361,7 +1398,11 @@ modalConfirmBtn?.addEventListener('click', async () => {
       const linkRes = await fetch('/api/scanner/wireless-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: config.scanFilename }),
+        body: JSON.stringify({
+          filename: config.scanFilename,
+          orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
+        }),
       });
       const linkData = (await linkRes.json()) as {
         downloadUrl?: string;
@@ -1386,12 +1427,6 @@ modalConfirmBtn?.addEventListener('click', async () => {
       hideOverlay(printingOverlay);
 
       await showScanQrOverlay(linkData.downloadUrl, linkData.expiresAt);
-
-      sessionStorage.removeItem('printbit.config');
-      sessionStorage.removeItem('printbit.uploadedFile');
-      sessionStorage.removeItem('printbit.uploadedDocumentId');
-      sessionStorage.removeItem('printbit.sessionId');
-      sessionStorage.removeItem('printbit.sessionToken');
     } catch {
       hideOverlay(printingOverlay);
       if (statusMessage)
@@ -1427,6 +1462,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           copies: config.copies,
           colorMode: config.colorMode,
           orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
           amount: totalPrice,
           previewPath: config.copyPreviewPath,
@@ -1520,6 +1556,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           copies: config.copies,
           colorMode: getDisplayColorMode(),
           orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
           pageRange: config.pageRange,
           duplex: config.duplex === true,

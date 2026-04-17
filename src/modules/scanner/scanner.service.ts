@@ -31,6 +31,11 @@ import {
   deleteTransientScanFile,
   toSafeTransientScanFileName,
 } from '@/services/transient-scan-file';
+import {
+  normalizeRotationDeg,
+  parseRotationDeg,
+  prepareScanRotationArtifact,
+} from '@/services/document-rotation';
 import type { Server as SocketIOServer } from 'socket.io';
 
 const VALID_SOURCES = new Set(['adf', 'flatbed']);
@@ -127,6 +132,11 @@ interface ScanReleaseTokenRecord {
   expiresAt: number;
 }
 
+interface ScanOutputTransformInput {
+  orientation?: 'portrait' | 'landscape';
+  rotationDeg?: number;
+}
+
 export class ScannerService {
   private readonly chargedScanFiles = new Map<string, number>();
   private readonly releaseTokens = new Map<string, ScanReleaseTokenRecord>();
@@ -189,6 +199,36 @@ export class ScannerService {
         this.releaseTokens.delete(token);
       }
     }
+  }
+
+  private async applyScanOutputTransform(
+    filename: string,
+    transform?: ScanOutputTransformInput,
+  ): Promise<string> {
+    const sourcePath = path.resolve('uploads', 'scans', filename);
+    if (!transform) return sourcePath;
+
+    const orientation =
+      transform.orientation === 'landscape' ? 'landscape' : 'portrait';
+
+    if (
+      typeof transform.rotationDeg !== 'undefined' &&
+      parseRotationDeg(transform.rotationDeg) === null
+    ) {
+      throw new Error('Invalid rotation. Accepted values: 0, 90, 180, 270.');
+    }
+    const rotationDeg = normalizeRotationDeg(transform.rotationDeg, 0);
+
+    const transformed = await prepareScanRotationArtifact({
+      sourcePath,
+      orientation,
+      rotationDeg,
+    });
+    if (!transformed.transformed) return sourcePath;
+
+    await fs.promises.copyFile(transformed.filePath, sourcePath);
+    await fs.promises.unlink(transformed.filePath);
+    return sourcePath;
   }
 
   private isSoftCopyPaid(filename: string): boolean {
@@ -486,22 +526,29 @@ export class ScannerService {
     };
   }
 
-  createWirelessLink(filename: string, publicBaseUrl: URL): ScanDownloadLink {
+  async createWirelessLink(
+    filename: string,
+    publicBaseUrl: URL,
+    transform?: ScanOutputTransformInput,
+  ): Promise<ScanDownloadLink> {
     const sourcePath = path.resolve('uploads', 'scans', filename);
     if (!fs.existsSync(sourcePath)) {
       throw new Error('Scanned file not found.');
     }
 
+    await this.applyScanOutputTransform(filename, transform);
     const link = createScanDownloadLink(sourcePath, publicBaseUrl);
     void adminService.appendAdminLog(
       'scan_wireless_link_created',
       'Wireless scan download link created.',
       {
         filename,
+        orientation:
+          transform?.orientation === 'landscape' ? 'landscape' : 'portrait',
+        rotationDeg: normalizeRotationDeg(transform?.rotationDeg, 0),
         expiresAt: link.expiresAt,
       },
     );
-
     return link;
   }
 

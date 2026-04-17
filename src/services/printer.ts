@@ -9,6 +9,11 @@ import {
   type PrintDispatchContext,
   type PrintDispatchResult,
 } from './print-dispatcher';
+import {
+  normalizeRotationDeg,
+  preparePrintRotationArtifact,
+  type RotationDeg,
+} from './document-rotation';
 
 export type ColorMode = 'colored' | 'grayscale';
 export type Orientation = 'portrait' | 'landscape';
@@ -18,6 +23,7 @@ export interface PrintJobOptions {
   copies: number;
   colorMode: ColorMode;
   orientation: Orientation;
+  rotationDeg?: RotationDeg;
   paperSize: PaperSize;
   pageRange?: string;
   duplex?: boolean;
@@ -123,7 +129,33 @@ export class PrinterService {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    return printDispatcher.dispatchFile(filePath, options, context);
+    const rotationDeg = normalizeRotationDeg(options.rotationDeg, 0);
+    const dispatchOptions: PrintJobOptions = {
+      ...options,
+      rotationDeg,
+    };
+    const prepared = await preparePrintRotationArtifact({
+      sourcePath: filePath,
+      rotationDeg,
+    });
+    try {
+      return await printDispatcher.dispatchFile(
+        prepared.printPath,
+        dispatchOptions,
+        context,
+      );
+    } finally {
+      for (const cleanupPath of prepared.cleanupPaths) {
+        try {
+          await fs.promises.unlink(cleanupPath);
+        } catch (error) {
+          console.warn('[PRINTER] Failed to clean up rotated artifact.', {
+            cleanupPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
   }
 }
 
