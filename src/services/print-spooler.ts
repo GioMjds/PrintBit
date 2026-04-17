@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { Server } from 'socket.io';
-import { db, type LogMeta } from './db';
+import { db, type LogMeta, type ReceiptRecordStatus } from './db';
 import { adminService } from './admin';
 import {
   PendingRefundServiceError,
@@ -16,6 +16,7 @@ import {
   PRINT_SPOOLER_POLL_INTERVAL_MS,
   PRINT_SPOOLER_QUERY_TIMEOUT_MS,
 } from '@/config';
+import { ReceiptService } from '@/modules/receipt/receipt.service';
 
 /** Polling interval for checking spooler status */
 const POLL_INTERVAL_MS = PRINT_SPOOLER_POLL_INTERVAL_MS;
@@ -29,6 +30,7 @@ const JOB_SUBMITTED_TIME_SKEW_MS = 5_000;
 const SPOOLER_QUERY_TIMEOUT_MS = PRINT_SPOOLER_QUERY_TIMEOUT_MS;
 /** Stop monitoring when spooler queries repeatedly fail */
 const MAX_CONSECUTIVE_QUERY_FAILURES = 3;
+const receiptService = new ReceiptService();
 
 // Windows JobStatus enum values (comma-separated string from PowerShell)
 
@@ -92,6 +94,56 @@ interface SpoolerQueryResult {
   elapsedMs: number;
   errorCode: SpoolerQueryErrorCode | null;
   errorDetail: string | null;
+}
+
+function receiptStatusFromRefundDisposition(
+  refundDisposition: 'auto_refunded' | 'pending_admin_review',
+): ReceiptRecordStatus {
+  return refundDisposition === 'auto_refunded'
+    ? 'refunded'
+    : 'refunded_pending_review';
+}
+
+async function safeUpdateReceiptTerminalStatus(input: {
+  transactionId: string | null;
+  status: ReceiptRecordStatus;
+  phase: string;
+  spoolerCorrelationKey: string | null;
+  spoolerJobId: number | null;
+  reason?: string;
+  terminalAt?: string;
+}): Promise<void> {
+  if (!input.transactionId) return;
+  try {
+    receiptService.updateTerminalStatus({
+      transactionId: input.transactionId,
+      status: input.status,
+      terminalAt: input.terminalAt ?? new Date().toISOString(),
+    });
+  } catch (error) {
+    try {
+      await adminService.appendAdminLog(
+        'receipt_status_update_failed',
+        'Failed to update print receipt terminal status.',
+        {
+          transactionId: input.transactionId,
+          status: input.status,
+          phase: input.phase,
+          spoolerCorrelationKey: input.spoolerCorrelationKey,
+          spoolerJobId: input.spoolerJobId,
+          reason: input.reason ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    } catch (logError) {
+      console.error('[SPOOLER-MONITOR] Failed to append receipt update failure log.', {
+        transactionId: input.transactionId,
+        spoolerCorrelationKey: input.spoolerCorrelationKey,
+        spoolerJobId: input.spoolerJobId,
+        error: logError instanceof Error ? logError.message : String(logError),
+      });
+    }
+  }
 }
 
 // Persistent PowerShell
@@ -450,6 +502,14 @@ export async function monitorSpoolerJob(
         spoolerCorrelationKey: correlationKey,
       });
     }
+    await safeUpdateReceiptTerminalStatus({
+      transactionId,
+      status: 'failed',
+      phase: 'monitor_unavailable',
+      spoolerCorrelationKey: correlationKey,
+      spoolerJobId: null,
+      reason,
+    });
     return {
       detected: false,
       jobStatus: null,
@@ -606,6 +666,14 @@ export async function monitorSpoolerJob(
         );
       }
     }
+    await safeUpdateReceiptTerminalStatus({
+      transactionId,
+      status: 'failed',
+      phase: marker,
+      spoolerCorrelationKey: correlationKey,
+      spoolerJobId: trackedJobId,
+      reason,
+    });
     return {
       detected: trackedJobId !== null || lastStatus !== null,
       jobStatus: lastStatus,
@@ -797,6 +865,14 @@ export async function monitorSpoolerJob(
                 );
               }
             }
+            await safeUpdateReceiptTerminalStatus({
+              transactionId,
+              status: 'printed',
+              phase: 'printed_inferred_pdftoprinter',
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: null,
+              reason: inferredStatus,
+            });
 
             return {
               detected: false,
@@ -1077,6 +1153,14 @@ export async function monitorSpoolerJob(
             }
           }
         }
+        await safeUpdateReceiptTerminalStatus({
+          transactionId,
+          status: 'printed',
+          phase: 'printed',
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: job.id,
+          reason: job.status,
+        });
         return {
           detected: true,
           jobStatus: job.status,
@@ -1236,6 +1320,14 @@ export async function monitorSpoolerJob(
                 );
               }
             }
+            await safeUpdateReceiptTerminalStatus({
+              transactionId,
+              status: 'failed',
+              phase: 'failed_trusted_time',
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: job.id,
+              reason,
+            });
             return {
               detected: true,
               jobStatus: job.status,
@@ -1405,6 +1497,14 @@ export async function monitorSpoolerJob(
             );
           }
         }
+        await safeUpdateReceiptTerminalStatus({
+          transactionId,
+          status: receiptStatusFromRefundDisposition(refundDisposition),
+          phase: 'failed_refund_disposition',
+          spoolerCorrelationKey: correlationKey,
+          spoolerJobId: job.id,
+          reason,
+        });
 
         return {
           detected: true,

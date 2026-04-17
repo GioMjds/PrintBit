@@ -343,7 +343,9 @@
           <section class="page">
             <section class="admin-page-hero">
               <p class="admin-page-hero__kicker">Auditing</p>
-              <h3 class="admin-page-hero__title">Print/Copy/Scan Transactions</h3>
+              <h3 class="admin-page-hero__title">
+                Print/Copy/Scan Transactions
+              </h3>
               <p class="admin-page-hero__desc">
                 Filter transaction lifecycle events across print, copy, and scan
                 by ID, mode, date range, event type, and status.
@@ -392,18 +394,31 @@
                 </label>
                 <label class="tx-filter-field">
                   <span>Date from</span>
-                  <input id="dateFromInput" class="tx-input" type="datetime-local" />
+                  <input
+                    id="dateFromInput"
+                    class="tx-input"
+                    type="datetime-local"
+                  />
                 </label>
                 <label class="tx-filter-field">
                   <span>Date to</span>
-                  <input id="dateToInput" class="tx-input" type="datetime-local" />
+                  <input
+                    id="dateToInput"
+                    class="tx-input"
+                    type="datetime-local"
+                  />
                 </label>
               </div>
               <div class="tx-filter-actions">
-                <button id="applyFiltersBtn" class="topbar-btn topbar-btn--accent">
+                <button
+                  id="applyFiltersBtn"
+                  class="topbar-btn topbar-btn--accent"
+                >
                   Apply Filters
                 </button>
-                <button id="clearFiltersBtn" class="topbar-btn">Reset Filters</button>
+                <button id="clearFiltersBtn" class="topbar-btn">
+                  Reset Filters
+                </button>
               </div>
             </section>
 
@@ -417,6 +432,7 @@
                       <th class="logs-th logs-th--mode">Mode</th>
                       <th class="logs-th logs-th--type">Type</th>
                       <th class="logs-th">Message</th>
+                      <th class="logs-th logs-th--actions">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="logsBody"></tbody>

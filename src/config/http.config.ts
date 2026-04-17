@@ -216,6 +216,10 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
     filePath: path.join(PUBLIC_DIR, 'confirm', 'index.html'),
   },
   {
+    route: '/receipt/t/:token',
+    filePath: path.join(PUBLIC_DIR, 'receipt', 'index.html'),
+  },
+  {
     route: '/receipt/:transactionId',
     filePath: path.join(PUBLIC_DIR, 'receipt', 'index.html'),
   },

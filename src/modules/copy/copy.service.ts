@@ -7,6 +7,7 @@ import { jobStore } from '@/services/job-store';
 import { printFile, type PrintJobOptions } from '@/services/printer';
 import {
   db,
+  type ReceiptRecordStatus,
   acquireIdempotencyKey,
   storeIdempotencyKey,
   releaseIdempotencyKey,
@@ -35,6 +36,7 @@ import {
 } from '@/services/document-rotation';
 import { consumablesStore } from '@/core/database/sqlite-storage';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
+import { ReceiptService } from '@/modules/receipt/receipt.service';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -95,6 +97,8 @@ export interface CopyServiceDeps {
 }
 
 export class CopyService {
+  private readonly receiptService = new ReceiptService();
+
   constructor(private readonly deps: CopyServiceDeps) {}
 
   claimIdempotencyKey(idempotencyKey: string): ClaimIdempotencyResult {
@@ -433,6 +437,12 @@ export class CopyService {
               meta: { stage: 'precheck' },
             },
           );
+          this.safeUpdateReceiptTerminalStatus({
+            transactionId: jobId,
+            status: 'failed',
+            phase: 'copy_preflight_failed',
+            reason: `Printer is not ready: ${telemetry.status}`,
+          });
           return;
         }
         const inkPreflight = evaluateInkPreflight(telemetry);
@@ -476,6 +486,14 @@ export class CopyService {
               meta: { stage: 'precheck' },
             },
           );
+          this.safeUpdateReceiptTerminalStatus({
+            transactionId: jobId,
+            status: 'failed',
+            phase: 'copy_preflight_failed_ink',
+            reason:
+              inkPreflight.reason ??
+              'Ink telemetry indicates printing should be blocked.',
+          });
           return;
         }
 
@@ -537,6 +555,12 @@ export class CopyService {
                 meta: { stage: 'running' },
               },
             );
+            this.safeUpdateReceiptTerminalStatus({
+              transactionId: failedJobId,
+              status: 'failed',
+              phase: 'copy_printer_malfunction',
+              reason: `Printer fault detected during copy job: ${fault.reason}`,
+            });
 
             void adminService.appendAdminLog(
               'copy_job_failed_printer_malfunction',
@@ -564,6 +588,12 @@ export class CopyService {
         });
 
         if (settlement.ok) {
+          const settledAt = getTrustedTimestamp().timestamp;
+          this.safeUpsertSettledReceiptSnapshot({
+            transactionId: jobId,
+            chargedAmount: settlement.chargedAmount,
+            settledAt,
+          });
           const completedJob = jobStore.getJob(jobId);
           if (completedJob && completedJob.type === 'copy') {
             completedJob.payment = {
@@ -585,6 +615,11 @@ export class CopyService {
               requiredAmount,
             },
           );
+          this.safeUpdateReceiptTerminalStatus({
+            transactionId: jobId,
+            status: 'printed',
+            phase: 'copy_printed',
+          });
           await financialLedgerService.append({
             eventType: 'job_completed',
             amount: settlement.chargedAmount,
@@ -662,6 +697,14 @@ export class CopyService {
               meta: { stage: 'running' },
             },
           );
+          this.safeUpdateReceiptTerminalStatus({
+            transactionId: jobId,
+            status: 'failed',
+            phase: 'copy_settlement_failed',
+            reason:
+              settlement.error ??
+              'Balance drained before charge could complete.',
+          });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -691,6 +734,12 @@ export class CopyService {
             meta: { stage: 'running' },
           },
         );
+        this.safeUpdateReceiptTerminalStatus({
+          transactionId: jobId,
+          status: 'failed',
+          phase: 'copy_dispatch_failed',
+          reason: message,
+        });
         void adminService.appendAdminLog(
           'copy_job_failed',
           'Copy job failed — balance NOT charged.',
@@ -715,6 +764,62 @@ export class CopyService {
         );
       }
     })();
+  }
+
+  private safeUpsertSettledReceiptSnapshot(input: {
+    transactionId: string;
+    chargedAmount: number;
+    settledAt: string;
+  }): void {
+    try {
+      this.receiptService.upsertReceiptSnapshot({
+        transactionId: input.transactionId,
+        mode: 'copy',
+        chargedAmount: input.chargedAmount,
+        status: 'settled_pending_terminal',
+        settledAt: input.settledAt,
+      });
+    } catch (error) {
+      void adminService.appendAdminLog(
+        'receipt_generation_failed',
+        'Failed to create copy receipt snapshot after settlement.',
+        {
+          transactionId: input.transactionId,
+          mode: 'copy',
+          chargedAmount: input.chargedAmount,
+          error: error instanceof Error ? error.message : String(error),
+          phase: 'copy_settled',
+        },
+      );
+    }
+  }
+
+  private safeUpdateReceiptTerminalStatus(input: {
+    transactionId: string;
+    status: ReceiptRecordStatus;
+    phase: string;
+    reason?: string;
+    terminalAt?: string;
+  }): void {
+    try {
+      this.receiptService.updateTerminalStatus({
+        transactionId: input.transactionId,
+        status: input.status,
+        terminalAt: input.terminalAt ?? new Date().toISOString(),
+      });
+    } catch (error) {
+      void adminService.appendAdminLog(
+        'receipt_status_update_failed',
+        'Failed to update copy receipt terminal status.',
+        {
+          transactionId: input.transactionId,
+          status: input.status,
+          phase: input.phase,
+          reason: input.reason ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
   }
 
   private async cleanupPreviewFile(

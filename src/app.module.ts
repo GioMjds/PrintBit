@@ -22,6 +22,7 @@ import { registerCopyModule } from '@/modules/copy';
 import { registerWirelessSessionModule } from '@/modules/wireless-session';
 import { registerFeedbackModule } from '@/modules/feedback';
 import { registerReportModule } from '@/modules/report';
+import { registerReceiptModule } from '@/modules/receipt';
 import { registerHotspotModule } from '@/modules/hotspot';
 import { registerWatchdogModule } from '@/modules/watchdog';
 import { registerHopperModule } from '@/modules/hopper';
@@ -90,6 +91,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
   });
+  registerReceiptModule(app, { io: deps.io });
   registerUploadPortalModule(app, {
     io: deps.io,
     portalDir: PORTAL_DIR,

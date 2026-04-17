@@ -147,6 +147,10 @@
   width: 160px;
 }
 
+.logs-th--actions {
+  width: 150px;
+}
+
 .logs-table tbody tr {
   border-bottom: 1px solid rgba(167, 170, 225, 0.05);
   transition: background 100ms;
@@ -179,6 +183,40 @@
   font-size: 11px;
   letter-spacing: 0.4px;
   color: var(--lavender);
+}
+
+.logs-td--actions {
+  white-space: nowrap;
+}
+
+.tx-receipt-btn {
+  border: 1px solid rgba(167, 170, 225, 0.35);
+  background: rgba(167, 170, 225, 0.12);
+  color: var(--lavender);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 120ms,
+    background 120ms,
+    color 120ms;
+}
+
+.tx-receipt-btn:hover:not(:disabled) {
+  border-color: rgba(167, 170, 225, 0.55);
+  background: rgba(167, 170, 225, 0.22);
+  color: var(--white);
+}
+
+.tx-receipt-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.tx-receipt-unavailable {
+  color: var(--ink-muted);
 }
 
 .topbar-btn--danger {

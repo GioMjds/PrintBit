@@ -30,7 +30,7 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 ## 3) Database layer (`src/core/database`)
 
 - `db.ts`: shared schema/runtime database facade backed by SQLite `runtime_state` table persistence.
-- `sqlite-storage.ts`: SQLite persistence (`printbit.sqlite`) for operational domains (admin logs, feedback, report issues).
+- `sqlite-storage.ts`: SQLite persistence (`printbit.sqlite`) for operational domains (admin logs, feedback, report issues, receipts + receipt access tokens).
 
 ## 4) Service layer (`src/services`)
 
@@ -46,6 +46,7 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `preview.ts`: document preview conversion/HTML generation.
 - `admin.ts`: pricing calculations, logging, stats, reporting helpers.
 - `job-store.ts`: in-memory copy/scan job state machine.
+- `modules/receipt`: receipt domain APIs (token-based customer read + admin transaction-context read), token mint/verify helpers, lifecycle update helpers, and periodic expiry cleanup.
 
 ## 4) Frontend layer (`src/public`)
 
@@ -116,6 +117,13 @@ Ephemeral (process memory):
 1. Admin authenticates with PIN.
 2. UI reads summary/status/settings/logs.
 3. Maintenance actions can reset balance, clear storage, update settings, export logs, and resolve owed changes.
+
+## E) E-Receipt flow (v1 scope: print + copy)
+
+1. On settled `POST /api/confirm-payment` for `mode: "print"` or `mode: "copy"`, the backend snapshots receipt data and mints an access token.
+2. Customer receipt access uses `/receipt/t/:token` -> `GET /api/receipts/by-token/:token`.
+3. Admin support uses transaction context (`GET /api/admin/transactions/:transactionId/receipt`) and does not expose customer tokens.
+4. Receipt records and access tokens default to 24-hour retention; cleanup runs at startup and then on a 15-minute interval.
 
 ## External dependencies
 

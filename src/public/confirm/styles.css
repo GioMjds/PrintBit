@@ -836,6 +836,30 @@ body {
   margin-top: 20px;
 }
 
+.receipt-cta {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.receipt-cta .modal-subtitle {
+  margin: 0;
+}
+
+.receipt-cta .scan-qr-canvas {
+  width: 180px;
+  height: 180px;
+}
+
+.receipt-cta .scan-qr-link {
+  max-width: 320px;
+}
+
+.receipt-cta .scan-qr-expiry {
+  opacity: 0.6;
+}
+
 /* ── Scan QR overlay ──────────────────────────────────────── */
 .modal-card--qr {
   text-align: center;

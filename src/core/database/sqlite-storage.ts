@@ -5,6 +5,9 @@ import type {
   FeedbackEntry,
   FeedbackSessionEntry,
   LogMeta,
+  ReceiptAccessTokenEntry,
+  ReceiptRecordEntry,
+  ReceiptRecordStatus,
   ReportIssueAttachmentEntry,
   ReportIssueCategory,
   ReportIssueEntry,
@@ -44,6 +47,13 @@ type ListReportIssueOptions = {
   offset: number;
 };
 
+type ListReceiptOptions = {
+  mode?: ReceiptRecordEntry['mode'];
+  status?: ReceiptRecordEntry['status'];
+  limit: number;
+  offset: number;
+};
+
 export interface LowDbImportSnapshot {
   logs: AdminLogEntry[];
   feedback: FeedbackEntry[];
@@ -51,6 +61,8 @@ export interface LowDbImportSnapshot {
   reportIssues: ReportIssueEntry[];
   reportIssueSessions: ReportIssueSessionEntry[];
   reportIssueAttachments: ReportIssueAttachmentEntry[];
+  receiptRecords: ReceiptRecordEntry[];
+  receiptAccessTokens: ReceiptAccessTokenEntry[];
 }
 
 export interface LowDbImportOptions {
@@ -60,6 +72,8 @@ export interface LowDbImportOptions {
 export interface LowDbImportResult {
   skipped: boolean;
   attempted: {
+    receiptRecords: number;
+    receiptAccessTokens: number;
     feedbackSessions: number;
     feedback: number;
     reportIssueSessions: number;
@@ -68,6 +82,8 @@ export interface LowDbImportResult {
     logs: number;
   };
   inserted: {
+    receiptRecords: number;
+    receiptAccessTokens: number;
     feedbackSessions: number;
     feedback: number;
     reportIssueSessions: number;
@@ -76,6 +92,7 @@ export interface LowDbImportResult {
     logs: number;
   };
   skippedOrphans: {
+    receiptAccessTokens: number;
     feedback: number;
     reportIssues: number;
     reportIssueAttachments: number;
@@ -375,6 +392,49 @@ function ensureSchema(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_report_issue_attachments_timestamp
       ON report_issue_attachments(timestamp DESC);
 
+    CREATE TABLE IF NOT EXISTS receipt_records (
+      id TEXT PRIMARY KEY,
+      transaction_id TEXT NOT NULL UNIQUE,
+      mode TEXT NOT NULL CHECK (mode IN ('print', 'copy')),
+      charged_amount INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK (
+        status IN (
+          'settled_pending_terminal',
+          'printed',
+          'failed',
+          'refunded',
+          'refunded_pending_review'
+        )
+      ),
+      settled_at TEXT,
+      terminal_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_receipt_records_expires_at
+      ON receipt_records(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_receipt_records_status
+      ON receipt_records(status);
+
+    CREATE TABLE IF NOT EXISTS receipt_access_tokens (
+      id TEXT PRIMARY KEY,
+      receipt_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      FOREIGN KEY(receipt_id) REFERENCES receipt_records(id)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_receipt_access_tokens_receipt_id
+      ON receipt_access_tokens(receipt_id);
+    CREATE INDEX IF NOT EXISTS idx_receipt_access_tokens_expires_at
+      ON receipt_access_tokens(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_receipt_access_tokens_revoked_at
+      ON receipt_access_tokens(revoked_at);
+
     CREATE TABLE IF NOT EXISTS consumable_usage_events (
       id TEXT PRIMARY KEY,
       timestamp TEXT NOT NULL,
@@ -540,8 +600,9 @@ export interface WirelessSessionSnapshotStorageEntry {
 export class WirelessSessionSqliteStore {
   listSessionSnapshots(): WirelessSessionSnapshotStorageEntry[] {
     const db = getSqliteDb();
-    const sessionRows = db.prepare(
-      `SELECT
+    const sessionRows = db
+      .prepare(
+        `SELECT
         session_id,
         token,
         status,
@@ -551,12 +612,14 @@ export class WirelessSessionSqliteStore {
         owner_claimed_at
        FROM wireless_sessions
        ORDER BY created_at DESC`,
-    ).all() as Array<Record<string, unknown>>;
+      )
+      .all() as Array<Record<string, unknown>>;
 
     if (sessionRows.length === 0) return [];
 
-    const documentRows = db.prepare(
-      `SELECT
+    const documentRows = db
+      .prepare(
+        `SELECT
         document_id,
         session_id,
         filename,
@@ -567,7 +630,8 @@ export class WirelessSessionSqliteStore {
         analysis_json
        FROM wireless_session_documents
        ORDER BY uploaded_at ASC`,
-    ).all() as Array<Record<string, unknown>>;
+      )
+      .all() as Array<Record<string, unknown>>;
 
     const documentsBySessionId = new Map<
       string,
@@ -1658,6 +1722,370 @@ export class ReportIssueSqliteStore {
   }
 }
 
+export interface ReceiptTokenLookupResult {
+  receipt: ReceiptRecordEntry;
+  token: ReceiptAccessTokenEntry;
+}
+
+export class ReceiptSqliteStore {
+  upsertReceiptRecord(entry: ReceiptRecordEntry): void {
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO receipt_records (
+          id,
+          transaction_id,
+          mode,
+          charged_amount,
+          status,
+          settled_at,
+          terminal_at,
+          created_at,
+          updated_at,
+          expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(transaction_id) DO UPDATE SET
+          mode = excluded.mode,
+          charged_amount = excluded.charged_amount,
+          status = excluded.status,
+          settled_at = excluded.settled_at,
+          terminal_at = excluded.terminal_at,
+          updated_at = excluded.updated_at,
+          expires_at = excluded.expires_at`,
+      )
+      .run(
+        entry.id,
+        entry.transactionId,
+        entry.mode,
+        entry.chargedAmount,
+        entry.status,
+        entry.settledAt,
+        entry.terminalAt,
+        entry.createdAt,
+        entry.updatedAt,
+        entry.expiresAt,
+      );
+  }
+
+  getReceiptById(receiptId: string): ReceiptRecordEntry | null {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          transaction_id,
+          mode,
+          charged_amount,
+          status,
+          settled_at,
+          terminal_at,
+          created_at,
+          updated_at,
+          expires_at
+         FROM receipt_records
+         WHERE id = ?
+         LIMIT 1`,
+      )
+      .get(receiptId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.toReceiptRecord(row);
+  }
+
+  getReceiptByTransactionId(transactionId: string): ReceiptRecordEntry | null {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          transaction_id,
+          mode,
+          charged_amount,
+          status,
+          settled_at,
+          terminal_at,
+          created_at,
+          updated_at,
+          expires_at
+         FROM receipt_records
+         WHERE transaction_id = ?
+         LIMIT 1`,
+      )
+      .get(transactionId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.toReceiptRecord(row);
+  }
+
+  deleteReceiptById(receiptId: string): boolean {
+    const result = getSqliteDb()
+      .prepare('DELETE FROM receipt_records WHERE id = ?')
+      .run(receiptId) as { changes?: unknown };
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  listReceipts(options: ListReceiptOptions): {
+    total: number;
+    items: ReceiptRecordEntry[];
+  } {
+    const db = getSqliteDb();
+    const limit = Math.max(1, Math.floor(options.limit));
+    const offset = Math.max(0, Math.floor(options.offset));
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (options.mode) {
+      where.push('mode = ?');
+      params.push(options.mode);
+    }
+    if (options.status) {
+      where.push('status = ?');
+      params.push(options.status);
+    }
+    const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+    const totalRow = db
+      .prepare(`SELECT COUNT(*) AS total FROM receipt_records ${whereSql}`)
+      .get(...params) as { total?: unknown };
+    const rows = db
+      .prepare(
+        `SELECT
+          id,
+          transaction_id,
+          mode,
+          charged_amount,
+          status,
+          settled_at,
+          terminal_at,
+          created_at,
+          updated_at,
+          expires_at
+         FROM receipt_records
+         ${whereSql}
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit, offset) as Array<Record<string, unknown>>;
+
+    return {
+      total: Number(totalRow.total ?? 0),
+      items: rows.map((row) => this.toReceiptRecord(row)),
+    };
+  }
+
+  createAccessToken(entry: ReceiptAccessTokenEntry): void {
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO receipt_access_tokens (
+          id,
+          receipt_id,
+          token_hash,
+          created_at,
+          expires_at,
+          revoked_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.receiptId,
+        entry.tokenHash,
+        entry.createdAt,
+        entry.expiresAt,
+        entry.revokedAt,
+      );
+  }
+
+  getAccessTokenByHash(tokenHash: string): ReceiptAccessTokenEntry | null {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          receipt_id,
+          token_hash,
+          created_at,
+          expires_at,
+          revoked_at
+         FROM receipt_access_tokens
+         WHERE token_hash = ?
+         LIMIT 1`,
+      )
+      .get(tokenHash) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.toAccessTokenEntry(row);
+  }
+
+  listAccessTokensForReceipt(receiptId: string): ReceiptAccessTokenEntry[] {
+    const rows = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          receipt_id,
+          token_hash,
+          created_at,
+          expires_at,
+          revoked_at
+         FROM receipt_access_tokens
+         WHERE receipt_id = ?
+         ORDER BY created_at DESC, rowid DESC`,
+      )
+      .all(receiptId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.toAccessTokenEntry(row));
+  }
+
+  revokeAccessToken(tokenHash: string, revokedAt: string): boolean {
+    const result = getSqliteDb()
+      .prepare(
+        `UPDATE receipt_access_tokens
+         SET revoked_at = ?
+         WHERE token_hash = ? AND revoked_at IS NULL`,
+      )
+      .run(revokedAt, tokenHash) as { changes?: unknown };
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  deleteAccessTokenByHash(tokenHash: string): boolean {
+    const result = getSqliteDb()
+      .prepare('DELETE FROM receipt_access_tokens WHERE token_hash = ?')
+      .run(tokenHash) as { changes?: unknown };
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  findActiveReceiptByTokenHash(
+    tokenHash: string,
+    now: Date,
+  ): ReceiptTokenLookupResult | null {
+    const nowIso = now.toISOString();
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          rr.id AS receipt_id,
+          rr.transaction_id AS receipt_transaction_id,
+          rr.mode AS receipt_mode,
+          rr.charged_amount AS receipt_charged_amount,
+          rr.status AS receipt_status,
+          rr.settled_at AS receipt_settled_at,
+          rr.terminal_at AS receipt_terminal_at,
+          rr.created_at AS receipt_created_at,
+          rr.updated_at AS receipt_updated_at,
+          rr.expires_at AS receipt_expires_at,
+          rat.id AS token_id,
+          rat.receipt_id AS token_receipt_id,
+          rat.token_hash AS token_hash,
+          rat.created_at AS token_created_at,
+          rat.expires_at AS token_expires_at,
+          rat.revoked_at AS token_revoked_at
+         FROM receipt_access_tokens rat
+         INNER JOIN receipt_records rr
+           ON rr.id = rat.receipt_id
+         WHERE rat.token_hash = ?
+           AND rat.revoked_at IS NULL
+           AND rat.expires_at > ?
+           AND rr.expires_at > ?
+         LIMIT 1`,
+      )
+      .get(tokenHash, nowIso, nowIso) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      receipt: this.toReceiptRecord({
+        id: row.receipt_id,
+        transaction_id: row.receipt_transaction_id,
+        mode: row.receipt_mode,
+        charged_amount: row.receipt_charged_amount,
+        status: row.receipt_status,
+        settled_at: row.receipt_settled_at,
+        terminal_at: row.receipt_terminal_at,
+        created_at: row.receipt_created_at,
+        updated_at: row.receipt_updated_at,
+        expires_at: row.receipt_expires_at,
+      }),
+      token: this.toAccessTokenEntry({
+        id: row.token_id,
+        receipt_id: row.token_receipt_id,
+        token_hash: row.token_hash,
+        created_at: row.token_created_at,
+        expires_at: row.token_expires_at,
+        revoked_at: row.token_revoked_at,
+      }),
+    };
+  }
+
+  cleanupExpiredAccessTokens(now: Date): number {
+    const nowIso = now.toISOString();
+    const result = getSqliteDb()
+      .prepare(
+        `DELETE FROM receipt_access_tokens
+         WHERE expires_at <= ?
+            OR (revoked_at IS NOT NULL AND revoked_at <= ?)`,
+      )
+      .run(nowIso, nowIso) as { changes?: unknown };
+    return Number(result.changes ?? 0);
+  }
+
+  cleanupExpiredReceiptRecords(now: Date): number {
+    const nowIso = now.toISOString();
+    const result = getSqliteDb()
+      .prepare(
+        `DELETE FROM receipt_records
+         WHERE expires_at <= ?
+           AND NOT EXISTS (
+             SELECT 1
+             FROM receipt_access_tokens
+             WHERE receipt_access_tokens.receipt_id = receipt_records.id
+               AND receipt_access_tokens.revoked_at IS NULL
+               AND receipt_access_tokens.expires_at > ?
+           )`,
+      )
+      .run(nowIso, nowIso) as { changes?: unknown };
+    return Number(result.changes ?? 0);
+  }
+
+  cleanupExpired(now: Date): {
+    deletedReceiptRecords: number;
+    deletedAccessTokens: number;
+  } {
+    return withTransaction(() => {
+      const deletedAccessTokens = this.cleanupExpiredAccessTokens(now);
+      const deletedReceiptRecords = this.cleanupExpiredReceiptRecords(now);
+      return { deletedReceiptRecords, deletedAccessTokens };
+    });
+  }
+
+  private toReceiptStatus(value: unknown): ReceiptRecordStatus {
+    if (
+      value === 'settled_pending_terminal' ||
+      value === 'printed' ||
+      value === 'failed' ||
+      value === 'refunded' ||
+      value === 'refunded_pending_review'
+    ) {
+      return value;
+    }
+    return 'settled_pending_terminal';
+  }
+
+  private toReceiptRecord(row: Record<string, unknown>): ReceiptRecordEntry {
+    return {
+      id: String(row.id ?? ''),
+      transactionId: String(row.transaction_id ?? ''),
+      mode: row.mode === 'copy' ? 'copy' : 'print',
+      chargedAmount: Number(row.charged_amount ?? 0),
+      status: this.toReceiptStatus(row.status),
+      settledAt: typeof row.settled_at === 'string' ? row.settled_at : null,
+      terminalAt: typeof row.terminal_at === 'string' ? row.terminal_at : null,
+      createdAt: String(row.created_at ?? ''),
+      updatedAt: String(row.updated_at ?? ''),
+      expiresAt: String(row.expires_at ?? ''),
+    };
+  }
+
+  private toAccessTokenEntry(
+    row: Record<string, unknown>,
+  ): ReceiptAccessTokenEntry {
+    return {
+      id: String(row.id ?? ''),
+      receiptId: String(row.receipt_id ?? ''),
+      tokenHash: String(row.token_hash ?? ''),
+      createdAt: String(row.created_at ?? ''),
+      expiresAt: String(row.expires_at ?? ''),
+      revokedAt: typeof row.revoked_at === 'string' ? row.revoked_at : null,
+    };
+  }
+}
+
 export class ConsumablesSqliteStore {
   appendUsageEvent(entry: ConsumableUsageEventEntry): void {
     getSqliteDb()
@@ -1885,6 +2313,7 @@ export class ConsumablesSqliteStore {
 export const adminLogStore = new AdminLogSqliteStore();
 export const feedbackStore = new FeedbackSqliteStore();
 export const reportIssueStore = new ReportIssueSqliteStore();
+export const receiptStore = new ReceiptSqliteStore();
 export const consumablesStore = new ConsumablesSqliteStore();
 export const wirelessSessionStore = new WirelessSessionSqliteStore();
 
@@ -1894,6 +2323,8 @@ export function importLowDbSnapshotIfNeeded(
 ): LowDbImportResult {
   initSqliteStorage();
   const hasCandidates =
+    snapshot.receiptRecords.length > 0 ||
+    snapshot.receiptAccessTokens.length > 0 ||
     snapshot.feedbackSessions.length > 0 ||
     snapshot.feedback.length > 0 ||
     snapshot.reportIssueSessions.length > 0 ||
@@ -1904,6 +2335,8 @@ export function importLowDbSnapshotIfNeeded(
     return {
       skipped: true,
       attempted: {
+        receiptRecords: 0,
+        receiptAccessTokens: 0,
         feedbackSessions: 0,
         feedback: 0,
         reportIssueSessions: 0,
@@ -1912,6 +2345,8 @@ export function importLowDbSnapshotIfNeeded(
         logs: 0,
       },
       inserted: {
+        receiptRecords: 0,
+        receiptAccessTokens: 0,
         feedbackSessions: 0,
         feedback: 0,
         reportIssueSessions: 0,
@@ -1920,6 +2355,7 @@ export function importLowDbSnapshotIfNeeded(
         logs: 0,
       },
       skippedOrphans: {
+        receiptAccessTokens: 0,
         feedback: 0,
         reportIssues: 0,
         reportIssueAttachments: 0,
@@ -1932,6 +2368,8 @@ export function importLowDbSnapshotIfNeeded(
     return {
       skipped: true,
       attempted: {
+        receiptRecords: 0,
+        receiptAccessTokens: 0,
         feedbackSessions: 0,
         feedback: 0,
         reportIssueSessions: 0,
@@ -1940,6 +2378,8 @@ export function importLowDbSnapshotIfNeeded(
         logs: 0,
       },
       inserted: {
+        receiptRecords: 0,
+        receiptAccessTokens: 0,
         feedbackSessions: 0,
         feedback: 0,
         reportIssueSessions: 0,
@@ -1948,6 +2388,7 @@ export function importLowDbSnapshotIfNeeded(
         logs: 0,
       },
       skippedOrphans: {
+        receiptAccessTokens: 0,
         feedback: 0,
         reportIssues: 0,
         reportIssueAttachments: 0,
@@ -1956,6 +2397,8 @@ export function importLowDbSnapshotIfNeeded(
   }
 
   const attempted: LowDbImportResult['attempted'] = {
+    receiptRecords: 0,
+    receiptAccessTokens: 0,
     feedbackSessions: 0,
     feedback: 0,
     reportIssueSessions: 0,
@@ -1964,6 +2407,8 @@ export function importLowDbSnapshotIfNeeded(
     logs: 0,
   };
   const inserted: LowDbImportResult['inserted'] = {
+    receiptRecords: 0,
+    receiptAccessTokens: 0,
     feedbackSessions: 0,
     feedback: 0,
     reportIssueSessions: 0,
@@ -1972,6 +2417,7 @@ export function importLowDbSnapshotIfNeeded(
     logs: 0,
   };
   const skippedOrphans: LowDbImportResult['skippedOrphans'] = {
+    receiptAccessTokens: 0,
     feedback: 0,
     reportIssues: 0,
     reportIssueAttachments: 0,
@@ -1979,6 +2425,72 @@ export function importLowDbSnapshotIfNeeded(
 
   withTransaction(() => {
     const db = getSqliteDb();
+    const receiptExistsStmt = db.prepare(
+      'SELECT id FROM receipt_records WHERE id = ? LIMIT 1',
+    );
+
+    for (const receipt of snapshot.receiptRecords) {
+      attempted.receiptRecords += 1;
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO receipt_records (
+            id,
+            transaction_id,
+            mode,
+            charged_amount,
+            status,
+            settled_at,
+            terminal_at,
+            created_at,
+            updated_at,
+            expires_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          receipt.id,
+          receipt.transactionId,
+          receipt.mode,
+          receipt.chargedAmount,
+          receipt.status,
+          receipt.settledAt,
+          receipt.terminalAt,
+          receipt.createdAt,
+          receipt.updatedAt,
+          receipt.expiresAt,
+        );
+      inserted.receiptRecords += changesFromRun(result);
+    }
+
+    for (const token of snapshot.receiptAccessTokens) {
+      attempted.receiptAccessTokens += 1;
+      const parent = receiptExistsStmt.get(token.receiptId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!parent) {
+        skippedOrphans.receiptAccessTokens += 1;
+        continue;
+      }
+      const result = db
+        .prepare(
+          `INSERT OR IGNORE INTO receipt_access_tokens (
+            id,
+            receipt_id,
+            token_hash,
+            created_at,
+            expires_at,
+            revoked_at
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          token.id,
+          token.receiptId,
+          token.tokenHash,
+          token.createdAt,
+          token.expiresAt,
+          token.revokedAt,
+        );
+      inserted.receiptAccessTokens += changesFromRun(result);
+    }
 
     const feedbackSessionIds = new Set<string>();
     for (const session of snapshot.feedbackSessions) {

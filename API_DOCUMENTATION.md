@@ -169,6 +169,16 @@ Response:
     "spoolerCorrelationKey": "uuid",
     "jobDispatchedAt": "2026-01-01T00:00:00.000Z",
     "monitorWindowMs": 180000
+  },
+  "receipt": {
+    "transactionId": "uuid",
+    "mode": "print",
+    "status": "settled_pending_terminal",
+    "token": "<opaque-access-token>",
+    "tokenId": "uuid",
+    "expiresAt": "2026-01-02T00:00:00.000Z",
+    "viewUrl": "http://kiosk.local/receipt/t/<token>",
+    "apiUrl": "http://kiosk.local/api/receipts/by-token/<token>"
   }
 }
 ```
@@ -177,11 +187,51 @@ The `change` object is always present. `state` is one of `"none"`, `"dispensed"`
 For print mode, `print.state: "awaiting_spooler_terminal"` means payment settled but terminal print success is still pending spooler confirmation.
 `print.monitorWindowMs` reflects the backend spooler-monitor timeout window currently applied for that run.
 `transactionId` is the canonical customer/admin reference ID for support and refund follow-up.
+When receipt generation succeeds, `receipt` includes the token and prebuilt URLs for customer "View Receipt"/QR experiences.
+E-Receipt v1 scope is `mode: "print"` and `mode: "copy"` (from `POST /api/confirm-payment`).
 For `mode: "print"` in the modern flow, uploaded file deletion is finalized after spooler terminal success (not immediately at settlement).
 
-### `GET /api/transactions/:transactionId/receipt`
+### `GET /api/receipts/by-token/:token`
 
-Public/safe receipt endpoint for kiosk follow-up pages. Returns sanitized transaction details (`mode`, `chargedAmount`, status timestamps, refund status) keyed by `transactionId`.
+Customer-safe receipt endpoint using short-lived access tokens.
+Default retention/expiry is 24 hours for both receipt snapshots and access tokens.
+
+Response payload:
+
+- `transactionId`
+- `mode`
+- `chargedAmount`
+- `status`
+- `settledAt`
+- `terminalAt`
+- `generatedAt`
+
+Token status responses:
+
+- `404` + `code: "RECEIPT_TOKEN_NOT_FOUND"` for unknown token
+- `403` + `code: "RECEIPT_TOKEN_REVOKED"` for revoked token
+- `410` + `code: "RECEIPT_TOKEN_EXPIRED"` for expired token
+
+Public receipt pages:
+
+- `/receipt/t/:token` (tokenized customer flow)
+- `/receipt/:transactionId` (legacy compatibility flow)
+
+### `GET /api/admin/transactions/:transactionId/receipt`
+
+Admin-authenticated receipt lookup by transaction context (`requireAdminLocalAccess` + `requireAdminPin`).
+Returns the same safe payload shape as token reads without exposing customer access tokens.
+This is the API used by the Admin Transactions **Open E-Receipt** action.
+
+Status responses:
+
+- `400` when `transactionId` is missing
+- `404` when receipt snapshot is not found
+- `410` when receipt has expired
+
+### `GET /api/transactions/:transactionId/receipt` (legacy compatibility)
+
+Existing transaction-ID receipt endpoint is still available during migration and is used by `/receipt/:transactionId`.
 
 For `mode: "print"`, the server now recomputes pricing from the same quote pipeline used by `/api/print/quote`, so displayed quote amount and charged amount stay aligned.
 

@@ -6,6 +6,7 @@ export * from './copy';
 export * from './feedback';
 export * from './financial';
 export * from './printer';
+export * from './receipt';
 export * from './report';
 export * from './scanner';
 export * from './wireless-session';

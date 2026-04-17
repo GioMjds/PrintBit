@@ -38,6 +38,8 @@
 - Pricing API: `GET /api/pricing`
 - Active session API: `GET /api/session/active`
 - Admin summary (requires PIN header): `GET /api/admin/summary`
+- Customer E-Receipt API (tokenized): `GET /api/receipts/by-token/:token`
+- Admin E-Receipt API (support path): `GET /api/admin/transactions/:transactionId/receipt`
 
 ## Controlled Windows and driver updates (Issue #39)
 
@@ -116,6 +118,19 @@ All sections below must pass before closing spooler handoff reliability work.
 5. Do not mark spooler handoff work done unless every sampled `transactionId` has matching successful spooler/admin evidence and physical output.
 
 ## Frequent issues
+
+### E-Receipt link invalid/expired
+
+- Customer links use `/receipt/t/:token` and expire after 24 hours by default.
+- Expected token API outcomes:
+  - `404` + `RECEIPT_TOKEN_NOT_FOUND` for unknown token
+  - `403` + `RECEIPT_TOKEN_REVOKED` for revoked token
+  - `410` + `RECEIPT_TOKEN_EXPIRED` for expired token
+- Admin support path: open **Admin -> Transactions -> Open E-Receipt** for the transaction context ID.
+- Expected admin lookup outcomes:
+  - `404` when no receipt snapshot exists
+  - `410` when the receipt has expired
+- Expired receipt records/tokens are cleaned at startup and then on a 15-minute interval.
 
 ## Watchdog & self-healing (Issue #40)
 

@@ -17,6 +17,7 @@ What it resets:
 - Coin/job statistics
 - Hopper runtime stats
 - Owed change, pending refund, anomaly, ledger, ink history, recovery sessions
+- E-Receipt records and access tokens
 - Wireless print sessions/documents metadata
 - Admin logs, feedback entries/sessions, report issue entries/sessions/attachments
 
@@ -82,6 +83,8 @@ function buildResetState(current) {
     anomalyIncidents: [],
     financialLedger: [],
     inkHistory: [],
+    receiptRecords: [],
+    receiptAccessTokens: [],
     recovery: {
       lifecycle: {
         bootCount: 0,
@@ -108,6 +111,8 @@ const ALLOWED_TABLES = new Set([
   'report_issue_entries',
   'report_issue_sessions',
   'report_issue_attachments',
+  'receipt_records',
+  'receipt_access_tokens',
 ]);
 
 function countRows(sqliteDb, tableName) {
@@ -134,7 +139,9 @@ function clearSqliteOperationalTables(sqliteDb) {
        DELETE FROM feedback_sessions;
        DELETE FROM report_issue_attachments;
        DELETE FROM report_issue_entries;
-       DELETE FROM report_issue_sessions;`,
+       DELETE FROM report_issue_sessions;
+       DELETE FROM receipt_access_tokens;
+       DELETE FROM receipt_records;`,
     );
     // Commit once all deletes succeed.
     sqliteDb.exec('COMMIT');
@@ -170,7 +177,11 @@ async function main() {
     report_issue_entries: countRows(sqliteDb, 'report_issue_entries'),
     report_issue_sessions: countRows(sqliteDb, 'report_issue_sessions'),
     report_issue_attachments: countRows(sqliteDb, 'report_issue_attachments'),
+    receipt_records: countRows(sqliteDb, 'receipt_records'),
+    receipt_access_tokens: countRows(sqliteDb, 'receipt_access_tokens'),
     financialLedger: db.data.financialLedger.length,
+    receiptRecords: db.data.receiptRecords.length,
+    receiptAccessTokens: db.data.receiptAccessTokens.length,
     anomalyIncidents: db.data.anomalyIncidents.length,
     pendingRefunds: db.data.pendingRefunds.length,
   };
@@ -198,7 +209,11 @@ async function main() {
     report_issue_entries: countRows(sqliteDb, 'report_issue_entries'),
     report_issue_sessions: countRows(sqliteDb, 'report_issue_sessions'),
     report_issue_attachments: countRows(sqliteDb, 'report_issue_attachments'),
+    receipt_records: countRows(sqliteDb, 'receipt_records'),
+    receipt_access_tokens: countRows(sqliteDb, 'receipt_access_tokens'),
     financialLedger: db.data.financialLedger.length,
+    receiptRecords: db.data.receiptRecords.length,
+    receiptAccessTokens: db.data.receiptAccessTokens.length,
     anomalyIncidents: db.data.anomalyIncidents.length,
     pendingRefunds: db.data.pendingRefunds.length,
   };

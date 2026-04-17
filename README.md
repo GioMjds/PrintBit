@@ -8,6 +8,7 @@ It is designed for campus usage (students, faculty, and staff) with phone-to-kio
 - Coin balance via serial input (Arduino/coin acceptor).
 - Wireless upload sessions for print jobs (QR + hotspot flow).
 - Print and copy job charging tied to configurable pricing.
+- Tokenized E-Receipt links for settled print/copy transactions (`/receipt/t/:token`).
 - Scan and scan-preview flow for copy mode.
 - Admin dashboard for earnings, logs, settings, and diagnostics.
 
@@ -60,6 +61,13 @@ Troubleshooting:
 - If scanner is unavailable, check scanner connection/power and retry.
 - If the QR link expires, refresh the wireless link.
 - USB mass storage is disabled in kiosk lockdown mode by design.
+
+### E-Receipt (v1: print + copy)
+
+- After successful **print** or **copy** payment confirmation, the confirm screen can show an E-Receipt QR/link when receipt generation succeeds.
+- Customer receipt URLs use tokenized routes: `/receipt/t/:token`.
+- Receipt links are retained for up to 24 hours. After expiry, customer links show an expired/invalid/revoked outcome.
+- Admin support path: **Admin -> Transactions -> Open E-Receipt** (transaction-context lookup).
 
 ## Tech stack
 

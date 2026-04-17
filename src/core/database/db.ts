@@ -415,6 +415,37 @@ export interface RecoveryState {
   sessions: RecoverySessionEntry[];
 }
 
+export type ReceiptMode = 'print' | 'copy';
+
+export type ReceiptRecordStatus =
+  | 'settled_pending_terminal'
+  | 'printed'
+  | 'failed'
+  | 'refunded'
+  | 'refunded_pending_review';
+
+export interface ReceiptRecordEntry {
+  id: string;
+  transactionId: string;
+  mode: ReceiptMode;
+  chargedAmount: number;
+  status: ReceiptRecordStatus;
+  settledAt: string | null;
+  terminalAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+export interface ReceiptAccessTokenEntry {
+  id: string;
+  receiptId: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+}
+
 export type Schema = {
   adminLockout: AdminLockout;
   balance: number;
@@ -437,6 +468,8 @@ export type Schema = {
   inkHistory: InkHistoryEntry[];
   spoolerLifecycle: SpoolerLifecycleRecord[];
   recovery: RecoveryState;
+  receiptRecords: ReceiptRecordEntry[];
+  receiptAccessTokens: ReceiptAccessTokenEntry[];
 };
 
 const DEFAULT_DATA: Schema = {
@@ -557,6 +590,8 @@ const DEFAULT_DATA: Schema = {
     },
     sessions: [],
   },
+  receiptRecords: [],
+  receiptAccessTokens: [],
 };
 
 /**
@@ -1006,6 +1041,90 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       sessions: normalizedSessions,
     };
   };
+  const normalizeReceiptRecords = (raw: unknown): ReceiptRecordEntry[] => {
+    if (!Array.isArray(raw)) return [];
+    const records: ReceiptRecordEntry[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const candidate = entry as Partial<ReceiptRecordEntry>;
+      if (
+        typeof candidate.id !== 'string' ||
+        typeof candidate.transactionId !== 'string'
+      ) {
+        continue;
+      }
+
+      const statusCandidate = candidate.status;
+      const status: ReceiptRecordStatus =
+        statusCandidate === 'settled_pending_terminal' ||
+        statusCandidate === 'printed' ||
+        statusCandidate === 'failed' ||
+        statusCandidate === 'refunded' ||
+        statusCandidate === 'refunded_pending_review'
+          ? statusCandidate
+          : 'settled_pending_terminal';
+
+      records.push({
+        id: candidate.id,
+        transactionId: candidate.transactionId,
+        mode: candidate.mode === 'copy' ? 'copy' : 'print',
+        chargedAmount: Math.max(0, finiteOr(candidate.chargedAmount, 0)),
+        status,
+        settledAt:
+          typeof candidate.settledAt === 'string' ? candidate.settledAt : null,
+        terminalAt:
+          typeof candidate.terminalAt === 'string'
+            ? candidate.terminalAt
+            : null,
+        createdAt:
+          typeof candidate.createdAt === 'string'
+            ? candidate.createdAt
+            : new Date(0).toISOString(),
+        updatedAt:
+          typeof candidate.updatedAt === 'string'
+            ? candidate.updatedAt
+            : new Date(0).toISOString(),
+        expiresAt:
+          typeof candidate.expiresAt === 'string'
+            ? candidate.expiresAt
+            : new Date(0).toISOString(),
+      });
+    }
+    return records;
+  };
+  const normalizeReceiptAccessTokens = (
+    raw: unknown,
+  ): ReceiptAccessTokenEntry[] => {
+    if (!Array.isArray(raw)) return [];
+    const tokens: ReceiptAccessTokenEntry[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const candidate = entry as Partial<ReceiptAccessTokenEntry>;
+      if (
+        typeof candidate.id !== 'string' ||
+        typeof candidate.receiptId !== 'string' ||
+        typeof candidate.tokenHash !== 'string'
+      ) {
+        continue;
+      }
+      tokens.push({
+        id: candidate.id,
+        receiptId: candidate.receiptId,
+        tokenHash: candidate.tokenHash,
+        createdAt:
+          typeof candidate.createdAt === 'string'
+            ? candidate.createdAt
+            : new Date(0).toISOString(),
+        expiresAt:
+          typeof candidate.expiresAt === 'string'
+            ? candidate.expiresAt
+            : new Date(0).toISOString(),
+        revokedAt:
+          typeof candidate.revokedAt === 'string' ? candidate.revokedAt : null,
+      });
+    }
+    return tokens;
+  };
 
   return {
     adminLockout: {
@@ -1320,6 +1439,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       : DEFAULT_DATA.inkHistory,
     spoolerLifecycle: normalizeSpoolerLifecycleRecords(data?.spoolerLifecycle),
     recovery: normalizeRecoveryState(data?.recovery),
+    receiptRecords: normalizeReceiptRecords(data?.receiptRecords),
+    receiptAccessTokens: normalizeReceiptAccessTokens(
+      data?.receiptAccessTokens,
+    ),
   };
 }
 
@@ -1343,6 +1466,8 @@ function buildLowDbImportSnapshot(data: Schema) {
     reportIssues: data.reportIssues.slice(),
     reportIssueSessions: data.reportIssueSessions.slice(),
     reportIssueAttachments: data.reportIssueAttachments.slice(),
+    receiptRecords: data.receiptRecords.slice(),
+    receiptAccessTokens: data.receiptAccessTokens.slice(),
   };
 }
 
@@ -1394,6 +1519,8 @@ export async function migrateLegacyDbJsonToSqlite(options?: {
     result: {
       skipped: true,
       attempted: {
+        receiptRecords: 0,
+        receiptAccessTokens: 0,
         feedbackSessions: 0,
         feedback: 0,
         reportIssueSessions: 0,
@@ -1402,6 +1529,8 @@ export async function migrateLegacyDbJsonToSqlite(options?: {
         logs: 0,
       },
       inserted: {
+        receiptRecords: 0,
+        receiptAccessTokens: 0,
         feedbackSessions: 0,
         feedback: 0,
         reportIssueSessions: 0,
@@ -1410,6 +1539,7 @@ export async function migrateLegacyDbJsonToSqlite(options?: {
         logs: 0,
       },
       skippedOrphans: {
+        receiptAccessTokens: 0,
         feedback: 0,
         reportIssues: 0,
         reportIssueAttachments: 0,

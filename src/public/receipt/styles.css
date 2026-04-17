@@ -50,6 +50,14 @@
   color: var(--lavender);
 }
 
+.receipt-message--pending {
+  color: #ffd58a;
+}
+
+.receipt-message--error {
+  color: #f26e6b;
+}
+
 .receipt-back {
   display: inline-block;
   margin-top: 8px;

@@ -8,6 +8,7 @@ import {
   db,
   type Schema,
   type FinancialLedgerEntry,
+  type ReceiptRecordStatus,
   acquireIdempotencyKey,
   storeIdempotencyKey,
   releaseIdempotencyKey,
@@ -68,6 +69,7 @@ import {
   normalizeRotationDeg,
   parseRotationDeg,
 } from '@/services/document-rotation';
+import { ReceiptService } from '@/modules/receipt/receipt.service';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -281,6 +283,8 @@ async function deleteUploadByStoredFilename(
 }
 
 export class FinancialService {
+  private readonly receiptService = new ReceiptService();
+
   constructor(private readonly deps: FinancialServiceDeps) {}
 
   private incrementCoinStats(state: Schema, coinValue: number): void {
@@ -1836,6 +1840,8 @@ export class FinancialService {
       });
     }
 
+    const settledAt = getTrustedTimestamp().timestamp;
+
     await checkpointRecoverySession({
       transactionId,
       mode,
@@ -1846,13 +1852,88 @@ export class FinancialService {
       documentId: targetDocumentId ?? null,
       spoolerCorrelationKey,
       jobDispatchedAt,
-      settledAt: getTrustedTimestamp().timestamp,
+      settledAt,
       context: {
         changeState: settlement.change.state,
         changeRequested: settlement.change.requested,
         changeDispensed: settlement.change.dispensed,
       },
     });
+
+    let receipt: {
+      transactionId: string;
+      mode: 'print' | 'copy';
+      status: ReceiptRecordStatus;
+      token: string;
+      tokenId: string;
+      expiresAt: string;
+      viewUrl: string;
+      apiUrl: string;
+    } | null = null;
+    try {
+      const initialStatus: ReceiptRecordStatus =
+        mode === 'print' ? 'settled_pending_terminal' : 'printed';
+      let snapshot = this.receiptService.upsertReceiptSnapshot({
+        transactionId,
+        mode,
+        chargedAmount: settlement.chargedAmount,
+        status: initialStatus,
+        settledAt,
+        terminalAt: mode === 'print' ? null : new Date().toISOString(),
+      });
+      if (mode === 'print') {
+        const lifecycleRecord = getSpoolerLifecycleRecord(transactionId);
+        const terminalStatus = this.resolvePrintReceiptTerminalStatus(
+          transactionId,
+          lifecycleRecord?.currentState ?? null,
+        );
+        if (terminalStatus) {
+          const terminalAt =
+            lifecycleRecord?.printedAt ??
+            lifecycleRecord?.failedAt ??
+            new Date().toISOString();
+          const updated = this.receiptService.updateTerminalStatus({
+            transactionId,
+            status: terminalStatus,
+            terminalAt,
+          });
+          if (updated) snapshot = updated;
+        }
+      }
+      const tokenData = this.receiptService.mintToken(transactionId, {
+        revokeExisting: true,
+      });
+      if (!tokenData) {
+        throw new Error('Receipt token mint returned null.');
+      }
+      const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
+      const encodedToken = encodeURIComponent(tokenData.token);
+      receipt = {
+        transactionId,
+        mode,
+        status: snapshot.status,
+        token: tokenData.token,
+        tokenId: tokenData.tokenId,
+        expiresAt: tokenData.expiresAt,
+        viewUrl: new URL(`/receipt/t/${encodedToken}`, publicBaseUrl).toString(),
+        apiUrl: new URL(
+          `/api/receipts/by-token/${encodedToken}`,
+          publicBaseUrl,
+        ).toString(),
+      };
+    } catch (error) {
+      void adminService.appendAdminLog(
+        'receipt_generation_failed',
+        'Failed to create e-receipt snapshot/token after settlement.',
+        {
+          transactionId,
+          mode,
+          spoolerCorrelationKey,
+          error: error instanceof Error ? error.message : String(error),
+          phase: 'confirm_payment_settled',
+        },
+      );
+    }
 
     try {
       await financialLedgerService.append({
@@ -1952,6 +2033,7 @@ export class FinancialService {
               monitorWindowMs: PRINT_SPOOLER_MONITOR_WINDOW_MS,
             }
           : undefined,
+      receipt: receipt ?? undefined,
     });
 
     void (async () => {
@@ -2071,6 +2153,53 @@ export class FinancialService {
       });
     }
   };
+
+  private safeUpdateReceiptTerminalStatus(input: {
+    transactionId: string;
+    status: ReceiptRecordStatus;
+    phase: string;
+    spoolerCorrelationKey: string | null;
+    reason?: string;
+    terminalAt?: string;
+  }): void {
+    try {
+      this.receiptService.updateTerminalStatus({
+        transactionId: input.transactionId,
+        status: input.status,
+        terminalAt: input.terminalAt,
+      });
+    } catch (error) {
+      void adminService.appendAdminLog(
+        'receipt_status_update_failed',
+        'Failed to update e-receipt terminal status.',
+        {
+          transactionId: input.transactionId,
+          status: input.status,
+          phase: input.phase,
+          spoolerCorrelationKey: input.spoolerCorrelationKey,
+          reason: input.reason ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  private resolvePrintReceiptTerminalStatus(
+    transactionId: string,
+    lifecycleState: 'queued' | 'processing' | 'printed' | 'failed' | null,
+  ): ReceiptRecordStatus | null {
+    if (lifecycleState === 'printed') return 'printed';
+    if (lifecycleState !== 'failed') return null;
+
+    const pendingRefund = db.data!.pendingRefunds.find((entry) => {
+      const ref = entry.jobContext.transactionId;
+      return typeof ref === 'string' && ref === transactionId;
+    });
+    if (!pendingRefund) return 'failed';
+    if (pendingRefund.status === 'refunded') return 'refunded';
+    if (pendingRefund.status === 'open') return 'refunded_pending_review';
+    return 'failed';
+  }
 
   private async cleanupPrintUploadAfterSpoolerSuccess(input: {
     transactionId: string;
@@ -2248,6 +2377,17 @@ export class FinancialService {
       const refundDisposition = refundOutcome.autoRefunded
         ? 'auto_refunded'
         : 'pending_admin_review';
+      this.safeUpdateReceiptTerminalStatus({
+        transactionId,
+        status:
+          refundDisposition === 'auto_refunded'
+            ? 'refunded'
+            : 'refunded_pending_review',
+        phase: 'spooler_monitor_unavailable_refund',
+        spoolerCorrelationKey,
+        terminalAt: new Date().toISOString(),
+        reason,
+      });
 
       if (
         refundOutcome.autoRefunded &&
@@ -2369,6 +2509,14 @@ export class FinancialService {
           restoredBalanceAmount: 0,
           transactionId,
           spoolerCorrelationKey,
+        });
+        this.safeUpdateReceiptTerminalStatus({
+          transactionId,
+          status: 'failed',
+          phase: 'spooler_monitor_unavailable_trusted_time_blocked',
+          spoolerCorrelationKey,
+          terminalAt: new Date().toISOString(),
+          reason: 'Refund blocked because trusted time is unavailable.',
         });
         await checkpointRecoverySession({
           transactionId,

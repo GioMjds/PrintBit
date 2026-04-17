@@ -793,6 +793,16 @@ const thankYouDoneBtn = document.getElementById(
 const transactionReference = document.getElementById(
   'transactionReference',
 ) as HTMLElement | null;
+const receiptCtaContainer = document.getElementById(
+  'receiptCtaContainer',
+) as HTMLElement | null;
+const receiptQrCanvas = document.getElementById(
+  'receiptQrCanvas',
+) as HTMLCanvasElement | null;
+const receiptQrLink = document.getElementById('receiptQrLink') as HTMLElement | null;
+const receiptQrExpiry = document.getElementById(
+  'receiptQrExpiry',
+) as HTMLElement | null;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
@@ -840,6 +850,21 @@ const MAX_SPOOLER_FINALIZATION_TIMEOUT_MS = 120_000;
 const SPOOLER_FINALIZATION_TIMEOUT_RATIO = 0.5;
 let spoolerFinalizationTimer: number | null = null;
 let currentTransactionId: string | null = null;
+let currentReceiptUrl: string | null = null;
+let currentReceiptExpiresAt: string | null = null;
+
+type ReceiptLinkPayload = {
+  receipt?: {
+    token?: string | null;
+    url?: string | null;
+    link?: string | null;
+    expiresAt?: string | null;
+  } | null;
+  receiptToken?: string | null;
+  receiptUrl?: string | null;
+  receiptLink?: string | null;
+  receiptExpiresAt?: string | null;
+};
 
 function setTransactionReference(id: string | null): void {
   currentTransactionId = id && id.trim().length > 0 ? id.trim() : null;
@@ -851,6 +876,121 @@ function setTransactionReference(id: string | null): void {
   }
   transactionReference.textContent = 'Reference ID: —';
   transactionReference.setAttribute('hidden', '');
+}
+
+function readCandidateString(...values: Array<unknown>): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function normalizeReceiptUrl(rawUrl: string): string | null {
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function extractReceiptUrl(payload: unknown): {
+  url: string;
+  expiresAt: string | null;
+} | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const receiptPayload = payload as ReceiptLinkPayload;
+  const token = readCandidateString(
+    receiptPayload.receipt?.token,
+    receiptPayload.receiptToken,
+  );
+  const urlCandidate = readCandidateString(
+    receiptPayload.receipt?.url,
+    receiptPayload.receipt?.link,
+    receiptPayload.receiptUrl,
+    receiptPayload.receiptLink,
+  );
+  const fallbackTokenUrl = token
+    ? `/receipt/t/${encodeURIComponent(token)}`
+    : null;
+  const normalizedUrl = normalizeReceiptUrl(urlCandidate ?? fallbackTokenUrl ?? '');
+  if (!normalizedUrl) return null;
+  return {
+    url: normalizedUrl,
+    expiresAt: readCandidateString(
+      receiptPayload.receipt?.expiresAt,
+      receiptPayload.receiptExpiresAt,
+    ),
+  };
+}
+
+function clearReceiptCta(): void {
+  currentReceiptUrl = null;
+  currentReceiptExpiresAt = null;
+  if (receiptCtaContainer) {
+    receiptCtaContainer.setAttribute('hidden', '');
+  }
+  if (receiptQrLink) {
+    receiptQrLink.textContent = '';
+  }
+  if (receiptQrExpiry) {
+    receiptQrExpiry.textContent = '';
+  }
+  if (receiptQrCanvas) {
+    const context = receiptQrCanvas.getContext('2d');
+    if (context) {
+      context.clearRect(0, 0, receiptQrCanvas.width, receiptQrCanvas.height);
+    }
+  }
+}
+
+function renderReceiptCta(): void {
+  if (!receiptCtaContainer || !receiptQrCanvas || !currentReceiptUrl) {
+    if (receiptCtaContainer) receiptCtaContainer.setAttribute('hidden', '');
+    return;
+  }
+
+  receiptCtaContainer.removeAttribute('hidden');
+  if (receiptQrLink) {
+    receiptQrLink.textContent = currentReceiptUrl;
+  }
+  if (receiptQrExpiry) {
+    if (!currentReceiptExpiresAt) {
+      receiptQrExpiry.textContent = '';
+    } else {
+      const date = new Date(currentReceiptExpiresAt);
+      receiptQrExpiry.textContent = Number.isNaN(date.getTime())
+        ? `Receipt link expires at ${currentReceiptExpiresAt}`
+        : `Receipt link expires at ${date.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}`;
+    }
+  }
+
+  void QRCode.toCanvas(receiptQrCanvas, currentReceiptUrl, {
+    width: 180,
+    margin: 1,
+    color: { dark: '#1a1a2e', light: '#ffffff' },
+    errorCorrectionLevel: 'M',
+  }).catch(() => {
+    // Ignore QR render failures; URL text remains visible.
+  });
+}
+
+function captureReceiptCta(payload: unknown): void {
+  const receipt = extractReceiptUrl(payload);
+  if (!receipt) return;
+  currentReceiptUrl = receipt.url;
+  currentReceiptExpiresAt = receipt.expiresAt;
+  renderReceiptCta();
 }
 
 type SpoolerFailureEvent = {
@@ -1064,6 +1204,7 @@ function finalizePrintSuccess(
       : 'Printing complete. Thank you!';
   }
   clearConfirmSessionStorage();
+  renderReceiptCta();
   lastSpoolerCorrelationKey = null;
   spoolerTimedOut = false;
   isProcessingPayment = false;
@@ -1200,6 +1341,7 @@ function hideOverlay(el: HTMLElement | null): void {
 }
 
 function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
+  clearReceiptCta();
   setTransactionReference(ev.transactionId);
   hideOverlay(printingOverlay);
   hideOverlay(thankYouOverlay);
@@ -1340,6 +1482,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   activeSpoolerCorrelationKey = null;
   lastSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
   spoolerTimedOut = false;
+  clearReceiptCta();
 
   showOverlay(printingOverlay);
 
@@ -1484,6 +1627,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         id: string;
         state: string;
       };
+      captureReceiptCta(createData);
       const jobId = createData.id;
 
       // Poll job status
@@ -1495,6 +1639,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
       if (pollResult.state === 'printed') {
         showOverlay(thankYouOverlay);
+        renderReceiptCta();
         if (statusMessage) statusMessage.textContent = 'Your copies are ready!';
         clearConfirmSessionStorage();
       } else if (pollResult.state === 'failed') {
@@ -1608,6 +1753,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           monitorWindowMs?: number | null;
         };
       };
+      captureReceiptCta(payload);
       setTransactionReference(
         typeof payload.transactionId === 'string'
           ? payload.transactionId
@@ -1700,6 +1846,7 @@ async function pollCopyJob(
         progress?: { pagesCompleted: number; pagesTotal: number | null };
         failure?: { message?: string };
       };
+      captureReceiptCta(data);
       const { state, progress, failure } = data;
 
       if (state === 'queued' && statusMessage) {
@@ -2086,6 +2233,7 @@ if (typeof ioFactory === 'function') {
     if (event.mode !== 'print' || event.state !== 'printed') return;
     if (!matchesCurrentPrintLifecycle(event)) return;
 
+    captureReceiptCta(payload);
     finalizePrintSuccess(event.transactionId, event.printerName);
   });
 
@@ -2139,6 +2287,7 @@ if (typeof ioFactory === 'function') {
       return;
     }
 
+    captureReceiptCta(payload);
     finalizePrintSuccess(event.transactionId, event.printerName);
   });
 
