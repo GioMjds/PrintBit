@@ -105,12 +105,13 @@ Ephemeral (process memory):
 ## C) Change dispensing (coin hopper)
 
 1. Settlement logic computes `changeAmount = previousBalance - requiredAmount`.
-2. If `changeAmount > 0`, sends `HOPPER DISPENSE <requestId> <coinCount>` to Arduino via serial.
-3. Arduino acknowledges with `HOPPER ACK`, sends `HOPPER PROGRESS` updates, then `HOPPER DONE` or `HOPPER ERR`.
+2. If `changeAmount > 0`, hopper service requests payout in whole 1-peso coin count (serial `HOPPER DISPENSE ...` or ESP32 HTTP bridge, based on provider mode).
+3. Hopper responses are validated against requested coin count; partial dispense is treated as failure and only the remaining unpaid amount is recorded as owed change.
 4. Protocol defined in `hopper-protocol.ts`; request IDs are 4-char hex for Arduino memory efficiency.
 5. Hopper only dispenses **1-peso coins** — all pricing enforced as whole-peso integers.
-6. On dispense failure, owed change is recorded for admin resolution (`owedChanges` in SQLite state).
-7. Retries happen only for retryable error codes (JAM, MOTOR_TIMEOUT, PARTIAL).
+6. Settlement and audit logs track the **actual dispensed amount** (not just requested change).
+7. On dispense failure, owed change is recorded for admin resolution (`owedChanges` in SQLite state).
+8. Retries happen only for retryable error codes (JAM, MOTOR_TIMEOUT, PARTIAL).
 
 ## D) Admin flow
 

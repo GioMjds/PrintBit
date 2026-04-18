@@ -98,11 +98,16 @@ class SettlementService {
 
       const dispenseResult: HopperDispenseResult =
         await hopperService.dispenseChange(changeAmount);
+      const dispensedAmount = Math.max(
+        0,
+        Math.min(changeAmount, Math.floor(dispenseResult.dispensedCoins)),
+      );
 
       if (dispenseResult.ok) {
         io.emit('changeDispenseStatus', {
           state: 'dispensed',
           amount: changeAmount,
+          dispensed: dispensedAmount,
           attempts: dispenseResult.attempts,
           mode: jobContext.mode,
           transactionId,
@@ -116,7 +121,7 @@ class SettlementService {
           earnings: db.data!.earnings,
           change: {
             requested: changeAmount,
-            dispensed: changeAmount,
+            dispensed: dispensedAmount,
             state: 'dispensed' as const,
             attempts: dispenseResult.attempts,
           },
@@ -126,6 +131,7 @@ class SettlementService {
       io.emit('changeDispenseStatus', {
         state: 'failed',
         amount: changeAmount,
+        dispensed: dispensedAmount,
         attempts: dispenseResult.attempts,
         owedChangeId: dispenseResult.owedChangeId ?? null,
         message: dispenseResult.message,
@@ -141,7 +147,7 @@ class SettlementService {
         earnings: db.data!.earnings,
         change: {
           requested: changeAmount,
-          dispensed: 0,
+          dispensed: dispensedAmount,
           state: 'failed' as const,
           attempts: dispenseResult.attempts,
           owedChangeId: dispenseResult.owedChangeId ?? null,

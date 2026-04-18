@@ -133,8 +133,12 @@ const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
 
-const COIN_INSERT_GUIDANCE_MESSAGE =
+const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
   'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
+const COIN_INSERT_GUIDANCE_MESSAGE =
+  coinInsertNote?.textContent?.trim() ||
+  footerNote?.textContent?.trim() ||
+  DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE;
 
 function syncCoinInsertGuidanceMessage(): void {
   if (coinInsertNote) coinInsertNote.textContent = COIN_INSERT_GUIDANCE_MESSAGE;
@@ -1756,6 +1760,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         change?: {
           state?: 'none' | 'dispensed' | 'failed';
           requested?: number;
+          dispensed?: number;
           message?: string;
         };
         print?: {
@@ -1778,14 +1783,23 @@ modalConfirmBtn?.addEventListener('click', async () => {
       }
 
       if (awaitingSpoolerTerminal && payload.change?.state === 'failed') {
+        const requestedChange = payload.change.requested ?? 0;
+        const dispensedChange = payload.change.dispensed ?? 0;
+        const remainingChange = Math.max(0, requestedChange - dispensedChange);
         setPrintingPhase('printing');
         if (statusMessage) {
           statusMessage.textContent =
             'Print job accepted. Change dispensing failed. Waiting for printer confirmation and staff review.';
         }
-        setCoinEventMessage(
-          `Change owed: ₱ ${payload.change.requested ?? 0}. Staff assistance required after print verification.`,
-        );
+        if (dispensedChange > 0 && remainingChange > 0) {
+          setCoinEventMessage(
+            `Partially dispensed: ₱ ${dispensedChange}. Remaining owed: ₱ ${remainingChange}. Staff assistance required after print verification.`,
+          );
+        } else {
+          setCoinEventMessage(
+            `Change owed: ₱ ${requestedChange}. Staff assistance required after print verification.`,
+          );
+        }
       } else if (
         awaitingSpoolerTerminal &&
         payload.change?.state === 'dispensed'
@@ -1952,6 +1966,14 @@ if (typeof ioFactory === 'function') {
       typeof (payload as { value: unknown }).value === 'number'
     ) {
       const value = (payload as { value: number }).value;
+      const balance =
+        'balance' in payload &&
+        typeof (payload as { balance: unknown }).balance === 'number'
+          ? (payload as { balance: number }).balance
+          : null;
+      if (typeof balance === 'number') {
+        updateBalanceUI(balance);
+      }
       setCoinEventMessage(`Last accepted coin: ₱ ${value}`);
     }
   });
@@ -2058,6 +2080,11 @@ if (typeof ioFactory === 'function') {
       typeof (payload as { amount: unknown }).amount === 'number'
         ? (payload as { amount: number }).amount
         : 0;
+    const dispensed =
+      'dispensed' in payload &&
+      typeof (payload as { dispensed: unknown }).dispensed === 'number'
+        ? (payload as { dispensed: number }).dispensed
+        : 0;
 
     if (state === 'dispensing') {
       setPrintingPhase('dispensing');
@@ -2068,6 +2095,7 @@ if (typeof ioFactory === 'function') {
     }
 
     if (state === 'dispensed') {
+      const finalDispensed = dispensed > 0 ? dispensed : amount;
       const awaitingPrintTerminal =
         config.mode === 'print' && lastSpoolerCorrelationKey !== null;
       if (awaitingPrintTerminal) {
@@ -2079,26 +2107,29 @@ if (typeof ioFactory === 'function') {
       } else {
         setPrintingPhase('done');
         if (statusMessage) {
-          statusMessage.textContent = `Change dispensed: ₱ ${amount}.`;
+          statusMessage.textContent = `Change dispensed: ₱ ${finalDispensed}.`;
         }
       }
       return;
     }
 
     if (state === 'failed') {
+      const remaining = Math.max(0, amount - dispensed);
       const awaitingPrintTerminal =
         config.mode === 'print' && lastSpoolerCorrelationKey !== null;
       if (awaitingPrintTerminal) {
         setPrintingPhase('printing');
         if (statusMessage) {
-          statusMessage.textContent =
-            'Change dispensing failed. Print confirmation is still pending; please contact staff.';
+          statusMessage.textContent = dispensed > 0
+            ? `Partial change dispensed (₱ ${dispensed}). Remaining ₱ ${remaining} needs staff settlement after print confirmation.`
+            : 'Change dispensing failed. Print confirmation is still pending; please contact staff.';
         }
       } else {
         setPrintingPhase('failed');
         if (statusMessage) {
-          statusMessage.textContent =
-            'Change dispensing failed. Please contact staff for settlement.';
+          statusMessage.textContent = dispensed > 0
+            ? `Partial change dispensed (₱ ${dispensed}). Remaining ₱ ${remaining} needs staff settlement.`
+            : 'Change dispensing failed. Please contact staff for settlement.';
         }
       }
     }

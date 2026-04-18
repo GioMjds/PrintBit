@@ -60,6 +60,14 @@ type Esp32DispenseAttemptResult = {
 };
 
 class HopperService {
+  private normalizeDispensedCoins(
+    dispensed: number | undefined,
+    remainingCoins: number,
+  ): number {
+    if (typeof dispensed !== 'number' || !Number.isFinite(dispensed)) return 0;
+    return Math.max(0, Math.min(Math.floor(dispensed), remainingCoins));
+  }
+
   private async recordOwedChange(
     amount: number,
     reason: string,
@@ -312,11 +320,22 @@ class HopperService {
 
       const outcome = status.lastOutcome.trim().toLowerCase();
       if (outcome === 'done') {
-        const dispensed = Math.max(lastDispensedCoins, status.dispensedCoins);
+        const dispensed = this.normalizeDispensedCoins(
+          Math.max(lastDispensedCoins, status.dispensedCoins),
+          coins,
+        );
+        if (dispensed < coins) {
+          return {
+            ok: false,
+            dispensedCoins: dispensed,
+            message: `ESP32 hopper reported done after dispensing ${dispensed}/${coins} coin(s).`,
+            errorCode: HopperErrorCode.PARTIAL,
+          };
+        }
         return {
           ok: true,
-          dispensedCoins: dispensed > 0 ? dispensed : coins,
-          message: `ESP32 hopper dispensed ${dispensed > 0 ? dispensed : coins} coin(s).`,
+          dispensedCoins: dispensed,
+          message: `ESP32 hopper dispensed ${dispensed} coin(s).`,
         };
       }
 
@@ -350,15 +369,20 @@ class HopperService {
     const maxAttempts = Math.max(1, Math.floor(settings.retryCount) + 1);
     let lastMessage = 'ESP32 hopper dispense failed.';
     let lastErrorCode: HopperErrorCodeValue | undefined = HopperErrorCode.UNKNOWN;
-    let lastDispensedCoins = 0;
+    let totalDispensedCoins = 0;
+    let remainingCoins = coins;
     let performedAttempts = 0;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    for (
+      let attempt = 1;
+      attempt <= maxAttempts && remainingCoins > 0;
+      attempt += 1
+    ) {
       performedAttempts = attempt;
       stats.dispenseAttempts += 1;
       const requestId = generateRequestId();
       const startResult = await this.startEsp32Dispense(
-        coins,
+        remainingCoins,
         requestId,
         settings.timeoutMs,
       );
@@ -377,13 +401,18 @@ class HopperService {
 
       const attemptResult = await this.waitForEsp32Dispense(
         requestId,
-        coins,
+        remainingCoins,
         settings.timeoutMs,
       );
       if (attemptResult.ok) {
-        const dispensed = attemptResult.dispensedCoins;
+        const dispensedThisAttempt = this.normalizeDispensedCoins(
+          attemptResult.dispensedCoins,
+          remainingCoins,
+        );
+        totalDispensedCoins += dispensedThisAttempt;
+        remainingCoins -= dispensedThisAttempt;
         stats.dispenseSuccess += 1;
-        stats.totalDispensed += dispensed;
+        stats.totalDispensed += totalDispensedCoins;
         stats.lastDispensedAt = new Date().toISOString();
         stats.lastError = null;
         await db.write();
@@ -392,7 +421,7 @@ class HopperService {
           ok: true,
           amount: requestedAmount,
           requestedCoins: coins,
-          dispensedCoins: dispensed,
+          dispensedCoins: totalDispensedCoins,
           message: attemptResult.message,
           attempts: performedAttempts,
         };
@@ -400,7 +429,14 @@ class HopperService {
 
       lastMessage = attemptResult.message;
       lastErrorCode = attemptResult.errorCode;
-      lastDispensedCoins = attemptResult.dispensedCoins;
+      const dispensedThisAttempt = this.normalizeDispensedCoins(
+        attemptResult.dispensedCoins,
+        remainingCoins,
+      );
+      if (dispensedThisAttempt > 0) {
+        totalDispensedCoins += dispensedThisAttempt;
+        remainingCoins -= dispensedThisAttempt;
+      }
       if (
         lastErrorCode &&
         lastErrorCode !== HopperErrorCode.UNKNOWN &&
@@ -410,17 +446,39 @@ class HopperService {
       }
     }
 
-    const owed = await this.recordOwedChange(
-      requestedAmount,
-      'ESP32 hopper dispense failed.',
-      {
-        message: lastMessage,
-        requestedCoins: coins,
-        dispensedCoins: lastDispensedCoins,
-        errorCode: lastErrorCode ?? null,
-      },
-    );
+    if (remainingCoins <= 0) {
+      stats.dispenseSuccess += 1;
+      stats.totalDispensed += totalDispensedCoins;
+      stats.lastDispensedAt = new Date().toISOString();
+      stats.lastError = null;
+      await db.write();
 
+      return {
+        ok: true,
+        amount: requestedAmount,
+        requestedCoins: coins,
+        dispensedCoins: totalDispensedCoins,
+        message:
+          lastMessage.length > 0
+            ? `${lastMessage} (Full payout reached.)`
+            : 'Hopper dispensed full change.',
+        attempts: performedAttempts,
+      };
+    }
+
+    const remainingAmount = Math.max(0, requestedAmount - totalDispensedCoins);
+    const owed =
+      remainingAmount > 0
+        ? await this.recordOwedChange(remainingAmount, 'ESP32 hopper dispense failed.', {
+            message: lastMessage,
+            requestedCoins: coins,
+            dispensedCoins: totalDispensedCoins,
+            remainingCoins,
+            errorCode: lastErrorCode ?? null,
+          })
+        : undefined;
+
+    stats.totalDispensed += totalDispensedCoins;
     stats.dispenseFailures += 1;
     stats.lastError = lastMessage;
     await db.write();
@@ -440,7 +498,9 @@ class HopperService {
       context: {
         amount: requestedAmount,
         requestedCoins: coins,
-        dispensedCoins: lastDispensedCoins,
+        dispensedCoins: totalDispensedCoins,
+        remainingCoins,
+        remainingAmount,
         errorCode: lastErrorCode ?? null,
         attempts: performedAttempts,
         provider: 'esp32',
@@ -451,10 +511,10 @@ class HopperService {
       ok: false,
       amount: requestedAmount,
       requestedCoins: coins,
-      dispensedCoins: 0,
+      dispensedCoins: totalDispensedCoins,
       message: lastMessage,
       attempts: performedAttempts,
-      owedChangeId: owed.id,
+      owedChangeId: owed?.id,
       errorCode: lastErrorCode,
     };
   }
@@ -712,13 +772,19 @@ class HopperService {
     const maxAttempts = Math.max(1, Math.floor(settings.retryCount) + 1);
     let lastMessage = 'Unknown hopper failure.';
     let lastResult: HopperCommandResult | null = null;
+    let totalDispensedCoins = 0;
+    let remainingCoins = coins;
     let performedAttempts = 0;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    for (
+      let attempt = 1;
+      attempt <= maxAttempts && remainingCoins > 0;
+      attempt += 1
+    ) {
       performedAttempts = attempt;
       stats.dispenseAttempts += 1;
       const requestId = generateRequestId();
-      const command = buildDispenseCommand(requestId, coins);
+      const command = buildDispenseCommand(requestId, remainingCoins);
       const result = await sendHopperCommand(
         command,
         settings.timeoutMs,
@@ -727,9 +793,26 @@ class HopperService {
       lastResult = result;
 
       if (result.ok) {
-        const dispensed = result.dispensedCoins ?? coins;
+        const dispensed = this.normalizeDispensedCoins(
+          result.dispensedCoins ?? remainingCoins,
+          remainingCoins,
+        );
+        if (dispensed < remainingCoins) {
+          totalDispensedCoins += dispensed;
+          remainingCoins -= dispensed;
+          lastResult = {
+            ok: false,
+            message: `Hopper reported success after dispensing ${dispensed}/${remainingCoins + dispensed} coin(s).`,
+            errorCode: HopperErrorCode.PARTIAL,
+            dispensedCoins: dispensed,
+          };
+          lastMessage = lastResult.message;
+          continue;
+        }
+        totalDispensedCoins += dispensed;
+        remainingCoins -= dispensed;
         stats.dispenseSuccess += 1;
-        stats.totalDispensed += dispensed;
+        stats.totalDispensed += totalDispensedCoins;
         stats.lastDispensedAt = new Date().toISOString();
         stats.lastError = null;
         await db.write();
@@ -738,13 +821,21 @@ class HopperService {
           ok: true,
           amount: requestedAmount,
           requestedCoins: coins,
-          dispensedCoins: dispensed,
+          dispensedCoins: totalDispensedCoins,
           message: result.message,
           attempts: performedAttempts,
         };
       }
 
       lastMessage = result.message;
+      const dispensedThisAttempt = this.normalizeDispensedCoins(
+        result.dispensedCoins,
+        remainingCoins,
+      );
+      if (dispensedThisAttempt > 0) {
+        totalDispensedCoins += dispensedThisAttempt;
+        remainingCoins -= dispensedThisAttempt;
+      }
 
       // Only retry on retryable error codes; abort immediately for non-retryable
       if (result.errorCode && !isRetryableError(result.errorCode)) {
@@ -752,16 +843,39 @@ class HopperService {
       }
     }
 
-    const owed = await this.recordOwedChange(
-      requestedAmount,
-      'Hopper dispense failed.',
-      {
-        message: lastMessage,
-        requestedCoins: coins,
-        errorCode: lastResult?.errorCode ?? null,
-      },
-    );
+    if (remainingCoins <= 0) {
+      stats.dispenseSuccess += 1;
+      stats.totalDispensed += totalDispensedCoins;
+      stats.lastDispensedAt = new Date().toISOString();
+      stats.lastError = null;
+      await db.write();
 
+      return {
+        ok: true,
+        amount: requestedAmount,
+        requestedCoins: coins,
+        dispensedCoins: totalDispensedCoins,
+        message:
+          lastMessage.length > 0
+            ? `${lastMessage} (Full payout reached.)`
+            : 'Hopper dispensed full change.',
+        attempts: performedAttempts,
+      };
+    }
+
+    const remainingAmount = Math.max(0, requestedAmount - totalDispensedCoins);
+    const owed =
+      remainingAmount > 0
+        ? await this.recordOwedChange(remainingAmount, 'Hopper dispense failed.', {
+            message: lastMessage,
+            requestedCoins: coins,
+            dispensedCoins: totalDispensedCoins,
+            remainingCoins,
+            errorCode: lastResult?.errorCode ?? null,
+          })
+        : undefined;
+
+    stats.totalDispensed += totalDispensedCoins;
     stats.dispenseFailures += 1;
     stats.lastError = lastMessage;
     await db.write();
@@ -780,6 +894,9 @@ class HopperService {
       context: {
         amount: requestedAmount,
         requestedCoins: coins,
+        dispensedCoins: totalDispensedCoins,
+        remainingCoins,
+        remainingAmount,
         errorCode: lastResult?.errorCode ?? null,
         attempts: performedAttempts,
       },
@@ -789,10 +906,10 @@ class HopperService {
       ok: false,
       amount: requestedAmount,
       requestedCoins: coins,
-      dispensedCoins: 0,
+      dispensedCoins: totalDispensedCoins,
       message: lastMessage,
       attempts: performedAttempts,
-      owedChangeId: owed.id,
+      owedChangeId: owed?.id,
       errorCode: lastResult?.errorCode,
     };
   }
