@@ -187,6 +187,16 @@ body {
   margin: 0;
 }
 
+.coin-panel__note {
+  margin: -4px 0 0;
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 500;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
 /* ── Balance ring ─────────────────────────────────────────── */
 .balance-ring {
   position: relative;

@@ -129,7 +129,19 @@ const modalChange = document.getElementById('modalChange');
 const modalChangeRow = document.getElementById('modalChangeRow');
 const statusMessage = document.getElementById('statusMessage');
 const coinEventMessage = document.getElementById('coinToast');
+const coinInsertNote = document.getElementById('coinInsertNote');
+const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
+
+const COIN_INSERT_GUIDANCE_MESSAGE =
+  'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
+
+function syncCoinInsertGuidanceMessage(): void {
+  if (coinInsertNote) coinInsertNote.textContent = COIN_INSERT_GUIDANCE_MESSAGE;
+  if (footerNote) footerNote.textContent = COIN_INSERT_GUIDANCE_MESSAGE;
+}
+
+syncCoinInsertGuidanceMessage();
 
 const rawConfig = sessionStorage.getItem('printbit.config');
 const uploadedFile = sessionStorage.getItem('printbit.uploadedFile');
