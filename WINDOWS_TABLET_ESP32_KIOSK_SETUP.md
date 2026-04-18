@@ -32,6 +32,8 @@ setx PRINTBIT_NETWORK_PROVIDER esp32 /M
 setx PRINTBIT_ESP32_AP_BASE_URL http://192.168.4.1 /M
 setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX 192.168.4. /M
 setx PRINTBIT_ESP32_KIOSK_IP 192.168.4.2 /M
+setx PRINTBIT_ESP32_STATIC_IP_ENFORCE true /M
+setx PRINTBIT_ESP32_KIOSK_NETMASK 255.255.255.0 /M
 setx PORT 3000 /M
 setx PRINTBIT_KIOSK_LOCKDOWN true /M
 setx PRINTBIT_USB_EXPORT_ENABLED false /M
@@ -50,6 +52,13 @@ Then reboot once so services/tasks pick up new machine env vars.
 ```powershell
 netsh wlan set profileparameter name="PrintBit" connectionmode=auto
 netsh wlan set profileorder name="PrintBit" interface="Wi-Fi" priority=1
+```
+
+3. Set static IPv4 on the kiosk Wi-Fi adapter (Admin PowerShell):
+
+```powershell
+netsh interface ipv4 set address name="Wi-Fi" static 192.168.4.2 255.255.255.0 192.168.4.1
+netsh interface ipv4 set dnsservers name="Wi-Fi" static 192.168.4.1 primary
 ```
 
 Optional startup safety task (connect Wi-Fi on boot):
@@ -110,6 +119,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUse
 
 `install-watchdog.ps1 -AtStartup` registers watchdog tasks with the **SYSTEM** principal so server recovery still runs when the kiosk login account is different from the admin account used during setup.
 Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`, watchdog Edge recovery) now honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
+Startup scripts also enforce ESP32 static IPv4 on boot (`scripts\ensure-esp32-network.ps1`) when `PRINTBIT_ESP32_STATIC_IP_ENFORCE=true`, including Wi-Fi reconnect + static IP re-apply before server launch.
 `install-startup.ps1 -AtStartup` now also uses **SYSTEM** principal for cross-account kiosk deployments; when running as SYSTEM it starts/restarts the server and intentionally skips visible Edge launch in Session 0.
 `install-startup.ps1 -KioskUser <user>` creates a **kiosk-user logon** task that starts only the server under that user's interactive token via `scripts\start-kiosk-server.ps1` (compiled runtime via `node dist\server.js`, with `build:server` fallback if needed).
 `watchdog.ps1` is compatible with both **PowerShell 7** and **Windows PowerShell 5.1** task hosts for `/api/watchdog/health` polling.
@@ -139,6 +149,7 @@ After power-on/reboot:
 - `PrintBit Kiosk` and `PrintBit Watchdog` tasks exist and are `Ready/Running`.
 - `GET http://127.0.0.1:3000/api/startup/ready` eventually returns `ready=true`.
 - `GET http://127.0.0.1:3000/api/watchdog/health` returns healthy locally after boot settles.
+- `Get-NetIPAddress -InterfaceAlias "Wi-Fi" -AddressFamily IPv4` includes `192.168.4.2`.
 - `GET /api/admin/summary` shows healthy watchdog/recovery stats.
 - Kiosk UI appears after reboot without manual login steps (if auto-sign-in is configured).
 

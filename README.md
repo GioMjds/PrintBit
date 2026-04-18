@@ -190,7 +190,11 @@ Related env knobs:
 - `PRINTBIT_ESP32_AP_BASE_URL` (default `http://192.168.4.1`) for kiosk registration endpoint
 - `PRINTBIT_ESP32_REGISTER_TOKEN` (default `printbit-register-token`) shared token for ESP32 `/kiosk/register`
 - `PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX` (default `192.168.4.`) to detect kiosk IP for ESP32 mode
-- `PRINTBIT_ESP32_KIOSK_IP` (optional) explicitly set the kiosk's IP on the ESP32 network (bypasses auto-detection)
+- `PRINTBIT_ESP32_KIOSK_IP` (default `192.168.4.2`) kiosk IP used by launch/watchdog URLs and startup static-IP enforcement in ESP32 mode
+- `PRINTBIT_ESP32_STATIC_IP_ENFORCE` (default `true` in ESP32 mode) reconnects Wi-Fi + reapplies kiosk static IPv4 on startup scripts
+- `PRINTBIT_ESP32_KIOSK_NETMASK` (default `255.255.255.0`) netmask used by startup static-IP enforcement
+- `PRINTBIT_ESP32_GATEWAY_IP` (optional) explicit ESP32 gateway override for startup static-IP enforcement (otherwise derived from `PRINTBIT_ESP32_AP_BASE_URL`)
+- `PRINTBIT_ESP32_WIFI_INTERFACE` (optional) explicit Windows Wi-Fi interface alias for startup static-IP enforcement
 - `PRINTBIT_ESP32_COIN_SOURCE` (default `esp32`) expected source label for `/coin` bridge requests
 - `PRINTBIT_ESP32_COIN_API_KEY` (**required in `esp32` mode**) shared secret required by `/coin` bridge requests
 - `PRINTBIT_ESP32_COIN_BRIDGE_RELAXED` (default `false`) simulation-only compatibility mode for legacy `/coin?value=` requests
@@ -205,10 +209,15 @@ PRINTBIT_NETWORK_PROVIDER=esp32
 PRINTBIT_HOTSPOT_SSID=PrintBit
 PRINTBIT_HOTSPOT_PASSWORD=printbit123
 PRINTBIT_HOTSPOT_AUTH_TYPE=WPA
-# Leave empty for dynamic kiosk IP registration (recommended)
-PRINTBIT_ESP32_KIOSK_IP=
+# Fixed kiosk IP for reboot-stable ESP32 deployments
+PRINTBIT_ESP32_KIOSK_IP=192.168.4.2
 PRINTBIT_ESP32_AP_BASE_URL=http://192.168.4.1
 PRINTBIT_ESP32_REGISTER_TOKEN=printbit-register-token
+PRINTBIT_ESP32_STATIC_IP_ENFORCE=true
+PRINTBIT_ESP32_KIOSK_NETMASK=255.255.255.0
+# Optional interface/gateway overrides:
+# PRINTBIT_ESP32_WIFI_INTERFACE=Wi-Fi
+# PRINTBIT_ESP32_GATEWAY_IP=192.168.4.1
 PRINTBIT_ESP32_COIN_SOURCE=esp32
 PRINTBIT_ESP32_COIN_API_KEY=printbit-coin-bridge-key
 # Keep strict mode for production and real ESP32 bridging

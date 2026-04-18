@@ -51,6 +51,18 @@ if %errorlevel% neq 0 (
 
 if "%PORT%"=="" set "PORT=3000"
 
+if /I "%PRINTBIT_NETWORK_PROVIDER%"=="esp32" (
+    if exist "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1" (
+        echo [PrintBit] Ensuring ESP32 Wi-Fi static IP profile...
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1"
+        if %errorlevel% neq 0 (
+            echo [PrintBit] WARNING: Could not fully enforce ESP32 static IP profile.
+        )
+    ) else (
+        echo [PrintBit] WARNING: Missing network helper script at "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1"
+    )
+)
+
 if not exist "%PROJECT_DIR%\dist\server.js" (
     echo [PrintBit] Compiled server bundle missing. Building dist\server.js...
     where pnpm >nul 2>&1

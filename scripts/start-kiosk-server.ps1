@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 $ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Split-Path -Parent $ScriptsDir
+$EnsureEsp32NetworkScript = Join-Path $ScriptsDir "ensure-esp32-network.ps1"
 $LogDir = Join-Path $ProjectDir "uploads\logs"
 $LogPath = Join-Path $LogDir "kiosk-server-startup.log"
 $ServerBundlePath = Join-Path $ProjectDir "dist\server.js"
@@ -135,8 +136,31 @@ if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_SKIP_EDGE_LAUNCH)) {
     $env:PRINTBIT_SKIP_EDGE_LAUNCH = "true"
 }
 
+function Get-NetworkProvider {
+    $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return "mypublicwifi"
+    }
+    return $raw.Trim().ToLowerInvariant()
+}
+
 Write-StartupLog "Starting kiosk server task. user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name) projectDir=$ProjectDir"
 Write-StartupLog "Environment PRINTBIT_KIOSK_LOCKDOWN=$($env:PRINTBIT_KIOSK_LOCKDOWN) PRINTBIT_USB_EXPORT_ENABLED=$($env:PRINTBIT_USB_EXPORT_ENABLED) PRINTBIT_SKIP_EDGE_LAUNCH=$($env:PRINTBIT_SKIP_EDGE_LAUNCH)"
+
+if ((Get-NetworkProvider) -eq "esp32") {
+    if (Test-Path $EnsureEsp32NetworkScript) {
+        Write-StartupLog "ESP32 provider detected. Ensuring Wi-Fi static IP profile."
+        try {
+            & $EnsureEsp32NetworkScript -Quiet 2>&1 | ForEach-Object {
+                Write-StartupLog "network: $($_.ToString())"
+            }
+        } catch {
+            Write-StartupLog "WARNING: Could not fully enforce ESP32 static IP profile: $($_.Exception.Message)"
+        }
+    } else {
+        Write-StartupLog "WARNING: Missing network helper script at $EnsureEsp32NetworkScript"
+    }
+}
 
 Ensure-ServerBundle
 

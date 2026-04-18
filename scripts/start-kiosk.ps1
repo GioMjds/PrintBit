@@ -46,6 +46,7 @@ $esp32KioskIp = [Environment]::GetEnvironmentVariable("PRINTBIT_ESP32_KIOSK_IP")
 if ([string]::IsNullOrWhiteSpace($esp32KioskIp)) {
     $esp32KioskIp = "192.168.4.2"
 }
+$ensureEsp32NetworkScript = Join-Path $ScriptsDir "ensure-esp32-network.ps1"
 
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Cyan
@@ -57,6 +58,20 @@ Write-Host "[PrintBit] Port     : $Port"         -ForegroundColor Gray
 Write-Host "[PrintBit] Lockdown : $kioskLockdown" -ForegroundColor Gray
 Write-Host "[PrintBit] USB Export Enabled : $usbExportEnabled" -ForegroundColor Gray
 Write-Host ""
+
+if ($networkProvider -eq "esp32") {
+    if (Test-Path $ensureEsp32NetworkScript) {
+        Write-Host "[PrintBit] Ensuring ESP32 Wi-Fi static IP profile..." -ForegroundColor Yellow
+        try {
+            & $ensureEsp32NetworkScript
+        } catch {
+            Write-Host "[PrintBit] WARNING: Could not fully enforce ESP32 static IP profile: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        Write-Host ""
+    } else {
+        Write-Host "[PrintBit] WARNING: Missing network helper script at $ensureEsp32NetworkScript" -ForegroundColor Yellow
+    }
+}
 
 # ── 3. VERIFY DEPENDENCIES ───────────────────────────────────────────────────
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {

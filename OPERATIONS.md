@@ -253,6 +253,7 @@ Rollback path:
 - Align AP values with firmware (`SSID=PrintBit`, password/auth must match).
 - In ESP32 `.ino`, expose `POST /kiosk/register` so the kiosk can dynamically publish its current IP and captive path.
 - Keep `PRINTBIT_ESP32_AP_BASE_URL` pointed to the ESP32 AP gateway (default `http://192.168.4.1`).
+- For fixed kiosk routing after reboot, keep `PRINTBIT_ESP32_KIOSK_IP=192.168.4.2` and `PRINTBIT_ESP32_STATIC_IP_ENFORCE=true`; startup scripts will re-apply static IPv4 before server launch.
 - Validate end-to-end:
   - Start a new print session on kiosk (`/print`)
   - Scan QR and join ESP32 AP
