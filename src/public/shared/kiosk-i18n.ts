@@ -9,6 +9,7 @@ interface LanguageApiResponse {
 
 const STORAGE_LANGUAGE_KEY = 'printbit.kiosk.language';
 const STORAGE_CONTRAST_KEY = 'printbit.kiosk.highContrast';
+export const KIOSK_LANGUAGE_CHANGED_EVENT = 'printbit:language-changed';
 
 let currentLanguage: SupportedLanguage = 'en';
 let currentTranslations: Record<string, string> = {};
@@ -238,13 +239,22 @@ async function setLanguage(language: SupportedLanguage): Promise<void> {
   localizeTree(document.body);
   ensureAriaLabels(document.body);
   updateControlBarState();
+  window.dispatchEvent(
+    new CustomEvent(KIOSK_LANGUAGE_CHANGED_EVENT, {
+      detail: { language: currentLanguage },
+    }),
+  );
 }
 
 function updateControlBarState(): void {
   const bar = document.getElementById('printbitLanguageFab');
   if (!bar) return;
-  const trigger = bar.querySelector<HTMLButtonElement>('[data-role="language-toggle"]');
-  const languageBadge = bar.querySelector<HTMLElement>('[data-role="language-badge"]');
+  const trigger = bar.querySelector<HTMLButtonElement>(
+    '[data-role="language-toggle"]',
+  );
+  const languageBadge = bar.querySelector<HTMLElement>(
+    '[data-role="language-badge"]',
+  );
 
   if (languageBadge) {
     languageBadge.textContent = currentLanguage.toUpperCase();
@@ -278,16 +288,19 @@ function ensureControlBar(): void {
   `;
   document.body.appendChild(bar);
 
-  const trigger = bar.querySelector<HTMLButtonElement>('[data-role="language-toggle"]');
+  const trigger = bar.querySelector<HTMLButtonElement>(
+    '[data-role="language-toggle"]',
+  );
   trigger?.addEventListener('click', () => {
-    const nextLanguage: SupportedLanguage = currentLanguage === 'en' ? 'fil' : 'en';
+    const nextLanguage: SupportedLanguage =
+      currentLanguage === 'en' ? 'fil' : 'en';
     void setLanguage(nextLanguage).catch((error: unknown) => {
       console.error('[i18n] Failed to toggle language.', error);
     });
   });
 }
 
-export function t(key: string, fallback?: string): string {
+export function translation(key: string, fallback?: string): string {
   return currentTranslations[key] ?? fallback ?? key;
 }
 

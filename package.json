@@ -11,7 +11,7 @@
     "build": "node scripts/build-client.js",
     "build:server": "node scripts/build-server.js",
     "build:kiosk": "pnpm run build && pnpm run build:server",
-    "start:prod": "node dist/server.js",
+    "start:prod": "pnpm run ensure-network && node dist/server.js",
     "db:reset": "node ./scripts/reset-db.js",
     "kiosk": "node ./scripts/launch-kiosk.js",
     "ensure-network": "powershell -ExecutionPolicy Bypass -File .\\scripts\\ensure-esp32-network.ps1",

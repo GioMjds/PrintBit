@@ -1,5 +1,9 @@
 import QRCode from 'qrcode';
-import { initKioskLocalization } from './shared/kiosk-i18n';
+import {
+  initKioskLocalization,
+  KIOSK_LANGUAGE_CHANGED_EVENT,
+  translation,
+} from './shared/kiosk-i18n';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
@@ -41,6 +45,277 @@ powerOff?.addEventListener('click', () => {
   const ok = confirm('Power off device?');
   if (!ok) return;
   alert('Powering off...');
+});
+
+// ── Homepage clock ─────────────────────────────────────────────────────────────
+
+const clockTimeEl = document.getElementById('clockTime');
+const clockDateEl = document.getElementById('clockDate');
+
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function updateClock(): void {
+  if (!clockTimeEl || !clockDateEl) return;
+
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const h12 = hours % 12 || 12;
+
+  clockTimeEl.textContent = `${h12}:${minutes} ${ampm}`;
+  clockDateEl.textContent = `${DAY_NAMES[now.getDay()]}, ${MONTH_NAMES[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+}
+
+updateClock();
+window.setInterval(updateClock, 1000);
+
+// ── Guide overlay modal ────────────────────────────────────────────────────────
+
+interface PrintGuideStep {
+  imageUrl: string;
+  captionKey: string;
+  captionFallback: string;
+}
+
+const printGuideSteps: PrintGuideStep[] = [
+  {
+    imageUrl: '/assets/print-steps/step-1.png',
+    captionKey: 'print.guide.step1',
+    captionFallback: 'Scan "PrintBit"\'s QR code from your device to connect first.',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-2.png',
+    captionKey: 'print.guide.step2',
+    captionFallback: 'Scan the QR code shown in the kiosk to open the upload page on your device.',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-3.jpg',
+    captionKey: 'print.guide.step3',
+    captionFallback: 'Upload your document file(s) from your device.',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-4.jpg',
+    captionKey: 'print.guide.step4',
+    captionFallback: 'Press "Send to Kiosk" to transfer your file(s) to the kiosk.',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-5.jpg',
+    captionKey: 'print.guide.step5',
+    captionFallback: 'Wait for the upload to complete. If it is successful, please check in the kiosk to review your file(s).',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-6.png',
+    captionKey: 'print.guide.step6',
+    captionFallback: 'Your uploaded file(s) will appear on the kiosk screen. Review your file(s) and press "Proceed to Config" for the next step.',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-7.png',
+    captionKey: 'print.guide.step7',
+    captionFallback: 'Configure your print settings (e.g. number of copies, color or black & white) and then press "Continue" for confirmation step and to insert coins.',
+  },
+  {
+    imageUrl: '/assets/print-steps/step-8.png',
+    captionKey: 'print.guide.step8',
+    captionFallback: 'You may now proceed to insert coins. Press "Confirm & Print" and wait for the printing to start.',
+  },
+];
+
+const guideOverlay = document.getElementById('guideOverlay');
+const guideCards = guideOverlay?.querySelectorAll<HTMLElement>('.guide-card');
+const printGuideImage = document.getElementById(
+  'printGuideImage',
+) as HTMLImageElement | null;
+const printGuideCounter = document.getElementById('printGuideCounter');
+const printGuideCaption = document.getElementById('printGuideCaption');
+const printGuidePrevBtn = document.getElementById(
+  'printGuidePrevBtn',
+) as HTMLButtonElement | null;
+const printGuideNextBtn = document.getElementById(
+  'printGuideNextBtn',
+) as HTMLButtonElement | null;
+
+let activeGuide: string | null = null;
+let printGuideIndex = 0;
+const PRINT_GUIDE_NEXT_KEY = 'print.guide.next';
+const PRINT_GUIDE_GOT_IT_KEY = 'print.guide.got_it';
+const PRINT_GUIDE_NEXT_ARIA_KEY = 'print.guide.next_aria';
+const PRINT_GUIDE_CLOSE_ARIA_KEY = 'print.guide.close_aria';
+
+function isGuideOverlayVisible(): boolean {
+  return guideOverlay?.classList.contains('is-visible') ?? false;
+}
+
+function renderPrintGuideStep(): void {
+  if (
+    !printGuideSteps.length ||
+    !printGuideImage ||
+    !printGuideCounter ||
+    !printGuideCaption ||
+    !printGuidePrevBtn ||
+    !printGuideNextBtn
+  ) {
+    return;
+  }
+
+  const step = printGuideSteps[printGuideIndex];
+  const isLastStep = printGuideIndex === printGuideSteps.length - 1;
+  const nextActionLabel = translation(PRINT_GUIDE_NEXT_KEY, 'Next');
+  const nextVisualLabel = isLastStep
+    ? translation(PRINT_GUIDE_GOT_IT_KEY, '✖')
+    : '❯';
+  const isCloseIconState =
+    isLastStep && nextVisualLabel.trim().replace(/\uFE0F/g, '').length <= 1;
+  const nextAriaLabel = isLastStep
+    ? translation(PRINT_GUIDE_CLOSE_ARIA_KEY, 'Close print guide modal')
+    : translation(PRINT_GUIDE_NEXT_ARIA_KEY, 'Next print guide step');
+  printGuideCounter.textContent = `Step ${printGuideIndex + 1} of ${printGuideSteps.length}`;
+  printGuideCaption.textContent = translation(step.captionKey, step.captionFallback);
+  printGuideImage.alt = `Print guide step ${printGuideIndex + 1}`;
+  printGuideImage.style.visibility = 'visible';
+  printGuideImage.src = step.imageUrl;
+  printGuidePrevBtn.disabled = printGuideIndex === 0;
+  printGuideNextBtn.disabled = false;
+  printGuideNextBtn.textContent = nextVisualLabel;
+  printGuideNextBtn.classList.toggle('is-label', isLastStep && !isCloseIconState);
+  printGuideNextBtn.classList.toggle('is-close-icon', isCloseIconState);
+  printGuideNextBtn.title = isLastStep ? nextAriaLabel : nextActionLabel;
+  printGuideNextBtn.setAttribute('aria-label', nextAriaLabel);
+}
+
+function setPrintGuideStep(nextIndex: number): void {
+  if (!printGuideSteps.length) return;
+  if (nextIndex < 0) nextIndex = 0;
+  if (nextIndex > printGuideSteps.length - 1) {
+    nextIndex = printGuideSteps.length - 1;
+  }
+  printGuideIndex = nextIndex;
+  renderPrintGuideStep();
+}
+
+function openGuide(name: string): void {
+  if (!guideOverlay || !guideCards) return;
+
+  guideCards.forEach((card) => {
+    card.style.display = 'none';
+  });
+
+  activeGuide = name;
+  const target = document.getElementById(`guide-${name}`) as HTMLElement | null;
+  if (target) target.style.display = 'flex';
+  if (name === 'print') setPrintGuideStep(0);
+
+  guideOverlay.classList.add('is-visible');
+  guideOverlay.setAttribute('aria-hidden', 'false');
+}
+
+function closeGuide(): void {
+  if (!guideOverlay) return;
+  guideOverlay.classList.remove('is-visible');
+  guideOverlay.setAttribute('aria-hidden', 'true');
+  activeGuide = null;
+}
+
+window.addEventListener(KIOSK_LANGUAGE_CHANGED_EVENT, () => {
+  if (activeGuide === 'print' && isGuideOverlayVisible()) {
+    renderPrintGuideStep();
+  }
+});
+
+if (printGuideImage) {
+  printGuideImage.addEventListener('load', () => {
+    printGuideImage.style.visibility = 'visible';
+  });
+  printGuideImage.addEventListener('error', () => {
+    printGuideImage.style.visibility = 'hidden';
+    if (printGuideCaption) {
+      printGuideCaption.textContent = 'Step image unavailable for this step.';
+    }
+  });
+}
+
+printGuidePrevBtn?.addEventListener('click', () => {
+  setPrintGuideStep(printGuideIndex - 1);
+});
+
+printGuideNextBtn?.addEventListener('click', () => {
+  if (printGuideIndex === printGuideSteps.length - 1) {
+    closeGuide();
+    return;
+  }
+  setPrintGuideStep(printGuideIndex + 1);
+});
+
+document.querySelectorAll<HTMLElement>('.action-card__help').forEach((btn) => {
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+
+    const guideName = btn.dataset.guide;
+    if (!guideName) return;
+    openGuide(guideName);
+  });
+});
+
+guideOverlay
+  ?.querySelectorAll<HTMLElement>('.guide-card__close')
+  .forEach((btn) => {
+    btn.addEventListener('click', closeGuide);
+  });
+
+guideOverlay?.addEventListener('click', (event) => {
+  if (event.target === guideOverlay) closeGuide();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (!isGuideOverlayVisible()) return;
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeGuide();
+    return;
+  }
+
+  if (activeGuide !== 'print') return;
+
+  if (event.key === 'ArrowLeft') {
+    if (printGuideIndex === 0) return;
+    event.preventDefault();
+    setPrintGuideStep(printGuideIndex - 1);
+    return;
+  }
+
+  if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    if (printGuideIndex === printGuideSteps.length - 1) {
+      closeGuide();
+      return;
+    }
+    setPrintGuideStep(printGuideIndex + 1);
+  }
 });
 
 // ── Feedback QR modal ─────────────────────────────────────────────────────────

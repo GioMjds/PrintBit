@@ -3,6 +3,8 @@ import type { Express } from 'express';
 import path from 'node:path';
 
 export function registerStaticAssets(app: Express) {
+  app.use('/assets', express.static(path.resolve('src/assets')));
+  app.use('/assets', express.static(path.resolve('dist/assets')));
   app.use(
     '/fonts',
     express.static(path.resolve('src/fonts'), {
