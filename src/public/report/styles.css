@@ -7,6 +7,10 @@
   background: var(--bg, #f0f2f5);
 }
 
+.rp-shell--done {
+  align-items: center;
+}
+
 .rp-card,
 .rp-state {
   width: 100%;
@@ -45,6 +49,19 @@
   font-size: 1.5rem;
 }
 
+.rp-state--done {
+  max-width: 520px;
+  padding: 3.25rem 2.25rem;
+  animation: rp-pop-in 0.4s ease-out both;
+}
+
+.rp-state--done .rp-state__icon--ok {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.8rem;
+  box-shadow: 0 10px 24px rgba(22, 163, 74, 0.2);
+}
+
 .rp-state h2 {
   margin: 0;
   font-size: 1.25rem;
@@ -71,6 +88,17 @@
 @keyframes rp-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes rp-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -274,11 +302,34 @@
 .rp-attachment {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.7rem;
   padding: 0.5rem 0.7rem;
   border-radius: 8px;
   font-size: 0.85rem;
+}
+
+.rp-attachment__preview {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.rp-attachment__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.rp-attachment__meta {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 0.14rem;
 }
 
 .rp-attachment--uploading {
@@ -298,10 +349,14 @@
 }
 
 .rp-attachment__name {
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rp-attachment__status {
+  font-size: 0.76rem;
+  font-weight: 600;
 }
 
 /* ── Message ─────────────────────────────────────────────────────────────── */

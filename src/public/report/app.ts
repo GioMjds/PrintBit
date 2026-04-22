@@ -3,15 +3,6 @@ import { initKioskLocalization } from '../shared/kiosk-i18n';
 
 void initKioskLocalization();
 
-function escHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -56,6 +47,7 @@ const CATEGORIES: Array<{ value: string; label: string }> = [
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
+const shell = document.querySelector('.rp-shell') as HTMLElement | null;
 const stateLoading = document.getElementById('stateLoading') as HTMLElement;
 const stateError = document.getElementById('stateError') as HTMLElement;
 const stateForm = document.getElementById('stateForm') as HTMLElement;
@@ -83,11 +75,13 @@ const attachedFiles: Array<{
   name: string;
   id: string;
   status: 'uploading' | 'done' | 'error';
+  previewUrl: string;
 }> = [];
 
 // ── State switching ───────────────────────────────────────────────────────────
 
 function setState(state: AppState): void {
+  shell?.classList.toggle('rp-shell--done', state === 'done');
   stateLoading.classList.toggle('hidden', state !== 'loading');
   stateError.classList.toggle('hidden', state !== 'error');
   stateForm.classList.toggle(
@@ -143,12 +137,32 @@ function renderAttachmentList(): void {
   for (const item of attachedFiles) {
     const div = document.createElement('div');
     div.className = `rp-attachment rp-attachment--${item.status}`;
-    div.innerHTML = `
-      <span class="rp-attachment__name">${escHtml(item.name)}</span>
-      <span class="rp-attachment__status">
-        ${item.status === 'uploading' ? '⏳' : item.status === 'done' ? '✓' : '✗'}
-      </span>
-    `;
+
+    const preview = document.createElement('div');
+    preview.className = 'rp-attachment__preview';
+
+    const image = document.createElement('img');
+    image.src = item.previewUrl;
+    image.alt = `Preview of ${item.name}`;
+    image.loading = 'lazy';
+    preview.appendChild(image);
+
+    const meta = document.createElement('div');
+    meta.className = 'rp-attachment__meta';
+
+    const name = document.createElement('span');
+    name.className = 'rp-attachment__name';
+    name.textContent = item.name;
+
+    const status = document.createElement('span');
+    status.className = 'rp-attachment__status';
+    status.textContent =
+      item.status === 'uploading' ? '⏳ Uploading' : item.status === 'done' ? '✓ Uploaded' : '✗ Failed';
+
+    meta.appendChild(name);
+    meta.appendChild(status);
+    div.appendChild(preview);
+    div.appendChild(meta);
     attachmentList.appendChild(div);
   }
 }
@@ -159,7 +173,12 @@ async function uploadSingleFile(file: File): Promise<void> {
   if (!sessionId) throw new Error('Session unavailable');
 
   const trackIdx =
-    attachedFiles.push({ name: file.name, id: '', status: 'uploading' }) - 1;
+    attachedFiles.push({
+      name: file.name,
+      id: '',
+      status: 'uploading',
+      previewUrl: URL.createObjectURL(file),
+    }) - 1;
   renderAttachmentList();
 
   const formData = new FormData();
@@ -299,3 +318,9 @@ reportForm.addEventListener('submit', (e) => {
 
 buildCategoryChips();
 void loadSession();
+
+window.addEventListener('beforeunload', () => {
+  for (const item of attachedFiles) {
+    URL.revokeObjectURL(item.previewUrl);
+  }
+});
