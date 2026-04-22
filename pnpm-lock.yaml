@@ -39,8 +39,8 @@ importers:
         specifier: ^2.6.1
         version: 2.6.1
       i18next-http-middleware:
-        specifier: ^3.9.2
-        version: 3.9.2
+        specifier: ^3.9.3
+        version: 3.9.3
       multer:
         specifier: ^2.1.1
         version: 2.1.1
@@ -1119,8 +1119,8 @@ packages:
   i18next-fs-backend@2.6.1:
     resolution: {integrity: sha512-eYWTX7QT7kJ0sZyCPK6x1q+R63zvNKv2D6UdbMf15A8vNb2ZLyw4NNNZxPFwXlIv/U+oUtg8SakW6ZgJZcoqHQ==}
 
-  i18next-http-middleware@3.9.2:
-    resolution: {integrity: sha512-vzd0Z89xR1yF2V2USVS2G6oOzNilTXsBkxQ16GFPGJO4whQI/LIreh4p4Qy7HXQlGrWVp83YaekuG36+t9anJA==}
+  i18next-http-middleware@3.9.3:
+    resolution: {integrity: sha512-4QNrWiueeo0ry7IhclDdoEPtQsX2AN/O8ybDLIm9vfVWqWF9dt2XM9kCxm8ydeBISjjvjqs4d7lPYWVLA0HqIA==}
 
   i18next@25.9.0:
     resolution: {integrity: sha512-mJ4rVRNWOTkqh5xnaGR6iMFT5vEw3Y2MTJhcjinR/7u8cRv6dAfC0ofuePh5fVPxoh395p6JdrJTStCcNW66gg==}
@@ -2649,7 +2649,7 @@ snapshots:
 
   i18next-fs-backend@2.6.1: {}
 
-  i18next-http-middleware@3.9.2: {}
+  i18next-http-middleware@3.9.3: {}
 
   i18next@25.9.0(typescript@6.0.2):
     dependencies:
