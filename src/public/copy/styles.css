@@ -602,6 +602,60 @@ body {
   transform: scale(0.97);
 }
 
+.copy-troubleshoot {
+  margin-top: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(248, 113, 113, 0.25);
+  background: rgba(248, 113, 113, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.copy-troubleshoot__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fecaca;
+}
+
+.copy-troubleshoot__summary {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fecaca;
+}
+
+.copy-troubleshoot__group {
+  padding: 10px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  background: rgba(14, 13, 31, 0.22);
+}
+
+.copy-troubleshoot__label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #fca5a5;
+  text-transform: uppercase;
+}
+
+.copy-troubleshoot__list,
+.copy-troubleshoot__steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #ffe4e6;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* =============================================================
    FOOTER
    ============================================================= */
@@ -748,11 +802,14 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  padding: 40px 48px;
+  justify-content: center;
+  gap: 24px;
+  width: min(620px, calc(100vw - 48px));
+  min-height: clamp(360px, 56vh, 480px);
+  padding: clamp(44px, 6vh, 64px) clamp(52px, 7vw, 80px);
   background: rgba(255, 255, 255, 0.04);
   border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 28px;
+  border-radius: 32px;
   backdrop-filter: blur(20px);
   animation: overlay-card 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -773,11 +830,11 @@ body {
 }
 .scan-overlay__page {
   position: relative;
-  width: 160px;
-  height: 200px;
+  width: clamp(220px, 30vw, 280px);
+  height: clamp(280px, 40vw, 350px);
   background: rgba(255, 255, 255, 0.05);
   border: 1.5px solid rgba(167, 170, 225, 0.2);
-  border-radius: 6px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .scan-overlay__beam {
@@ -815,17 +872,17 @@ body {
 }
 
 .scan-overlay__title {
-  font-size: 20px;
+  font-size: clamp(28px, 3.2vw, 34px);
   font-weight: 800;
   letter-spacing: -0.3px;
   text-align: center;
 }
 .scan-overlay__sub {
-  font-size: 14px;
+  font-size: clamp(15px, 1.7vw, 18px);
   color: var(--ink-muted);
   text-align: center;
   line-height: 1.5;
-  max-width: 280px;
+  max-width: 420px;
 }
 
 /* ── Responsive ───────────────────────────────────────────── */

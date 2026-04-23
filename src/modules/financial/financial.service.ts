@@ -880,51 +880,15 @@ export class FinancialService {
       return res.status(400).json({ error: 'transactionId is required.' });
     }
 
-    const ledgerEntries = db
-      .data!.financialLedger.filter(
-        (entry) => entry.referenceId === transactionId,
-      )
-      .map((entry) => ({
-        eventType: entry.eventType,
-        amount: entry.amount,
-        timestamp: entry.timestamp,
-      }));
-    const jobCompleted = ledgerEntries.find(
-      (entry) => entry.eventType === 'job_completed',
-    );
-    const recoverySession =
-      db.data!.recovery.sessions.find(
-        (session) => session.id === transactionId,
-      ) ?? null;
-    const lifecycleRecord = getSpoolerLifecycleRecord(transactionId);
-    const pendingRefund = db.data!.pendingRefunds.find((entry) => {
-      const ref = entry.jobContext.transactionId;
-      return typeof ref === 'string' && ref === transactionId;
-    });
-
-    if (!jobCompleted && !recoverySession && !pendingRefund) {
+    const result = this.receiptService.resolveByTransactionId(transactionId);
+    if (result.status !== 'ok') {
+      if (result.status === 'expired') {
+        return res.status(410).json({ error: 'Receipt has expired.' });
+      }
       return res.status(404).json({ error: 'Receipt not found.' });
     }
 
-    return res.json({
-      transactionId,
-      mode: lifecycleRecord?.mode ?? recoverySession?.mode ?? null,
-      chargedAmount:
-        jobCompleted?.amount ??
-        recoverySession?.chargedAmount ??
-        pendingRefund?.chargedAmount ??
-        null,
-      status: lifecycleRecord?.currentState ?? recoverySession?.phase ?? null,
-      settledAt: recoverySession?.settledAt ?? null,
-      terminalAt:
-        lifecycleRecord?.printedAt ??
-        lifecycleRecord?.failedAt ??
-        recoverySession?.spoolerTerminalAt ??
-        null,
-      refundStatus: pendingRefund?.status ?? null,
-      refundReason: pendingRefund?.reason ?? null,
-      generatedAt: getTrustedTimestamp().timestamp,
-    });
+    return res.json(result.payload);
   };
 
   resetBalance = async (_req: Request, res: Response): Promise<void> => {
@@ -1878,6 +1842,18 @@ export class FinancialService {
         mode,
         chargedAmount: settlement.chargedAmount,
         status: initialStatus,
+        change: {
+          requested: settlement.change.requested,
+          dispensed: settlement.change.dispensed,
+          state:
+            settlement.change.state === 'dispensed' ||
+            settlement.change.state === 'failed'
+              ? settlement.change.state
+              : 'none',
+          attempts: settlement.change.attempts ?? 0,
+          owedChangeId: settlement.change.owedChangeId ?? null,
+          message: settlement.change.message ?? null,
+        },
         settledAt,
         terminalAt: mode === 'print' ? null : new Date().toISOString(),
       });

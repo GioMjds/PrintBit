@@ -424,12 +424,24 @@ export type ReceiptRecordStatus =
   | 'refunded'
   | 'refunded_pending_review';
 
+export type ReceiptChangeState = 'none' | 'dispensed' | 'failed';
+
+export interface ReceiptChangeSnapshot {
+  requested: number;
+  dispensed: number;
+  state: ReceiptChangeState;
+  attempts: number;
+  owedChangeId: string | null;
+  message: string | null;
+}
+
 export interface ReceiptRecordEntry {
   id: string;
   transactionId: string;
   mode: ReceiptMode;
   chargedAmount: number;
   status: ReceiptRecordStatus;
+  change: ReceiptChangeSnapshot;
   settledAt: string | null;
   terminalAt: string | null;
   createdAt: string;
@@ -1063,6 +1075,40 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         statusCandidate === 'refunded_pending_review'
           ? statusCandidate
           : 'settled_pending_terminal';
+      const changeCandidate =
+        typeof candidate.change === 'object' && candidate.change !== null
+          ? (candidate.change as Partial<ReceiptChangeSnapshot>)
+          : null;
+      const changeStateCandidate = changeCandidate?.state;
+      const changeState: ReceiptChangeState =
+        changeStateCandidate === 'dispensed' ||
+        changeStateCandidate === 'failed' ||
+        changeStateCandidate === 'none'
+          ? changeStateCandidate
+          : 'none';
+      const changeRequested = Math.max(
+        0,
+        Math.floor(finiteOr(changeCandidate?.requested, 0)),
+      );
+      const rawChangeDispensed = Math.max(
+        0,
+        Math.floor(finiteOr(changeCandidate?.dispensed, 0)),
+      );
+      const changeDispensed = Math.min(rawChangeDispensed, changeRequested);
+      const changeAttempts = Math.max(
+        0,
+        Math.floor(finiteOr(changeCandidate?.attempts, 0)),
+      );
+      const changeOwedId =
+        typeof changeCandidate?.owedChangeId === 'string' &&
+        changeCandidate.owedChangeId.trim().length > 0
+          ? changeCandidate.owedChangeId.trim()
+          : null;
+      const changeMessage =
+        typeof changeCandidate?.message === 'string' &&
+        changeCandidate.message.trim().length > 0
+          ? changeCandidate.message.trim()
+          : null;
 
       records.push({
         id: candidate.id,
@@ -1070,6 +1116,14 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         mode: candidate.mode === 'copy' ? 'copy' : 'print',
         chargedAmount: Math.max(0, finiteOr(candidate.chargedAmount, 0)),
         status,
+        change: {
+          requested: changeRequested,
+          dispensed: changeDispensed,
+          state: changeState,
+          attempts: changeAttempts,
+          owedChangeId: changeState === 'failed' ? changeOwedId : null,
+          message: changeState === 'failed' ? changeMessage : null,
+        },
         settledAt:
           typeof candidate.settledAt === 'string' ? candidate.settledAt : null,
         terminalAt:

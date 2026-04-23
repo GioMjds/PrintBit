@@ -315,6 +315,52 @@ body {
   height: 100%;
   animation: fade-state 250ms ease both;
 }
+
+#stateScanning {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  height: 100vh;
+  padding: 24px;
+  background: rgba(14, 13, 31, 0.88);
+  backdrop-filter: blur(10px);
+}
+
+#stateScanning .scan-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  width: min(620px, calc(100vw - 48px));
+  min-height: clamp(360px, 56vh, 480px);
+  padding: clamp(44px, 6vh, 64px) clamp(52px, 7vw, 80px);
+  border-radius: 32px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(167, 170, 225, 0.18);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+}
+
+#stateScanning .scanning-anim__page {
+  width: clamp(220px, 30vw, 280px);
+  height: clamp(280px, 40vw, 350px);
+  border-radius: 12px;
+}
+
+#stateScanning .preview-state__label {
+  font-size: clamp(28px, 3.2vw, 34px);
+  max-width: 420px;
+  color: #f0f0ff;
+}
+
+#stateScanning .preview-state__sub {
+  font-size: clamp(15px, 1.7vw, 18px);
+  max-width: 420px;
+  color: var(--ink-muted);
+  opacity: 1;
+}
 @keyframes fade-state {
   from {
     opacity: 0;
@@ -1320,5 +1366,59 @@ body {
   color: var(--peach, #ffb450);
   text-align: center;
   margin: 0;
+}
+
+.scan-troubleshoot {
+  margin-top: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scan-troubleshoot__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fecaca;
+}
+
+.scan-troubleshoot__summary {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #fecaca;
+}
+
+.scan-troubleshoot__group {
+  padding: 10px 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  background: rgba(14, 13, 31, 0.22);
+}
+
+.scan-troubleshoot__label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #fca5a5;
+  text-transform: uppercase;
+}
+
+.scan-troubleshoot__list,
+.scan-troubleshoot__steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #ffe4e6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 

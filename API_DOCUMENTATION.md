@@ -202,9 +202,18 @@ Response payload:
 - `mode`
 - `chargedAmount`
 - `status`
+- `change.requested`
+- `change.dispensed`
+- `change.remaining`
+- `change.state`
+- `change.attempts`
+- `change.owedChangeId`
+- `change.message`
 - `settledAt`
 - `terminalAt`
 - `generatedAt`
+
+`change.state` is one of `none`, `dispensed`, or `failed`. When the state is `failed`, `remaining` and `owedChangeId` identify the unresolved customer payout that staff must settle manually.
 
 Token status responses:
 
@@ -233,7 +242,13 @@ Status responses:
 
 Existing transaction-ID receipt endpoint is still available during migration and is used by `/receipt/:transactionId`.
 
-For `mode: "print"`, the server now recomputes pricing from the same quote pipeline used by `/api/print/quote`, so displayed quote amount and charged amount stay aligned.
+It now returns the same receipt snapshot payload shape as token-based reads, including the `change` reconciliation block.
+
+Status responses:
+
+- `400` when `transactionId` is missing
+- `404` when receipt snapshot is not found
+- `410` when receipt has expired
 
 ### Legacy endpoints
 

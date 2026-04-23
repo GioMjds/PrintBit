@@ -3,6 +3,8 @@ import { receiptStore } from '@/core/database/sqlite-storage';
 import type {
   LogMeta,
   ReceiptAccessTokenEntry,
+  ReceiptChangeSnapshot,
+  ReceiptChangeState,
   ReceiptMode,
   ReceiptRecordEntry,
   ReceiptRecordStatus,
@@ -18,6 +20,7 @@ export interface ReceiptSnapshotInput {
   mode: ReceiptMode;
   chargedAmount: number;
   status?: ReceiptRecordStatus;
+  change?: Partial<ReceiptChangeSnapshot>;
   settledAt?: string | null;
   terminalAt?: string | null;
   expiresAt?: string;
@@ -42,11 +45,22 @@ export interface MintReceiptTokenResult {
   expiresAt: string;
 }
 
+export interface ReceiptPayloadChange {
+  requested: number;
+  dispensed: number;
+  remaining: number;
+  state: ReceiptChangeState;
+  attempts: number;
+  owedChangeId: string | null;
+  message: string | null;
+}
+
 export interface ReceiptPayload {
   transactionId: string;
   mode: ReceiptMode;
   chargedAmount: number;
   status: ReceiptRecordStatus;
+  change: ReceiptPayloadChange;
   settledAt: string | null;
   terminalAt: string | null;
   generatedAt: string;
@@ -118,6 +132,7 @@ export class ReceiptService {
       input.terminalAt,
       existing?.terminalAt ?? null,
     );
+    const change = this.normalizeChangeSnapshot(input.change, existing?.change);
 
     const entry: ReceiptRecordEntry = {
       id: existing?.id ?? randomUUID(),
@@ -125,6 +140,7 @@ export class ReceiptService {
       mode: input.mode === 'copy' ? 'copy' : 'print',
       chargedAmount: this.normalizeChargedAmount(input.chargedAmount),
       status: input.status ?? existing?.status ?? DEFAULT_STATUS,
+      change,
       settledAt,
       terminalAt,
       createdAt: existing?.createdAt ?? nowIso,
@@ -143,6 +159,11 @@ export class ReceiptService {
           mode: entry.mode,
           status: entry.status,
           chargedAmount: entry.chargedAmount,
+          changeState: entry.change.state,
+          changeRequested: entry.change.requested,
+          changeDispensed: entry.change.dispensed,
+          changeAttempts: entry.change.attempts,
+          owedChangeId: entry.change.owedChangeId,
           expiresAt: entry.expiresAt,
         },
       );
@@ -312,11 +333,24 @@ export class ReceiptService {
   }
 
   private toPayload(record: ReceiptRecordEntry, now: Date): ReceiptPayload {
+    const remaining = Math.max(
+      0,
+      record.change.requested - record.change.dispensed,
+    );
     return {
       transactionId: record.transactionId,
       mode: record.mode,
       chargedAmount: record.chargedAmount,
       status: record.status,
+      change: {
+        requested: record.change.requested,
+        dispensed: record.change.dispensed,
+        remaining,
+        state: record.change.state,
+        attempts: record.change.attempts,
+        owedChangeId: record.change.owedChangeId,
+        message: record.change.message,
+      },
       settledAt: record.settledAt,
       terminalAt: record.terminalAt,
       generatedAt: now.toISOString(),
@@ -350,6 +384,60 @@ export class ReceiptService {
   private normalizeChargedAmount(value: number): number {
     if (!Number.isFinite(value)) return 0;
     return Math.max(0, value);
+  }
+
+  private normalizeChangeState(value: string): ReceiptChangeState {
+    if (value === 'dispensed' || value === 'failed' || value === 'none') {
+      return value;
+    }
+    return 'none';
+  }
+
+  private normalizeChangeAmount(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.floor(value));
+  }
+
+  private normalizeChangeSnapshot(
+    input: Partial<ReceiptChangeSnapshot> | undefined,
+    existing: ReceiptChangeSnapshot | undefined,
+  ): ReceiptChangeSnapshot {
+    const requested = this.normalizeChangeAmount(
+      input?.requested ?? existing?.requested ?? 0,
+    );
+    const dispensedRaw = this.normalizeChangeAmount(
+      input?.dispensed ?? existing?.dispensed ?? 0,
+    );
+    const dispensed = Math.min(dispensedRaw, requested);
+    const attempts = this.normalizeChangeAmount(
+      input?.attempts ?? existing?.attempts ?? 0,
+    );
+    const state = this.normalizeChangeState(
+      input?.state ?? existing?.state ?? 'none',
+    );
+    const owedChangeId =
+      typeof input?.owedChangeId === 'string' &&
+      input.owedChangeId.trim().length > 0
+        ? input.owedChangeId.trim()
+        : typeof existing?.owedChangeId === 'string' &&
+            existing.owedChangeId.trim().length > 0
+          ? existing.owedChangeId.trim()
+          : null;
+    const message =
+      typeof input?.message === 'string' && input.message.trim().length > 0
+        ? input.message.trim()
+        : typeof existing?.message === 'string' && existing.message.trim().length > 0
+          ? existing.message.trim()
+          : null;
+
+    return {
+      requested,
+      dispensed,
+      state,
+      attempts,
+      owedChangeId: state === 'failed' ? owedChangeId : null,
+      message: state === 'failed' ? message : null,
+    };
   }
 
   private appendLifecycleLog(

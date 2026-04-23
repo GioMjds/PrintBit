@@ -14,6 +14,12 @@ const jobsCopy = document.getElementById('jobsCopy') as HTMLElement;
 const jobsScan = document.getElementById('jobsScan') as HTMLElement;
 const storageFiles = document.getElementById('storageFiles') as HTMLElement;
 const storageBytes = document.getElementById('storageBytes') as HTMLElement;
+const owedChangeOpen = document.getElementById(
+  'owedChangeOpen',
+) as HTMLElement | null;
+const owedChangeHint = document.getElementById(
+  'owedChangeHint',
+) as HTMLElement | null;
 const barPrint = document.getElementById('barPrint') as HTMLElement | null;
 const barCopy = document.getElementById('barCopy') as HTMLElement | null;
 const barScan = document.getElementById('barScan') as HTMLElement | null;
@@ -143,6 +149,15 @@ function applySummary(summary: SummaryResponse): void {
   jobsScan.textContent = String(summary.jobStats.scan);
   storageFiles.textContent = String(summary.storage.fileCount);
   storageBytes.textContent = formatBytes(summary.storage.bytes);
+  if (owedChangeOpen) {
+    owedChangeOpen.textContent = String(summary.owedChangeOpenCount);
+  }
+  if (owedChangeHint) {
+    owedChangeHint.textContent =
+      summary.owedChangeOpenCount > 0
+        ? 'Manual change settlement required now.'
+        : 'No unsettled change payouts.';
+  }
   const openCount =
     summary.anomalyStats.openCount > 0
       ? String(summary.anomalyStats.openCount)

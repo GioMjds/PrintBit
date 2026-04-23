@@ -1,7 +1,7 @@
 /* ── KPI row ─────────────────────────────────────────────── */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
 }
 
@@ -116,6 +116,19 @@
 
 .kpi--storage .kpi__value {
   color: var(--amber);
+}
+
+.kpi--owed .kpi__icon-wrap {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--red);
+}
+
+.kpi--owed .kpi__glow {
+  background: radial-gradient(circle at 20% 50%, rgba(248, 113, 113, 0.12) 0%, transparent 70%);
+}
+
+.kpi--owed .kpi__value {
+  color: var(--red);
 }
 
 /* ── Panel row ───────────────────────────────────────────── */

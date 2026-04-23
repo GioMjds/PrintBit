@@ -41,6 +41,8 @@
 - Customer E-Receipt API (tokenized): `GET /api/receipts/by-token/:token`
 - Admin E-Receipt API (support path): `GET /api/admin/transactions/:transactionId/receipt`
 
+Admin dashboard overview now surfaces an explicit open owed-change KPI (`owedChangeOpenCount`) so unresolved payouts are visible without drilling into anomaly logs.
+
 ## Controlled Windows and driver updates (Issue #39)
 
 ### Baseline setup
@@ -122,6 +124,7 @@ All sections below must pass before closing spooler handoff reliability work.
 ### E-Receipt link invalid/expired
 
 - Customer links use `/receipt/t/:token` and expire after 24 hours by default.
+- Receipt payloads include change reconciliation fields (`requested`, `dispensed`, `remaining`, `state`, `owedChangeId`, `message`) tied to the transaction ID.
 - Expected token API outcomes:
   - `404` + `RECEIPT_TOKEN_NOT_FOUND` for unknown token
   - `403` + `RECEIPT_TOKEN_REVOKED` for revoked token

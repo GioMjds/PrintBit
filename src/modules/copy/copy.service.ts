@@ -592,6 +592,18 @@ export class CopyService {
           this.safeUpsertSettledReceiptSnapshot({
             transactionId: jobId,
             chargedAmount: settlement.chargedAmount,
+            change: {
+              requested: settlement.change.requested,
+              dispensed: settlement.change.dispensed,
+              state:
+                settlement.change.state === 'dispensed' ||
+                settlement.change.state === 'failed'
+                  ? settlement.change.state
+                  : 'none',
+              attempts: settlement.change.attempts ?? 0,
+              owedChangeId: settlement.change.owedChangeId ?? null,
+              message: settlement.change.message ?? null,
+            },
             settledAt,
           });
           const completedJob = jobStore.getJob(jobId);
@@ -769,6 +781,14 @@ export class CopyService {
   private safeUpsertSettledReceiptSnapshot(input: {
     transactionId: string;
     chargedAmount: number;
+    change: {
+      requested: number;
+      dispensed: number;
+      state: 'none' | 'dispensed' | 'failed';
+      attempts: number;
+      owedChangeId: string | null;
+      message: string | null;
+    };
     settledAt: string;
   }): void {
     try {
@@ -777,6 +797,7 @@ export class CopyService {
         mode: 'copy',
         chargedAmount: input.chargedAmount,
         status: 'settled_pending_terminal',
+        change: input.change,
         settledAt: input.settledAt,
       });
     } catch (error) {

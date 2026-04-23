@@ -218,7 +218,7 @@ if (backLink) {
   if (config.mode === 'copy') {
     backLink.href = '/copy';
   } else if (config.mode === 'scan') {
-    backLink.href = '/config?mode=scan';
+    backLink.href = '/scan';
   } else if (config.sessionId) {
     backLink.href = `/config?sessionId=${encodeURIComponent(config.sessionId)}`;
   }
@@ -872,11 +872,13 @@ let currentReceiptExpiresAt: string | null = null;
 type ReceiptLinkPayload = {
   receipt?: {
     token?: string | null;
+    viewUrl?: string | null;
     url?: string | null;
     link?: string | null;
     expiresAt?: string | null;
   } | null;
   receiptToken?: string | null;
+  receiptViewUrl?: string | null;
   receiptUrl?: string | null;
   receiptLink?: string | null;
   receiptExpiresAt?: string | null;
@@ -928,6 +930,8 @@ function extractReceiptUrl(payload: unknown): {
     receiptPayload.receiptToken,
   );
   const urlCandidate = readCandidateString(
+    receiptPayload.receipt?.viewUrl,
+    receiptPayload.receiptViewUrl,
     receiptPayload.receipt?.url,
     receiptPayload.receipt?.link,
     receiptPayload.receiptUrl,

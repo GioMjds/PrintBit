@@ -54,6 +54,14 @@ interface PDFViewport {
   height: number;
 }
 
+type CopyFailureCause =
+  | 'no_document'
+  | 'placement'
+  | 'dirty_glass'
+  | 'busy'
+  | 'connection'
+  | 'unknown';
+
 const continueBtn = document.getElementById(
   'continueBtn',
 ) as HTMLButtonElement | null;
@@ -89,12 +97,207 @@ const previewPlaceholder = document.getElementById(
 const previewStatusText = document.getElementById(
   'previewStatusText',
 ) as HTMLElement | null;
+const copyTroubleshootingPanel = document.getElementById(
+  'copyTroubleshootingPanel',
+) as HTMLElement | null;
+const copyTroubleshootSummary = document.getElementById(
+  'copyTroubleshootSummary',
+) as HTMLElement | null;
+const copyTroubleshootCauses = document.getElementById(
+  'copyTroubleshootCauses',
+) as HTMLUListElement | null;
+const copyTroubleshootSteps = document.getElementById(
+  'copyTroubleshootSteps',
+) as HTMLOListElement | null;
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
 
 let previewPath: string | null = null;
 let previewReleaseToken: string | null = null;
 let previewObjectUrl: string | null = null;
 const RELEASE_TIMEOUT_MS = 1_500;
+
+const COPY_FAILURE_GUIDES: Record<
+  CopyFailureCause,
+  { causes: string[]; steps: string[] }
+> = {
+  no_document: {
+    causes: [
+      'No page is currently on the scanner glass.',
+      'Page is face-up instead of face-down on the glass.',
+      'Only part of the page is inside the scan area.',
+    ],
+    steps: [
+      'Place one page face-down on the scanner glass.',
+      'Align the page with the corner marks so the whole page is inside the frame.',
+      'Close the scanner cover gently, then tap Check Document again.',
+    ],
+  },
+  placement: {
+    causes: [
+      'Page is tilted so edges are outside the scan area.',
+      'Paper shifted while the scanner started reading.',
+      'Document is smaller/larger than expected and not centered.',
+    ],
+    steps: [
+      'Reposition the page flat and straight on the glass.',
+      'Keep page corners inside the scanner frame markings.',
+      'Hold the cover steady while starting Check Document.',
+    ],
+  },
+  dirty_glass: {
+    causes: [
+      'Dust, smudges, or streaks are on the scanner glass.',
+      'Dirt on the white backing causes false detection issues.',
+      'Previous paper debris left marks in the scan area.',
+    ],
+    steps: [
+      'Open the lid and clean the scanner glass with a soft, dry microfiber cloth.',
+      'If needed, lightly dampen cloth with glass cleaner (do not spray directly on scanner).',
+      'Dry completely, place the document again, and retry.',
+    ],
+  },
+  busy: {
+    causes: [
+      'Scanner is still finishing a previous scan request.',
+      'Another process is using the scanner right now.',
+      'Scanner service is temporarily busy.',
+    ],
+    steps: [
+      'Wait a few seconds, then tap Retry once.',
+      'Avoid tapping Check Document repeatedly in quick succession.',
+      'If it remains busy, go back and try the copy flow again.',
+    ],
+  },
+  connection: {
+    causes: [
+      'Scanner connection is unstable or unavailable.',
+      'Scanner is powered off or not ready.',
+      'Scanner driver/service is unavailable on the kiosk.',
+    ],
+    steps: [
+      'Confirm scanner power is on and the scanner is ready.',
+      'Check scanner cable connections are firmly seated.',
+      'Retry; if still failing, ask staff to check scanner connection and service.',
+    ],
+  },
+  unknown: {
+    causes: [
+      'Scanner could not complete document detection.',
+      'Page placement or scanner readiness may have interrupted detection.',
+      'Temporary scanner runtime issue occurred.',
+    ],
+    steps: [
+      'Remove and place the page face-down again, flat on the glass.',
+      'Check the glass is clean and close the lid before retrying.',
+      'If it still fails, restart scan flow or ask staff for assistance.',
+    ],
+  },
+};
+
+function sanitizeUserFacingError(rawMessage: string): string {
+  const fallback = 'Could not complete scanner check. Please try again.';
+  const initial = rawMessage.trim();
+  if (!initial) return fallback;
+
+  let safeMessage = initial
+    .replace(/epson\s*l5290\s*series/gi, 'scanner')
+    .replace(/naps2(?:\.console\.exe)?/gi, 'scanner service')
+    .replace(/\btwain\b/gi, 'scanner driver')
+    .replace(/\bwia\b/gi, 'scanner driver')
+    .replace(/[A-Z]:\\[^ ]+/g, 'scanner service path')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (!safeMessage) return fallback;
+  return safeMessage;
+}
+
+function classifyCopyFailure(rawMessage: string): CopyFailureCause {
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('no document') ||
+    normalized.includes('no pages') ||
+    normalized.includes('not detected')
+  ) {
+    return 'no_document';
+  }
+
+  if (
+    normalized.includes('align') ||
+    normalized.includes('alignment') ||
+    normalized.includes('skew') ||
+    normalized.includes('crop') ||
+    normalized.includes('position')
+  ) {
+    return 'placement';
+  }
+
+  if (
+    normalized.includes('dirty') ||
+    normalized.includes('smudge') ||
+    normalized.includes('streak') ||
+    normalized.includes('dust') ||
+    normalized.includes('glass')
+  ) {
+    return 'dirty_glass';
+  }
+
+  if (
+    normalized.includes('busy') ||
+    normalized.includes('in use') ||
+    normalized.includes('another scan') ||
+    normalized.includes('already scanning')
+  ) {
+    return 'busy';
+  }
+
+  if (
+    normalized.includes('no scanner') ||
+    normalized.includes('not connected') ||
+    normalized.includes('unavailable') ||
+    normalized.includes('connection') ||
+    normalized.includes('usb') ||
+    normalized.includes('driver') ||
+    normalized.includes('cannot communicate') ||
+    normalized.includes('offline')
+  ) {
+    return 'connection';
+  }
+
+  return 'unknown';
+}
+
+function replaceListItems(
+  listEl: HTMLUListElement | HTMLOListElement | null,
+  items: string[],
+): void {
+  if (!listEl) return;
+  listEl.replaceChildren();
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.textContent = item;
+    listEl.appendChild(li);
+  }
+}
+
+function hideCopyTroubleshooting(): void {
+  if (copyTroubleshootingPanel) copyTroubleshootingPanel.style.display = 'none';
+}
+
+function showCopyTroubleshooting(rawMessage: string): string {
+  const safeMessage = sanitizeUserFacingError(rawMessage);
+  const cause = classifyCopyFailure(rawMessage);
+  const guide = COPY_FAILURE_GUIDES[cause];
+
+  if (copyTroubleshootSummary) {
+    copyTroubleshootSummary.textContent = safeMessage;
+  }
+  replaceListItems(copyTroubleshootCauses, guide.causes);
+  replaceListItems(copyTroubleshootSteps, guide.steps);
+  if (copyTroubleshootingPanel) copyTroubleshootingPanel.style.display = '';
+  return safeMessage;
+}
 
 function setBackNavigationLocked(locked: boolean): void {
   if (!backBtn) return;
@@ -187,8 +390,9 @@ function resetPreviewSurfaces(): void {
 }
 
 function showError(msg: string): void {
+  const safeMessage = showCopyTroubleshooting(msg);
   if (errorBanner) errorBanner.style.display = '';
-  if (errorText) errorText.textContent = msg;
+  if (errorText) errorText.textContent = safeMessage;
   if (checkDocBtn) checkDocBtn.style.display = '';
   if (previewSection) previewSection.style.display = 'none';
   if (previewPlaceholder) previewPlaceholder.style.display = '';
@@ -205,6 +409,7 @@ function showError(msg: string): void {
 
 function hideError(): void {
   if (errorBanner) errorBanner.style.display = 'none';
+  hideCopyTroubleshooting();
 }
 
 async function renderPdfPreview(buf: ArrayBuffer): Promise<void> {

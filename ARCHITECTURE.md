@@ -117,14 +117,16 @@ Ephemeral (process memory):
 
 1. Admin authenticates with PIN.
 2. UI reads summary/status/settings/logs.
-3. Maintenance actions can reset balance, clear storage, update settings, export logs, and resolve owed changes.
+3. Dashboard overview surfaces explicit open owed-change count alongside anomaly counts for faster payout reconciliation triage.
+4. Maintenance actions can reset balance, clear storage, update settings, export logs, and resolve owed changes.
 
 ## E) E-Receipt flow (v1 scope: print + copy)
 
 1. On settled `POST /api/confirm-payment` for `mode: "print"` or `mode: "copy"`, the backend snapshots receipt data and mints an access token.
 2. Customer receipt access uses `/receipt/t/:token` -> `GET /api/receipts/by-token/:token`.
 3. Admin support uses transaction context (`GET /api/admin/transactions/:transactionId/receipt`) and does not expose customer tokens.
-4. Receipt records and access tokens default to 24-hour retention; cleanup runs at startup and then on a 15-minute interval.
+4. Receipt snapshots persist change reconciliation (`requested`, `dispensed`, `remaining`, `state`, `owedChangeId`, `message`) so customer and admin views are deterministic.
+5. Receipt records and access tokens default to 24-hour retention; cleanup runs at startup and then on a 15-minute interval.
 
 ## External dependencies
 

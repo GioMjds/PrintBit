@@ -119,15 +119,17 @@
 
               <!-- Scanning animation state -->
               <div class="preview-state hidden" id="stateScanning">
-                <div class="scanning-anim" aria-hidden="true">
-                  <div class="scanning-anim__page">
-                    <div class="scanning-anim__beam"></div>
+                <div class="scan-overlay__card">
+                  <div class="scanning-anim" aria-hidden="true">
+                    <div class="scanning-anim__page">
+                      <div class="scanning-anim__beam"></div>
+                    </div>
                   </div>
+                  <p class="preview-state__label">Scanning your document…</p>
+                  <p class="preview-state__sub" id="scanProgress">
+                    Initialising scanner
+                  </p>
                 </div>
-                <p class="preview-state__label">Scanning your document…</p>
-                <p class="preview-state__sub" id="scanProgress">
-                  Initialising scanner
-                </p>
               </div>
 
               <!-- Scanned result state -->
@@ -298,6 +300,30 @@
               </p>
             </div>
           </div>
+
+          <section
+            id="scanTroubleshootingPanel"
+            class="scan-troubleshoot"
+            style="display: none"
+            aria-live="polite"
+          >
+            <h3 class="scan-troubleshoot__title">Troubleshoot scanner issue</h3>
+            <p class="scan-troubleshoot__summary" id="scanTroubleshootSummary"></p>
+            <div class="scan-troubleshoot__group">
+              <p class="scan-troubleshoot__label">Possible reasons</p>
+              <ul
+                class="scan-troubleshoot__list"
+                id="scanTroubleshootCauses"
+              ></ul>
+            </div>
+            <div class="scan-troubleshoot__group">
+              <p class="scan-troubleshoot__label">How to fix it on the machine</p>
+              <ol
+                class="scan-troubleshoot__steps"
+                id="scanTroubleshootSteps"
+              ></ol>
+            </div>
+          </section>
 
           <!-- /scan-info-card -->
           <div style="display: none">

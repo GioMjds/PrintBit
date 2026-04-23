@@ -6,6 +6,7 @@ import type {
   FeedbackSessionEntry,
   LogMeta,
   ReceiptAccessTokenEntry,
+  ReceiptChangeState,
   ReceiptRecordEntry,
   ReceiptRecordStatus,
   ReportIssueAttachmentEntry,
@@ -406,6 +407,14 @@ function ensureSchema(db: DatabaseSync): void {
           'refunded_pending_review'
         )
       ),
+      change_requested INTEGER NOT NULL DEFAULT 0,
+      change_dispensed INTEGER NOT NULL DEFAULT 0,
+      change_state TEXT NOT NULL DEFAULT 'none' CHECK (
+        change_state IN ('none', 'dispensed', 'failed')
+      ),
+      change_attempts INTEGER NOT NULL DEFAULT 0,
+      change_owed_id TEXT,
+      change_message TEXT,
       settled_at TEXT,
       terminal_at TEXT,
       created_at TEXT NOT NULL,
@@ -469,6 +478,42 @@ function ensureSchema(db: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name
       ON consumable_ink_snapshots(printer_name);
   `);
+
+  const receiptColumnRows = db
+    .prepare('PRAGMA table_info(receipt_records)')
+    .all() as Array<Record<string, unknown>>;
+  const receiptColumns = new Set(
+    receiptColumnRows
+      .map((row) => (typeof row.name === 'string' ? row.name : ''))
+      .filter((name) => name.length > 0),
+  );
+
+  if (!receiptColumns.has('change_requested')) {
+    db.exec(
+      'ALTER TABLE receipt_records ADD COLUMN change_requested INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  if (!receiptColumns.has('change_dispensed')) {
+    db.exec(
+      'ALTER TABLE receipt_records ADD COLUMN change_dispensed INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  if (!receiptColumns.has('change_state')) {
+    db.exec(
+      "ALTER TABLE receipt_records ADD COLUMN change_state TEXT NOT NULL DEFAULT 'none'",
+    );
+  }
+  if (!receiptColumns.has('change_attempts')) {
+    db.exec(
+      'ALTER TABLE receipt_records ADD COLUMN change_attempts INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+  if (!receiptColumns.has('change_owed_id')) {
+    db.exec('ALTER TABLE receipt_records ADD COLUMN change_owed_id TEXT');
+  }
+  if (!receiptColumns.has('change_message')) {
+    db.exec('ALTER TABLE receipt_records ADD COLUMN change_message TEXT');
+  }
 }
 
 function getMetaValue(key: string): string | null {
@@ -1737,16 +1782,28 @@ export class ReceiptSqliteStore {
           mode,
           charged_amount,
           status,
+          change_requested,
+          change_dispensed,
+          change_state,
+          change_attempts,
+          change_owed_id,
+          change_message,
           settled_at,
           terminal_at,
           created_at,
           updated_at,
           expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(transaction_id) DO UPDATE SET
           mode = excluded.mode,
           charged_amount = excluded.charged_amount,
           status = excluded.status,
+          change_requested = excluded.change_requested,
+          change_dispensed = excluded.change_dispensed,
+          change_state = excluded.change_state,
+          change_attempts = excluded.change_attempts,
+          change_owed_id = excluded.change_owed_id,
+          change_message = excluded.change_message,
           settled_at = excluded.settled_at,
           terminal_at = excluded.terminal_at,
           updated_at = excluded.updated_at,
@@ -1758,6 +1815,12 @@ export class ReceiptSqliteStore {
         entry.mode,
         entry.chargedAmount,
         entry.status,
+        entry.change.requested,
+        entry.change.dispensed,
+        entry.change.state,
+        entry.change.attempts,
+        entry.change.owedChangeId,
+        entry.change.message,
         entry.settledAt,
         entry.terminalAt,
         entry.createdAt,
@@ -1775,6 +1838,12 @@ export class ReceiptSqliteStore {
           mode,
           charged_amount,
           status,
+          change_requested,
+          change_dispensed,
+          change_state,
+          change_attempts,
+          change_owed_id,
+          change_message,
           settled_at,
           terminal_at,
           created_at,
@@ -1798,6 +1867,12 @@ export class ReceiptSqliteStore {
           mode,
           charged_amount,
           status,
+          change_requested,
+          change_dispensed,
+          change_state,
+          change_attempts,
+          change_owed_id,
+          change_message,
           settled_at,
           terminal_at,
           created_at,
@@ -1849,6 +1924,12 @@ export class ReceiptSqliteStore {
           mode,
           charged_amount,
           status,
+          change_requested,
+          change_dispensed,
+          change_state,
+          change_attempts,
+          change_owed_id,
+          change_message,
           settled_at,
           terminal_at,
           created_at,
@@ -1957,6 +2038,12 @@ export class ReceiptSqliteStore {
           rr.mode AS receipt_mode,
           rr.charged_amount AS receipt_charged_amount,
           rr.status AS receipt_status,
+          rr.change_requested AS receipt_change_requested,
+          rr.change_dispensed AS receipt_change_dispensed,
+          rr.change_state AS receipt_change_state,
+          rr.change_attempts AS receipt_change_attempts,
+          rr.change_owed_id AS receipt_change_owed_id,
+          rr.change_message AS receipt_change_message,
           rr.settled_at AS receipt_settled_at,
           rr.terminal_at AS receipt_terminal_at,
           rr.created_at AS receipt_created_at,
@@ -1986,6 +2073,12 @@ export class ReceiptSqliteStore {
         mode: row.receipt_mode,
         charged_amount: row.receipt_charged_amount,
         status: row.receipt_status,
+        change_requested: row.receipt_change_requested,
+        change_dispensed: row.receipt_change_dispensed,
+        change_state: row.receipt_change_state,
+        change_attempts: row.receipt_change_attempts,
+        change_owed_id: row.receipt_change_owed_id,
+        change_message: row.receipt_change_message,
         settled_at: row.receipt_settled_at,
         terminal_at: row.receipt_terminal_at,
         created_at: row.receipt_created_at,
@@ -2057,13 +2150,45 @@ export class ReceiptSqliteStore {
     return 'settled_pending_terminal';
   }
 
+  private toReceiptChangeState(value: unknown): ReceiptChangeState {
+    if (value === 'dispensed' || value === 'failed' || value === 'none') {
+      return value;
+    }
+    return 'none';
+  }
+
   private toReceiptRecord(row: Record<string, unknown>): ReceiptRecordEntry {
+    const requested = Math.max(
+      0,
+      Math.floor(Number(row.change_requested ?? 0) || 0),
+    );
+    const dispensed = Math.max(
+      0,
+      Math.floor(Number(row.change_dispensed ?? 0) || 0),
+    );
+    const attempts = Math.max(
+      0,
+      Math.floor(Number(row.change_attempts ?? 0) || 0),
+    );
+    const changeState = this.toReceiptChangeState(row.change_state);
+    const owedChangeId =
+      typeof row.change_owed_id === 'string' ? row.change_owed_id : null;
+    const changeMessage =
+      typeof row.change_message === 'string' ? row.change_message : null;
     return {
       id: String(row.id ?? ''),
       transactionId: String(row.transaction_id ?? ''),
       mode: row.mode === 'copy' ? 'copy' : 'print',
       chargedAmount: Number(row.charged_amount ?? 0),
       status: this.toReceiptStatus(row.status),
+      change: {
+        requested,
+        dispensed: Math.min(dispensed, requested),
+        state: changeState,
+        attempts,
+        owedChangeId: changeState === 'failed' ? owedChangeId : null,
+        message: changeState === 'failed' ? changeMessage : null,
+      },
       settledAt: typeof row.settled_at === 'string' ? row.settled_at : null,
       terminalAt: typeof row.terminal_at === 'string' ? row.terminal_at : null,
       createdAt: String(row.created_at ?? ''),
@@ -2439,12 +2564,18 @@ export function importLowDbSnapshotIfNeeded(
             mode,
             charged_amount,
             status,
+            change_requested,
+            change_dispensed,
+            change_state,
+            change_attempts,
+            change_owed_id,
+            change_message,
             settled_at,
             terminal_at,
             created_at,
             updated_at,
             expires_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           receipt.id,
@@ -2452,6 +2583,12 @@ export function importLowDbSnapshotIfNeeded(
           receipt.mode,
           receipt.chargedAmount,
           receipt.status,
+          receipt.change.requested,
+          receipt.change.dispensed,
+          receipt.change.state,
+          receipt.change.attempts,
+          receipt.change.owedChangeId,
+          receipt.change.message,
           receipt.settledAt,
           receipt.terminalAt,
           receipt.createdAt,

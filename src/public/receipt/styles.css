@@ -45,6 +45,12 @@
   font-size: 13px;
 }
 
+#rChangeRemaining,
+#rChangeStatus,
+#rChangeMessage {
+  color: var(--peach);
+}
+
 .receipt-message {
   margin: 14px 0;
   color: var(--lavender);

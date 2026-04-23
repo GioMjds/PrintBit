@@ -49,6 +49,15 @@ type AdminReceiptPayload = {
   mode: string | null;
   chargedAmount: number | null;
   status: string | null;
+  change?: {
+    requested: number;
+    dispensed: number;
+    remaining: number;
+    state: string | null;
+    attempts: number;
+    owedChangeId: string | null;
+    message: string | null;
+  };
   settledAt: string | null;
   terminalAt: string | null;
   generatedAt: string;
@@ -128,6 +137,19 @@ function formatReceiptStatus(value: string | null): string {
   return value.replace(/_/g, ' ');
 }
 
+function formatReceiptPeso(value: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return `₱${value.toFixed(2)}`;
+}
+
+function formatReceiptChangeState(value: string | null): string {
+  if (!value) return 'none';
+  if (value === 'failed') return 'dispense failed';
+  if (value === 'dispensed') return 'dispensed';
+  if (value === 'none') return 'none';
+  return value.replace(/_/g, ' ');
+}
+
 function writeReceiptWindow(windowRef: Window, html: string): void {
   windowRef.document.open();
   windowRef.document.write(html);
@@ -152,10 +174,30 @@ function loadingReceiptHtml(transactionId: string): string {
 }
 
 function receiptWindowHtml(payload: AdminReceiptPayload): string {
-  const amount =
-    typeof payload.chargedAmount === 'number'
-      ? `₱${payload.chargedAmount.toFixed(2)}`
-      : '—';
+  const amount = formatReceiptPeso(payload.chargedAmount);
+  const changeRequested =
+    typeof payload.change?.requested === 'number' &&
+    Number.isFinite(payload.change.requested)
+      ? Math.max(0, payload.change.requested)
+      : 0;
+  const changeDispensed =
+    typeof payload.change?.dispensed === 'number' &&
+    Number.isFinite(payload.change.dispensed)
+      ? Math.max(0, Math.min(payload.change.dispensed, changeRequested))
+      : 0;
+  const changeRemaining =
+    typeof payload.change?.remaining === 'number' &&
+    Number.isFinite(payload.change.remaining)
+      ? Math.max(0, payload.change.remaining)
+      : Math.max(0, changeRequested - changeDispensed);
+  const changeState =
+    typeof payload.change?.state === 'string' ? payload.change.state : 'none';
+  const changeMessage =
+    typeof payload.change?.message === 'string' && payload.change.message.trim()
+      ? payload.change.message.trim()
+      : changeRemaining > 0
+        ? 'Remaining change requires manual staff settlement.'
+        : 'No outstanding change.';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -187,6 +229,11 @@ function receiptWindowHtml(payload: AdminReceiptPayload): string {
         <div class="k">Transaction ID</div><div class="v">${escapeHtml(payload.transactionId)}</div>
         <div class="k">Mode</div><div class="v">${escapeHtml(formatReceiptMode(payload.mode))}</div>
         <div class="k">Charged</div><div class="v">${amount}</div>
+        <div class="k">Change Requested</div><div class="v">${escapeHtml(formatReceiptPeso(changeRequested))}</div>
+        <div class="k">Change Dispensed</div><div class="v">${escapeHtml(formatReceiptPeso(changeDispensed))}</div>
+        <div class="k">Remaining Owed</div><div class="v">${escapeHtml(formatReceiptPeso(changeRemaining))}</div>
+        <div class="k">Change Status</div><div class="v">${escapeHtml(formatReceiptChangeState(changeState))}</div>
+        <div class="k">Change Message</div><div class="v">${escapeHtml(changeMessage)}</div>
         <div class="k">Status</div><div class="v">${escapeHtml(formatReceiptStatus(payload.status))}</div>
         <div class="k">Settled At</div><div class="v">${escapeHtml(formatReceiptDate(payload.settledAt))}</div>
         <div class="k">Terminal At</div><div class="v">${escapeHtml(formatReceiptDate(payload.terminalAt))}</div>

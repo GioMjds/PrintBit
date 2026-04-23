@@ -55,6 +55,14 @@ interface StoredScanConfig {
   scanReleaseToken?: string | null;
 }
 
+type ScanFailureCause =
+  | 'paper_jam'
+  | 'empty_feeder'
+  | 'multi_feed'
+  | 'busy'
+  | 'connection'
+  | 'unknown';
+
 const previewHint = document.getElementById('previewHint') as HTMLElement;
 const stateIdle = document.getElementById('stateIdle') as HTMLElement;
 const stateScanning = document.getElementById('stateScanning') as HTMLElement;
@@ -86,6 +94,18 @@ const proceedBtnLabel = document.getElementById(
 const softCopyFeeText = document.getElementById(
   'softCopyFeeText',
 ) as HTMLElement;
+const scanTroubleshootingPanel = document.getElementById(
+  'scanTroubleshootingPanel',
+) as HTMLElement | null;
+const scanTroubleshootSummary = document.getElementById(
+  'scanTroubleshootSummary',
+) as HTMLElement | null;
+const scanTroubleshootCauses = document.getElementById(
+  'scanTroubleshootCauses',
+) as HTMLUListElement | null;
+const scanTroubleshootSteps = document.getElementById(
+  'scanTroubleshootSteps',
+) as HTMLOListElement | null;
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
 
 const PREVIEW_STATES: Record<
@@ -109,6 +129,190 @@ const SCAN_COLOR: ScanColor = 'color';
 const SCAN_DPI: ScanDpi = '600';
 
 const RELEASE_TIMEOUT_MS = 1_500;
+
+const SCAN_FAILURE_GUIDES: Record<
+  ScanFailureCause,
+  { causes: string[]; steps: string[] }
+> = {
+  paper_jam: {
+    causes: [
+      'Paper is stuck in the feeder path.',
+      'A torn or folded sheet blocked the rollers.',
+      'The feeder cover was not fully closed after loading.',
+    ],
+    steps: [
+      'Open the feeder cover and remove jammed paper slowly in the feed direction.',
+      'Check for torn scraps near rollers, then close all covers firmly.',
+      'Reload straight sheets (not folded/stapled) and align paper guides before rescanning.',
+    ],
+  },
+  empty_feeder: {
+    causes: [
+      'No page is inserted in the feeder slot.',
+      'Page was inserted too shallow or skewed so pickup failed.',
+      'Paper guides are too loose to grip the sheet.',
+    ],
+    steps: [
+      'Insert at least one clean, flat sheet fully into the feeder tray.',
+      'Align both paper guides to the paper width so the sheet stays centered.',
+      'Try again with one sheet first to confirm feeding works before loading more.',
+    ],
+  },
+  multi_feed: {
+    causes: [
+      'Two or more sheets were pulled at the same time.',
+      'Paper stack is curled, damp, or static-clinged together.',
+      'Pages entered the feeder at an angle.',
+    ],
+    steps: [
+      'Remove the stack, fan and straighten pages, then reload a smaller stack.',
+      'Use dry, flat paper and remove folded or wrinkled sheets.',
+      'Keep paper guides snug and rescan to verify smooth single-sheet feeding.',
+    ],
+  },
+  busy: {
+    causes: [
+      'Scanner is still finishing a previous job.',
+      'Another request is currently using the scanner.',
+      'The scanner service is recovering from a recent interruption.',
+    ],
+    steps: [
+      'Wait a few seconds for the scanner to become idle.',
+      'Press Rescan once and avoid repeated rapid taps.',
+      'If it stays busy, return Home and retry one scan job at a time.',
+    ],
+  },
+  connection: {
+    causes: [
+      'Scanner USB/cable connection is loose or temporarily unavailable.',
+      'Scanner is powered off or still booting.',
+      'Scanner driver/service is unavailable on the kiosk.',
+    ],
+    steps: [
+      'Check that the scanner is powered on and fully ready.',
+      'Reseat the scanner cable and ensure it is securely connected.',
+      'Retry the scan; if the issue persists, ask staff to check scanner connection and service.',
+    ],
+  },
+  unknown: {
+    causes: [
+      'The feeder could not complete the scan request.',
+      'Document loading or alignment may have interrupted scanning.',
+      'Scanner may have hit a temporary runtime issue.',
+    ],
+    steps: [
+      'Remove and reinsert the page straight into the feeder with guides aligned.',
+      'Check for jammed, folded, or damaged sheets and retry with a clean page.',
+      'If it still fails, power-cycle the scanner and retry or ask staff for assistance.',
+    ],
+  },
+};
+
+function sanitizeUserFacingError(rawMessage: string): string {
+  const fallback = 'Scan failed. Please check the feeder and try again.';
+  const initial = rawMessage.trim();
+  if (!initial) return fallback;
+
+  let safeMessage = initial
+    .replace(/epson\s*l5290\s*series/gi, 'scanner')
+    .replace(/naps2(?:\.console\.exe)?/gi, 'scanner service')
+    .replace(/\btwain\b/gi, 'scanner driver')
+    .replace(/\bwia\b/gi, 'scanner driver')
+    .replace(/[A-Z]:\\[^ ]+/g, 'scanner service path')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  if (!safeMessage) return fallback;
+  return safeMessage;
+}
+
+function classifyScanFailure(rawMessage: string): ScanFailureCause {
+  const normalized = rawMessage.toLowerCase();
+
+  if (
+    normalized.includes('paper jam') ||
+    normalized.includes('jam') ||
+    normalized.includes('stuck')
+  ) {
+    return 'paper_jam';
+  }
+
+  if (
+    normalized.includes('multi-feed') ||
+    normalized.includes('multifeed') ||
+    normalized.includes('double feed') ||
+    normalized.includes('misfeed') ||
+    normalized.includes('skew')
+  ) {
+    return 'multi_feed';
+  }
+
+  if (
+    normalized.includes('no document') ||
+    normalized.includes('no pages') ||
+    normalized.includes('empty feeder') ||
+    normalized.includes('insert document') ||
+    normalized.includes('load paper')
+  ) {
+    return 'empty_feeder';
+  }
+
+  if (
+    normalized.includes('busy') ||
+    normalized.includes('in use') ||
+    normalized.includes('another scan') ||
+    normalized.includes('already scanning')
+  ) {
+    return 'busy';
+  }
+
+  if (
+    normalized.includes('no scanner') ||
+    normalized.includes('not connected') ||
+    normalized.includes('unavailable') ||
+    normalized.includes('connection') ||
+    normalized.includes('usb') ||
+    normalized.includes('driver') ||
+    normalized.includes('cannot communicate') ||
+    normalized.includes('offline')
+  ) {
+    return 'connection';
+  }
+
+  return 'unknown';
+}
+
+function replaceListItems(
+  listEl: HTMLUListElement | HTMLOListElement | null,
+  items: string[],
+): void {
+  if (!listEl) return;
+  listEl.replaceChildren();
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.textContent = item;
+    listEl.appendChild(li);
+  }
+}
+
+function hideScanTroubleshooting(): void {
+  if (scanTroubleshootingPanel) scanTroubleshootingPanel.style.display = 'none';
+}
+
+function showScanTroubleshooting(rawMessage: string): string {
+  const safeMessage = sanitizeUserFacingError(rawMessage);
+  const cause = classifyScanFailure(rawMessage);
+  const guide = SCAN_FAILURE_GUIDES[cause];
+
+  if (scanTroubleshootSummary) {
+    scanTroubleshootSummary.textContent = safeMessage;
+  }
+  replaceListItems(scanTroubleshootCauses, guide.causes);
+  replaceListItems(scanTroubleshootSteps, guide.steps);
+  if (scanTroubleshootingPanel) scanTroubleshootingPanel.style.display = '';
+
+  return safeMessage;
+}
 
 function setBackNavigationLocked(locked: boolean): void {
   if (!backBtn) return;
@@ -266,6 +470,7 @@ async function restoreScanPreviewFromSession(): Promise<boolean> {
   currentPage = 0;
 
   showPreview('result', 'Restored your scanned document preview.');
+  hideScanTroubleshooting();
   updatePager();
   updateSoftCopyPricingUi();
   rescanBtn.style.display = 'flex';
@@ -286,6 +491,7 @@ async function startScan(): Promise<void> {
   const hasPreviousPreview = previousPages.length > 0 && Boolean(previousFilename);
 
   setBackNavigationLocked(true);
+  hideScanTroubleshooting();
   showPreview('scanning', 'Scanning your document…');
   scanBtn.disabled = true;
   scanBtn.setAttribute('aria-disabled', 'true');
@@ -355,7 +561,8 @@ async function startScan(): Promise<void> {
     scanBtnLabel.textContent = 'Scan Document';
   } catch (err) {
     clearInterval(progTimer);
-    const msg = err instanceof Error ? err.message : 'Scan failed';
+    const rawMessage = err instanceof Error ? err.message : 'Scan failed';
+    const safeMessage = showScanTroubleshooting(rawMessage);
 
     if (hasPreviousPreview) {
       scannedPages = previousPages;
@@ -366,7 +573,10 @@ async function startScan(): Promise<void> {
         Math.min(previousPage, previousPages.length - 1),
       );
 
-      showPreview('result', `Previous scan kept. New scan failed: ${msg}`);
+      showPreview(
+        'result',
+        `Previous scan kept. New scan failed: ${safeMessage}`,
+      );
       updatePager();
       updateSoftCopyPricingUi();
       rescanBtn.style.display = 'flex';
@@ -378,8 +588,8 @@ async function startScan(): Promise<void> {
       return;
     }
 
-    errorText.textContent = msg;
-    showPreview('error', msg);
+    errorText.textContent = safeMessage;
+    showPreview('error', safeMessage);
     scanBtn.disabled = false;
     scanBtn.setAttribute('aria-disabled', 'false');
     rescanBtn.style.display = 'none';
@@ -398,6 +608,7 @@ function resetToIdle(): void {
   currentPage = 0;
 
   showPreview('idle', 'Insert document into the feeder and press Scan');
+  hideScanTroubleshooting();
   previewControls.style.display = 'none';
   pageCountBadge.style.display = 'none';
   rescanBtn.style.display = 'none';
@@ -438,7 +649,7 @@ proceedBtn.addEventListener('click', () => {
     }),
   );
   sessionStorage.setItem('printbit.mode', 'scan');
-  window.location.href = '/config?mode=scan';
+  window.location.href = '/confirm';
 });
 
 async function initializeScanPage(): Promise<void> {
@@ -446,6 +657,7 @@ async function initializeScanPage(): Promise<void> {
   const restored = await restoreScanPreviewFromSession();
   if (restored) return;
 
+  hideScanTroubleshooting();
   showPreview('idle', 'Insert document into the feeder and press Scan');
   scanBtn.disabled = false;
   scanBtn.setAttribute('aria-disabled', 'false');
