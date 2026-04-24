@@ -38,11 +38,74 @@ const openAlertBadgeMob = document.getElementById(
   'openAlertBadgeMob',
 ) as HTMLElement | null;
 
+const txDrawerBackdrop = document.getElementById(
+  'txDrawerBackdrop',
+) as HTMLElement | null;
+const txDetailDrawer = document.getElementById('txDetailDrawer') as HTMLElement | null;
+const txDetailCloseBtn = document.getElementById(
+  'txDetailCloseBtn',
+) as HTMLButtonElement | null;
+const txDetailState = document.getElementById('txDetailState') as HTMLElement | null;
+const dTransactionId = document.getElementById('dTransactionId') as HTMLElement | null;
+const dMode = document.getElementById('dMode') as HTMLElement | null;
+const dAmount = document.getElementById('dAmount') as HTMLElement | null;
+const dStatus = document.getElementById('dStatus') as HTMLElement | null;
+const dChangeRequested = document.getElementById(
+  'dChangeRequested',
+) as HTMLElement | null;
+const dChangeDispensed = document.getElementById(
+  'dChangeDispensed',
+) as HTMLElement | null;
+const dChangeRemaining = document.getElementById(
+  'dChangeRemaining',
+) as HTMLElement | null;
+const dChangeStatus = document.getElementById('dChangeStatus') as HTMLElement | null;
+const dChangeMessage = document.getElementById('dChangeMessage') as HTMLElement | null;
+const dSettledAt = document.getElementById('dSettledAt') as HTMLElement | null;
+const dTerminalAt = document.getElementById('dTerminalAt') as HTMLElement | null;
+const dGeneratedAt = document.getElementById('dGeneratedAt') as HTMLElement | null;
+const dContextHint = document.getElementById('dContextHint') as HTMLElement | null;
+const dMissingReasons = document.getElementById('dMissingReasons') as HTMLElement | null;
+const dRelatedLogsBody = document.getElementById(
+  'dRelatedLogsBody',
+) as HTMLElement | null;
+const dOpenReceiptBtn = document.getElementById(
+  'dOpenReceiptBtn',
+) as HTMLButtonElement | null;
+const dCopyIdBtn = document.getElementById('dCopyIdBtn') as HTMLButtonElement | null;
+const dCreateReportBtn = document.getElementById(
+  'dCreateReportBtn',
+) as HTMLButtonElement | null;
+
+const txReportModal = document.getElementById('txReportModal') as HTMLElement | null;
+const txReportCloseBtn = document.getElementById(
+  'txReportCloseBtn',
+) as HTMLButtonElement | null;
+const txReportCancelBtn = document.getElementById(
+  'txReportCancelBtn',
+) as HTMLButtonElement | null;
+const txReportSubmitBtn = document.getElementById(
+  'txReportSubmitBtn',
+) as HTMLButtonElement | null;
+const txReportSummary = document.getElementById('txReportSummary') as HTMLElement | null;
+const txReportTitleInput = document.getElementById(
+  'txReportTitleInput',
+) as HTMLInputElement | null;
+const txReportCategoryInput = document.getElementById(
+  'txReportCategoryInput',
+) as HTMLSelectElement | null;
+const txReportDescriptionInput = document.getElementById(
+  'txReportDescriptionInput',
+) as HTMLTextAreaElement | null;
+
 const PAGE_SIZE = 20;
 let refreshTimer: number | null = null;
 let currentPage = 1;
 let totalLogs = 0;
 let allLogs: LogsResponse['logs'] = [];
+let activeDrawerTransactionId: string | null = null;
+let reportContext: TransactionContextPayload | null = null;
+const transactionContextCache = new Map<string, TransactionContextPayload>();
 
 type AdminReceiptPayload = {
   transactionId: string;
@@ -63,6 +126,83 @@ type AdminReceiptPayload = {
   generatedAt: string;
 };
 
+type TransactionContextPayload = {
+  transactionId: string;
+  mode: string | null;
+  chargedAmount: number | null;
+  status: string | null;
+  change: {
+    requested: number | null;
+    dispensed: number | null;
+    remaining: number | null;
+    state: string | null;
+    attempts: number | null;
+    owedChangeId: string | null;
+    message: string | null;
+  };
+  settledAt: string | null;
+  terminalAt: string | null;
+  generatedAt: string;
+  receipt: {
+    available: boolean;
+    expired: boolean;
+    source: 'snapshot' | 'derived';
+  };
+  contextFlags: {
+    hasIncompleteContext: boolean;
+    hasReceiptSnapshot: boolean;
+    hasTransactionLogs: boolean;
+    missingTransactionMeta: boolean;
+    missingReasons: string[];
+  };
+  settlement: {
+    spoolerPhase: string | null;
+    reconciliationAction: string | null;
+    pendingRefundCount: number;
+    hasOutstandingReview: boolean;
+    hint: string | null;
+  };
+  spoolerLifecycle: {
+    currentState: string | null;
+    queuedAt: string | null;
+    processingAt: string | null;
+    printedAt: string | null;
+    failedAt: string | null;
+    transitions: Array<{
+      state: string;
+      timestamp: string;
+      reason: string | null;
+      printerName: string | null;
+      spoolerCorrelationKey: string | null;
+      spoolerJobId: number | null;
+      jobStatus: string | null;
+      pagesPrinted: number | null;
+      totalPages: number | null;
+      meta: Record<string, string | number | boolean | null>;
+    }>;
+  } | null;
+  pendingRefunds: Array<{
+    id: string;
+    status: string;
+    chargedAmount: number;
+    reason: string;
+    closedAt: string | null;
+  }>;
+  ledgerEntries: Array<{
+    id: string;
+    eventType: string;
+    amount: number;
+    timestamp: string;
+  }>;
+  relatedLogs: Array<{
+    id: string;
+    type: string;
+    message: string;
+    timestamp: string;
+    meta: Record<string, string | number | boolean | null>;
+  }>;
+};
+
 type FilterState = {
   transactionId: string;
   mode: '' | 'print' | 'copy' | 'scan';
@@ -71,6 +211,16 @@ type FilterState = {
   dateFrom: string;
   dateTo: string;
 };
+
+type ReportCategory =
+  | 'hardware'
+  | 'software'
+  | 'print'
+  | 'copy'
+  | 'scan'
+  | 'payment'
+  | 'network'
+  | 'other';
 
 const filterState: FilterState = {
   transactionId: '',
@@ -92,7 +242,8 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function inferMode(log: LogsResponse['logs'][number]): string {
@@ -118,36 +269,40 @@ function getTransactionId(log: LogsResponse['logs'][number]): string {
   return getTransactionContextId(log) ?? '—';
 }
 
-function formatReceiptDate(value: string | null): string {
+function formatDate(value: string | null): string {
   if (!value) return '—';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
 }
 
-function formatReceiptMode(value: string | null): string {
+function formatMode(value: string | null): string {
   if (!value) return '—';
   return value.toUpperCase();
 }
 
-function formatReceiptStatus(value: string | null): string {
+function formatStatus(value: string | null): string {
   if (!value) return '—';
   if (value === 'settled_pending_terminal') return 'pending terminal confirmation';
   if (value === 'refunded_pending_review') return 'refund pending review';
   return value.replace(/_/g, ' ');
 }
 
-function formatReceiptPeso(value: number | null): string {
+function formatPeso(value: number | null): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return `₱${value.toFixed(2)}`;
 }
 
-function formatReceiptChangeState(value: string | null): string {
+function formatChangeState(value: string | null): string {
   if (!value) return 'none';
   if (value === 'failed') return 'dispense failed';
   if (value === 'dispensed') return 'dispensed';
   if (value === 'none') return 'none';
   return value.replace(/_/g, ' ');
+}
+
+function setField(target: HTMLElement | null, value: string): void {
+  if (target) target.textContent = value;
 }
 
 function writeReceiptWindow(windowRef: Window, html: string): void {
@@ -174,7 +329,7 @@ function loadingReceiptHtml(transactionId: string): string {
 }
 
 function receiptWindowHtml(payload: AdminReceiptPayload): string {
-  const amount = formatReceiptPeso(payload.chargedAmount);
+  const amount = formatPeso(payload.chargedAmount);
   const changeRequested =
     typeof payload.change?.requested === 'number' &&
     Number.isFinite(payload.change.requested)
@@ -227,17 +382,17 @@ function receiptWindowHtml(payload: AdminReceiptPayload): string {
       </header>
       <div class="grid">
         <div class="k">Transaction ID</div><div class="v">${escapeHtml(payload.transactionId)}</div>
-        <div class="k">Mode</div><div class="v">${escapeHtml(formatReceiptMode(payload.mode))}</div>
+        <div class="k">Mode</div><div class="v">${escapeHtml(formatMode(payload.mode))}</div>
         <div class="k">Charged</div><div class="v">${amount}</div>
-        <div class="k">Change Requested</div><div class="v">${escapeHtml(formatReceiptPeso(changeRequested))}</div>
-        <div class="k">Change Dispensed</div><div class="v">${escapeHtml(formatReceiptPeso(changeDispensed))}</div>
-        <div class="k">Remaining Owed</div><div class="v">${escapeHtml(formatReceiptPeso(changeRemaining))}</div>
-        <div class="k">Change Status</div><div class="v">${escapeHtml(formatReceiptChangeState(changeState))}</div>
+        <div class="k">Change Requested</div><div class="v">${escapeHtml(formatPeso(changeRequested))}</div>
+        <div class="k">Change Dispensed</div><div class="v">${escapeHtml(formatPeso(changeDispensed))}</div>
+        <div class="k">Remaining Owed</div><div class="v">${escapeHtml(formatPeso(changeRemaining))}</div>
+        <div class="k">Change Status</div><div class="v">${escapeHtml(formatChangeState(changeState))}</div>
         <div class="k">Change Message</div><div class="v">${escapeHtml(changeMessage)}</div>
-        <div class="k">Status</div><div class="v">${escapeHtml(formatReceiptStatus(payload.status))}</div>
-        <div class="k">Settled At</div><div class="v">${escapeHtml(formatReceiptDate(payload.settledAt))}</div>
-        <div class="k">Terminal At</div><div class="v">${escapeHtml(formatReceiptDate(payload.terminalAt))}</div>
-        <div class="k">Generated At</div><div class="v">${escapeHtml(formatReceiptDate(payload.generatedAt))}</div>
+        <div class="k">Status</div><div class="v">${escapeHtml(formatStatus(payload.status))}</div>
+        <div class="k">Settled At</div><div class="v">${escapeHtml(formatDate(payload.settledAt))}</div>
+        <div class="k">Terminal At</div><div class="v">${escapeHtml(formatDate(payload.terminalAt))}</div>
+        <div class="k">Generated At</div><div class="v">${escapeHtml(formatDate(payload.generatedAt))}</div>
       </div>
     </section>
   </div>
@@ -283,6 +438,55 @@ async function openReceiptForTransaction(
   writeReceiptWindow(receiptWindow, receiptWindowHtml(payload));
 }
 
+async function openReceiptWithButton(
+  transactionId: string,
+  actionButton: HTMLButtonElement,
+): Promise<void> {
+  const receiptWindow = window.open('', '_blank');
+  if (!receiptWindow) {
+    setMessage('Unable to open E-Receipt window. Please allow pop-ups and retry.');
+    return;
+  }
+  writeReceiptWindow(receiptWindow, loadingReceiptHtml(transactionId));
+
+  const defaultLabel = actionButton.textContent;
+  actionButton.disabled = true;
+  actionButton.textContent = 'Opening…';
+
+  await openReceiptForTransaction(transactionId, receiptWindow)
+    .then(() => setMessage(`Opened E-Receipt for ${transactionId}.`))
+    .catch((error: unknown) =>
+      setMessage(error instanceof Error ? error.message : 'Failed to open E-Receipt.'),
+    )
+    .finally(() => {
+      actionButton.disabled = false;
+      actionButton.textContent = defaultLabel;
+    });
+}
+
+async function copyToClipboard(value: string): Promise<boolean> {
+  const text = value.trim();
+  if (!text) return false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fall through to textarea fallback
+    }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', 'true');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const ok = document.execCommand('copy');
+  area.remove();
+  return ok;
+}
+
 function totalPages(): number {
   return Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
 }
@@ -313,14 +517,30 @@ function applyLogs(logs: LogsResponse['logs']): void {
 
   for (const log of logs) {
     const transactionContextId = getTransactionContextId(log);
-    const actionMarkup = transactionContextId
-      ? `<button class="tx-receipt-btn" data-action="open-receipt" data-transaction-id="${escapeHtml(transactionContextId)}">Open E-Receipt</button>`
-      : '<span class="tx-receipt-unavailable">—</span>';
+    const transactionIdCell = transactionContextId
+      ? escapeHtml(transactionContextId)
+      : '<span class="tx-context-missing">Missing transaction context</span>';
+    const actionMarkup = `
+      <div class="tx-actions">
+        <button class="tx-action-btn" data-action="view-details" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
+          View details
+        </button>
+        <button class="tx-action-btn" data-action="open-receipt" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
+          Open E-Receipt
+        </button>
+        <button class="tx-action-btn" data-action="copy-transaction-id" data-copy-value="${escapeHtml(transactionContextId ?? log.id)}">
+          ${transactionContextId ? 'Copy ID' : 'Copy Log ID'}
+        </button>
+        <button class="tx-action-btn tx-action-btn--accent" data-action="create-report" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
+          Create report
+        </button>
+      </div>
+    `;
     const tr = document.createElement('tr');
     tr.dataset.logId = log.id;
     tr.innerHTML = `
       <td class="logs-td logs-td--ts">${new Date(log.timestamp).toLocaleString()}</td>
-      <td class="logs-td logs-td--id">${escapeHtml(getTransactionId(log))}</td>
+      <td class="logs-td logs-td--id">${transactionIdCell}</td>
       <td class="logs-td logs-td--mode">${escapeHtml(inferMode(log))}</td>
       <td class="logs-td logs-td--type">${escapeHtml(log.type)}</td>
       <td class="logs-td">${escapeHtml(log.message)}</td>
@@ -342,18 +562,10 @@ function buildFilterParams(includeLimit: boolean): URLSearchParams {
   const params = new URLSearchParams();
   if (includeLimit) params.set('limit', '1000');
 
-  if (filterState.transactionId) {
-    params.set('transactionId', filterState.transactionId);
-  }
-  if (filterState.mode) {
-    params.set('mode', filterState.mode);
-  }
-  if (filterState.status) {
-    params.set('status', filterState.status);
-  }
-  if (filterState.eventType) {
-    params.set('eventType', filterState.eventType);
-  }
+  if (filterState.transactionId) params.set('transactionId', filterState.transactionId);
+  if (filterState.mode) params.set('mode', filterState.mode);
+  if (filterState.status) params.set('status', filterState.status);
+  if (filterState.eventType) params.set('eventType', filterState.eventType);
 
   const isoFrom = toIso(filterState.dateFrom);
   if (isoFrom) params.set('dateFrom', isoFrom);
@@ -392,15 +604,10 @@ async function loadData(): Promise<void> {
   const params = buildFilterParams(true);
   const res = await apiFetch(`/api/admin/logs/transactions?${params.toString()}`);
   if (!res.ok) {
-    let errorText = 'Failed to load transaction logs.';
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (typeof body.error === 'string' && body.error.trim()) {
-        errorText = body.error;
-      }
-    } catch {
-      // Ignore parse errors and keep fallback message
-    }
+    const errorText = await resolveApiErrorMessage(
+      res,
+      'Failed to load transaction logs.',
+    );
     throw new Error(errorText);
   }
   const data = (await res.json()) as LogsResponse;
@@ -431,6 +638,9 @@ async function clearAllTransactionLogs(): Promise<void> {
   allLogs = [];
   totalLogs = 0;
   currentPage = 1;
+  transactionContextCache.clear();
+  closeTransactionDrawer();
+  closeReportModal();
   renderPage();
   setMessage('All transaction logs cleared.');
 }
@@ -444,6 +654,267 @@ function applyFilters(): void {
     .catch((error: unknown) =>
       setMessage(error instanceof Error ? error.message : 'Filter failed.'),
     );
+}
+
+function openTransactionDrawerShell(): void {
+  txDrawerBackdrop?.classList.remove('hidden');
+  txDetailDrawer?.classList.remove('hidden');
+}
+
+function closeTransactionDrawer(): void {
+  activeDrawerTransactionId = null;
+  txDrawerBackdrop?.classList.add('hidden');
+  txDetailDrawer?.classList.add('hidden');
+}
+
+function resetDrawerView(): void {
+  setField(dTransactionId, '—');
+  setField(dMode, '—');
+  setField(dAmount, '—');
+  setField(dStatus, '—');
+  setField(dChangeRequested, '—');
+  setField(dChangeDispensed, '—');
+  setField(dChangeRemaining, '—');
+  setField(dChangeStatus, '—');
+  setField(dChangeMessage, '—');
+  setField(dSettledAt, '—');
+  setField(dTerminalAt, '—');
+  setField(dGeneratedAt, '—');
+  setField(dContextHint, '—');
+  if (dMissingReasons) dMissingReasons.innerHTML = '';
+  if (dRelatedLogsBody) dRelatedLogsBody.innerHTML = '';
+}
+
+async function fetchTransactionContext(
+  transactionId: string,
+): Promise<TransactionContextPayload> {
+  const cached = transactionContextCache.get(transactionId);
+  if (cached) return cached;
+
+  const res = await apiFetch(
+    `/api/admin/transactions/${encodeURIComponent(transactionId)}/context`,
+  );
+  if (!res.ok) {
+    const fallback =
+      res.status === 404
+        ? `Transaction ${transactionId} no longer has resolvable context.`
+        : 'Failed to load transaction details.';
+    const message = await resolveApiErrorMessage(res, fallback);
+    throw new Error(message);
+  }
+  const payload = (await res.json()) as TransactionContextPayload;
+  transactionContextCache.set(transactionId, payload);
+  return payload;
+}
+
+function renderDrawerRelatedLogs(context: TransactionContextPayload): void {
+  if (!dRelatedLogsBody) return;
+  dRelatedLogsBody.innerHTML = '';
+  if (context.relatedLogs.length === 0) {
+    const row = document.createElement('tr');
+    row.innerHTML = `<td colspan="3" style="color:var(--ink-muted);padding:9px">No related logs found.</td>`;
+    dRelatedLogsBody.appendChild(row);
+    return;
+  }
+  for (const entry of context.relatedLogs.slice(0, 20)) {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${escapeHtml(formatDate(entry.timestamp))}</td>
+      <td>${escapeHtml(entry.type)}</td>
+      <td>${escapeHtml(entry.message)}</td>
+    `;
+    dRelatedLogsBody.appendChild(row);
+  }
+}
+
+function renderDrawer(context: TransactionContextPayload): void {
+  setField(dTransactionId, context.transactionId);
+  setField(dMode, formatMode(context.mode));
+  setField(dAmount, formatPeso(context.chargedAmount));
+  setField(dStatus, formatStatus(context.status));
+  setField(dChangeRequested, formatPeso(context.change.requested));
+  setField(dChangeDispensed, formatPeso(context.change.dispensed));
+  setField(dChangeRemaining, formatPeso(context.change.remaining));
+  setField(dChangeStatus, formatChangeState(context.change.state));
+  setField(dChangeMessage, context.change.message ?? '—');
+  setField(dSettledAt, formatDate(context.settledAt));
+  setField(dTerminalAt, formatDate(context.terminalAt));
+  setField(dGeneratedAt, formatDate(context.generatedAt));
+  const hint =
+    context.settlement.hint ??
+    (context.contextFlags.hasIncompleteContext
+      ? 'Some transaction context is incomplete.'
+      : 'Transaction context is complete.');
+  setField(dContextHint, hint);
+
+  if (dMissingReasons) {
+    dMissingReasons.innerHTML = '';
+    if (context.contextFlags.missingReasons.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'No missing context flags.';
+      dMissingReasons.appendChild(li);
+    } else {
+      for (const reason of context.contextFlags.missingReasons) {
+        const li = document.createElement('li');
+        li.textContent = reason;
+        dMissingReasons.appendChild(li);
+      }
+    }
+  }
+
+  renderDrawerRelatedLogs(context);
+}
+
+async function openTransactionDrawer(transactionId: string): Promise<void> {
+  activeDrawerTransactionId = transactionId;
+  openTransactionDrawerShell();
+  resetDrawerView();
+  if (txDetailState) txDetailState.textContent = 'Loading transaction context...';
+
+  try {
+    const context = await fetchTransactionContext(transactionId);
+    if (activeDrawerTransactionId !== transactionId) return;
+    renderDrawer(context);
+    if (txDetailState) {
+      txDetailState.textContent = context.contextFlags.hasIncompleteContext
+        ? 'Context loaded with missing fields flagged below.'
+        : 'Context loaded.';
+    }
+  } catch (error: unknown) {
+    if (activeDrawerTransactionId !== transactionId) return;
+    if (txDetailState) {
+      txDetailState.textContent =
+        error instanceof Error ? error.message : 'Failed to load context.';
+    }
+    setMessage(
+      error instanceof Error ? error.message : 'Failed to load transaction context.',
+    );
+  }
+}
+
+function resolveReportCategory(context: TransactionContextPayload): ReportCategory {
+  if (context.status === 'refunded' || context.status === 'refunded_pending_review') {
+    return 'payment';
+  }
+  if (context.mode === 'print' || context.mode === 'copy' || context.mode === 'scan') {
+    return context.mode;
+  }
+  return 'other';
+}
+
+function buildReportDescription(context: TransactionContextPayload): string {
+  const missingFlags =
+    context.contextFlags.missingReasons.length > 0
+      ? context.contextFlags.missingReasons.join('; ')
+      : 'none';
+  return [
+    `Transaction ID: ${context.transactionId}`,
+    `Mode: ${formatMode(context.mode)}`,
+    `Status: ${formatStatus(context.status)}`,
+    `Charged Amount: ${formatPeso(context.chargedAmount)}`,
+    `Change Remaining: ${formatPeso(context.change.remaining)}`,
+    `Settled At: ${formatDate(context.settledAt)}`,
+    `Terminal At: ${formatDate(context.terminalAt)}`,
+    `Spooler Phase: ${context.settlement.spoolerPhase ?? '—'}`,
+    `Reconciliation Action: ${context.settlement.reconciliationAction ?? '—'}`,
+    `Missing Context Flags: ${missingFlags}`,
+    '',
+    'Issue details:',
+  ].join('\n');
+}
+
+function openReportModalWithContext(context: TransactionContextPayload): void {
+  reportContext = context;
+  if (txReportSummary) {
+    txReportSummary.textContent =
+      `Transaction ${context.transactionId} · ${formatMode(context.mode)} · ${formatStatus(context.status)}`;
+  }
+  if (txReportTitleInput) {
+    txReportTitleInput.value = `Transaction ${context.transactionId} support follow-up`;
+  }
+  if (txReportCategoryInput) {
+    txReportCategoryInput.value = resolveReportCategory(context);
+  }
+  if (txReportDescriptionInput) {
+    txReportDescriptionInput.value = buildReportDescription(context);
+  }
+  txReportModal?.classList.remove('hidden');
+}
+
+function closeReportModal(): void {
+  txReportModal?.classList.add('hidden');
+  reportContext = null;
+}
+
+async function openReportModalForTransaction(transactionId: string): Promise<void> {
+  try {
+    const context = await fetchTransactionContext(transactionId);
+    openReportModalWithContext(context);
+  } catch (error: unknown) {
+    setMessage(
+      error instanceof Error ? error.message : 'Failed to prepare report draft.',
+    );
+  }
+}
+
+async function submitQuickReport(): Promise<void> {
+  if (!reportContext) {
+    setMessage('No transaction context loaded for report creation.');
+    return;
+  }
+  const title = txReportTitleInput?.value.trim() ?? '';
+  const description = txReportDescriptionInput?.value.trim() ?? '';
+  const category = (txReportCategoryInput?.value ?? 'other') as ReportCategory;
+  if (!title) {
+    setMessage('Report title is required.');
+    return;
+  }
+  if (!description) {
+    setMessage('Report description is required.');
+    return;
+  }
+
+  if (txReportSubmitBtn) txReportSubmitBtn.disabled = true;
+  setMessage('Submitting report...');
+  try {
+    const transactionId = reportContext.transactionId;
+    const response = await apiFetch('/api/admin/report-issues', {
+      method: 'POST',
+      body: JSON.stringify({
+        title,
+        description,
+        category,
+        meta: {
+          source: 'admin_transaction_logs',
+          transactionId: reportContext.transactionId,
+          mode: reportContext.mode,
+          status: reportContext.status,
+          chargedAmount: reportContext.chargedAmount,
+          settledAt: reportContext.settledAt,
+          terminalAt: reportContext.terminalAt,
+          hasIncompleteContext: reportContext.contextFlags.hasIncompleteContext,
+          pendingRefundCount: reportContext.settlement.pendingRefundCount,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const message = await resolveApiErrorMessage(
+        response,
+        'Failed to submit report.',
+      );
+      setMessage(message);
+      if (txReportSubmitBtn) txReportSubmitBtn.disabled = false;
+      return;
+    }
+
+    closeReportModal();
+    setMessage(`Report created for transaction ${transactionId}.`);
+    if (txReportSubmitBtn) txReportSubmitBtn.disabled = false;
+  } catch {
+    if (txReportSubmitBtn) txReportSubmitBtn.disabled = false;
+    setMessage('Network error while submitting report.');
+  }
 }
 
 refreshBtn.addEventListener('click', () => {
@@ -510,39 +981,92 @@ nextPageBtn.addEventListener('click', () => {
 logsBody.addEventListener('click', (event) => {
   const target = event.target;
   if (!(target instanceof Element)) return;
-
-  const actionButton = target.closest<HTMLButtonElement>(
-    '[data-action="open-receipt"]',
-  );
+  const actionButton = target.closest<HTMLButtonElement>('[data-action]');
   if (!actionButton) return;
 
+  const action = actionButton.dataset.action;
   const transactionId = actionButton.dataset.transactionId?.trim() ?? '';
-  if (!transactionId) {
-    setMessage('Transaction context is missing for this log entry.');
+
+  if (action === 'view-details') {
+    if (!transactionId) {
+      setMessage('Missing transaction context for this log row.');
+      return;
+    }
+    void openTransactionDrawer(transactionId);
     return;
   }
 
-  const receiptWindow = window.open('', '_blank');
-  if (!receiptWindow) {
-    setMessage('Unable to open E-Receipt window. Please allow pop-ups and retry.');
+  if (action === 'open-receipt') {
+    if (!transactionId) {
+      setMessage('Missing transaction ID. Cannot open E-Receipt.');
+      return;
+    }
+    void openReceiptWithButton(transactionId, actionButton);
     return;
   }
-  writeReceiptWindow(receiptWindow, loadingReceiptHtml(transactionId));
 
-  const defaultLabel = actionButton.textContent;
-  actionButton.disabled = true;
-  actionButton.textContent = 'Opening…';
-
-  void openReceiptForTransaction(transactionId, receiptWindow)
-    .then(() => setMessage(`Opened E-Receipt for ${transactionId}.`))
-    .catch((error: unknown) =>
-      setMessage(error instanceof Error ? error.message : 'Failed to open E-Receipt.'),
-    )
-    .finally(() => {
-      actionButton.disabled = false;
-      actionButton.textContent = defaultLabel;
+  if (action === 'copy-transaction-id') {
+    const copyValue = actionButton.dataset.copyValue?.trim() ?? '';
+    if (!copyValue) {
+      setMessage('Nothing to copy.');
+      return;
+    }
+    void copyToClipboard(copyValue).then((copied) => {
+      if (copied) {
+        setMessage(
+          transactionId ? 'Transaction ID copied.' : 'Log ID copied (no transaction ID).',
+        );
+      } else {
+        setMessage('Failed to copy value.');
+      }
     });
+    return;
+  }
+
+  if (action === 'create-report') {
+    if (!transactionId) {
+      setMessage('Missing transaction ID. Cannot create linked report.');
+      return;
+    }
+    void openReportModalForTransaction(transactionId);
+  }
 });
+
+txDetailCloseBtn?.addEventListener('click', closeTransactionDrawer);
+txDrawerBackdrop?.addEventListener('click', closeTransactionDrawer);
+
+dOpenReceiptBtn?.addEventListener('click', () => {
+  if (!activeDrawerTransactionId) {
+    setMessage('No active transaction selected.');
+    return;
+  }
+  void openReceiptWithButton(activeDrawerTransactionId, dOpenReceiptBtn);
+});
+
+dCopyIdBtn?.addEventListener('click', () => {
+  if (!activeDrawerTransactionId) {
+    setMessage('No active transaction selected.');
+    return;
+  }
+  void copyToClipboard(activeDrawerTransactionId).then((copied) =>
+    setMessage(copied ? 'Transaction ID copied.' : 'Failed to copy transaction ID.'),
+  );
+});
+
+dCreateReportBtn?.addEventListener('click', () => {
+  if (!activeDrawerTransactionId) {
+    setMessage('No active transaction selected.');
+    return;
+  }
+  void openReportModalForTransaction(activeDrawerTransactionId);
+});
+
+txReportCloseBtn?.addEventListener('click', closeReportModal);
+txReportCancelBtn?.addEventListener('click', closeReportModal);
+txReportModal?.addEventListener('click', (event) => {
+  if (event.target === txReportModal) closeReportModal();
+});
+txReportSubmitBtn?.addEventListener('click', () => void submitQuickReport());
 
 initAuth(async () => {
   await loadData();

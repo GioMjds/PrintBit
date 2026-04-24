@@ -14,7 +14,14 @@ import {
   type TransactionLogMode,
   type TransactionLogStatus,
 } from './admin.service';
-import { db } from '@/services/db';
+import {
+  db,
+  type AdminLogEntry,
+  type LogMeta,
+  type PendingRefundEntry,
+  type RecoverySessionEntry,
+  type SpoolerLifecycleTransitionEntry,
+} from '@/services/db';
 import {
   PendingRefundServiceError,
   dismissPendingRefund,
@@ -51,6 +58,7 @@ import { hashPassword, verifyPassword } from '@/utils/hash';
 import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
 import type { AlertSettings } from './admin.schema';
 import { ConsumablesService } from './consumables.service';
+import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -92,7 +100,9 @@ function normalizeTargetPrinterName(value: unknown): string | null {
   return sanitized ? sanitized : null;
 }
 
-function isEarningsAnalyticsView(value: unknown): value is EarningsAnalyticsView {
+function isEarningsAnalyticsView(
+  value: unknown,
+): value is EarningsAnalyticsView {
   return (
     value === 'daily' ||
     value === 'weekly' ||
@@ -358,6 +368,7 @@ export class AdminController {
   public readonly router: Router;
   private readonly adminService: AdminService;
   private readonly consumablesService: ConsumablesService;
+  private readonly receiptService: ReceiptService;
   private readonly deps: AdminControllerDeps;
 
   constructor(
@@ -368,13 +379,19 @@ export class AdminController {
     this.router = Router();
     this.adminService = adminService;
     this.consumablesService = consumablesService;
+    this.receiptService = new ReceiptService();
     this.deps = deps;
     this.initializeRoutes();
   }
 
   private initializeRoutes(): void {
     // ── Authentication routes ──────────────────────────────────────────────────
-    this.router.post('/auth', requireAdminLocalAccess, adminAuthRateLimit, this.handleAuth);
+    this.router.post(
+      '/auth',
+      requireAdminLocalAccess,
+      adminAuthRateLimit,
+      this.handleAuth,
+    );
     this.router.post(
       '/logout',
       requireAdminLocalAccess,
@@ -552,6 +569,12 @@ export class AdminController {
       requireAdminLocalAccess,
       requireAdminPin,
       this.handleGetTransactionById,
+    );
+    this.router.get(
+      '/transactions/:transactionId/context',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetTransactionContextById,
     );
     this.router.get(
       '/logs/export.csv',
@@ -888,7 +911,10 @@ export class AdminController {
     const currentSheetsRaw = body.currentSheets;
     const trayCapacityRaw = body.paperTrayCapacitySheets;
 
-    if (!isFiniteNumber(currentSheetsRaw) || !Number.isInteger(currentSheetsRaw)) {
+    if (
+      !isFiniteNumber(currentSheetsRaw) ||
+      !Number.isInteger(currentSheetsRaw)
+    ) {
       return res.status(400).json({
         error: 'currentSheets must be a whole number.',
       });
@@ -1052,9 +1078,12 @@ export class AdminController {
     };
 
     if (body.pricing) {
-      if (printPerPage !== undefined) nextSettings.pricing.printPerPage = printPerPage;
-      if (copyPerPage !== undefined) nextSettings.pricing.copyPerPage = copyPerPage;
-      if (scanDocument !== undefined) nextSettings.pricing.scanDocument = scanDocument;
+      if (printPerPage !== undefined)
+        nextSettings.pricing.printPerPage = printPerPage;
+      if (copyPerPage !== undefined)
+        nextSettings.pricing.copyPerPage = copyPerPage;
+      if (scanDocument !== undefined)
+        nextSettings.pricing.scanDocument = scanDocument;
       if (colorSurcharge !== undefined)
         nextSettings.pricing.colorSurcharge = colorSurcharge;
     }
@@ -1218,7 +1247,9 @@ export class AdminController {
               'consumablesForecasting.paperTrayCapacitySheets must be a whole number >= 1.',
           });
         }
-        next.paperTrayCapacitySheets = Math.floor(incoming.paperTrayCapacitySheets);
+        next.paperTrayCapacitySheets = Math.floor(
+          incoming.paperTrayCapacitySheets,
+        );
       }
 
       if (incoming.paperCurrentSheets !== undefined) {
@@ -1574,9 +1605,10 @@ export class AdminController {
       : fallback;
   }
 
-  private parseTransactionLogFilters(
-    req: Request,
-  ): { filters?: TransactionLogFilters; error?: string } {
+  private parseTransactionLogFilters(req: Request): {
+    filters?: TransactionLogFilters;
+    error?: string;
+  } {
     const transactionId =
       typeof req.query.transactionId === 'string'
         ? req.query.transactionId.trim()
@@ -1650,6 +1682,108 @@ export class AdminController {
       return res.status(400).json({ error: 'transactionId is required.' });
     }
 
+    const context = this.buildTransactionContextResponse(transactionId);
+    if (!context) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+
+    return res.json({
+      transactionId: context.transactionId,
+      mode: context.mode,
+      chargedAmount: context.chargedAmount,
+      settledAt: context.settledAt,
+      spoolerPhase: context.settlement.spoolerPhase,
+      reconciliationAction: context.settlement.reconciliationAction,
+      spoolerLifecycle: context.spoolerLifecycle,
+      pendingRefunds: context.pendingRefunds,
+      ledgerEntries: context.ledgerEntries,
+      relatedLogs: context.relatedLogs.slice(0, 30).map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        message: entry.message,
+        timestamp: entry.timestamp,
+      })),
+    });
+  };
+
+  private handleGetTransactionContextById = (req: Request, res: Response) => {
+    const transactionId = String(req.params.transactionId ?? '').trim();
+    if (!transactionId) {
+      return res.status(400).json({ error: 'transactionId is required.' });
+    }
+
+    const context = this.buildTransactionContextResponse(transactionId);
+    if (!context) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+    return res.json(context);
+  };
+
+  private buildTransactionContextResponse(transactionId: string): {
+    transactionId: string;
+    mode: string | null;
+    chargedAmount: number | null;
+    status: string | null;
+    change: {
+      requested: number | null;
+      dispensed: number | null;
+      remaining: number | null;
+      state: string | null;
+      attempts: number | null;
+      owedChangeId: string | null;
+      message: string | null;
+    };
+    settledAt: string | null;
+    terminalAt: string | null;
+    generatedAt: string;
+    receipt: {
+      available: boolean;
+      expired: boolean;
+      source: 'snapshot' | 'derived';
+    };
+    contextFlags: {
+      hasIncompleteContext: boolean;
+      hasReceiptSnapshot: boolean;
+      hasTransactionLogs: boolean;
+      missingTransactionMeta: boolean;
+      missingReasons: string[];
+    };
+    settlement: {
+      spoolerPhase: string | null;
+      reconciliationAction: string | null;
+      pendingRefundCount: number;
+      hasOutstandingReview: boolean;
+      hint: string | null;
+    };
+    spoolerLifecycle: {
+      currentState: string | null;
+      queuedAt: string | null;
+      processingAt: string | null;
+      printedAt: string | null;
+      failedAt: string | null;
+      transitions: SpoolerLifecycleTransitionEntry[];
+    } | null;
+    pendingRefunds: Array<{
+      id: string;
+      status: string;
+      chargedAmount: number;
+      reason: string;
+      closedAt: string | null;
+    }>;
+    ledgerEntries: Array<{
+      id: string;
+      eventType: string;
+      amount: number;
+      timestamp: string;
+    }>;
+    relatedLogs: Array<{
+      id: string;
+      type: string;
+      message: string;
+      timestamp: string;
+      meta: LogMeta;
+    }>;
+  } | null {
     const logs = this.adminService.listAllTransactionLogs({ transactionId });
     const ledgerEntries = db.data!.financialLedger.filter(
       (entry) => entry.referenceId === transactionId,
@@ -1664,40 +1798,141 @@ export class AdminController {
       return typeof ref === 'string' && ref === transactionId;
     });
 
+    const receiptResolution =
+      this.receiptService.resolveByTransactionId(transactionId);
+    const receiptPayload: ReceiptPayload | null =
+      receiptResolution.status === 'ok' ? receiptResolution.payload : null;
+    const receiptExpired = receiptResolution.status === 'expired';
+
     const found =
       logs.length > 0 ||
       ledgerEntries.length > 0 ||
       recoverySession !== null ||
       lifecycleRecord !== null ||
-      pendingRefunds.length > 0;
-
-    if (!found) {
-      return res.status(404).json({ error: 'Transaction not found.' });
-    }
+      pendingRefunds.length > 0 ||
+      receiptResolution.status === 'ok' ||
+      receiptResolution.status === 'expired';
+    if (!found) return null;
 
     const chargedAmount =
+      receiptPayload?.chargedAmount ??
       ledgerEntries.find((entry) => entry.eventType === 'job_completed')
         ?.amount ??
       recoverySession?.chargedAmount ??
       pendingRefunds[0]?.chargedAmount ??
       null;
     const mode =
-      (lifecycleRecord?.mode ??
-        recoverySession?.mode ??
-        (typeof logs[0]?.meta?.mode === 'string' ? logs[0].meta.mode : null)) ||
+      receiptPayload?.mode ??
+      lifecycleRecord?.mode ??
+      recoverySession?.mode ??
+      (typeof logs[0]?.meta?.mode === 'string' ? logs[0].meta.mode : null) ??
       null;
+    const status = this.deriveTransactionStatus(
+      receiptPayload,
+      recoverySession,
+      lifecycleRecord,
+      pendingRefunds,
+      logs,
+    );
     const settledAt =
+      receiptPayload?.settledAt ??
       recoverySession?.settledAt ??
       logs.find((entry) => entry.type === 'payment_confirmed')?.timestamp ??
       null;
+    const terminalAt =
+      receiptPayload?.terminalAt ??
+      recoverySession?.spoolerTerminalAt ??
+      lifecycleRecord?.printedAt ??
+      lifecycleRecord?.failedAt ??
+      null;
+    const generatedAt = receiptPayload?.generatedAt ?? new Date().toISOString();
+    const pendingRefundCount = pendingRefunds.filter(
+      (entry) => entry.status === 'open',
+    ).length;
+    const hasOutstandingReview =
+      pendingRefundCount > 0 ||
+      recoverySession?.reconciliationAction === 'pending_admin_review' ||
+      status === 'refunded_pending_review';
+    const hint =
+      pendingRefundCount > 0
+        ? 'Pending refund/reconciliation requires admin review.'
+        : recoverySession?.reconciliationAction === 'pending_admin_review'
+          ? 'Recovery marked this transaction for pending admin review.'
+          : null;
 
-    return res.json({
+    const missingReasons: string[] = [];
+    if (!receiptPayload) {
+      missingReasons.push(
+        receiptExpired
+          ? 'Receipt snapshot exists but is expired.'
+          : 'Receipt snapshot not found.',
+      );
+    }
+    if (logs.length === 0) missingReasons.push('No transaction logs found.');
+    if (ledgerEntries.length === 0)
+      missingReasons.push('No ledger entries found.');
+    if (!recoverySession && !lifecycleRecord) {
+      missingReasons.push('No spooler/recovery trace found.');
+    }
+    const missingTransactionMeta = logs.some(
+      (entry) =>
+        typeof entry.meta?.transactionId !== 'string' ||
+        entry.meta.transactionId.trim().length === 0,
+    );
+    if (missingTransactionMeta) {
+      missingReasons.push('Some logs are missing transactionId metadata.');
+    }
+
+    return {
       transactionId,
       mode,
       chargedAmount,
+      status,
+      change: receiptPayload
+        ? {
+            requested: receiptPayload.change.requested,
+            dispensed: receiptPayload.change.dispensed,
+            remaining: receiptPayload.change.remaining,
+            state: receiptPayload.change.state,
+            attempts: receiptPayload.change.attempts,
+            owedChangeId: receiptPayload.change.owedChangeId,
+            message: receiptPayload.change.message,
+          }
+        : {
+            requested: null,
+            dispensed: null,
+            remaining: null,
+            state: null,
+            attempts: null,
+            owedChangeId: null,
+            message:
+              hasOutstandingReview || pendingRefundCount > 0
+                ? 'Transaction requires admin-side reconciliation review.'
+                : null,
+          },
       settledAt,
-      spoolerPhase: lifecycleRecord?.currentState ?? recoverySession?.phase ?? null,
-      reconciliationAction: recoverySession?.reconciliationAction ?? null,
+      terminalAt,
+      generatedAt,
+      receipt: {
+        available: receiptPayload !== null,
+        expired: receiptExpired,
+        source: receiptPayload ? 'snapshot' : 'derived',
+      },
+      contextFlags: {
+        hasIncompleteContext: missingReasons.length > 0,
+        hasReceiptSnapshot: receiptPayload !== null,
+        hasTransactionLogs: logs.length > 0,
+        missingTransactionMeta,
+        missingReasons,
+      },
+      settlement: {
+        spoolerPhase:
+          lifecycleRecord?.currentState ?? recoverySession?.phase ?? null,
+        reconciliationAction: recoverySession?.reconciliationAction ?? null,
+        pendingRefundCount,
+        hasOutstandingReview,
+        hint,
+      },
       spoolerLifecycle: lifecycleRecord
         ? {
             currentState: lifecycleRecord.currentState,
@@ -1713,6 +1948,7 @@ export class AdminController {
         status: entry.status,
         chargedAmount: entry.chargedAmount,
         reason: entry.reason,
+        closedAt: entry.closedAt,
       })),
       ledgerEntries: ledgerEntries.map((entry) => ({
         id: entry.id,
@@ -1720,17 +1956,57 @@ export class AdminController {
         amount: entry.amount,
         timestamp: entry.timestamp,
       })),
-      relatedLogs: logs.slice(0, 30).map((entry) => ({
+      relatedLogs: logs.slice(0, 50).map((entry) => ({
         id: entry.id,
         type: entry.type,
         message: entry.message,
         timestamp: entry.timestamp,
+        meta: entry.meta ?? {},
       })),
+    };
+  }
+
+  private deriveTransactionStatus(
+    receiptPayload: ReceiptPayload | null,
+    recoverySession: RecoverySessionEntry | null,
+    lifecycleRecord: ReturnType<typeof getSpoolerLifecycleRecord> | null,
+    pendingRefunds: PendingRefundEntry[],
+    logs: AdminLogEntry[],
+  ): string | null {
+    if (receiptPayload?.status) return receiptPayload.status;
+    if (pendingRefunds.some((entry) => entry.status === 'open')) {
+      return 'refunded_pending_review';
+    }
+    if (pendingRefunds.some((entry) => entry.status === 'refunded')) {
+      return 'refunded';
+    }
+    const phase = recoverySession?.phase ?? lifecycleRecord?.currentState;
+    if (phase === 'spooler_confirmed' || phase === 'printed') return 'printed';
+    if (phase === 'spooler_failed' || phase === 'failed') return 'failed';
+    if (
+      phase === 'settled' ||
+      phase === 'spooler_timeout' ||
+      phase === 'job_dispatched' ||
+      phase === 'processing'
+    ) {
+      return 'settled_pending_terminal';
+    }
+    const hasSuccessfulCompletionLog = logs.some((entry) => {
+      const lowerType = entry.type.toLowerCase();
+      return (
+        lowerType.includes('completed') ||
+        lowerType.includes('confirmed') ||
+        lowerType.includes('charged')
+      );
     });
-  };
+    if (hasSuccessfulCompletionLog) return 'settled_pending_terminal';
+    return null;
+  }
 
   private handleExportSystemLogs = (_req: Request, res: Response) => {
-    const csv = this.adminService.logsToCsv(this.adminService.listAllSystemLogs());
+    const csv = this.adminService.logsToCsv(
+      this.adminService.listAllSystemLogs(),
+    );
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',

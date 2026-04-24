@@ -236,25 +236,72 @@ async function openDetail(id: string): Promise<void> {
 
     detailTitle.textContent = issue.title;
 
-    const imgHtml = attachments
-      .map(
-        (a) =>
-          `<a href="/api/admin/report-issues/attachments/${encodeURIComponent(a.id)}/file"
-              target="_blank" class="ri-attachment-link">
-            <img src="/api/admin/report-issues/attachments/${encodeURIComponent(a.id)}/file"
-                alt="${escHtml(a.originalName)}" class="ri-attachment-thumb" />
-          </a>`,
+    const renderAttachment = (
+      attachment: AttachmentMeta,
+      linkClassName: string,
+      imageClassName: string,
+    ): string =>
+      `<a href="/api/admin/report-issues/attachments/${encodeURIComponent(attachment.id)}/file"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="${linkClassName}">
+        <img
+          src="/api/admin/report-issues/attachments/${encodeURIComponent(attachment.id)}/file"
+          alt="${escHtml(attachment.originalName)}"
+          class="${imageClassName}"
+          loading="lazy"
+        />
+        <span class="ri-attachment-name">${escHtml(attachment.originalName)}</span>
+      </a>`;
+    const featuredAttachment = attachments[0] ?? null;
+    const galleryAttachments = attachments.slice(1);
+    const galleryHtml = galleryAttachments
+      .map((attachment) =>
+        renderAttachment(
+          attachment,
+          'ri-attachment-link',
+          'ri-attachment-thumb',
+        ),
       )
       .join('');
 
     detailBody.innerHTML = `
-      <div class="ri-detail-meta">
-        ${statusBadgeHtml(issue.status)}
-        <span class="ri-badge ri-badge--cat">${escHtml(issue.category)}</span>
-        <span class="ri-detail-time">${new Date(issue.timestamp).toLocaleString()}</span>
+      <div class="ri-detail-layout">
+        <section class="ri-detail-content">
+          <div class="ri-detail-meta">
+            ${statusBadgeHtml(issue.status)}
+            <span class="ri-badge ri-badge--cat">${escHtml(issue.category)}</span>
+            <span class="ri-detail-time">${new Date(issue.timestamp).toLocaleString()}</span>
+          </div>
+          <p class="ri-detail-desc">${escHtml(issue.description)}</p>
+        </section>
+        <section class="ri-detail-media">
+          ${
+            attachments.length > 0
+              ? `
+                <div class="ri-detail-media__head">
+                  <h4 class="ri-detail-media__title">Attachments</h4>
+                  <span class="ri-detail-media__count">${attachments.length}</span>
+                </div>
+                ${
+                  featuredAttachment
+                    ? renderAttachment(
+                        featuredAttachment,
+                        'ri-attachment-feature',
+                        'ri-attachment-feature__img',
+                      )
+                    : ''
+                }
+                ${
+                  galleryAttachments.length > 0
+                    ? `<div class="ri-attachments-grid">${galleryHtml}</div>`
+                    : ''
+                }
+              `
+              : '<p class="ri-no-attach">No image attachments.</p>'
+          }
+        </section>
       </div>
-      <p class="ri-detail-desc">${escHtml(issue.description)}</p>
-      ${attachments.length > 0 ? `<div class="ri-attachments-grid">${imgHtml}</div>` : '<p class="ri-no-attach">No image attachments.</p>'}
     `;
 
     detailAckBtn.classList.toggle('hidden', issue.status !== 'open');

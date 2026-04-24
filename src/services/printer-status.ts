@@ -84,6 +84,16 @@ interface PnpPrinterDeviceInfo {
   SerialNumber: string | null;
 }
 
+interface Win32PrinterRow {
+  Name: string;
+  DriverName: string;
+  PortName: string;
+  Default?: boolean;
+  PrinterStatus: number;
+  PrinterState: number;
+  WorkOffline?: boolean | null;
+}
+
 // ── PrinterState bitmask (Win32_Printer) ─────────────────────────
 // Ref: https://docs.microsoft.com/en-us/windows/win32/cimwin32prov/win32-printer
 
@@ -457,23 +467,9 @@ export async function queryLivePrinterStatus(): Promise<{
 }> {
   try {
     const settings = getInkMonitoringSettings();
-    const targetName =
-      normalizeTargetPrinterName(settings.targetPrinterName)?.replace(
-        /'/g,
-        "''",
-      ) ?? null;
-    const filter = targetName
-      ? `| Where-Object {$_.Name -eq '${targetName}'} `
-      : `| Where-Object {$_.Default -eq $true} `;
-    const json = await runPowerShell(
-      `Get-CimInstance -ClassName Win32_Printer ` +
-        filter +
-        `| Select-Object Name, DriverName, PortName, PrinterStatus, PrinterState, WorkOffline ` +
-        `| ConvertTo-Json -Depth 2`,
-      5_000,
-    );
-
-    if (!json) {
+    const targetName = normalizeTargetPrinterName(settings.targetPrinterName);
+    const printers = await listWin32Printers(5_000);
+    if (printers.length === 0) {
       return {
         connected: false,
         status: targetName
@@ -484,43 +480,53 @@ export async function queryLivePrinterStatus(): Promise<{
       };
     }
 
-    const raw = JSON.parse(json) as {
-      Name: string;
-      DriverName: string;
-      PortName: string;
-      PrinterStatus: number;
-      PrinterState: number;
-      WorkOffline?: boolean | null;
-    };
-    const statusFlags = parsePrinterStateFlags(raw.PrinterState);
-    const status = humanStatusFromFlags(statusFlags, raw.PrinterStatus);
-    const connectionType = detectConnectionType(raw.PortName ?? null);
+    const printerRecord = targetName
+      ? findConfiguredPrinter(printers, targetName)
+      : findDefaultOrSinglePhysicalPrinter(printers);
+
+    if (!printerRecord) {
+      return {
+        connected: false,
+        status: targetName
+          ? 'Configured printer not found'
+          : 'No default printer',
+        statusFlags: [],
+        pnpDevice: null,
+      };
+    }
+
+    const statusFlags = parsePrinterStateFlags(printerRecord.PrinterState);
+    const status = humanStatusFromFlags(
+      statusFlags,
+      printerRecord.PrinterStatus,
+    );
+    const connectionType = detectConnectionType(printerRecord.PortName ?? null);
     let matchedPnpDevice: PnpPrinterDeviceInfo | null = null;
     if (connectionType === 'usb') {
       const pnpDevices = await listPnpPrinterDevices(1_000);
       matchedPnpDevice = matchPnpDeviceToPrinter(
         {
-          Name: raw.Name,
-          DriverName: raw.DriverName,
-          PortName: raw.PortName,
+          Name: printerRecord.Name,
+          DriverName: printerRecord.DriverName,
+          PortName: printerRecord.PortName,
           Default: true,
-          PrinterStatus: raw.PrinterStatus,
-          PrinterState: raw.PrinterState,
+          PrinterStatus: printerRecord.PrinterStatus,
+          PrinterState: printerRecord.PrinterState,
         },
         pnpDevices,
       );
     }
-    const printerRecord = { ...raw, pnpDevice: matchedPnpDevice };
+    const printerWithPnp = { ...printerRecord, pnpDevice: matchedPnpDevice };
     const normalized = applyConnectionSignals({
       status,
       statusFlags,
       connectionType,
-      workOffline: printerRecord.WorkOffline,
-      pnpDevice: printerRecord.pnpDevice,
+      workOffline: printerWithPnp.WorkOffline,
+      pnpDevice: printerWithPnp.pnpDevice,
     });
     return {
       ...normalized,
-      pnpDevice: printerRecord.pnpDevice,
+      pnpDevice: printerWithPnp.pnpDevice,
     };
   } catch {
     return {
@@ -540,36 +546,17 @@ async function queryPrinterTelemetry(): Promise<PrinterTelemetry> {
   const targetPrinterName = normalizeTargetPrinterName(
     settings.targetPrinterName,
   );
-  const escapedTargetName = targetPrinterName?.replace(/'/g, "''") ?? null;
-  const queryFilter = escapedTargetName
-    ? `| Where-Object {$_.Name -eq '${escapedTargetName}'} `
-    : `| Where-Object {$_.Default -eq $true} `;
-
-  // 1) Fetch default printer basic info
-  let printerInfo: {
-    Name: string;
-    DriverName: string;
-    PortName: string;
-    Default?: boolean;
-    PrinterStatus: number;
-    PrinterState: number;
-    WorkOffline?: boolean | null;
-    pnpDevice?: PnpPrinterDeviceInfo | null;
-  } | null = null;
+  let printerInfo: (Win32PrinterRow & { pnpDevice?: PnpPrinterDeviceInfo | null }) | null = null;
 
   try {
-    const json = await runPowerShell(
-      `Get-CimInstance -ClassName Win32_Printer ` +
-        queryFilter +
-        `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState, WorkOffline ` +
-        `| ConvertTo-Json -Depth 2`,
-    );
-
-    if (!json) {
+    const printers = await listWin32Printers();
+    if (printers.length === 0) {
       return noDefaultPrinter(lastCheckedAt, targetPrinterName);
     }
 
-    printerInfo = JSON.parse(json);
+    printerInfo = targetPrinterName
+      ? findConfiguredPrinter(printers, targetPrinterName)
+      : findDefaultOrSinglePhysicalPrinter(printers);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[PRINTER-STATUS] ⚠ Could not query printer: ${msg}`);
@@ -1300,7 +1287,12 @@ export async function runInkTelemetryDiagnostics(): Promise<{
   const targetPrinterName =
     normalizeTargetPrinterName(settings.targetPrinterName) ??
     normalizeTargetPrinterName(telemetry.name);
-  const escaped = targetPrinterName?.replace(/'/g, "''") ?? null;
+  const resolvedTargetPrinter = targetPrinterName
+    ? findMatchingInstalledPrinterByName(installedPrinters, targetPrinterName)
+    : null;
+  const resolvedTargetPrinterName =
+    resolvedTargetPrinter?.Name ?? targetPrinterName;
+  const escaped = resolvedTargetPrinterName?.replace(/'/g, "''") ?? null;
   let matchingProperties: Array<{ propertyName: string; value: unknown }> = [];
 
   if (escaped) {
@@ -1328,12 +1320,11 @@ export async function runInkTelemetryDiagnostics(): Promise<{
     }
   }
 
-  const targetPrinterIdentity = targetPrinterName
+  const targetPrinterIdentity = resolvedTargetPrinterName
     ? (() => {
-        const matched = installedPrinters.find(
-          (entry) =>
-            entry.Name.trim().toLowerCase() ===
-            targetPrinterName.trim().toLowerCase(),
+        const matched = findMatchingInstalledPrinterByName(
+          installedPrinters,
+          resolvedTargetPrinterName,
         );
         if (!matched) return null;
         return {
@@ -1345,13 +1336,12 @@ export async function runInkTelemetryDiagnostics(): Promise<{
     : null;
 
   return {
-    targetPrinterName: targetPrinterName ?? null,
+    targetPrinterName: resolvedTargetPrinterName ?? null,
     targetResolved: Boolean(
-      targetPrinterName &&
+      resolvedTargetPrinterName &&
       installedPrinters.some(
         (entry) =>
-          entry.Name.trim().toLowerCase() ===
-          targetPrinterName.trim().toLowerCase(),
+          namesLikelyMatch(entry.Name, resolvedTargetPrinterName),
       ),
     ),
     telemetry,
@@ -1364,6 +1354,101 @@ export async function runInkTelemetryDiagnostics(): Promise<{
 function normalizeComparableName(value: string | null | undefined): string {
   if (!value) return '';
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function normalizePrinterMatchKey(value: string | null | undefined): string {
+  return normalizeComparableName(value).replace(/[^a-z0-9]+/g, '');
+}
+
+function namesLikelyMatch(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  const normalizedLeft = normalizeComparableName(left);
+  const normalizedRight = normalizeComparableName(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const keyLeft = normalizePrinterMatchKey(normalizedLeft);
+  const keyRight = normalizePrinterMatchKey(normalizedRight);
+  if (!keyLeft || !keyRight) return false;
+  if (keyLeft === keyRight) return true;
+
+  const minLength = Math.min(keyLeft.length, keyRight.length);
+  if (minLength < 8) return false;
+  return keyLeft.includes(keyRight) || keyRight.includes(keyLeft);
+}
+
+function findConfiguredPrinter(
+  printers: Win32PrinterRow[],
+  targetPrinterName: string,
+): Win32PrinterRow | null {
+  const exact = printers.find(
+    (printer) =>
+      normalizeComparableName(printer.Name) ===
+      normalizeComparableName(targetPrinterName),
+  );
+  if (exact) return exact;
+
+  const fuzzy = printers.find((printer) =>
+    namesLikelyMatch(printer.Name, targetPrinterName),
+  );
+  return fuzzy ?? null;
+}
+
+function findDefaultOrSinglePhysicalPrinter(
+  printers: Win32PrinterRow[],
+): Win32PrinterRow | null {
+  const defaultPrinter = printers.find((printer) => printer.Default === true);
+  if (defaultPrinter) return defaultPrinter;
+
+  const physicalPrinters = printers.filter(
+    (printer) => detectConnectionType(printer.PortName ?? null) !== 'virtual',
+  );
+
+  if (physicalPrinters.length === 1) {
+    return physicalPrinters[0];
+  }
+
+  return null;
+}
+
+function findMatchingInstalledPrinterByName(
+  printers: InstalledPrinterInfo[],
+  name: string,
+): InstalledPrinterInfo | null {
+  const exact = printers.find(
+    (printer) =>
+      normalizeComparableName(printer.Name) === normalizeComparableName(name),
+  );
+  if (exact) return exact;
+
+  const fuzzy = printers.find((printer) => namesLikelyMatch(printer.Name, name));
+  return fuzzy ?? null;
+}
+
+async function listWin32Printers(timeoutMs = 10_000): Promise<Win32PrinterRow[]> {
+  const json = await runPowerShell(
+    `Get-CimInstance -ClassName Win32_Printer ` +
+      `| Select-Object Name, DriverName, PortName, Default, PrinterStatus, PrinterState, WorkOffline ` +
+      `| ConvertTo-Json -Depth 2`,
+    timeoutMs,
+  );
+
+  if (!json || json === 'null') return [];
+
+  const parsed = JSON.parse(json) as Win32PrinterRow | Win32PrinterRow[];
+  const rows = Array.isArray(parsed) ? parsed : [parsed];
+
+  return rows
+    .filter(
+      (row) =>
+        row && typeof row.Name === 'string' && typeof row.DriverName === 'string',
+    )
+    .map((row) => ({
+      ...row,
+      PortName: typeof row.PortName === 'string' ? row.PortName : '',
+    }));
 }
 
 function extractPortTokenFromInstanceId(

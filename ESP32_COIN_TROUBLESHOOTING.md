@@ -44,7 +44,9 @@ ping 192.168.4.1
 
 ## 2. ESP32 Registration Checks
 
-ESP32 must accept kiosk registration on `http://192.168.4.1/kiosk/register`.
+ESP32 must accept kiosk registration on `http://<esp32-lan-ip>/kiosk/register`.
+
+- In WiFiManager STA mode, use the ESP32 LAN IP shown on serial as `KIOSK_IP:<ip>`.
 
 ### Expected kiosk server log behavior
 
@@ -60,13 +62,13 @@ ESP32 must accept kiosk registration on `http://192.168.4.1/kiosk/register`.
 
 ```powershell
 Invoke-WebRequest `
-  -Uri 'http://192.168.4.1/kiosk/register' `
+  -Uri 'http://<esp32-lan-ip>/kiosk/register' `
   -Method Post `
   -ContentType 'application/x-www-form-urlencoded' `
-  -Body 'token=printbit-register-token&ip=192.168.4.2&port=3000&path=/portal'
+  -Body 'token=printbit-register-token&ip=<kiosk-lan-ip>&port=3000&path=/portal'
 ```
 
-- Replace `ip` with actual kiosk IP if not `.2`.
+- Replace `<esp32-lan-ip>` and `<kiosk-lan-ip>` with actual LAN addresses.
 - Should return HTTP 200 with body `registered`.
 
 ## 3. Secure Coin Bridge Checks
@@ -130,7 +132,7 @@ New-NetFirewallRule -DisplayName "PrintBit Dev 3000" -Direction Inbound -LocalPo
 
 ## 6. End-to-End Acceptance Test
 
-1. Connect kiosk/tablet to `PrintBit`.
+1. Connect kiosk/tablet and ESP32 to the same 2.4GHz LAN.
 2. Start PrintBit server.
 3. Confirm ESP32 shows successful kiosk registration log.
 4. Insert a coin.
@@ -142,8 +144,8 @@ New-NetFirewallRule -DisplayName "PrintBit Dev 3000" -Direction Inbound -LocalPo
 
 ## Quick Recovery Checklist
 
-1. Verify kiosk WiFi IP (`192.168.4.x`).
+1. Verify kiosk WiFi IP is reachable on the same LAN as ESP32.
 2. Verify shared token/key values match between kiosk env and firmware.
-3. Verify registration endpoint responds on `http://192.168.4.1/kiosk/register`.
+3. Verify registration endpoint responds on `http://<esp32-lan-ip>/kiosk/register`.
 4. Verify strict `/coin` request succeeds locally with headers.
 5. Reboot ESP32 and restart kiosk server after config changes.

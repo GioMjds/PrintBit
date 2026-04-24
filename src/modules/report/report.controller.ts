@@ -16,7 +16,11 @@ import {
 } from '@/middleware/file-validation';
 import { createRateLimit } from '@/middleware/rate-limit';
 import { ReportService } from './report.service';
-import type { ReportIssueCategory, ReportIssueStatus } from './report.schema';
+import type {
+  LogMeta,
+  ReportIssueCategory,
+  ReportIssueStatus,
+} from './report.schema';
 
 export interface ReportControllerDeps {
   resolvePublicBaseUrl: (req: Request) => URL;
@@ -27,6 +31,7 @@ type ReportBody = {
   description?: unknown;
   category?: unknown;
   attachmentIds?: unknown;
+  meta?: unknown;
 };
 
 const reportPortalAssetRateLimit = createRateLimit({
@@ -41,6 +46,44 @@ const adminReportAttachmentRateLimit = createRateLimit({
   windowMs: 60_000,
   max: 60,
 });
+
+function parseLogMeta(input: unknown): { value?: LogMeta; error?: string } {
+  if (input === undefined || input === null) return {};
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    return { error: 'meta must be an object with primitive values.' };
+  }
+
+  const output: LogMeta = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) continue;
+    if (value === null) {
+      output[normalizedKey] = null;
+      continue;
+    }
+    if (typeof value === 'string') {
+      output[normalizedKey] = value;
+      continue;
+    }
+    if (typeof value === 'boolean') {
+      output[normalizedKey] = value;
+      continue;
+    }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        return { error: `meta.${normalizedKey} must be a finite number.` };
+      }
+      output[normalizedKey] = value;
+      continue;
+    }
+    return {
+      error:
+        `meta.${normalizedKey} must be string, number, boolean, or null.`,
+    };
+  }
+
+  return { value: output };
+}
 
 export class ReportController {
   public readonly router: Router;
@@ -337,6 +380,11 @@ export class ReportController {
     const attachmentIds = Array.isArray(body.attachmentIds)
       ? body.attachmentIds.filter((id): id is string => typeof id === 'string')
       : [];
+    const parsedMeta = parseLogMeta(body.meta);
+    if (parsedMeta.error) {
+      res.status(400).json({ error: parsedMeta.error });
+      return;
+    }
 
     try {
       const entry = await this.service.createByAdmin({
@@ -344,6 +392,7 @@ export class ReportController {
         description,
         category,
         attachmentIds,
+        meta: parsedMeta.value,
       });
       res.status(201).json({ ok: true, reportIssueId: entry.id });
     } catch (err) {

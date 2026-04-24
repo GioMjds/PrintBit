@@ -8,6 +8,7 @@ import {
   NETWORK_PROVIDER,
   ESP32_KIOSK_SUBNET_PREFIX,
   ESP32_KIOSK_IP,
+  ESP32_AP_BASE_URL,
   PORT,
 } from '@/config/http.config';
 import {
@@ -1133,7 +1134,12 @@ function isPrivateIpv4(host: string): boolean {
 
 function detectPreferredLocalKioskAddress(requestHost: string): string | null {
   if (NETWORK_PROVIDER === 'esp32') {
+    const esp32SubnetPrefix = deriveEsp32SubnetPrefix();
+    if (ESP32_KIOSK_IP && requestHost === ESP32_KIOSK_IP) return requestHost;
     if (requestHost.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) return requestHost;
+    if (esp32SubnetPrefix && requestHost.startsWith(esp32SubnetPrefix)) {
+      return requestHost;
+    }
     const detectedEsp32 = detectEsp32KioskAddress();
     if (detectedEsp32) return detectedEsp32;
   }
@@ -1173,15 +1179,49 @@ function buildPublicUploadUrl(token: string): string | undefined {
 }
 
 function detectEsp32KioskAddress(): string | null {
+  if (ESP32_KIOSK_IP && isPrivateIpv4(ESP32_KIOSK_IP)) {
+    return ESP32_KIOSK_IP;
+  }
+
+  const prefixes = new Set<string>();
+  if (ESP32_KIOSK_SUBNET_PREFIX.trim().length > 0) {
+    prefixes.add(ESP32_KIOSK_SUBNET_PREFIX.trim());
+  }
+  const esp32SubnetPrefix = deriveEsp32SubnetPrefix();
+  if (esp32SubnetPrefix) {
+    prefixes.add(esp32SubnetPrefix);
+  }
+
+  let privateFallback: string | null = null;
   const interfaces = os.networkInterfaces();
   for (const interfaceName of Object.keys(interfaces)) {
     for (const iface of interfaces[interfaceName] ?? []) {
       if (iface.family !== 'IPv4' || iface.internal) continue;
-      if (iface.address.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) {
+      if (Array.from(prefixes).some((prefix) => iface.address.startsWith(prefix))) {
         return iface.address;
+      }
+      if (!privateFallback && isPrivateIpv4(iface.address)) {
+        privateFallback = iface.address;
       }
     }
   }
 
-  return null;
+  return privateFallback;
+}
+
+function deriveEsp32SubnetPrefix(): string | null {
+  try {
+    const hostname = new URL(ESP32_AP_BASE_URL).hostname.trim();
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
+    const octets = hostname.split('.').map(Number);
+    if (
+      octets.length !== 4 ||
+      octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+    ) {
+      return null;
+    }
+    return `${octets[0]}.${octets[1]}.${octets[2]}.`;
+  } catch {
+    return null;
+  }
 }

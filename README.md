@@ -232,8 +232,9 @@ Security note: `printbit-coin-bridge-key` is a predictable example value. Before
 
 Recommended `.ino` alignment for ESP32 mode:
 
-- AP SSID: `PrintBit`
-- AP password: `printbit123`
+- Use `WiFiManager.h` to connect ESP32 to your 2.4GHz LAN (STA mode)
+- WiFiManager config portal SSID/password (firmware defaults): `PrintBit-Setup` / `printbit123`
+- Point `PRINTBIT_ESP32_AP_BASE_URL` to the current ESP32 LAN IP (for example `http://192.168.1.120`)
 - Handle kiosk registration on `POST /kiosk/register` (ESP32 listens on port `80`)
 - Forward coins with secure `/coin` request headers:
   - `x-coin-source: esp32`

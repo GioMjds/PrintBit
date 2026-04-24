@@ -515,6 +515,63 @@ Returns a transaction-focused support snapshot for the given reference ID. Respo
 - `ledgerEntries[]`
 - `relatedLogs[]`
 
+### `GET /api/admin/transactions/:transactionId/context`
+
+Preferred admin investigation endpoint used by **Admin > Transaction Logs > View details**.
+Returns receipt-parity fields plus support context in one payload.
+
+Response includes:
+
+- `transactionId`
+- `mode`
+- `chargedAmount`
+- `status`
+- `change.requested`
+- `change.dispensed`
+- `change.remaining`
+- `change.state`
+- `change.attempts`
+- `change.owedChangeId`
+- `change.message`
+- `settledAt`
+- `terminalAt`
+- `generatedAt`
+- `receipt.available`
+- `receipt.expired`
+- `contextFlags.hasIncompleteContext`
+- `contextFlags.missingReasons[]`
+- `settlement.spoolerPhase`
+- `settlement.reconciliationAction`
+- `settlement.pendingRefundCount`
+- `settlement.hasOutstandingReview`
+- `settlement.hint`
+- `spoolerLifecycle`
+- `pendingRefunds[]`
+- `ledgerEntries[]`
+- `relatedLogs[]`
+
+Status responses:
+
+- `400` when `transactionId` is missing
+- `404` when no transaction evidence can be resolved
+
+### `POST /api/admin/report-issues`
+
+Creates an admin-side issue report entry. Existing payload fields remain:
+
+- `title` (required)
+- `description` (required)
+- `category` (optional)
+- `attachmentIds` (optional)
+
+Extended optional field:
+
+- `meta` (object)
+  - values must be `string | number | boolean | null`
+  - nested objects/arrays are rejected with `400`
+
+The Transaction Logs quick-report action sends metadata such as `transactionId`, `mode`, `status`, and `source` so reports remain traceable to the originating transaction.
+
 ### `GET /api/admin/system/time-sync`
 
 Returns trusted time health. HTTP `200` when trusted time is valid, HTTP `503` when unavailable/drift exceeded and financial enforcement is active.
@@ -618,6 +675,8 @@ Returns diagnostics for Issue #24 ink monitoring checks, including:
   - `pnpFriendlyName`
   - `deviceSerialNumber`
 
+Target-printer resolution is name-tolerant. If `inkMonitoring.targetPrinterName` is a close queue-name variant (for example `EPSON L5290 Series` vs `EPSON L5290 Series (Network)`), diagnostics resolve to the best installed queue match.
+
 `targetPrinterIdentity` helps verify that the configured target queue maps to the expected connected hardware even when a true serial number is not exposed by the driver.
 
 ### `GET /api/admin/printer/ink-history`
@@ -630,6 +689,8 @@ Returns ink telemetry history snapshots.
 ### `POST /api/admin/printer/re-detect`
 
 Forces immediate printer re-detection and telemetry refresh. Returns `{ ok, printer }`.
+
+When a target printer name is configured, re-detect uses tolerant queue-name matching instead of strict exact-equality, and can resolve close variants of the same printer model.
 
 ### `POST /api/admin/printer/test-print`
 

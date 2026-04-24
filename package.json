@@ -36,6 +36,7 @@
   "dependencies": {
     "@serialport/parser-readline": "^13.0.0",
     "argon2": "^0.44.0",
+    "bullmq": "^5.76.1",
     "canvas": "^3.2.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",

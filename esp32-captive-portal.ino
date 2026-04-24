@@ -1,28 +1,26 @@
 #include <WiFi.h>
 #include <NetworkClient.h>
-#include <WiFiAP.h>
 #include <HTTPClient.h>
+#include <WiFiManager.h>
 
 #define coinAcceptorPin 4
 #define hopperSensorPin 5
 #define relayPin 18
 
-const char* ssid = "PrintBit";
-const char* password = "printbit123";
+const char* wifiManagerPortalSsid = "PrintBit-Setup";
+const char* wifiManagerPortalPassword = "printbit123";
+const int wifiManagerPortalTimeoutSeconds = 180;
+const unsigned long wifiReconnectIntervalMs = 5000;
 
-const char* fallbackKioskIp = "192.168.4.2";
-const uint16_t fallbackKioskPort = 3000;
-const char* fallbackKioskPortalPath = "/portal";
 const char* kioskRegisterToken = "printbit-register-token";
-const char* coinBridgeSource = "esp32";
 const char* coinBridgeApiKey = "printbit-coin-bridge-key";
 const char* hopperControlToken = "printbit-coin-bridge-key";
 
 NetworkServer server(80);
 
-String kioskIp = fallbackKioskIp;
-uint16_t kioskPort = fallbackKioskPort;
-String kioskPortalPath = fallbackKioskPortalPath;
+String kioskIp = "";
+uint16_t kioskPort = 0;
+String kioskPortalPath = "";
 String kioskPortalUrl = "";
 String tabletServer = "";
 bool hasKioskRegistration = false;
@@ -61,6 +59,29 @@ String lastDispenseOutcome = "idle";
 String lastDispenseError = "";
 unsigned long lastDispenseFinishedAt = 0;
 String serialLineBuffer = "";
+
+bool connectWifiWithManager() {
+  WiFi.mode(WIFI_STA);
+
+  WiFiManager wifiManager;
+  wifiManager.setConfigPortalTimeout(wifiManagerPortalTimeoutSeconds);
+
+  bool connected = wifiManager.autoConnect(
+      wifiManagerPortalSsid,
+      wifiManagerPortalPassword);
+  if (!connected) {
+    return false;
+  }
+
+  return WiFi.status() == WL_CONNECTED;
+}
+
+void logWifiConnection() {
+  Serial.print("WIFI_SSID:");
+  Serial.println(WiFi.SSID());
+  Serial.print("KIOSK_IP:");
+  Serial.println(WiFi.localIP());
+}
 
 String decodeUrlComponent(const String& value) {
   String decoded = "";
@@ -123,7 +144,7 @@ String buildHopperRequestId() {
 }
 
 String normalizedPath(const String& pathCandidate) {
-  if (pathCandidate.length() == 0) return "/portal";
+  if (pathCandidate.length() == 0) return "";
   if (pathCandidate.charAt(0) == '/') return pathCandidate;
   return "/" + pathCandidate;
 }
@@ -146,6 +167,12 @@ bool isValidIpv4Address(const String& ip) {
 }
 
 void refreshTargets() {
+  if (kioskIp.length() == 0 || kioskPort == 0 || kioskPortalPath.length() == 0) {
+    kioskPortalUrl = "";
+    tabletServer = "";
+    return;
+  }
+
   kioskPortalPath = normalizedPath(kioskPortalPath);
   kioskPortalUrl =
       "http://" + kioskIp + ":" + String(kioskPort) + kioskPortalPath;
@@ -261,8 +288,8 @@ void emitHopperError(
 }
 
 void sendCoinToTablet(int value) {
-  if (WiFi.softAPgetStationNum() == 0) {
-    logCoinSendFailure("network_unreachable_no_station", 0, "");
+  if (WiFi.status() != WL_CONNECTED) {
+    logCoinSendFailure("network_unreachable_wifi_disconnected", 0, "");
     return;
   }
   if (tabletServer.length() == 0) {
@@ -277,7 +304,7 @@ void sendCoinToTablet(int value) {
   for (int attempt = 1; attempt <= maxCoinSendAttempts; attempt++) {
     HTTPClient http;
     http.begin(url);
-    http.addHeader("x-coin-source", coinBridgeSource);
+    http.addHeader("x-coin-source", "esp32");
     http.addHeader("x-coin-api-key", coinBridgeApiKey);
     http.addHeader("x-coin-event-id", eventId);
     int code = http.GET();
@@ -340,15 +367,32 @@ void handleRegisterRequest(NetworkClient& client, const String& body) {
     Serial.println("kiosk_register_failed:invalid_ip");
     return;
   }
+  if (!isNumericString(postedPort)) {
+    replyPlain(client, 400, "Bad Request", "Missing or invalid port");
+    Serial.println("kiosk_register_failed:invalid_port");
+    return;
+  }
+  if (postedPath.length() == 0) {
+    replyPlain(client, 400, "Bad Request", "Missing path");
+    Serial.println("kiosk_register_failed:missing_path");
+    return;
+  }
 
   int parsedPort = postedPort.toInt();
   if (parsedPort <= 0 || parsedPort > 65535) {
-    parsedPort = fallbackKioskPort;
+    replyPlain(client, 400, "Bad Request", "Missing or invalid port");
+    Serial.println("kiosk_register_failed:invalid_port");
+    return;
   }
 
   kioskIp = postedIp;
   kioskPort = uint16_t(parsedPort);
   kioskPortalPath = normalizedPath(postedPath);
+  if (kioskPortalPath.length() == 0) {
+    replyPlain(client, 400, "Bad Request", "Missing path");
+    Serial.println("kiosk_register_failed:missing_path");
+    return;
+  }
   hasKioskRegistration = true;
   refreshTargets();
 
@@ -422,6 +466,11 @@ void handleWifiRequest(NetworkClient& client) {
   }
 
   if (method == "GET" && isCaptiveProbePath(routePath)) {
+    if (kioskPortalUrl.length() == 0) {
+      replyPlain(client, 503, "Service Unavailable", "Kiosk not registered");
+      client.stop();
+      return;
+    }
     replyRedirect(client, kioskPortalUrl);
     client.stop();
     return;
@@ -637,12 +686,15 @@ void setup() {
   attachInterrupt(coinAcceptorPin, countPulse, FALLING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
 
-  refreshTargets();
-  WiFi.softAP(ssid, password, 1, 0);
+  if (!connectWifiWithManager()) {
+    Serial.println("wifi_connect_failed:restarting");
+    delay(1000);
+    ESP.restart();
+    return;
+  }
 
-  Serial.println("AP Started");
-  Serial.print("AP_IP:");
-  Serial.println(WiFi.softAPIP());
+  refreshTargets();
+  logWifiConnection();
   Serial.print("coin_target:");
   Serial.println(tabletServer);
   Serial.print("portal_target:");
@@ -655,6 +707,14 @@ void setup() {
 
 // LOOP
 void loop() {
+  static unsigned long lastWifiReconnectAt = 0;
+  if (WiFi.status() != WL_CONNECTED &&
+      millis() - lastWifiReconnectAt >= wifiReconnectIntervalMs) {
+    lastWifiReconnectAt = millis();
+    Serial.println("wifi_reconnect_attempt");
+    WiFi.reconnect();
+  }
+
   byte tempCount;
   unsigned long tempLastPulse;
 

@@ -5,4 +5,5 @@ onlyBuiltDependencies:
   - argon2
   - canvas
   - esbuild
+  - msgpackr-extract
   - sharp

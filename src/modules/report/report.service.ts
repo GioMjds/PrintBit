@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import {
   reportIssueService,
+  type LogMeta,
   type ReportIssueAttachmentEntry,
   type ReportIssueCategory,
   type ReportIssueEntry,
@@ -74,6 +75,7 @@ export interface CreateAdminReportIssueInput {
   description: string;
   category?: string | null;
   attachmentIds?: string[];
+  meta?: LogMeta;
 }
 
 export interface ListReportIssueOptions {

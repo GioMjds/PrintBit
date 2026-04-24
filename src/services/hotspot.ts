@@ -28,6 +28,30 @@ const ESP32_REGISTER_ROUTE = '/kiosk/register';
 const ESP32_REGISTER_INTERVAL_MS = 15_000;
 const ESP32_REGISTER_TIMEOUT_MS = 2_500;
 
+function isValidIpv4Address(value: string): boolean {
+  const trimmed = value.trim();
+  const parts = trimmed.split('.');
+  if (parts.length !== 4) return false;
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return false;
+    const numeric = Number(part);
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric > 255) return false;
+  }
+  return true;
+}
+
+function extractEsp32SubnetPrefix(): string | null {
+  try {
+    const baseUrl = new URL(ESP32_AP_BASE_URL);
+    const host = baseUrl.hostname.trim();
+    if (!isValidIpv4Address(host)) return null;
+    const octets = host.split('.');
+    return `${octets[0]}.${octets[1]}.${octets[2]}.`;
+  } catch {
+    return null;
+  }
+}
+
 function ipToInt32(ip: string): number {
   const parts = ip.split('.').map(Number);
   return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3] | 0;
@@ -130,38 +154,46 @@ function isMyPublicWifiRunning(): boolean {
 }
 
 function detectEsp32KioskIp(): string | null {
+  const preferredPrefixes: string[] = [];
+  if (ESP32_KIOSK_SUBNET_PREFIX.trim().length > 0) {
+    preferredPrefixes.push(ESP32_KIOSK_SUBNET_PREFIX.trim());
+  }
+  const esp32SubnetPrefix = extractEsp32SubnetPrefix();
+  if (esp32SubnetPrefix && !preferredPrefixes.includes(esp32SubnetPrefix)) {
+    preferredPrefixes.push(esp32SubnetPrefix);
+  }
+
+  let privateFallback: string | null = null;
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name] ?? []) {
       if (iface.family !== 'IPv4' || iface.internal) continue;
-      if (iface.address.startsWith(ESP32_KIOSK_SUBNET_PREFIX)) {
+      if (
+        preferredPrefixes.some((prefix) => iface.address.startsWith(prefix))
+      ) {
         return iface.address;
+      }
+      if (!privateFallback && /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(iface.address)) {
+        privateFallback = iface.address;
       }
     }
   }
-  return null;
+  return privateFallback;
 }
 
 async function registerKioskWithEsp32(): Promise<boolean> {
-  // Skip registration if kiosk IP is explicitly configured (no need to tell ESP32)
-  if (ESP32_KIOSK_IP) {
-    console.log(
-      `[HOTSPOT] ESP32 mode with explicit kiosk IP: ${ESP32_KIOSK_IP}:${PORT}`,
-    );
-    console.log(
-      `[HOTSPOT] Ensure kiosk WiFi is connected to "${HOTSPOT_SSID}" network`,
-    );
-    return true;
-  }
+  const configuredKioskIp = ESP32_KIOSK_IP?.trim();
+  const kioskIp =
+    configuredKioskIp && isValidIpv4Address(configuredKioskIp)
+      ? configuredKioskIp
+      : detectEsp32KioskIp();
 
-  // Try auto-detection only if no explicit IP is set
-  const kioskIp = detectEsp32KioskIp();
   if (!kioskIp) {
     console.warn(
-      `[HOTSPOT] ⚠ ESP32 provider active, but no adapter IP matches ${ESP32_KIOSK_SUBNET_PREFIX}x`,
+      `[HOTSPOT] ⚠ ESP32 provider active, but kiosk IP could not be resolved for registration.`,
     );
     console.warn(
-      `[HOTSPOT]   Set PRINTBIT_ESP32_KIOSK_IP in .env or connect kiosk WiFi to ESP32 AP`,
+      `[HOTSPOT]   Set PRINTBIT_ESP32_KIOSK_IP in .env or verify kiosk is on the same LAN as the ESP32 base URL (${ESP32_AP_BASE_URL}).`,
     );
     return false;
   }
@@ -222,13 +254,6 @@ class HotspotService {
   private async startEsp32RegistrationLoop(): Promise<void> {
     this.stopEsp32RegistrationLoop();
 
-    // When explicit IP is set, just log once - no need to loop
-    if (ESP32_KIOSK_IP) {
-      await registerKioskWithEsp32();
-      return;
-    }
-
-    // Only loop if we need to auto-detect and register
     await registerKioskWithEsp32();
     this.esp32RegistrationTimer = setInterval(() => {
       void registerKioskWithEsp32();
