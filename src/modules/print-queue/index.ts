@@ -44,5 +44,17 @@ export {
 
 export {
   createPrintJobWorker,
-  PrintWorkerError,
 } from './print-queue.worker';
+
+export {
+  buildPrintJobEnqueuePayload,
+  PrintJobEnqueueError,
+} from './print-queue.integration';
+
+export {
+  orchestratePrintJob,
+  WorkerOrchestrationError,
+  recordJobAttempt,
+  buildPrintJobContext,
+  type PrintWorkerOrchestrationResult,
+} from './print-queue.orchestration';
