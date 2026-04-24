@@ -81,3 +81,13 @@ export {
   type PrintQueueStatusSnapshot,
   type PrintQueueSocketIOEvent,
 } from './print-queue.socket-events';
+
+export {
+  type AdminQueueJobRecord,
+  type AdminQueueAttemptRecord,
+  type AdminTransactionSupervisionRecord,
+  type AdminOperatorAction,
+  type AdminQueueJobFilters,
+  type AdminQueueJobQueryResult,
+  type AdminQueueDashboardData,
+} from './print-queue.admin-supervision';
