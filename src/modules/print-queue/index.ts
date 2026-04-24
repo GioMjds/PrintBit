@@ -58,3 +58,26 @@ export {
   buildPrintJobContext,
   type PrintWorkerOrchestrationResult,
 } from './print-queue.orchestration';
+
+export {
+  buildConsumptionFingerprint,
+  buildThresholdFingerprint,
+  isTerminalConsumptionOutcome,
+  type PrintConsumptionEvent,
+  type PerPrinterThresholdConfig,
+  type ThresholdIncident,
+} from './print-queue.consumption';
+
+export {
+  type PrintQueueJobQueuedEvent,
+  type PrintQueueJobStartedEvent,
+  type PrintQueueJobRetryingEvent,
+  type PrintQueueJobFailedEvent,
+  type PrintQueueJobCompletedEvent,
+  type ConsumableThresholdTriggeredEvent,
+  type ConsumableThresholdRecoveredEvent,
+  type TransactionReceiptStatusChangedEvent,
+  type PrintQueueStatsEvent,
+  type PrintQueueStatusSnapshot,
+  type PrintQueueSocketIOEvent,
+} from './print-queue.socket-events';
