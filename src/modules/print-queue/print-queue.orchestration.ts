@@ -1,20 +1,27 @@
 /**
- * Print Queue Orchestration - Full Worker Pipeline with Service Integration
+ * Print Queue Orchestration - Phase 2 Implementation Framework
  *
- * 5-stage print job execution pipeline with real service calls:
- * 1. Preflight: Printer state, ink policy, balance, document validation
+ * 5-stage print job execution pipeline with service integration:
+ * 1. Preflight: Printer state, ink policy, document validation
  * 2. Dispatch: Send to printer, capture result
  * 3. Settlement: Process payment and change dispensing
  * 4. Spooler: Monitor job lifecycle until terminal state
  * 5. Reconciliation: Generate receipt and emit completion
  *
- * Phase 2: Full orchestration with service integration
+ * Phase 2: Service integration ready for development
+ * All stage helpers prepared; service calls marked with TODO
+ *
+ * Service Integration Dependencies:
+ * - @/services: getPrinterTelemetry, evaluateInkPreflight, printFile, etc.
+ * - @/services/print-spooler: monitorSpoolerJob
+ * - @/services/settlement: settlementService
+ * - @/modules/receipt/receipt.service: receiptService instance
+ * - @/services/print-dispatcher: PrintDispatchError, print dispatch types
  */
 
 import type { Job } from 'bullmq';
 import type { Server } from 'socket.io';
 import type { PrintJobEnqueuePayload } from './print-job.schema';
-import { isRetryableFailureClass } from './queue.config';
 
 /**
  * Result of orchestration execution
@@ -31,7 +38,7 @@ export interface PrintWorkerOrchestrationResult {
 }
 
 /**
- * Error class for worker orchestration
+ * Error class for worker orchestration with retry classification
  */
 export class WorkerOrchestrationError extends Error {
   constructor(
@@ -55,7 +62,6 @@ export function buildPrintJobContext(job: Job<PrintJobEnqueuePayload>): {
   spoolerCorrelationKey: string;
   jobId: string | number;
   mode: 'print' | 'copy';
-  copies: number;
   printerName: string;
 } {
   return {
@@ -63,7 +69,6 @@ export function buildPrintJobContext(job: Job<PrintJobEnqueuePayload>): {
     spoolerCorrelationKey: job.data.correlation.spoolerCorrelationKey,
     jobId: job.id ?? 'unknown',
     mode: job.data.request.mode,
-    copies: job.data.request.copies,
     printerName: job.data.request.printerName ?? 'default',
   };
 }
@@ -96,24 +101,57 @@ export function recordJobAttempt(
 }
 
 /**
- * Orchestrate print job execution through 5-stage pipeline
+ * Orchestrate print job through 5-stage pipeline
  *
- * Stage 1: Preflight - Validate printer, ink, document, balance
- * Stage 2: Dispatch - Send job to printer
- * Stage 3: Settlement - Process payment and change
- * Stage 4: Spooler - Monitor print completion
- * Stage 5: Reconciliation - Generate receipt
+ * Phase 2 Implementation Roadmap:
  *
- * Phase 2 Implementation Status:
- * ✓ Structure and error handling
- * ○ Service integration for each stage
+ * Stage 1 - Preflight (validation):
+ * TODO: Call getPrinterTelemetry() to verify printer online
+ * TODO: Call evaluateInkPreflight() to verify ink levels
+ * TODO: Validate document file exists and is accessible
+ * TODO: Verify required amount vs balance
+ * TODO: Emit printQueueJobStarted event
  *
- * The actual service calls will be added as follows:
- * - Stage 1: Call printer telemetry, ink evaluation, document validation
- * - Stage 2: Call printFile with dispatch options
- * - Stage 3: Call settlementService.settle()
- * - Stage 4: Call monitorSpoolerJob() with polling
- * - Stage 5: Call receiptService to generate receipt
+ * Stage 2 - Dispatch (send to printer):
+ * TODO: Call printFile(filePath, options, context)
+ * TODO: Handle PrintDispatchError with failure classification
+ * TODO: Capture PrintDispatchResult (engine, duration, success)
+ * TODO: Call checkpointRecoverySession() with dispatch checkpoint
+ * TODO: Emit printQueueJobDispatched event
+ *
+ * Stage 3 - Settlement (payment processing):
+ * TODO: Call settlementService.settle(requiredAmount)
+ * TODO: Verify settlement.ok === true
+ * TODO: Capture chargedAmount from settlement
+ * TODO: Handle insufficient balance (non-retryable)
+ * TODO: Call checkpointRecoverySession() with settled checkpoint
+ * TODO: Emit transactionSettled event
+ *
+ * Stage 4 - Spooler (monitor print completion):
+ * TODO: Call monitorSpoolerJob() with spooler correlation key
+ * TODO: Poll until terminal state (completed/failed/error)
+ * TODO: Handle timeout (retryable) vs permanent failures
+ * TODO: Call checkpointRecoverySession() with print_confirmed
+ * TODO: Emit printQueueJobPrinted event
+ *
+ * Stage 5 - Reconciliation (generate receipt):
+ * TODO: Call receiptService to generate receipt snapshot
+ * TODO: Emit printQueueJobCompleted event
+ * TODO: Emit transactionReceiptStatusChanged event
+ * TODO: Return success with final status
+ *
+ * Error Handling:
+ * - Retryable failures: Dispatch errors, spooler timeouts, settlement locks
+ * - Non-retryable: Missing printer, unsupported capabilities, insufficient balance
+ * - Unknown errors: Wrapped as retryable by default
+ *
+ * Socket.IO Events:
+ * - printQueueJobStarted: Preflight passed, execution starting
+ * - printQueueJobDispatched: Print engine successfully dispatched
+ * - transactionSettled: Payment processed
+ * - printQueueJobPrinted: Print confirmed by spooler
+ * - printQueueJobCompleted: Receipt generated, transaction complete
+ * - printQueueJobFailed: Job failed with failure class and retryability
  */
 export async function orchestratePrintJob(
   job: Job<PrintJobEnqueuePayload>,
@@ -130,61 +168,59 @@ export async function orchestratePrintJob(
     // =========================================================================
     currentStage = 'preflight';
 
-    // TODO: Integrate with services:
-    // - getPrinterTelemetry() to validate printer state
-    // - evaluateInkPreflight() to check ink policy
-    // - Validate document exists and is readable
-    // - Verify balance >= requiredAmount
-    // - Emit: printQueueJobStarted event
+    // TODO: Implement preflight validation
+    // - getPrinterTelemetry(ctx.printerName)
+    // - evaluateInkPreflight() for ink policy
+    // - Document validation
+    // - Balance verification
+    // - Emit printQueueJobStarted
 
     // =========================================================================
     // STAGE 2: DISPATCH
     // =========================================================================
     currentStage = 'dispatch';
 
-    // TODO: Integrate with services:
+    // TODO: Implement dispatch to printer
     // - Call printFile() with job.data.request options
-    // - Capture dispatchResult with engine, mode, mimeType
-    // - Call checkpointRecoverySession() with dispatch checkpoint
-    // - On error: Extract failureClass and throw WorkerOrchestrationError
-    // - Emit: printQueueJobDispatched event
+    // - Handle PrintDispatchError (retryable vs non-retryable)
+    // - Capture dispatchResult with engine, duration
+    // - Call checkpointRecoverySession(phase: 'job_dispatched')
+    // - Emit printQueueJobDispatched
 
     // =========================================================================
     // STAGE 3: SETTLEMENT
     // =========================================================================
     currentStage = 'settlement';
 
-    // TODO: Integrate with services:
-    // - Call settlementService.settle() with requiredAmount
+    // TODO: Implement settlement processing
+    // - Call settlementService.settle(requiredAmount)
     // - Verify settlement.ok === true
-    // - Capture chargedAmount from settlement result
-    // - Call checkpointRecoverySession() with settled checkpoint
-    // - On insufficient balance: throw non-retryable error
-    // - Emit: transactionSettled event
+    // - Extract chargedAmount from settlement result
+    // - Handle insufficient balance (non-retryable)
+    // - Call checkpointRecoverySession(phase: 'settled')
+    // - Emit transactionSettled
 
     // =========================================================================
     // STAGE 4: SPOOLER MONITORING
     // =========================================================================
     currentStage = 'spooler';
 
-    // TODO: Integrate with services:
-    // - Call monitorSpoolerJob() to poll spooler lifecycle
-    // - Poll until terminal state or timeout
-    // - On timeout: throw retryable error
-    // - On failure: throw retryable or non-retryable per reason
-    // - Emit: printQueueJobPrinted event
-    // - Call checkpointRecoverySession() with print_confirmed
+    // TODO: Implement spooler monitoring
+    // - Call monitorSpoolerJob(spoolerCorrelationKey)
+    // - Poll until terminal state or timeout (120s)
+    // - Classify timeout as retryable
+    // - Call checkpointRecoverySession(phase: 'print_confirmed')
+    // - Emit printQueueJobPrinted
 
     // =========================================================================
     // STAGE 5: RECONCILIATION
     // =========================================================================
     currentStage = 'reconciliation';
 
-    // TODO: Integrate with services:
-    // - Call receiptService.upsertReceiptSnapshot()
-    // - Emit: printQueueJobCompleted event
-    // - Emit: transactionReceiptStatusChanged event
-    // - Return success result
+    // TODO: Implement reconciliation
+    // - Call receiptService to generate receipt snapshot
+    // - Emit printQueueJobCompleted
+    // - Emit transactionReceiptStatusChanged
 
     return {
       success: true,
