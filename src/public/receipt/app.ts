@@ -49,7 +49,6 @@ const fields = {
   ) as HTMLElement | null,
   status: document.getElementById('rStatus') as HTMLElement | null,
   settledAt: document.getElementById('rSettledAt') as HTMLElement | null,
-  terminalAt: document.getElementById('rTerminalAt') as HTMLElement | null,
   generatedAt: document.getElementById('rGeneratedAt') as HTMLElement | null,
 };
 
@@ -275,7 +274,6 @@ function renderReceipt(payload: ReceiptPayload): void {
   setField(fields.changeMessage, changeMessage);
   setField(fields.status, fmtStatus(payload.status));
   setField(fields.settledAt, fmtDate(payload.settledAt));
-  setField(fields.terminalAt, fmtDate(payload.terminalAt));
   setField(fields.generatedAt, fmtDate(payload.generatedAt));
   receiptGrid?.removeAttribute('hidden');
 }

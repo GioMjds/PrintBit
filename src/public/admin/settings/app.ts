@@ -24,7 +24,7 @@ const settingAdminPin = document.getElementById(
 ) as HTMLInputElement;
 const settingAdminLocalOnly = document.getElementById(
   'settingAdminLocalOnly',
-) as HTMLInputElement;
+) as HTMLInputElement | null;
 const settingConsumablesForecastingEnabled = document.getElementById(
   'settingConsumablesForecastingEnabled',
 ) as HTMLInputElement | null;
@@ -105,6 +105,7 @@ const openAlertBadgeMob = document.getElementById(
 
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 let refreshTimer: number | null = null;
+let loadedAdminLocalOnly: boolean = false;
 
 function applySettings(settings: SettingsResponse): void {
   settingPrintPerPage.value = String(settings.pricing.printPerPage);
@@ -112,7 +113,10 @@ function applySettings(settings: SettingsResponse): void {
   settingScanDocument.value = String(settings.pricing.scanDocument);
   settingColorSurcharge.value = String(settings.pricing.colorSurcharge);
   settingAdminPin.value = '';
-  settingAdminLocalOnly.checked = settings.adminLocalOnly;
+  loadedAdminLocalOnly = settings.adminLocalOnly;
+  if (settingAdminLocalOnly) {
+    settingAdminLocalOnly.checked = settings.adminLocalOnly;
+  }
 
   // Kiosk Behaviour (optional)
   if (settingIdleTimeout) {
@@ -309,7 +313,7 @@ settingsForm.addEventListener('submit', (e) => {
       colorSurcharge: Number(settingColorSurcharge.value),
     },
     ...(newPin ? { adminPin: newPin } : {}),
-    adminLocalOnly: settingAdminLocalOnly.checked,
+    adminLocalOnly: settingAdminLocalOnly ? settingAdminLocalOnly.checked : loadedAdminLocalOnly,
   };
 
   // Only include idleTimeoutSeconds if the field is present

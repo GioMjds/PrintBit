@@ -391,7 +391,6 @@ function receiptWindowHtml(payload: AdminReceiptPayload): string {
         <div class="k">Change Message</div><div class="v">${escapeHtml(changeMessage)}</div>
         <div class="k">Status</div><div class="v">${escapeHtml(formatStatus(payload.status))}</div>
         <div class="k">Settled At</div><div class="v">${escapeHtml(formatDate(payload.settledAt))}</div>
-        <div class="k">Terminal At</div><div class="v">${escapeHtml(formatDate(payload.terminalAt))}</div>
         <div class="k">Generated At</div><div class="v">${escapeHtml(formatDate(payload.generatedAt))}</div>
       </div>
     </section>
@@ -523,7 +522,7 @@ function applyLogs(logs: LogsResponse['logs']): void {
     const actionMarkup = `
       <div class="tx-actions">
         <button class="tx-action-btn" data-action="view-details" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
-          View details
+          Open details
         </button>
         <button class="tx-action-btn" data-action="open-receipt" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
           Open E-Receipt
@@ -542,8 +541,6 @@ function applyLogs(logs: LogsResponse['logs']): void {
       <td class="logs-td logs-td--ts">${new Date(log.timestamp).toLocaleString()}</td>
       <td class="logs-td logs-td--id">${transactionIdCell}</td>
       <td class="logs-td logs-td--mode">${escapeHtml(inferMode(log))}</td>
-      <td class="logs-td logs-td--type">${escapeHtml(log.type)}</td>
-      <td class="logs-td">${escapeHtml(log.message)}</td>
       <td class="logs-td logs-td--actions">${actionMarkup}</td>
     `;
     logsBody.appendChild(tr);

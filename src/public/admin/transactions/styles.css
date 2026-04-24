@@ -143,12 +143,8 @@
   width: 90px;
 }
 
-.logs-th--type {
-  width: 160px;
-}
-
 .logs-th--actions {
-  width: 290px;
+  width: 250px;
 }
 
 .logs-table tbody tr {
@@ -172,8 +168,7 @@
   font-family: 'Courier New', monospace;
 }
 
-.logs-td--id,
-.logs-td--type {
+.logs-td--id {
   font-family: 'Courier New', monospace;
   font-size: 12px;
 }
@@ -255,14 +250,15 @@
 
 .tx-drawer {
   position: fixed;
-  top: 0;
-  right: 0;
-  width: min(540px, 100vw);
-  height: 100vh;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(88dvh, 860px);
   z-index: 120;
   background: linear-gradient(180deg, rgba(13, 15, 39, 0.98), rgba(8, 9, 22, 0.98));
-  border-left: 1px solid rgba(167, 170, 225, 0.22);
-  box-shadow: -12px 0 34px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(167, 170, 225, 0.22);
+  border-radius: 14px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
   padding: 14px;
@@ -515,7 +511,8 @@
   }
 
   .tx-drawer {
-    width: 100vw;
+    width: calc(100vw - 12px);
+    max-height: 94dvh;
     padding: 12px;
   }
 
