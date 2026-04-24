@@ -43,6 +43,12 @@ export {
 } from './print-queue.service';
 
 export {
+  PrintQueueAdminOperations,
+  PrintQueueAdminError,
+  getPrintQueueAdminOperations,
+} from './print-queue.admin-operations';
+
+export {
   createPrintJobWorker,
 } from './print-queue.worker';
 
