@@ -8,16 +8,23 @@
  * - Spooler monitoring
  * - Terminal reconciliation
  *
- * Phase 2: Workerized print pipeline and retries (detailed implementation)
- * Phase 1: Worker scaffolding and retry classification
+ * Phase 2: Workerized print pipeline with orchestration
  */
 
 import { Worker } from 'bullmq';
 import type { Server } from 'socket.io';
-import { redisConfig, queueNames, printJobsWorkerOptions, isRetryableFailureClass } from './queue.config';
+import {
+  redisConfig,
+  queueNames,
+  printJobsWorkerOptions,
+  isRetryableFailureClass,
+} from './queue.config';
 import type { PrintQueueJobData } from './print-job.schema';
 import type { Job } from 'bullmq';
-import { orchestratePrintJob, WorkerOrchestrationError, recordJobAttempt } from './print-queue.orchestration';
+import {
+  orchestratePrintJob,
+  WorkerOrchestrationError,
+} from './print-queue.orchestration';
 
 /**
  * Error class for worker operations
@@ -35,23 +42,9 @@ export class PrintWorkerError extends Error {
 }
 
 /**
- * Worker handler for processing print jobs
- * Delegates to orchestration layer for full pipeline
- *
- * @param job BullMQ job with print request payload
- * @returns Print result with completion status
+ * Process a single print job through the orchestration pipeline
  */
-async function processPrintJob(
-  job: Job<PrintQueueJobData>,
-): Promise<{
-  success: boolean;
-  transactionId: string;
-  spoolerCorrelationKey: string;
-  stage: string;
-  durationMs: number;
-}> {
-  // TODO Phase 2: Get io instance from worker context
-  // For now, worker will need io passed during creation
+async function processPrintJob(job: Job<PrintQueueJobData>) {
   const io = (global as any).socketIOInstance as Server;
 
   if (!io) {
@@ -64,9 +57,6 @@ async function processPrintJob(
 
   try {
     const result = await orchestratePrintJob(job, io);
-
-    // Record attempt for diagnostics
-    recordJobAttempt(job, result);
 
     return {
       success: result.success,
@@ -102,10 +92,9 @@ async function processPrintJob(
 
 /**
  * Create and start print job worker
- * Called on app startup
+ * Called on app startup to attach io instance and event handlers
  */
 export function createPrintJobWorker(io: Server) {
-  // Store io instance for worker handler access
   (global as any).socketIOInstance = io;
 
   const worker = new Worker(queueNames.printJobs, processPrintJob, {
@@ -123,7 +112,6 @@ export function createPrintJobWorker(io: Server) {
       `[PRINT-WORKER] Job ${job.id} completed: ${JSON.stringify(result)}`,
     );
 
-    // Emit Socket.IO event for real-time dashboard
     io.emit('printQueueJobCompleted', {
       jobId: job.id,
       transactionId: result.transactionId,
@@ -134,7 +122,9 @@ export function createPrintJobWorker(io: Server) {
 
   worker.on('failed', (job, err) => {
     if (!job) {
-      console.error(`[PRINT-WORKER] Job failed with no job context: ${err.message}`);
+      console.error(
+        `[PRINT-WORKER] Job failed with no job context: ${err.message}`,
+      );
       return;
     }
 
@@ -142,17 +132,19 @@ export function createPrintJobWorker(io: Server) {
       `[PRINT-WORKER] Job ${job.id} failed (attempt ${job.attemptsMade}): ${err.message}`,
     );
 
-    // Classify failure for retry decision
-    const isRetryable = !(err instanceof PrintWorkerError) || err.isRetryable;
+    const isRetryable =
+      !(err instanceof PrintWorkerError) || err.isRetryable;
 
     console.log(
-      `[PRINT-WORKER] Job ${job.id} will ${isRetryable ? `retry (attempt ${job.attemptsMade + 1}/3)` : 'be moved to dead-letter queue'}`,
+      `[PRINT-WORKER] Job ${job.id} will ${
+        isRetryable ? `retry (attempt ${job.attemptsMade + 1}/3)` : 'be moved to dead-letter'
+      }`,
     );
 
-    // Emit Socket.IO event for real-time dashboard
     io.emit('printQueueJobFailed', {
       jobId: job.id,
-      failureClass: err instanceof PrintWorkerError ? err.failureClass : 'UNKNOWN_FAILURE',
+      failureClass:
+        err instanceof PrintWorkerError ? err.failureClass : 'UNKNOWN_FAILURE',
       isRetryable,
       attemptNumber: job.attemptsMade,
       message: err.message,
@@ -161,27 +153,25 @@ export function createPrintJobWorker(io: Server) {
 
   worker.on('stalled', (jobId) => {
     console.warn(
-      `[PRINT-WORKER] Job ${jobId} stalled (exceeded lockDuration)`,
+      `[PRINT-WORKER] Job ${jobId} stalled (lockDuration exceeded)`,
     );
 
-    // Emit Socket.IO stall event
     io.emit('printQueueJobStalled', {
       jobId,
-      timestamp: new Date().toISOString(),
+      stalledAt: new Date().toISOString(),
     });
   });
 
   worker.on('error', (err) => {
-    console.error(`[PRINT-WORKER] Worker error: ${err.message}`);
+    console.error(
+      `[PRINT-WORKER] Worker error: ${err instanceof Error ? err.message : String(err)}`,
+    );
 
-    // Emit Socket.IO error event for monitoring
     io.emit('printQueueWorkerError', {
-      error: err.message,
+      error: err instanceof Error ? err.message : String(err),
       timestamp: new Date().toISOString(),
     });
   });
 
   return worker;
 }
-
-
