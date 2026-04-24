@@ -29,6 +29,9 @@ export interface PrintQuoteResult {
     printPerPage: number;
     colorSurcharge: number;
   };
+  analysisConfidence: 'high' | 'medium' | 'low';
+  billingPageDetection: 'high-confidence-page-detection' | 'fallback-assumptions';
+  analysisFallbackReasonFlags: string[];
 }
 
 export type PrintQuoteComputation =
@@ -203,6 +206,7 @@ export function buildPrintQuote(input: {
 
   let selectedColorPages = 0;
   let selectedBwPages = 0;
+  let usedFallbackAssumptions = false;
   if (byPage.size > 0) {
     for (const page of selectedPages.selected) {
       if (!byPage.has(page)) {
@@ -218,6 +222,7 @@ export function buildPrintQuote(input: {
       }
     }
   } else if (!parsedRange.normalized) {
+    usedFallbackAssumptions = true;
     selectedColorPages = Math.max(
       0,
       Math.floor(input.analysis.colorPages ?? 0),
@@ -229,6 +234,18 @@ export function buildPrintQuote(input: {
       error: 'Page-level analysis unavailable for custom page selection.',
     };
   }
+
+  const analysisFallbackReasonFlags = Array.from(
+    new Set(
+      pageAnalyses.flatMap((page) =>
+        Array.isArray(page.fallbackReasonFlags) ? page.fallbackReasonFlags : [],
+      ),
+    ),
+  );
+  const billingPageDetection =
+    !usedFallbackAssumptions && input.analysis.confidence === 'high'
+      ? 'high-confidence-page-detection'
+      : 'fallback-assumptions';
 
   const selectedCount = selectedPages.selected.size;
   if (selectedColorPages + selectedBwPages !== selectedCount) {
@@ -277,6 +294,9 @@ export function buildPrintQuote(input: {
         printPerPage: pricing.printPerPage,
         colorSurcharge: pricing.colorSurcharge,
       },
+      analysisConfidence: input.analysis.confidence,
+      billingPageDetection,
+      analysisFallbackReasonFlags,
     },
   };
 }

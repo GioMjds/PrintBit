@@ -44,6 +44,19 @@ export interface ConsumablesForecastingSettings {
   paperRefillUpdatedAt: string | null;
 }
 
+export interface ConsumableEstimationCoefficients {
+  bwBlack: number;
+  colorCyan: number;
+  colorMagenta: number;
+  colorYellow: number;
+  colorBlack: number;
+}
+
+export interface ConsumableEstimationSettings {
+  defaultCoefficients: ConsumableEstimationCoefficients;
+  printerOverrides: Record<string, Partial<ConsumableEstimationCoefficients>>;
+}
+
 export interface KioskPreferences {
   language: SupportedLanguage;
   highContrast: boolean;
@@ -99,6 +112,7 @@ export interface AdminSettings {
   alerts: AlertSettings;
   inkMonitoring: InkMonitoringSettings;
   consumablesForecasting: ConsumablesForecastingSettings;
+  consumableEstimation: ConsumableEstimationSettings;
 }
 
 export interface AdminLogEntry {

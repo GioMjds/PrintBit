@@ -83,6 +83,9 @@ Success response:
     "billableBwPages": 2,
     "requestedColorMode": "colored",
     "effectiveColorMode": "colored",
+    "analysisConfidence": "high",
+    "billingPageDetection": "high-confidence-page-detection",
+    "analysisFallbackReasonFlags": [],
     "pricing": {
       "printPerPage": 5,
       "colorSurcharge": 2
@@ -96,6 +99,9 @@ Notes:
 - Page range is validated against analyzed document page count.
 - If analysis is missing, endpoint returns `409`.
 - Duplex affects print behavior only (per-page pricing remains unchanged).
+- `analysisConfidence` is the global confidence for document page-color detection (`high|medium|low`).
+- `billingPageDetection` indicates whether billing used high-confidence page-level detection or fallback assumptions.
+- `analysisFallbackReasonFlags` returns any detected per-page fallback reasons (for diagnostics/audit).
 
 ### `POST /api/balance/reset`
 
@@ -292,6 +298,11 @@ Uploads one file into the target session.
 
 Requires header `x-upload-client-id` (must match the device that owns the session).
 
+When analysis completes (via session fetch payloads / manual analysis endpoint), document analysis now includes:
+
+- `confidence`: global analysis confidence (`high|medium|low`).
+- `pages[].fallbackReasonFlags` (optional): present when a page used fallback analysis logic.
+
 ---
 
 ## Upload portal pages
@@ -438,6 +449,7 @@ Also includes `consumables` forecasting output:
 
 - `generatedAt`, `rollingWindowDays`, `alertDaysThreshold`
 - `paper` forecast (`currentSheets`, `trayCapacitySheets`, `avgDailyUse`, `daysRemaining`, `projectedEmptyAt`, `status`, `confidence`)
+- `paper.usageConfidence` diagnostics (`highConfidenceEvents`, `fallbackEvents`, `highConfidenceRatio`) showing how many consumable usage samples came from high-confidence page detection vs fallback assumptions
 - `inkSupplies[]` forecast (`name`, `level`, `avgDailyDrop`, `daysRemaining`, `projectedEmptyAt`, `status`, `confidence`, `detectionMethod`)
 - `alerts` (`withinThreshold`, `reasons[]`)
 
@@ -629,9 +641,56 @@ Validation rules:
 - `paperTrayCapacitySheets`: integer `>= 1`
 - `paperCurrentSheets`: integer `>= 0` and must not exceed tray capacity
 
+Supports `consumableEstimation` updates for per-page supply deltas used by consumables telemetry:
+
+```json
+{
+  "consumableEstimation": {
+    "defaultCoefficients": {
+      "bwBlack": 0.015,
+      "colorCyan": 0.012,
+      "colorMagenta": 0.012,
+      "colorYellow": 0.012,
+      "colorBlack": 0.006
+    },
+    "printerOverrides": {
+      "epson_l5290_series": {
+        "bwBlack": 0.02,
+        "colorBlack": 0.01
+      }
+    }
+  }
+}
+```
+
+Validation rules:
+
+- all coefficient values must be finite numbers `>= 0`
+- `printerOverrides` must be an object keyed by normalized printer name
+
 ### `GET /api/admin/consumables/forecast`
 
 Returns the same consumables forecast payload exposed under `/api/admin/summary.consumables`.
+
+Forecast-driven anomaly behavior:
+
+- Forecast incidents continue to use `consumables-forecast:*` fingerprints (paper and per-ink-supply depletion projections).
+- Immediate ink threshold incidents now use separate `consumables-threshold:ink:<printer>:<supply>` fingerprints, so a low/empty incident can coexist with a depletion forecast incident for the same supply.
+- Threshold incidents are raised when either:
+  - latest `inkSupplies[].supplyStatus` is `low` or `empty`, or
+  - latest `inkSupplies[].level <= settings.inkMonitoring.lowThresholdPercent`,
+    even when `inkSupplies[].avgDailyDrop` is `0` or forecasting status is `insufficient_data`.
+- Threshold incidents are auto-resolved after recovery when supply status is no longer `low`/`empty` and level is above the configured low threshold.
+
+Threshold incident payload fields (`context`) include:
+
+- `printerName`
+- `supplyName`
+- `supplyStatus`
+- `level`
+- `lowThresholdPercent`
+- `thresholdTriggeredBy` (`status` | `level`)
+- `detectionMethod`
 
 ### `POST /api/admin/consumables/paper-refill`
 

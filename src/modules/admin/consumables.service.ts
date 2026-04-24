@@ -25,6 +25,11 @@ export interface PaperConsumableForecast {
   daysRemaining: number | null;
   projectedEmptyAt: string | null;
   usageEventsConsidered: number;
+  usageConfidence: {
+    highConfidenceEvents: number;
+    fallbackEvents: number;
+    highConfidenceRatio: number;
+  };
 }
 
 export interface InkConsumableForecast {
@@ -136,6 +141,17 @@ function toInkAlertFingerprint(printerName: string, supplyName: string): string 
   return `consumables-forecast:ink:${composite}`;
 }
 
+function toInkThresholdAlertFingerprint(
+  printerName: string,
+  supplyName: string,
+): string {
+  const composite = toSupplyCompositeKey(printerName, supplyName).replace(
+    /\s+/g,
+    '-',
+  );
+  return `consumables-threshold:ink:${composite}`;
+}
+
 export class ConsumablesService {
   getForecast(now = new Date()): ConsumablesForecastResponse {
     const settings = db.data!.settings.consumablesForecasting;
@@ -238,6 +254,7 @@ export class ConsumablesService {
     const paperFingerprint = 'consumables-forecast:paper';
     const activeRiskFingerprints = new Set<string>();
     const alertsEnabled = db.data!.settings.consumablesForecasting.enabled;
+    const inkLowThresholdPercent = db.data!.settings.inkMonitoring.lowThresholdPercent;
 
     if (
       forecast.paper.status === 'ok' &&
@@ -264,6 +281,39 @@ export class ConsumablesService {
     }
 
     for (const supply of forecast.inkSupplies) {
+      const thresholdTriggered =
+        supply.supplyStatus === 'low' ||
+        supply.supplyStatus === 'empty' ||
+        (supply.level !== null && supply.level <= inkLowThresholdPercent);
+      if (thresholdTriggered) {
+        const thresholdFingerprint = toInkThresholdAlertFingerprint(
+          supply.printerName,
+          supply.name,
+        );
+        activeRiskFingerprints.add(thresholdFingerprint);
+        if (alertsEnabled) {
+          await this.reportForecastIncidentIfNeeded({
+            type: 'consumables_ink_threshold_low',
+            source: 'consumables-forecast',
+            category: 'printer',
+            severity: 'warning',
+            message: `${supply.printerName} / ${supply.name} is at low supply threshold (${supply.supplyStatus}${supply.level !== null ? `, level ${supply.level}%` : ''}).`,
+            fingerprint: thresholdFingerprint,
+            context: {
+              printerName: supply.printerName,
+              supplyName: supply.name,
+              supplyStatus: supply.supplyStatus,
+              level: supply.level ?? null,
+              lowThresholdPercent: inkLowThresholdPercent,
+              thresholdTriggeredBy:
+                supply.supplyStatus === 'low' || supply.supplyStatus === 'empty'
+                  ? 'status'
+                  : 'level',
+              detectionMethod: supply.detectionMethod,
+            },
+          });
+        }
+      }
       if (
         supply.status !== 'ok' ||
         supply.daysRemaining === null ||
@@ -353,6 +403,14 @@ export class ConsumablesService {
         ? roundTo(totalSheetsUsed / input.rollingWindowDays, 3)
         : 0;
     const usageEventsConsidered = input.usageEvents.length;
+    const highConfidenceEvents = input.usageEvents.filter(
+      (event) => event.billingPageDetection === 'high-confidence-page-detection',
+    ).length;
+    const fallbackEvents = Math.max(0, usageEventsConsidered - highConfidenceEvents);
+    const highConfidenceRatio =
+      usageEventsConsidered > 0
+        ? roundTo(highConfidenceEvents / usageEventsConsidered, 3)
+        : 0;
     const usageDaysConsidered = byDay.size;
     const status: ConsumableForecastStatus =
       avgDailyUse > 0 ? 'ok' : 'insufficient_data';
@@ -376,6 +434,11 @@ export class ConsumablesService {
       daysRemaining,
       projectedEmptyAt,
       usageEventsConsidered,
+      usageConfidence: {
+        highConfidenceEvents,
+        fallbackEvents,
+        highConfidenceRatio,
+      },
     };
   }
 
@@ -519,7 +582,8 @@ function nowIso(): string {
 function isForecastIncidentFingerprint(fingerprint: string): boolean {
   return (
     fingerprint === 'consumables-forecast:paper' ||
-    fingerprint.startsWith('consumables-forecast:ink:')
+    fingerprint.startsWith('consumables-forecast:ink:') ||
+    fingerprint.startsWith('consumables-threshold:ink:')
   );
 }
 

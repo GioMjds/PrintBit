@@ -20,7 +20,10 @@ export type AnalyzedFileType =
 export interface PageAnalysis {
   index: number;
   isColor: boolean;
+  fallbackReasonFlags?: string[];
 }
+
+export type AnalysisConfidence = 'high' | 'medium' | 'low';
 
 export interface DocumentAnalysisResult {
   fileType: AnalyzedFileType;
@@ -29,6 +32,7 @@ export interface DocumentAnalysisResult {
   colorPages: number;
   bwPages: number;
   totalPages: number;
+  confidence?: AnalysisConfidence;
 }
 
 interface AnalyzeDocumentInput {
@@ -154,6 +158,7 @@ async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
     colorPages: page.isColor ? 1 : 0,
     bwPages: page.isColor ? 0 : 1,
     totalPages: 1,
+    confidence: 'high',
   };
 }
 
@@ -167,6 +172,7 @@ async function analyzePdfFile(
   const doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
 
   const pages: PageAnalysis[] = [];
+  let fallbackPageCount = 0;
 
   try {
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum += 1) {
@@ -181,6 +187,13 @@ async function analyzePdfFile(
           error,
         );
         isColor = true;
+        fallbackPageCount += 1;
+        pages.push({
+          index: pageNum,
+          isColor,
+          fallbackReasonFlags: ['operator_scan_failed_default_color'],
+        });
+        continue;
       } finally {
         page.cleanup();
       }
@@ -193,6 +206,12 @@ async function analyzePdfFile(
 
   const colorPages = pages.filter((page) => page.isColor).length;
   const totalPages = pages.length;
+  const confidence: AnalysisConfidence =
+    fallbackPageCount === 0
+      ? 'high'
+      : fallbackPageCount >= totalPages
+        ? 'low'
+        : 'medium';
 
   return {
     fileType,
@@ -201,6 +220,7 @@ async function analyzePdfFile(
     colorPages,
     bwPages: totalPages - colorPages,
     totalPages,
+    confidence,
   };
 }
 

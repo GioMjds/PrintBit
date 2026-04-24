@@ -37,6 +37,7 @@ import {
 import { consumablesStore } from '@/core/database/sqlite-storage';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 import { ReceiptService } from '@/modules/receipt/receipt.service';
+import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -655,7 +656,15 @@ export class CopyService {
               billableColorPages: normalized.colorMode === 'colored' ? 1 : 0,
               billableBwPages: normalized.colorMode === 'colored' ? 0 : 1,
               estimatedSheetsUsed: Math.max(1, normalized.copies),
+              estimatedInkUnits: estimateInkUsageByJob({
+                selectedColorPages: normalized.colorMode === 'colored' ? 1 : 0,
+                selectedBwPages: normalized.colorMode === 'colored' ? 0 : 1,
+                copies: normalized.copies,
+                printerName: telemetry.name ?? null,
+              }),
               source: 'copy-service',
+              billingPageDetection: 'fallback-assumptions',
+              analysisConfidence: 'unknown',
             });
             await evaluateConsumablesForecastAlerts();
           } catch (error) {

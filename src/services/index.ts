@@ -33,6 +33,7 @@ export * from './serial';
 export * from './session';
 export * from './settlement';
 export * from './financial-ledger';
+export * from './consumable-estimator';
 export * from './time-source';
 export * from './transient-file-cleanup';
 export * from './transient-scan-file';

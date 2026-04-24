@@ -70,6 +70,7 @@ import {
   parseRotationDeg,
 } from '@/services/document-rotation';
 import { ReceiptService } from '@/modules/receipt/receipt.service';
+import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1307,6 +1308,10 @@ export class FinancialService {
       billableColorPages: number;
       billableBwPages: number;
       effectiveColorMode: 'colored' | 'grayscale';
+      billingPageDetection: 
+        | 'high-confidence-page-detection'
+        | 'fallback-assumptions';
+      analysisConfidence: 'high' | 'medium' | 'low';
     } | null = null;
 
     await checkpointRecoverySession({
@@ -1438,6 +1443,8 @@ export class FinancialService {
         billableColorPages: quoteComputation.quote.billableColorPages,
         billableBwPages: quoteComputation.quote.billableBwPages,
         effectiveColorMode: quoteComputation.quote.effectiveColorMode,
+        billingPageDetection: quoteComputation.quote.billingPageDetection,
+        analysisConfidence: quoteComputation.quote.analysisConfidence,
       };
 
       serverFilename = path.basename(target.filePath);
@@ -1962,6 +1969,18 @@ export class FinancialService {
           : 1;
       const estimatedSheetsUsed =
         Math.max(1, copies) * Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
+      const billingPageDetection = isPrintMode
+        ? (printQuotePages?.billingPageDetection ?? 'fallback-assumptions')
+        : 'fallback-assumptions';
+      const analysisConfidence = isPrintMode
+        ? (printQuotePages?.analysisConfidence ?? 'unknown')
+        : 'unknown';
+      const estimatedInkUnits = estimateInkUsageByJob({
+        selectedColorPages: billableColorPages,
+        selectedBwPages: billableBwPages,
+        copies: Math.max(1, copies),
+        printerName: telemetry.name ?? null,
+      });
       consumablesStore.appendUsageEvent({
         id: randomUUID(),
         timestamp: getTrustedTimestamp().timestamp,
@@ -1973,7 +1992,10 @@ export class FinancialService {
         billableColorPages,
         billableBwPages,
         estimatedSheetsUsed,
+        estimatedInkUnits,
         source: 'confirm-payment',
+        billingPageDetection,
+        analysisConfidence,
       });
     }
 
@@ -2046,6 +2068,8 @@ export class FinancialService {
           selectedBwPages: printQuotePages?.selectedBwPages ?? null,
           billableColorPages: printQuotePages?.billableColorPages ?? null,
           billableBwPages: printQuotePages?.billableBwPages ?? null,
+          billingPageDetection: printQuotePages?.billingPageDetection ?? null,
+          analysisConfidence: printQuotePages?.analysisConfidence ?? null,
           documentId: targetDocumentId ?? null,
           sessionId: sessionId ?? null,
           filename: serverFilename ?? null,

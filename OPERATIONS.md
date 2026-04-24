@@ -238,6 +238,15 @@ Rollback path:
    - `/api/admin/consumables/forecast`
 6. Use SNMP-capable network queue/driver configuration where possible; fallback methods can report lower-confidence ink estimates.
 
+### Consumables incident expectations (forecast vs immediate threshold)
+
+- Consumables forecasting can open two concurrent ink incident types for the same supply:
+  - forecast depletion (`consumables-forecast:ink:<printer>:<supply>`) when days-remaining is within configured threshold;
+  - immediate low/empty threshold (`consumables-threshold:ink:<printer>:<supply>`) when latest status is `low`/`empty` or reported level is at/below the configured low threshold.
+- Immediate threshold incidents are expected even when depletion projection is unavailable (`avgDailyDrop = 0` / insufficient forecast data).
+- Threshold incidents auto-resolve when supply telemetry recovers (status no longer low/empty and level exceeds low threshold), using the same recovery pass that resolves recovered forecast incidents.
+- Operator action: treat threshold incidents as near-term replenishment signals, then verify recovery on the next telemetry refresh (`/api/admin/printer/re-detect` and `/api/admin/consumables/forecast`).
+
 ## Coins not updating
 
 - Verify serial cable and COM availability.
