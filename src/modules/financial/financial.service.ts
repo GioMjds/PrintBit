@@ -1848,6 +1848,9 @@ export class FinancialService {
         transactionId,
         mode,
         chargedAmount: settlement.chargedAmount,
+        // persist color/BW counts when known from quote
+        colorPages: typeof printQuotePages?.billableColorPages === 'number' ? printQuotePages?.billableColorPages : null,
+        bwPages: typeof printQuotePages?.billableBwPages === 'number' ? printQuotePages?.billableBwPages : null,
         status: initialStatus,
         change: {
           requested: settlement.change.requested,
