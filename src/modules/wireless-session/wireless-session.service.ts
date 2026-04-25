@@ -831,10 +831,15 @@ export class WirelessSessionService {
       convertToPdfPreview: this.deps.convertToPdfPreview,
     });
 
+    const analysisForStore = {
+      ...analysis,
+      confidence: analysis.confidence ?? 'medium',
+    } as Omit<import('@/services/document-analysis').DocumentAnalysisResult & { confidence: 'high' | 'medium' | 'low' }, 'analyzedAt'>;
+
     const persisted = this.deps.sessionStore.setDocumentAnalysis(
       sessionId,
       target.documentId,
-      analysis,
+      analysisForStore,
     );
 
     if (!persisted) {

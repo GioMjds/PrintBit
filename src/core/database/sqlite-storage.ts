@@ -458,11 +458,10 @@ function ensureSchema(db: DatabaseSync): void {
       billable_color_pages INTEGER NOT NULL,
       billable_bw_pages INTEGER NOT NULL,
       estimated_sheets_used INTEGER NOT NULL,
+      estimated_ink_units_json TEXT NOT NULL DEFAULT '{}',
       source TEXT NOT NULL,
       billing_page_detection TEXT NOT NULL DEFAULT 'fallback-assumptions',
       analysis_confidence TEXT NOT NULL DEFAULT 'unknown'
-      estimated_ink_units_json TEXT NOT NULL DEFAULT '{}',
-      source TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_consumable_usage_events_timestamp
       ON consumable_usage_events(timestamp DESC);
