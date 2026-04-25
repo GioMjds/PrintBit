@@ -120,7 +120,9 @@ const previewTroubleshootSteps = document.getElementById(
   'previewTroubleshootSteps',
 ) as HTMLOListElement | null;
 
-const errorSubtext = stateError?.querySelector('.preview-state__sub') as HTMLElement | null;
+const errorSubtext = stateError?.querySelector(
+  '.preview-state__sub',
+) as HTMLElement | null;
 
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
 
@@ -148,99 +150,92 @@ const RELEASE_TIMEOUT_MS = 1_500;
 
 const SCAN_FAILURE_GUIDES: Record<
   ScanFailureCause,
-  { causes: string[]; steps: string[] }
+  { title: string; causes: string[]; steps: string[] }
 > = {
   paper_jam: {
+    title: 'Paper Jam Detected in the Feeder',
     causes: [
-      'Paper is stuck in the feeder path.',
-      'A torn or folded sheet blocked the rollers.',
-      'The feeder cover was not fully closed after loading.',
+      'The paper is physically stuck inside the Automatic Document Feeder (ADF).',
+      'A torn, folded, crumpled, or stapled sheet blocked the internal rollers.',
+      'The top feeder cover was not properly or fully closed after a previous jam.',
     ],
     steps: [
-      'Open the feeder cover and remove jammed paper slowly in the feed direction.',
-      'Check for torn scraps near rollers, then close all covers firmly.',
-      'Reload straight sheets (not folded/stapled) and align paper guides before rescanning.',
+      "Gently pull the lever to open the scanner's top feeder cover.",
+      'Carefully pull the jammed paper out in the direction it normally feeds to avoid tearing it.',
+      'Check for and remove any small torn scraps of paper inside the rollers.',
+      'Firmly push down the feeder cover until you hear it click shut securely.',
+      'Smooth out your document, ensure there are no staples or paperclips, and reload it before pressing Rescan.',
     ],
   },
   empty_feeder: {
+    title: 'No Document Detected in Feeder',
     causes: [
-      'No page is inserted in the feeder slot.',
-      'Page was inserted too shallow or skewed so pickup failed.',
-      'Paper guides are too loose to grip the sheet.',
+      'The scanner did not detect any paper in the top feeder tray.',
+      'The document was pushed in too lightly or at an angle so the sensors missed it.',
+      'The paper width guides are too loose, preventing the rollers from gripping the sheet.',
     ],
     steps: [
-      'Insert at least one clean, flat sheet fully into the feeder tray.',
-      'Align both paper guides to the paper width so the sheet stays centered.',
-      'Try again with one sheet first to confirm feeding works before loading more.',
+      'Remove the paper from the top tray.',
+      'Tap the bottom edge of your paper stack on a flat surface to align all sheets.',
+      'Insert the document straight into the feeder slot until you feel a slight resistance (the scanner gripping the page).',
+      'Slide the plastic paper guides inward so they rest snugly against the left and right edges of your paper.',
+      'Press Rescan to try again.',
     ],
   },
   multi_feed: {
+    title: 'Multiple Pages Fed at Once',
     causes: [
-      'Two or more sheets were pulled at the same time.',
-      'Paper stack is curled, damp, or static-clinged together.',
-      'Pages entered the feeder at an angle.',
+      'Sheets of paper are sticking together due to static cling or dampness.',
+      'The paper stack was inserted unevenly or skewed.',
+      'Too many pages were loaded into the feeder at the same time.',
     ],
     steps: [
-      'Remove the stack, fan and straighten pages, then reload a smaller stack.',
-      'Use dry, flat paper and remove folded or wrinkled sheets.',
-      'Keep paper guides snug and rescan to verify smooth single-sheet feeding.',
+      'Remove the entire stack of paper from the feeder.',
+      'Fan the edges of the stack like a deck of cards to separate the sheets and release static.',
+      'Tap the stack on a flat table to perfectly align all edges.',
+      'Reload the stack squarely into the feeder and adjust the side guides so they touch the paper.',
+      'If the issue persists, try feeding fewer pages at a time and press Rescan.',
     ],
   },
   busy: {
+    title: 'Scanner is Currently Busy',
     causes: [
-      'Scanner is still finishing a previous job.',
-      'Another request is currently using the scanner.',
-      'The scanner service is recovering from a recent interruption.',
+      'The scanner is still finishing up a previous task or processing images.',
+      'The machine is performing a mechanical warm-up or calibration cycle.',
     ],
     steps: [
-      'Wait a few seconds for the scanner to become idle.',
-      'Press Rescan once and avoid repeated rapid taps.',
-      'If it stays busy, return Home and retry one scan job at a time.',
+      'Wait for about 10 to 15 seconds for the machine to finish its internal process.',
+      'Do not press the Rescan button multiple times rapidly, as this can freeze the queue.',
+      'Once the scanner sounds completely quiet and stops moving, press Rescan once to try again.',
     ],
   },
   connection: {
+    title: 'Scanner Connection Issue',
     causes: [
-      'Scanner USB/cable connection is loose or temporarily unavailable.',
-      'Scanner is powered off or still booting.',
-      'Scanner driver/service is unavailable on the kiosk.',
+      'The physical USB cable connecting the scanner to the kiosk is loose.',
+      'The scanner is turned off, unplugged, or stuck in a deep sleep mode.',
     ],
     steps: [
-      'Check that the scanner is powered on and fully ready.',
-      'Reseat the scanner cable and ensure it is securely connected.',
-      'Retry the scan; if the issue persists, ask staff to check scanner connection and service.',
+      'Check the physical scanner next to the kiosk to ensure its screen or power light is turned on.',
+      'If it appears completely off, press the power button on the scanner to wake it up.',
+      'Wait 30 seconds for it to fully boot up and reconnect to the kiosk.',
+      'Press Rescan. If the error remains, please ask a staff member to check the cables.',
     ],
   },
   unknown: {
+    title: 'Scanning Process Interrupted',
     causes: [
-      'The feeder could not complete the scan request.',
-      'Document loading or alignment may have interrupted scanning.',
-      'Scanner may have hit a temporary runtime issue.',
+      'The document alignment shifted heavily during the scan.',
+      'An unexpected physical or mechanical hiccup occurred inside the scanner.',
     ],
     steps: [
-      'Remove and reinsert the page straight into the feeder with guides aligned.',
-      'Check for jammed, folded, or damaged sheets and retry with a clean page.',
-      'If it still fails, power-cycle the scanner and retry or ask staff for assistance.',
+      'Remove your document completely from the scanner tray.',
+      'Check that the pages are clean, straight, and absolutely free of staples, tape, or sticky notes.',
+      'Re-insert the document firmly until you feel the scanner catch it, and align the side guides.',
+      'Press Rescan. If this happens repeatedly with different pages, please seek staff assistance.',
     ],
   },
 };
-
-function sanitizeUserFacingError(rawMessage: string): string {
-  const fallback = 'Scan failed. Please check the feeder and try again.';
-  const initial = rawMessage.trim();
-  if (!initial) return fallback;
-
-  let safeMessage = initial
-    .replace(/epson\s*l5290\s*series/gi, 'scanner')
-    .replace(/naps2(?:\.console\.exe)?/gi, 'scanner service')
-    .replace(/\btwain\b/gi, 'scanner driver')
-    .replace(/\bwia\b/gi, 'scanner driver')
-    .replace(/[A-Z]:\\[^ ]+/g, 'scanner service path')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-
-  if (!safeMessage) return fallback;
-  return safeMessage;
-}
 
 function classifyScanFailure(rawMessage: string): ScanFailureCause {
   const normalized = rawMessage.toLowerCase();
@@ -322,12 +317,12 @@ function hideScanTroubleshooting(): void {
 }
 
 function showScanTroubleshooting(rawMessage: string): string {
-  const safeMessage = sanitizeUserFacingError(rawMessage);
   const cause = classifyScanFailure(rawMessage);
   const guide = SCAN_FAILURE_GUIDES[cause];
+  const userFriendlyTitle = guide.title;
 
   if (scanTroubleshootSummary) {
-    scanTroubleshootSummary.textContent = safeMessage;
+    scanTroubleshootSummary.textContent = userFriendlyTitle;
   }
   replaceListItems(scanTroubleshootCauses, guide.causes);
   replaceListItems(scanTroubleshootSteps, guide.steps);
@@ -335,17 +330,20 @@ function showScanTroubleshooting(rawMessage: string): string {
 
   // Preview-area troubleshooting
   if (previewTroubleshootSummary) {
-    previewTroubleshootSummary.textContent = safeMessage;
+    previewTroubleshootSummary.textContent = userFriendlyTitle;
   }
   replaceListItems(previewTroubleshootCauses, guide.causes);
   replaceListItems(previewTroubleshootSteps, guide.steps);
   if (previewTroubleshooting) previewTroubleshooting.classList.remove('hidden');
 
   if (errorSubtext) {
-    errorSubtext.textContent = guide.steps && guide.steps.length > 0 ? guide.steps[0] : safeMessage;
+    errorSubtext.textContent =
+      guide.steps && guide.steps.length > 0
+        ? guide.steps[0]
+        : userFriendlyTitle;
   }
 
-  return safeMessage;
+  return userFriendlyTitle;
 }
 
 function setBackNavigationLocked(locked: boolean): void {
@@ -369,12 +367,18 @@ backBtn?.addEventListener('click', (event) => {
   }
 });
 
-async function releaseScanFile(releaseToken: string, reason: string): Promise<void> {
+async function releaseScanFile(
+  releaseToken: string,
+  reason: string,
+): Promise<void> {
   const safeReleaseToken = releaseToken.trim();
   if (!safeReleaseToken) return;
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), RELEASE_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    RELEASE_TIMEOUT_MS,
+  );
   try {
     const response = await fetch('/api/scanner/release', {
       method: 'POST',
@@ -522,7 +526,8 @@ async function startScan(): Promise<void> {
   const previousPage = currentPage;
   const previousFilename = scanFilename;
   const previousReleaseToken = scanReleaseToken;
-  const hasPreviousPreview = previousPages.length > 0 && Boolean(previousFilename);
+  const hasPreviousPreview =
+    previousPages.length > 0 && Boolean(previousFilename);
 
   setBackNavigationLocked(true);
   hideScanTroubleshooting();
@@ -577,10 +582,7 @@ async function startScan(): Promise<void> {
     scanReleaseToken = data.releaseToken;
     currentPage = 0;
 
-    if (
-      previousReleaseToken &&
-      previousReleaseToken !== data.releaseToken
-    ) {
+    if (previousReleaseToken && previousReleaseToken !== data.releaseToken) {
       void releaseScanFile(previousReleaseToken, 'scan_replaced_by_new_scan');
     }
 
@@ -593,10 +595,14 @@ async function startScan(): Promise<void> {
     proceedBtn.disabled = false;
     proceedBtn.setAttribute('aria-disabled', 'false');
     scanBtnLabel.textContent = 'Scan Document';
+
+    // ✨ FIX: This allows the rescan listener (!scanBtn.disabled) to fire successfully.
+    scanBtn.disabled = false;
+    scanBtn.setAttribute('aria-disabled', 'false');
   } catch (err) {
     clearInterval(progTimer);
     const rawMessage = err instanceof Error ? err.message : 'Scan failed';
-    const safeMessage = showScanTroubleshooting(rawMessage);
+    const userFriendlyTitle = showScanTroubleshooting(rawMessage);
 
     if (hasPreviousPreview) {
       scannedPages = previousPages;
@@ -609,7 +615,7 @@ async function startScan(): Promise<void> {
 
       showPreview(
         'result',
-        `Previous scan kept. New scan failed: ${safeMessage}`,
+        `Previous scan kept. New scan failed: ${userFriendlyTitle}`,
       );
       updatePager();
       updateSoftCopyPricingUi();
@@ -622,8 +628,8 @@ async function startScan(): Promise<void> {
       return;
     }
 
-    errorText.textContent = safeMessage;
-    showPreview('error', safeMessage);
+    errorText.textContent = userFriendlyTitle;
+    showPreview('error', userFriendlyTitle);
     scanBtn.disabled = false;
     scanBtn.setAttribute('aria-disabled', 'false');
     rescanBtn.style.display = 'none';
