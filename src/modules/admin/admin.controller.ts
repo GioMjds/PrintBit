@@ -791,15 +791,15 @@ export class AdminController {
       const todayRow = sqlite
         .prepare(
           `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
-           FROM receipt_records WHERE mode = ? AND created_at >= ?`
+           FROM receipt_records WHERE mode IN ('print','copy') AND created_at >= ?`
         )
-        .get('print', startIso) as Record<string, unknown> | undefined;
+        .get(startIso) as Record<string, unknown> | undefined;
       const totalRow = sqlite
         .prepare(
           `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
-           FROM receipt_records WHERE mode = ?`
+           FROM receipt_records WHERE mode IN ('print','copy')`
         )
-        .get('print') as Record<string, unknown> | undefined;
+        .get() as Record<string, unknown> | undefined;
 
       const pageCounts = {
         todayColorPages: Number(todayRow?.colorSum ?? 0),
