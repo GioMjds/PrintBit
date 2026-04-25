@@ -111,6 +111,9 @@ export interface ConsumableUsageEventEntry {
   billableColorPages: number;
   billableBwPages: number;
   estimatedSheetsUsed: number;
+  estimatedInkUnits: Record<string, number>;
+  billingPageDetection: 'high-confidence-page-detection' | 'fallback-assumptions';
+  analysisConfidence: 'high' | 'medium' | 'low' | 'unknown';
   source: string;
 }
 
@@ -455,6 +458,10 @@ function ensureSchema(db: DatabaseSync): void {
       billable_color_pages INTEGER NOT NULL,
       billable_bw_pages INTEGER NOT NULL,
       estimated_sheets_used INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      billing_page_detection TEXT NOT NULL DEFAULT 'fallback-assumptions',
+      analysis_confidence TEXT NOT NULL DEFAULT 'unknown'
+      estimated_ink_units_json TEXT NOT NULL DEFAULT '{}',
       source TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_consumable_usage_events_timestamp
@@ -513,6 +520,39 @@ function ensureSchema(db: DatabaseSync): void {
   }
   if (!receiptColumns.has('change_message')) {
     db.exec('ALTER TABLE receipt_records ADD COLUMN change_message TEXT');
+  }
+
+  const consumablesUsageColumnRows = db
+    .prepare('PRAGMA table_info(consumable_usage_events)')
+    .all() as Array<Record<string, unknown>>;
+  const consumablesUsageColumns = new Set(
+    consumablesUsageColumnRows
+      .map((row) => (typeof row.name === 'string' ? row.name : ''))
+      .filter((name) => name.length > 0),
+  );
+  if (!consumablesUsageColumns.has('billing_page_detection')) {
+    db.exec(
+      "ALTER TABLE consumable_usage_events ADD COLUMN billing_page_detection TEXT NOT NULL DEFAULT 'fallback-assumptions'",
+    );
+  }
+  if (!consumablesUsageColumns.has('analysis_confidence')) {
+    db.exec(
+      "ALTER TABLE consumable_usage_events ADD COLUMN analysis_confidence TEXT NOT NULL DEFAULT 'unknown'",
+    );
+  }
+
+  const consumableUsageColumnRows = db
+    .prepare('PRAGMA table_info(consumable_usage_events)')
+    .all() as Array<Record<string, unknown>>;
+  const consumableUsageColumns = new Set(
+    consumableUsageColumnRows
+      .map((row) => (typeof row.name === 'string' ? row.name : ''))
+      .filter((name) => name.length > 0),
+  );
+  if (!consumableUsageColumns.has('estimated_ink_units_json')) {
+    db.exec(
+      "ALTER TABLE consumable_usage_events ADD COLUMN estimated_ink_units_json TEXT NOT NULL DEFAULT '{}'",
+    );
   }
 }
 
@@ -2226,8 +2266,11 @@ export class ConsumablesSqliteStore {
           billable_color_pages,
           billable_bw_pages,
           estimated_sheets_used,
-          source
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          estimated_ink_units_json,
+          source,
+          billing_page_detection,
+          analysis_confidence
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         entry.id,
@@ -2240,7 +2283,10 @@ export class ConsumablesSqliteStore {
         entry.billableColorPages,
         entry.billableBwPages,
         entry.estimatedSheetsUsed,
+        JSON.stringify(entry.estimatedInkUnits),
         entry.source,
+        entry.billingPageDetection,
+        entry.analysisConfidence,
       );
     this.maybePruneOldTelemetryRows();
   }
@@ -2259,7 +2305,10 @@ export class ConsumablesSqliteStore {
           billable_color_pages,
           billable_bw_pages,
           estimated_sheets_used,
-          source
+          estimated_ink_units_json,
+          source,
+          billing_page_detection,
+          analysis_confidence
          FROM consumable_usage_events
          WHERE timestamp >= ?
          ORDER BY timestamp DESC, rowid DESC`,
@@ -2377,8 +2426,37 @@ export class ConsumablesSqliteStore {
       billableColorPages: Number(row.billable_color_pages ?? 0),
       billableBwPages: Number(row.billable_bw_pages ?? 0),
       estimatedSheetsUsed: Number(row.estimated_sheets_used ?? 0),
+      estimatedInkUnits: this.toEstimatedInkUnits(row.estimated_ink_units_json),
       source: String(row.source ?? ''),
+      billingPageDetection:
+        row.billing_page_detection === 'high-confidence-page-detection'
+          ? 'high-confidence-page-detection'
+          : 'fallback-assumptions',
+      analysisConfidence:
+        row.analysis_confidence === 'high' ||
+        row.analysis_confidence === 'medium' ||
+        row.analysis_confidence === 'low'
+          ? row.analysis_confidence
+          : 'unknown'
     };
+  }
+
+  private toEstimatedInkUnits(value: unknown): Record<string, number> {
+    const parsed = parseJsonValue<unknown>(value);
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return {};
+    }
+    const output: Record<string, number> = {};
+    for (const [key, raw] of Object.entries(parsed)) {
+      if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
+        output[key] = raw;
+      }
+    }
+    return output;
   }
 
   private toInkSnapshotEntry(

@@ -44,6 +44,19 @@ export interface ConsumablesForecastingSettings {
   paperRefillUpdatedAt: string | null;
 }
 
+export interface ConsumableEstimationCoefficients {
+  bwBlack: number;
+  colorCyan: number;
+  colorMagenta: number;
+  colorYellow: number;
+  colorBlack: number;
+}
+
+export interface ConsumableEstimationSettings {
+  defaultCoefficients: ConsumableEstimationCoefficients;
+  printerOverrides: Record<string, Partial<ConsumableEstimationCoefficients>>;
+}
+
 export interface AdminSettings {
   pricing: PricingSettings;
   idleTimeoutSeconds: number;
@@ -53,6 +66,7 @@ export interface AdminSettings {
   alerts: AlertSettings;
   inkMonitoring: InkMonitoringSettings;
   consumablesForecasting: ConsumablesForecastingSettings;
+  consumableEstimation: ConsumableEstimationSettings;
 }
 
 export type SupportedLanguage = 'en' | 'fil';
@@ -546,6 +560,16 @@ const DEFAULT_DATA: Schema = {
       paperCurrentSheets: 100,
       paperRefillUpdatedAt: null,
     },
+    consumableEstimation: {
+      defaultCoefficients: {
+        bwBlack: 0.015,
+        colorCyan: 0.012,
+        colorMagenta: 0.012,
+        colorYellow: 0.012,
+        colorBlack: 0.006,
+      },
+      printerOverrides: {},
+    },
   },
   coinStats: {
     one: 0,
@@ -629,11 +653,24 @@ function normalizeTargetPrinterName(value: unknown): string | null {
   return sanitized ? sanitized : null;
 }
 
+function normalizeEstimatorCoefficient(
+  value: unknown,
+  fallback: number,
+): number {
+  return Math.max(0, finiteOr(value, fallback));
+}
+
+function normalizeConsumableEstimationOverrideKey(value: string): string {
+  const compact = value.trim().toLowerCase();
+  if (!compact) return '';
+  return compact.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
 function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const pricing = data?.settings?.pricing;
   const alertSettings = data?.settings?.alerts;
   const inkMonitoring = data?.settings?.inkMonitoring;
   const consumablesForecasting = data?.settings?.consumablesForecasting;
+  const consumableEstimation = data?.settings?.consumableEstimation;
   const normalizedPaperTrayCapacitySheets = Math.max(
     1,
     Math.floor(
@@ -1384,6 +1421,78 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           typeof consumablesForecasting?.paperRefillUpdatedAt === 'string'
             ? consumablesForecasting.paperRefillUpdatedAt
             : DEFAULT_DATA.settings.consumablesForecasting.paperRefillUpdatedAt,
+      },
+      consumableEstimation: {
+        defaultCoefficients: {
+          bwBlack: normalizeEstimatorCoefficient(
+            consumableEstimation?.defaultCoefficients?.bwBlack,
+            DEFAULT_DATA.settings.consumableEstimation.defaultCoefficients
+              .bwBlack,
+          ),
+          colorCyan: normalizeEstimatorCoefficient(
+            consumableEstimation?.defaultCoefficients?.colorCyan,
+            DEFAULT_DATA.settings.consumableEstimation.defaultCoefficients
+              .colorCyan,
+          ),
+          colorMagenta: normalizeEstimatorCoefficient(
+            consumableEstimation?.defaultCoefficients?.colorMagenta,
+            DEFAULT_DATA.settings.consumableEstimation.defaultCoefficients
+              .colorMagenta,
+          ),
+          colorYellow: normalizeEstimatorCoefficient(
+            consumableEstimation?.defaultCoefficients?.colorYellow,
+            DEFAULT_DATA.settings.consumableEstimation.defaultCoefficients
+              .colorYellow,
+          ),
+          colorBlack: normalizeEstimatorCoefficient(
+            consumableEstimation?.defaultCoefficients?.colorBlack,
+            DEFAULT_DATA.settings.consumableEstimation.defaultCoefficients
+              .colorBlack,
+          ),
+        },
+        printerOverrides: Object.fromEntries(
+          Object.entries(consumableEstimation?.printerOverrides ?? {})
+            .map(([key, value]) => {
+              const normalizedKey = normalizeConsumableEstimationOverrideKey(key);
+              if (!normalizedKey || typeof value !== 'object' || value === null) {
+                return null;
+              }
+              const candidate = value as Partial<ConsumableEstimationCoefficients>;
+              return [
+                normalizedKey,
+                {
+                  bwBlack:
+                    candidate.bwBlack === undefined
+                      ? undefined
+                      : normalizeEstimatorCoefficient(candidate.bwBlack, 0),
+                  colorCyan:
+                    candidate.colorCyan === undefined
+                      ? undefined
+                      : normalizeEstimatorCoefficient(candidate.colorCyan, 0),
+                  colorMagenta:
+                    candidate.colorMagenta === undefined
+                      ? undefined
+                      : normalizeEstimatorCoefficient(candidate.colorMagenta, 0),
+                  colorYellow:
+                    candidate.colorYellow === undefined
+                      ? undefined
+                      : normalizeEstimatorCoefficient(candidate.colorYellow, 0),
+                  colorBlack:
+                    candidate.colorBlack === undefined
+                      ? undefined
+                      : normalizeEstimatorCoefficient(candidate.colorBlack, 0),
+                } as Partial<ConsumableEstimationCoefficients>,
+              ] as const;
+            })
+            .filter(
+              (
+                entry,
+              ): entry is readonly [
+                string,
+                Partial<ConsumableEstimationCoefficients>,
+              ] => entry !== null,
+            ),
+        ),
       },
     },
     coinStats: {

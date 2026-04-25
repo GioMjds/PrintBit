@@ -1010,6 +1010,25 @@ export class AdminController {
         paperTrayCapacitySheets?: number;
         paperCurrentSheets?: number;
       };
+      consumableEstimation?: {
+        defaultCoefficients?: {
+          bwBlack?: number;
+          colorCyan?: number;
+          colorMagenta?: number;
+          colorYellow?: number;
+          colorBlack?: number;
+        };
+        printerOverrides?: Record<
+          string,
+          {
+            bwBlack?: number;
+            colorCyan?: number;
+            colorMagenta?: number;
+            colorYellow?: number;
+            colorBlack?: number;
+          }
+        >;
+      };
     };
 
     const printPerPage = body.pricing?.printPerPage;
@@ -1075,6 +1094,12 @@ export class AdminController {
       kioskPreferences: { ...originalSettings.kioskPreferences },
       inkMonitoring: { ...originalSettings.inkMonitoring },
       consumablesForecasting: { ...originalSettings.consumablesForecasting },
+      consumableEstimation: {
+        defaultCoefficients: {
+          ...originalSettings.consumableEstimation.defaultCoefficients,
+        },
+        printerOverrides: { ...originalSettings.consumableEstimation.printerOverrides },
+      },
     };
 
     if (body.pricing) {
@@ -1292,6 +1317,96 @@ export class AdminController {
           next.paperTrayCapacitySheets ||
         originalSettings.consumablesForecasting.paperCurrentSheets !==
           next.paperCurrentSheets;
+    }
+
+    if (body.consumableEstimation) {
+      const incoming = body.consumableEstimation;
+      const next = {
+        defaultCoefficients: {
+          ...nextSettings.consumableEstimation.defaultCoefficients,
+        },
+        printerOverrides: { ...nextSettings.consumableEstimation.printerOverrides },
+      };
+
+      const validateCoefficient = (
+        value: unknown,
+        field: string,
+      ): { value?: number; error?: string } => {
+        if (value === undefined) return {};
+        if (!isFiniteNumber(value) || value < 0) {
+          return { error: `${field} must be a finite number >= 0.` };
+        }
+        return { value };
+      };
+
+      if (incoming.defaultCoefficients) {
+        const fields: Array<
+          keyof typeof next.defaultCoefficients
+        > = ['bwBlack', 'colorCyan', 'colorMagenta', 'colorYellow', 'colorBlack'];
+        for (const field of fields) {
+          const parsed = validateCoefficient(
+            incoming.defaultCoefficients[field],
+            `consumableEstimation.defaultCoefficients.${field}`,
+          );
+          if (parsed.error) {
+            return res.status(400).json({ error: parsed.error });
+          }
+          if (parsed.value !== undefined) {
+            next.defaultCoefficients[field] = parsed.value;
+          }
+        }
+      }
+
+      if (incoming.printerOverrides !== undefined) {
+        if (
+          typeof incoming.printerOverrides !== 'object' ||
+          incoming.printerOverrides === null ||
+          Array.isArray(incoming.printerOverrides)
+        ) {
+          return res.status(400).json({
+            error: 'consumableEstimation.printerOverrides must be an object.',
+          });
+        }
+
+        const normalizedOverrides: Record<string, typeof next.defaultCoefficients> = {};
+        for (const [rawKey, rawValue] of Object.entries(incoming.printerOverrides)) {
+          const normalizedKey = rawKey
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
+          if (!normalizedKey) continue;
+          if (typeof rawValue !== 'object' || rawValue === null || Array.isArray(rawValue)) {
+            return res.status(400).json({
+              error: `consumableEstimation.printerOverrides.${rawKey} must be an object.`,
+            });
+          }
+          const candidate = rawValue as Record<string, unknown>;
+          const merged = {
+            ...next.defaultCoefficients,
+            ...(next.printerOverrides[normalizedKey] ?? {}),
+          };
+          const fields: Array<
+            keyof typeof next.defaultCoefficients
+          > = ['bwBlack', 'colorCyan', 'colorMagenta', 'colorYellow', 'colorBlack'];
+          for (const field of fields) {
+            const parsed = validateCoefficient(
+              candidate[field],
+              `consumableEstimation.printerOverrides.${rawKey}.${field}`,
+            );
+            if (parsed.error) {
+              return res.status(400).json({ error: parsed.error });
+            }
+            if (parsed.value !== undefined) {
+              merged[field] = parsed.value;
+            }
+          }
+          normalizedOverrides[normalizedKey] = merged;
+        }
+        next.printerOverrides = normalizedOverrides;
+      }
+
+      nextSettings.consumableEstimation = next;
     }
 
     db.data!.settings = nextSettings;

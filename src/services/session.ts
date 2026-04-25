@@ -20,6 +20,7 @@ import {
 export interface DocumentPageAnalysis {
   index: number;
   isColor: boolean;
+  fallbackReasonFlags?: string[];
 }
 
 export interface DocumentAnalysis {
@@ -38,6 +39,7 @@ export interface DocumentAnalysis {
   colorPages: number;
   bwPages: number;
   totalPages: number;
+  confidence: 'high' | 'medium' | 'low';
   analyzedAt: Date;
 }
 
@@ -725,11 +727,32 @@ export class SessionStore {
           `Malformed page analysis fields at index ${index} for ${sessionId}/${documentId}`,
         );
       }
+      const fallbackReasonFlags = pageCandidate.fallbackReasonFlags;
+      if (
+        fallbackReasonFlags !== undefined &&
+        (!Array.isArray(fallbackReasonFlags) ||
+          fallbackReasonFlags.some((flag) => typeof flag !== 'string'))
+      ) {
+        throw new Error(
+          `Malformed fallback reason flags at index ${index} for ${sessionId}/${documentId}`,
+        );
+      }
       return {
         index: Math.floor(pageCandidate.index),
         isColor: pageCandidate.isColor,
+        ...(fallbackReasonFlags
+          ? { fallbackReasonFlags: fallbackReasonFlags as string[] }
+          : {}),
       };
     });
+
+    const confidenceRaw = candidate.confidence;
+    const confidence =
+      confidenceRaw === 'high' ||
+      confidenceRaw === 'medium' ||
+      confidenceRaw === 'low'
+        ? confidenceRaw
+        : 'low';
 
     return {
       fileType: candidate.fileType as DocumentAnalysis['fileType'],
@@ -738,6 +761,7 @@ export class SessionStore {
       colorPages: Math.floor(candidate.colorPages),
       bwPages: Math.floor(candidate.bwPages),
       totalPages: Math.floor(candidate.totalPages),
+      confidence,
       analyzedAt,
     };
   }
