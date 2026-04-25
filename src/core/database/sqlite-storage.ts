@@ -522,6 +522,12 @@ function ensureSchema(db: DatabaseSync): void {
   if (!receiptColumns.has('change_message')) {
     db.exec('ALTER TABLE receipt_records ADD COLUMN change_message TEXT');
   }
+  if (!receiptColumns.has('color_pages')) {
+    db.exec('ALTER TABLE receipt_records ADD COLUMN color_pages INTEGER');
+  }
+  if (!receiptColumns.has('bw_pages')) {
+    db.exec('ALTER TABLE receipt_records ADD COLUMN bw_pages INTEGER');
+  }
 
   const consumablesUsageColumnRows = db
     .prepare('PRAGMA table_info(consumable_usage_events)')
