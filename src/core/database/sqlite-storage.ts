@@ -561,7 +561,32 @@ function ensureSchema(db: DatabaseSync): void {
       "ALTER TABLE consumable_usage_events ADD COLUMN estimated_ink_units_json TEXT NOT NULL DEFAULT '{}'",
     );
   }
+
+  // Ensure consumable_ink_snapshots exists for DBs that missed schema creation
+  const inkSnapshotColumnRows = db
+    .prepare('PRAGMA table_info(consumable_ink_snapshots)')
+    .all() as Array<Record<string, unknown>>;
+  if (inkSnapshotColumnRows.length === 0) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS consumable_ink_snapshots (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL,
+        printer_name TEXT,
+        ink_detection_method TEXT NOT NULL,
+        ink_telemetry_available INTEGER NOT NULL,
+        ink_telemetry_reason TEXT,
+        supplies_json TEXT NOT NULL
+      );
+    `);
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_timestamp ON consumable_ink_snapshots(timestamp DESC)'
+    );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name ON consumable_ink_snapshots(printer_name)'
+    );
+  }
 }
+
 
 function getMetaValue(key: string): string | null {
   const db = getSqliteDb();
