@@ -401,6 +401,8 @@ function ensureSchema(db: DatabaseSync): void {
       transaction_id TEXT NOT NULL UNIQUE,
       mode TEXT NOT NULL CHECK (mode IN ('print', 'copy')),
       charged_amount INTEGER NOT NULL,
+      color_pages INTEGER,
+      bw_pages INTEGER,
       status TEXT NOT NULL CHECK (
         status IN (
           'settled_pending_terminal',
@@ -1820,6 +1822,8 @@ export class ReceiptSqliteStore {
           transaction_id,
           mode,
           charged_amount,
+          color_pages,
+          bw_pages,
           status,
           change_requested,
           change_dispensed,
@@ -1832,10 +1836,12 @@ export class ReceiptSqliteStore {
           created_at,
           updated_at,
           expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(transaction_id) DO UPDATE SET
           mode = excluded.mode,
           charged_amount = excluded.charged_amount,
+          color_pages = excluded.color_pages,
+          bw_pages = excluded.bw_pages,
           status = excluded.status,
           change_requested = excluded.change_requested,
           change_dispensed = excluded.change_dispensed,
@@ -1853,6 +1859,14 @@ export class ReceiptSqliteStore {
         entry.transactionId,
         entry.mode,
         entry.chargedAmount,
+        // color_pages
+        typeof (entry as any).colorPages === 'number'
+          ? Math.max(0, Math.floor((entry as any).colorPages))
+          : null,
+        // bw_pages
+        typeof (entry as any).bwPages === 'number'
+          ? Math.max(0, Math.floor((entry as any).bwPages))
+          : null,
         entry.status,
         entry.change.requested,
         entry.change.dispensed,
@@ -2233,6 +2247,14 @@ export class ReceiptSqliteStore {
       createdAt: String(row.created_at ?? ''),
       updatedAt: String(row.updated_at ?? ''),
       expiresAt: String(row.expires_at ?? ''),
+      colorPages:
+        typeof row.color_pages === 'number' && Number.isFinite(row.color_pages)
+          ? Math.max(0, Math.floor(Number(row.color_pages)))
+          : null,
+      bwPages:
+        typeof row.bw_pages === 'number' && Number.isFinite(row.bw_pages)
+          ? Math.max(0, Math.floor(Number(row.bw_pages)))
+          : null,
     };
   }
 

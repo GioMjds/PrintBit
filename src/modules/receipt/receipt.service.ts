@@ -19,6 +19,9 @@ export interface ReceiptSnapshotInput {
   transactionId: string;
   mode: ReceiptMode;
   chargedAmount: number;
+  // Optional persisted page composition counts (nullable when unknown)
+  colorPages?: number | null;
+  bwPages?: number | null;
   status?: ReceiptRecordStatus;
   change?: Partial<ReceiptChangeSnapshot>;
   settledAt?: string | null;
@@ -139,6 +142,15 @@ export class ReceiptService {
       transactionId,
       mode: input.mode === 'copy' ? 'copy' : 'print',
       chargedAmount: this.normalizeChargedAmount(input.chargedAmount),
+      // Persist reported color/bw page counts when available
+      colorPages:
+        typeof input.colorPages === 'number'
+          ? Math.max(0, Math.floor(input.colorPages))
+          : existing?.colorPages ?? null,
+      bwPages:
+        typeof input.bwPages === 'number'
+          ? Math.max(0, Math.floor(input.bwPages))
+          : existing?.bwPages ?? null,
       status: input.status ?? existing?.status ?? DEFAULT_STATUS,
       change,
       settledAt,

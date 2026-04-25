@@ -454,6 +454,9 @@ export interface ReceiptRecordEntry {
   transactionId: string;
   mode: ReceiptMode;
   chargedAmount: number;
+  // Optional persisted page composition counts (nullable when unknown)
+  colorPages?: number | null;
+  bwPages?: number | null;
   status: ReceiptRecordStatus;
   change: ReceiptChangeSnapshot;
   settledAt: string | null;

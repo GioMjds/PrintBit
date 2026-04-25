@@ -168,6 +168,12 @@ export interface PrintJobDispatchContext {
    * MIME type of document sent to printer
    */
   dispatchMimeType?: string;
+
+  /**
+   * Optional persisted counts of color and BW pages for this dispatch (nullable when unknown)
+   */
+  colorPages?: number | null;
+  bwPages?: number | null;
 }
 
 /**
