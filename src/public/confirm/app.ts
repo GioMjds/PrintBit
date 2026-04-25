@@ -919,6 +919,15 @@ function normalizeReceiptUrl(rawUrl: string): string | null {
   }
 }
 
+function isReceiptUrl(url: URL): boolean {
+  return (
+    url.pathname.startsWith('/receipt/t/') ||
+    url.pathname.startsWith('/receipt/') ||
+    url.pathname.startsWith('/api/receipts/by-token/') ||
+    url.pathname.startsWith('/api/transactions/')
+  );
+}
+
 function extractReceiptUrl(payload: unknown): {
   url: string;
   expiresAt: string | null;
@@ -940,7 +949,21 @@ function extractReceiptUrl(payload: unknown): {
   const fallbackTokenUrl = token
     ? `/receipt/t/${encodeURIComponent(token)}`
     : null;
-  const normalizedUrl = normalizeReceiptUrl(urlCandidate ?? fallbackTokenUrl ?? '');
+  const normalizedCandidate = urlCandidate
+    ? normalizeReceiptUrl(urlCandidate)
+    : null;
+  const normalizedFallback = fallbackTokenUrl
+    ? normalizeReceiptUrl(fallbackTokenUrl)
+    : null;
+  const receiptUrl = [normalizedCandidate, normalizedFallback].find((value) => {
+    if (!value) return false;
+    try {
+      return isReceiptUrl(new URL(value));
+    } catch {
+      return false;
+    }
+  });
+  const normalizedUrl = receiptUrl ?? null;
   if (!normalizedUrl) return null;
   return {
     url: normalizedUrl,
@@ -980,6 +1003,7 @@ function renderReceiptCta(): void {
   receiptCtaContainer.removeAttribute('hidden');
   if (receiptQrLink) {
     receiptQrLink.textContent = currentReceiptUrl;
+    receiptQrLink.setAttribute('href', currentReceiptUrl);
   }
   if (receiptQrExpiry) {
     if (!currentReceiptExpiresAt) {
