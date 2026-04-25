@@ -106,6 +106,22 @@ const scanTroubleshootCauses = document.getElementById(
 const scanTroubleshootSteps = document.getElementById(
   'scanTroubleshootSteps',
 ) as HTMLOListElement | null;
+
+const previewTroubleshooting = document.getElementById(
+  'previewTroubleshooting',
+) as HTMLElement | null;
+const previewTroubleshootSummary = document.getElementById(
+  'previewTroubleshootSummary',
+) as HTMLElement | null;
+const previewTroubleshootCauses = document.getElementById(
+  'previewTroubleshootCauses',
+) as HTMLUListElement | null;
+const previewTroubleshootSteps = document.getElementById(
+  'previewTroubleshootSteps',
+) as HTMLOListElement | null;
+
+const errorSubtext = stateError?.querySelector('.preview-state__sub') as HTMLElement | null;
+
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
 
 const PREVIEW_STATES: Record<
@@ -297,6 +313,12 @@ function replaceListItems(
 
 function hideScanTroubleshooting(): void {
   if (scanTroubleshootingPanel) scanTroubleshootingPanel.style.display = 'none';
+  if (previewTroubleshooting) {
+    previewTroubleshooting.classList.add('hidden');
+    if (previewTroubleshootSummary) previewTroubleshootSummary.textContent = '';
+    replaceListItems(previewTroubleshootCauses, []);
+    replaceListItems(previewTroubleshootSteps, []);
+  }
 }
 
 function showScanTroubleshooting(rawMessage: string): string {
@@ -310,6 +332,18 @@ function showScanTroubleshooting(rawMessage: string): string {
   replaceListItems(scanTroubleshootCauses, guide.causes);
   replaceListItems(scanTroubleshootSteps, guide.steps);
   if (scanTroubleshootingPanel) scanTroubleshootingPanel.style.display = '';
+
+  // Preview-area troubleshooting
+  if (previewTroubleshootSummary) {
+    previewTroubleshootSummary.textContent = safeMessage;
+  }
+  replaceListItems(previewTroubleshootCauses, guide.causes);
+  replaceListItems(previewTroubleshootSteps, guide.steps);
+  if (previewTroubleshooting) previewTroubleshooting.classList.remove('hidden');
+
+  if (errorSubtext) {
+    errorSubtext.textContent = guide.steps && guide.steps.length > 0 ? guide.steps[0] : safeMessage;
+  }
 
   return safeMessage;
 }

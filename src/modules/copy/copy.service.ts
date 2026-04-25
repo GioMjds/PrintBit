@@ -593,6 +593,8 @@ export class CopyService {
           this.safeUpsertSettledReceiptSnapshot({
             transactionId: jobId,
             chargedAmount: settlement.chargedAmount,
+            colorPages: normalized.colorMode === 'colored' ? 1 : 0,
+            bwPages: normalized.colorMode === 'colored' ? 0 : 1,
             change: {
               requested: settlement.change.requested,
               dispensed: settlement.change.dispensed,
@@ -790,6 +792,8 @@ export class CopyService {
   private safeUpsertSettledReceiptSnapshot(input: {
     transactionId: string;
     chargedAmount: number;
+    colorPages?: number | null;
+    bwPages?: number | null;
     change: {
       requested: number;
       dispensed: number;
@@ -805,6 +809,15 @@ export class CopyService {
         transactionId: input.transactionId,
         mode: 'copy',
         chargedAmount: input.chargedAmount,
+        // Persist reported color/BW page counts when available
+        colorPages:
+          typeof input.colorPages === 'number'
+            ? Math.max(0, Math.floor(input.colorPages))
+            : null,
+        bwPages:
+          typeof input.bwPages === 'number'
+            ? Math.max(0, Math.floor(input.bwPages))
+            : null,
         status: 'settled_pending_terminal',
         change: input.change,
         settledAt: input.settledAt,
