@@ -59,6 +59,7 @@ import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
 import type { AlertSettings } from './admin.schema';
 import { ConsumablesService } from './consumables.service';
 import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
+import { getSqliteDb } from '@/core/database/sqlite-storage';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -780,7 +781,34 @@ export class AdminController {
     });
     const recovery = getRecoveryStatusSnapshot();
     const consumablesForecast = this.consumablesService.getForecast();
-    res.json({
+
+    // Compute page counts (color / bw) for today and all-time from receipt_records
+    try {
+      const sqlite = getSqliteDb();
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const startIso = startOfToday.toISOString();
+      const todayRow = sqlite
+        .prepare(
+          `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
+           FROM receipt_records WHERE mode = ? AND created_at >= ?`
+        )
+        .get('print', startIso) as Record<string, unknown> | undefined;
+      const totalRow = sqlite
+        .prepare(
+          `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
+           FROM receipt_records WHERE mode = ?`
+        )
+        .get('print') as Record<string, unknown> | undefined;
+
+      const pageCounts = {
+        todayColorPages: Number(todayRow?.colorSum ?? 0),
+        todayBwPages: Number(todayRow?.bwSum ?? 0),
+        totalColorPages: Number(totalRow?.colorSum ?? 0),
+        totalBwPages: Number(totalRow?.bwSum ?? 0),
+      };
+
+      res.json({
       balance: db.data!.balance,
       earnings: this.adminService.computeEarningsBuckets(),
       coinStats: db.data!.coinStats,
@@ -831,7 +859,63 @@ export class AdminController {
         host,
         wifiActive,
       },
+      pageCounts,
     });
+    } catch (e) {
+      // Fallback: return summary without pageCounts if DB query fails
+      res.json({
+        balance: db.data!.balance,
+        earnings: this.adminService.computeEarningsBuckets(),
+        coinStats: db.data!.coinStats,
+        jobStats: db.data!.jobStats,
+        hopperStats: db.data!.hopperStats,
+        owedChangeOpenCount: db.data!.owedChanges.filter(
+          (entry) => entry.status === 'open',
+        ).length,
+        pendingRefundOpenCount: openRefunds.length,
+        refundStats: {
+          totalCount: pendingRefunds.length,
+          openCount: openRefunds.length,
+          refundedCount: refundedEntries.length,
+          dismissedCount: dismissedEntries.length,
+          autoRefundedCount: autoRefundedEntries.length,
+        },
+        anomalyStats: {
+          totalCount: db.data!.anomalyIncidents.length,
+          openCount: anomalyOpenCount,
+        },
+        recoveryStats: {
+          bootCount: recovery.lifecycle.bootCount,
+          unexpectedRestartCount: recovery.lifecycle.unexpectedRestartCount,
+          lastStartupAt: recovery.lifecycle.lastStartupAt,
+          lastShutdownAt: recovery.lifecycle.lastShutdownAt,
+          inFlightCount: recovery.sessionStats.inFlight,
+          startupPendingCount: recovery.sessionStats.startupPending,
+          autoRefundedCount: recovery.sessionStats.autoRefunded,
+          pendingAdminReviewCount: recovery.sessionStats.pendingAdminReview,
+          voidedCount: recovery.sessionStats.voided,
+        },
+        jamStats: {
+          totalEvents: jamEvents.length,
+          recent24h: recentJamEvents.length,
+          lastJamAt: jamEvents[0]?.timestamp ?? null,
+        },
+        consumables: consumablesForecast,
+        storage,
+        status: {
+          serverRunning: true,
+          uptimeSeconds: Math.floor(process.uptime()),
+          serial: this.deps.getSerialStatus(),
+          hopper: this.deps.getHopperStatus(),
+          printer,
+          scanner,
+          watchdog: getExternalWatchdogState(),
+          trustedTime: getTrustedTimeStatus(),
+          host,
+          wifiActive,
+        },
+      });
+    }
   };
 
   private handleGetStatus = (req: Request, res: Response) => {

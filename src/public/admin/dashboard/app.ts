@@ -17,6 +17,8 @@ const storageBytes = document.getElementById('storageBytes') as HTMLElement;
 const owedChangeOpen = document.getElementById(
   'owedChangeOpen',
 ) as HTMLElement | null;
+const colorPagesEl = document.getElementById('colorPages') as HTMLElement | null;
+const bwPagesEl = document.getElementById('bwPages') as HTMLElement | null;
 const owedChangeHint = document.getElementById(
   'owedChangeHint',
 ) as HTMLElement | null;
@@ -173,6 +175,16 @@ function applySummary(summary: SummaryResponse): void {
   if (barScan)
     barScan.style.width = `${Math.round((summary.jobStats.scan / total) * 100)}%`;
   applyConsumablesForecast(summary);
+
+  // Page counts (if available)
+  if (colorPagesEl) {
+    const v = summary.pageCounts?.todayColorPages ?? 0;
+    colorPagesEl.textContent = String(v);
+  }
+  if (bwPagesEl) {
+    const v = summary.pageCounts?.todayBwPages ?? 0;
+    bwPagesEl.textContent = String(v);
+  }
 }
 
 async function loadData(): Promise<void> {

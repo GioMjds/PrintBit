@@ -97,6 +97,13 @@ export type SummaryResponse = {
     fileCount: number;
     bytes: number;
   };
+  // Page counts (per-day totals and all-time totals)
+  pageCounts?: {
+    todayColorPages: number;
+    todayBwPages: number;
+    totalColorPages: number;
+    totalBwPages: number;
+  };
   status: {
     serverRunning: boolean;
     uptimeSeconds: number;
