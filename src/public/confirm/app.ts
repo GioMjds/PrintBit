@@ -864,10 +864,6 @@ const DEFAULT_SPOOLER_MONITOR_WINDOW_MS = 3 * 60 * 1_000;
 const MIN_SPOOLER_FINALIZATION_TIMEOUT_MS = 45_000;
 const MAX_SPOOLER_FINALIZATION_TIMEOUT_MS = 120_000;
 const SPOOLER_FINALIZATION_TIMEOUT_RATIO = 0.5;
-let spoolerFinalizationTimer: number | null = null;
-let currentTransactionId: string | null = null;
-let currentReceiptUrl: string | null = null;
-let currentReceiptExpiresAt: string | null = null;
 
 type ReceiptLinkPayload = {
   receipt?: {
@@ -883,6 +879,12 @@ type ReceiptLinkPayload = {
   receiptLink?: string | null;
   receiptExpiresAt?: string | null;
 };
+
+let spoolerFinalizationTimer: number | null = null;
+let currentTransactionId: string | null = null;
+let currentReceiptUrl: string | null = null;
+let currentReceiptExpiresAt: string | null = null;
+let pendingReceiptData: ReceiptLinkPayload | null = null;
 
 function setTransactionReference(id: string | null): void {
   currentTransactionId = id && id.trim().length > 0 ? id.trim() : null;
@@ -937,6 +939,7 @@ function extractReceiptUrl(payload: unknown): {
   const token = readCandidateString(
     receiptPayload.receipt?.token,
     receiptPayload.receiptToken,
+    (payload as any).receiptToken, // Explicit fallback
   );
   const urlCandidate = readCandidateString(
     receiptPayload.receipt?.viewUrl,
@@ -945,6 +948,8 @@ function extractReceiptUrl(payload: unknown): {
     receiptPayload.receipt?.link,
     receiptPayload.receiptUrl,
     receiptPayload.receiptLink,
+    (payload as any).receiptViewUrl, // Explicit fallback
+    (payload as any).receiptUrl, // Explicit fallback
   );
   const fallbackTokenUrl = token
     ? `/receipt/t/${encodeURIComponent(token)}`
@@ -964,12 +969,18 @@ function extractReceiptUrl(payload: unknown): {
     }
   });
   const normalizedUrl = receiptUrl ?? null;
-  if (!normalizedUrl) return null;
+
+  if (!normalizedUrl) {
+    console.warn('[RECEIPT] Failed to extract valid receipt URL from payload:', payload);
+    return null;
+  }
+
   return {
     url: normalizedUrl,
     expiresAt: readCandidateString(
       receiptPayload.receipt?.expiresAt,
       receiptPayload.receiptExpiresAt,
+      (payload as any).receiptExpiresAt,
     ),
   };
 }
@@ -977,6 +988,7 @@ function extractReceiptUrl(payload: unknown): {
 function clearReceiptCta(): void {
   currentReceiptUrl = null;
   currentReceiptExpiresAt = null;
+  pendingReceiptData = null;
   if (receiptCtaContainer) {
     receiptCtaContainer.setAttribute('hidden', '');
   }
@@ -1019,14 +1031,24 @@ function renderReceiptCta(): void {
     }
   }
 
-  void QRCode.toCanvas(receiptQrCanvas, currentReceiptUrl, {
-    width: 180,
-    margin: 1,
-    color: { dark: '#1a1a2e', light: '#ffffff' },
-    errorCorrectionLevel: 'M',
-  }).catch(() => {
-    // Ignore QR render failures; URL text remains visible.
-  });
+  console.log('[RECEIPT] Rendering QR code for:', currentReceiptUrl);
+  // Small delay to ensure the container is unhidden and visible in the layout
+  // before QRCode library tries to measure the canvas (if needed) or render.
+  setTimeout(() => {
+    if (!receiptQrCanvas || !currentReceiptUrl) return;
+    void QRCode.toCanvas(receiptQrCanvas, currentReceiptUrl, {
+      width: 180,
+      margin: 1,
+      color: { dark: '#1a1a2e', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    })
+      .then(() => {
+        console.log('[RECEIPT] QR code rendered successfully.');
+      })
+      .catch((err) => {
+        console.error('[RECEIPT] QR render failed:', err);
+      });
+  }, 50);
 }
 
 function captureReceiptCta(payload: unknown): void {
@@ -1034,6 +1056,7 @@ function captureReceiptCta(payload: unknown): void {
   if (!receipt) return;
   currentReceiptUrl = receipt.url;
   currentReceiptExpiresAt = receipt.expiresAt;
+  pendingReceiptData = payload as ReceiptLinkPayload;
   renderReceiptCta();
 }
 
@@ -1248,7 +1271,11 @@ function finalizePrintSuccess(
       : 'Printing complete. Thank you!';
   }
   clearConfirmSessionStorage();
-  renderReceiptCta();
+  if (pendingReceiptData) {
+    captureReceiptCta(pendingReceiptData);
+  } else {
+    renderReceiptCta();
+  }
   lastSpoolerCorrelationKey = null;
   spoolerTimedOut = false;
   isProcessingPayment = false;
@@ -1656,23 +1683,37 @@ modalConfirmBtn?.addEventListener('click', async () => {
         }),
       }, 5_000);
 
+      // Read the body once — re-reading an already-consumed stream throws TypeError.
+      const createData = (await createRes.json()) as {
+        id?: string;
+        state?: string;
+        error?: string;
+      };
+
       if (!createRes.ok) {
-        const payload = (await createRes.json()) as { error?: string };
         hideOverlay(printingOverlay);
         if (statusMessage)
           statusMessage.textContent =
-            payload.error ?? 'Failed to start copy job.';
+            createData.error ?? 'Failed to start copy job.';
         isProcessingPayment = false;
+        confirmBtn.disabled = false;
+        modalConfirmBtn.disabled = false;
         applyConfirmGate();
         return;
       }
 
-      const createData = (await createRes.json()) as {
-        id: string;
-        state: string;
-      };
       captureReceiptCta(createData);
-      const jobId = createData.id;
+      const jobId = createData.id ?? '';
+      if (!jobId) {
+        hideOverlay(printingOverlay);
+        if (statusMessage)
+          statusMessage.textContent = 'Copy job created but returned no ID. Please try again.';
+        isProcessingPayment = false;
+        confirmBtn.disabled = false;
+        modalConfirmBtn.disabled = false;
+        applyConfirmGate();
+        return;
+      }
 
       // Poll job status
       const pollResult = await pollCopyJob(jobId);
@@ -1682,6 +1723,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       hideOverlay(printingOverlay);
 
       if (pollResult.state === 'printed') {
+        isProcessingPayment = false;
         showOverlay(thankYouOverlay);
         renderReceiptCta();
         if (statusMessage) statusMessage.textContent = 'Your copies are ready!';
@@ -1691,6 +1733,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
           statusMessage.textContent =
             pollResult.reason ?? 'Copy job failed. Please try again.';
         isProcessingPayment = false;
+        confirmBtn.disabled = false;
+        modalConfirmBtn.disabled = false;
         applyConfirmGate();
       } else {
         if (statusMessage) statusMessage.textContent = 'Copy was cancelled.';
@@ -1701,6 +1745,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
           );
         }
         isProcessingPayment = false;
+        confirmBtn.disabled = false;
+        modalConfirmBtn.disabled = false;
         applyConfirmGate();
       }
     } catch {
@@ -1708,6 +1754,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (statusMessage)
         statusMessage.textContent = 'Network error during copy job.';
       isProcessingPayment = false;
+      confirmBtn.disabled = false;
+      modalConfirmBtn.disabled = false;
       applyConfirmGate();
     }
   } else {

@@ -19,6 +19,8 @@ const owedChangeOpen = document.getElementById(
 ) as HTMLElement | null;
 const colorPagesEl = document.getElementById('colorPages') as HTMLElement | null;
 const bwPagesEl = document.getElementById('bwPages') as HTMLElement | null;
+const refillColorPagesEl = document.getElementById('refillColorPages') as HTMLElement | null;
+const refillBwPagesEl = document.getElementById('refillBwPages') as HTMLElement | null;
 const owedChangeHint = document.getElementById(
   'owedChangeHint',
 ) as HTMLElement | null;
@@ -44,6 +46,9 @@ const forecastInkList = document.getElementById(
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 const resetBalanceBtn = document.getElementById(
   'resetBalanceBtn',
+) as HTMLButtonElement;
+const resetInkBtn = document.getElementById(
+  'resetInkBtn',
 ) as HTMLButtonElement;
 const clearStorageBtn = document.getElementById(
   'clearStorageBtn',
@@ -185,6 +190,14 @@ function applySummary(summary: SummaryResponse): void {
     const v = summary.pageCounts?.todayBwPages ?? 0;
     bwPagesEl.textContent = String(v);
   }
+  if (refillColorPagesEl) {
+    const v = summary.pageCounts?.refillColorPages ?? 0;
+    refillColorPagesEl.textContent = String(v);
+  }
+  if (refillBwPagesEl) {
+    const v = summary.pageCounts?.refillBwPages ?? 0;
+    refillBwPagesEl.textContent = String(v);
+  }
 }
 
 async function loadData(): Promise<void> {
@@ -217,6 +230,20 @@ resetBalanceBtn.addEventListener('click', () => {
     })
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Failed to reset balance.'),
+    );
+});
+ 
+resetInkBtn.addEventListener('click', () => {
+  if (!window.confirm('Reset page counters for new ink refill?')) return;
+  setMessage('Resetting ink counters...');
+  void apiFetch('/api/admin/printer/reset-ink-counters', { method: 'POST' })
+    .then(async (r) => {
+      if (!r.ok) throw new Error('Failed to reset ink counters.');
+      await loadData();
+      setMessage('Ink counters reset.');
+    })
+    .catch((e: unknown) =>
+      setMessage(e instanceof Error ? e.message : 'Failed to reset ink counters.'),
     );
 });
 

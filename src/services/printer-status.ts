@@ -1402,9 +1402,17 @@ function findDefaultOrSinglePhysicalPrinter(
   const defaultPrinter = printers.find((printer) => printer.Default === true);
   if (defaultPrinter) return defaultPrinter;
 
-  const physicalPrinters = printers.filter(
-    (printer) => detectConnectionType(printer.PortName ?? null) !== 'virtual',
-  );
+  const physicalPrinters = printers.filter((printer) => {
+    if (detectConnectionType(printer.PortName ?? null) === 'virtual') {
+      return false;
+    }
+    const name = (printer.Name ?? '').toUpperCase();
+    const driver = (printer.DriverName ?? '').toUpperCase();
+    if (name.includes('FAX') || driver.includes('FAX')) {
+      return false;
+    }
+    return true;
+  });
 
   if (physicalPrinters.length === 1) {
     return physicalPrinters[0];

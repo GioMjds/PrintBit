@@ -1537,6 +1537,7 @@ export class FinancialService {
       });
     };
 
+    let receipt: any = null;
     const startSpoolerMonitor = (
       chargedAmount: number,
       monitorStartPhase: 'post_dispatch' | 'post_settlement',
@@ -1544,6 +1545,7 @@ export class FinancialService {
       if (mode !== 'print' || !jobDispatchedAt || !telemetry.name) return;
       if (spoolerMonitorStarted) return;
 
+      const captureReceipt = receipt;
       spoolerMonitorStarted = true;
       void monitorSpoolerJob({
         printerName: telemetry.name,
@@ -1579,6 +1581,7 @@ export class FinancialService {
           }
           await runPostSpoolerConfirmedCallbacks();
         },
+        receipt: captureReceipt,
       }).catch((err) => {
         console.error(
           '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
@@ -1747,9 +1750,10 @@ export class FinancialService {
       }
     }
 
-    if (mode === 'print' && jobDispatchedAt && telemetry.name) {
-      startSpoolerMonitor(requiredAmount, 'post_dispatch');
-    }
+    // Deferred monitor start until after settlement and receipt generation
+    // if (mode === 'print' && jobDispatchedAt && telemetry.name) {
+    //   startSpoolerMonitor(requiredAmount, 'post_dispatch');
+    // }
 
     try {
       await financialLedgerService.append({
@@ -1831,16 +1835,7 @@ export class FinancialService {
       },
     });
 
-    let receipt: {
-      transactionId: string;
-      mode: 'print' | 'copy';
-      status: ReceiptRecordStatus;
-      token: string;
-      tokenId: string;
-      expiresAt: string;
-      viewUrl: string;
-      apiUrl: string;
-    } | null = null;
+    // receipt variable is declared higher up to be captured by startSpoolerMonitor
     try {
       const initialStatus: ReceiptRecordStatus =
         mode === 'print' ? 'settled_pending_terminal' : 'printed';

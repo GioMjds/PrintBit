@@ -463,6 +463,40 @@
                 </div>
               </div>
 
+              <!-- Ink Monitoring -->
+              <div class="sg">
+                <div class="sg__head">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M8 1a7 7 0 100 14A7 7 0 008 1zM7 5a1 1 0 112 0v4a1 1 0 11-2 0V5zm1 7a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                  </svg>
+                  <h3 class="sg__title">Printer Monitoring</h3>
+                </div>
+                <div class="fields">
+                  <div class="field">
+                    <label class="field__lbl" for="inkMonitoringEnabled">Enable Monitoring</label>
+                    <input type="checkbox" id="inkMonitoringEnabled" />
+                  </div>
+                  <div class="field">
+                    <label class="field__lbl" for="inkTargetPrinterName">Target Printer Name</label>
+                    <input id="inkTargetPrinterName" type="text" class="field__input" placeholder="e.g. EPSON L5290 Series" />
+                  </div>
+                  <div class="field">
+                    <label class="field__lbl" for="inkLowThresholdPercent">Low Ink Threshold</label>
+                    <div class="field__wrap field__wrap--post">
+                      <input id="inkLowThresholdPercent" type="number" min="0" max="100" class="field__input" />
+                      <span class="field__affix">%</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field__lbl" for="inkCriticalThresholdPercent">Critical Ink Threshold</label>
+                    <div class="field__wrap field__wrap--post">
+                      <input id="inkCriticalThresholdPercent" type="number" min="0" max="100" class="field__input" />
+                      <span class="field__affix">%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Security -->
               <div class="sg">
                 <div class="sg__head">

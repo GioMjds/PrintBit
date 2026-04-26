@@ -63,13 +63,13 @@ export interface AppModuleDeps {
  * This function is called from server.ts during startup.
  */
 export function registerAppModules(app: Express, deps: AppModuleDeps): void {
+  registerStaticAssets(app);
   registerPageModule(app, {
     io: deps.io,
     sessionStore: deps.sessionStore,
     publicPageRoutes: PUBLIC_PAGE_ROUTES,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
   });
-  registerStaticAssets(app);
 
   registerAdminModule(app, {
     io: deps.io,
@@ -108,7 +108,10 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
   });
-  registerCopyModule(app, { io: deps.io });
+  registerCopyModule(app, {
+    io: deps.io,
+    resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
+  });
   registerPrinterModule(app, { io: deps.io });
   registerLanguageModule(app, { io: deps.io });
 

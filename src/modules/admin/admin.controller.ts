@@ -513,6 +513,12 @@ export class AdminController {
       this.handleGetInkHistory,
     );
     this.router.post(
+      '/printer/reset-ink-counters',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleResetInkCounters,
+    );
+    this.router.post(
       '/printer/re-detect',
       requireAdminLocalAccess,
       requireAdminPin,
@@ -801,11 +807,18 @@ export class AdminController {
         )
         .get() as Record<string, unknown> | undefined;
 
+      const baseline = db.data!.inkRefillBaseline;
+      const totalColor = Number(totalRow?.colorSum ?? 0);
+      const totalBw = Number(totalRow?.bwSum ?? 0);
+ 
       const pageCounts = {
         todayColorPages: Number(todayRow?.colorSum ?? 0),
         todayBwPages: Number(todayRow?.bwSum ?? 0),
-        totalColorPages: Number(totalRow?.colorSum ?? 0),
-        totalBwPages: Number(totalRow?.bwSum ?? 0),
+        totalColorPages: totalColor,
+        totalBwPages: totalBw,
+        refillColorPages: Math.max(0, totalColor - baseline.colorPages),
+        refillBwPages: Math.max(0, totalBw - baseline.bwPages),
+        lastRefillAt: baseline.updatedAt,
       };
 
       res.json({
@@ -2261,6 +2274,37 @@ export class AdminController {
       balance: db.data!.balance,
       earnings: db.data!.earnings,
     });
+  };
+
+  private handleResetInkCounters = async (_req: Request, res: Response) => {
+    try {
+      const sqlite = getSqliteDb();
+      const totalRow = sqlite
+        .prepare(
+          `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
+           FROM receipt_records WHERE mode IN ('print','copy')`
+        )
+        .get() as Record<string, unknown> | undefined;
+
+      const totalColor = Number(totalRow?.colorSum ?? 0);
+      const totalBw = Number(totalRow?.bwSum ?? 0);
+
+      await this.adminService.resetInkRefillBaseline(totalColor, totalBw);
+
+      res.json({
+        ok: true,
+        pageCounts: {
+          totalColorPages: totalColor,
+          totalBwPages: totalBw,
+          refillColorPages: 0,
+          refillBwPages: 0,
+          lastRefillAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('[ADMIN] Failed to reset ink counters', error);
+      res.status(500).json({ error: 'Failed to reset ink counters.' });
+    }
   };
 
   private handleClearStorage = async (_req: Request, res: Response) => {

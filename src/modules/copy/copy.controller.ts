@@ -35,6 +35,7 @@ export class CopyController {
       req.body as CreateCopyJobInput,
       true,
       idempotencyKey,
+      req,
     );
 
     if (result.cacheIdempotencyResponse) {

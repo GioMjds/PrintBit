@@ -2,12 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Overview — PrintBit Admin</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/dashboard/styles.css" />
   </head>
+
   <body>
     <div id="adminAuthView" class="auth-gate">
       <div class="auth-card">
@@ -372,10 +376,17 @@
               <div class="kpi kpi--pages">
                 <div class="kpi__glow" aria-hidden="true"></div>
                 <div class="kpi__icon-wrap" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                  >
+                    <path d="M3 7h18M3 12h18M3 17h18" />
+                  </svg>
                 </div>
                 <div class="kpi__body">
-                  <span class="kpi__label">Color Pages</span>
+                  <span class="kpi__label">Color Pages (Today)</span>
                   <span class="kpi__value" id="colorPages">0</span>
                 </div>
               </div>
@@ -383,10 +394,17 @@
               <div class="kpi kpi--pages bw">
                 <div class="kpi__glow" aria-hidden="true"></div>
                 <div class="kpi__icon-wrap" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                  >
+                    <path d="M3 7h18M3 12h18M3 17h18" />
+                  </svg>
                 </div>
                 <div class="kpi__body">
-                  <span class="kpi__label">B&amp;W Pages</span>
+                  <span class="kpi__label">B&amp;W Pages (Today)</span>
                   <span class="kpi__value" id="bwPages">0</span>
                 </div>
               </div>
@@ -496,6 +514,23 @@
                     </svg>
                     Reset Balance
                     <span class="ctrl-btn__sub">Zeroes coin counter</span>
+                  </button>
+                  <button id="resetInkBtn" class="ctrl-btn ctrl-btn--indigo">
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                    Reset Ink Counters
+                    <span class="ctrl-btn__sub"
+                      >Track pages from full refill</span
+                    >
                   </button>
                   <button id="clearStorageBtn" class="ctrl-btn ctrl-btn--red">
                     <svg

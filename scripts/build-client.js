@@ -16,9 +16,13 @@ function copyFlatpickrCss() {
     'flatpickr',
     'flatpickr.min.css',
   );
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.copyFileSync(sourcePath, targetPath);
-  console.log(`Copied: ${sourcePath} -> ${targetPath}`);
+  try {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    console.log(`Copied: ${sourcePath} -> ${targetPath}`);
+  } catch (err) {
+    console.warn(`Could not copy flatpickr css (ignoring): ${err.message}`);
+  }
 }
 
 const builds = [

@@ -428,7 +428,9 @@ body {
   color: var(--white);
 }
 
-#guide-print {
+#guide-print,
+#guide-copy,
+#guide-scan {
   width: 900px;
   max-width: 95vw;
   max-height: min(92vh, 860px);
@@ -436,7 +438,9 @@ body {
   gap: 18px;
 }
 
-#guide-print .guide-card__title {
+#guide-print .guide-card__title,
+#guide-copy .guide-card__title,
+#guide-scan .guide-card__title {
   text-align: center;
 }
 
@@ -665,7 +669,9 @@ body {
     height: min(38vh, 320px);
   }
 
-  #guide-print {
+  #guide-print,
+  #guide-copy,
+  #guide-scan {
     padding: 28px 18px 22px;
     gap: 14px;
   }

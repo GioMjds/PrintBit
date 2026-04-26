@@ -58,9 +58,17 @@
   flex: 1;
   overflow-x: auto;
   overflow-y: auto;
-  max-height: calc(100vh - 60px - 48px - 48px - 48px);
+  max-height: calc(100dvh - var(--topbar-h) - 200px);
   scrollbar-width: thin;
   scrollbar-color: rgba(167, 170, 225, 0.15) transparent;
+}
+
+/* Ensure table never collapses below its minimum readable width */
+.logs-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 12.5px;
 }
 
 .logs-pagination {
@@ -110,11 +118,6 @@
   cursor: not-allowed;
 }
 
-.logs-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
-}
 
 .logs-th {
   position: sticky;
@@ -132,19 +135,23 @@
 }
 
 .logs-th--ts {
-  width: 180px;
+  width: 190px;
+  min-width: 160px;
 }
 
 .logs-th--id {
-  width: 180px;
+  width: 200px;
+  min-width: 160px;
 }
 
 .logs-th--mode {
   width: 90px;
+  min-width: 72px;
 }
 
 .logs-th--actions {
-  width: 250px;
+  width: 160px;
+  min-width: 140px;
 }
 
 .logs-table tbody tr {
@@ -263,6 +270,19 @@
   flex-direction: column;
   padding: 14px;
   overflow: hidden;
+}
+
+/* Scrollable middle section of the drawer */
+.tx-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-right: 2px; /* breathing room for scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 170, 225, 0.15) transparent;
 }
 
 .tx-drawer.hidden,
@@ -510,13 +530,27 @@
     font-size: 11px;
   }
 
+  /* ── Full-screen drawer on mobile ───────────────────────────────────────── */
   .tx-drawer {
-    width: calc(100vw - 12px);
-    max-height: 94dvh;
-    padding: 12px;
+    /* Override the centered-modal positioning */
+    inset: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .tx-detail-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Ensure the backdrop also fills the full screen */
+  .tx-drawer-backdrop {
+    inset: 0;
   }
 }

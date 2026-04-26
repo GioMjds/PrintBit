@@ -524,15 +524,6 @@ function applyLogs(logs: LogsResponse['logs']): void {
         <button class="tx-action-btn" data-action="view-details" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
           Open details
         </button>
-        <button class="tx-action-btn" data-action="open-receipt" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
-          Open E-Receipt
-        </button>
-        <button class="tx-action-btn" data-action="copy-transaction-id" data-copy-value="${escapeHtml(transactionContextId ?? log.id)}">
-          ${transactionContextId ? 'Copy ID' : 'Copy Log ID'}
-        </button>
-        <button class="tx-action-btn tx-action-btn--accent" data-action="create-report" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
-          Create report
-        </button>
       </div>
     `;
     const tr = document.createElement('tr');
@@ -992,71 +983,10 @@ logsBody.addEventListener('click', (event) => {
     void openTransactionDrawer(transactionId);
     return;
   }
-
-  if (action === 'open-receipt') {
-    if (!transactionId) {
-      setMessage('Missing transaction ID. Cannot open E-Receipt.');
-      return;
-    }
-    void openReceiptWithButton(transactionId, actionButton);
-    return;
-  }
-
-  if (action === 'copy-transaction-id') {
-    const copyValue = actionButton.dataset.copyValue?.trim() ?? '';
-    if (!copyValue) {
-      setMessage('Nothing to copy.');
-      return;
-    }
-    void copyToClipboard(copyValue).then((copied) => {
-      if (copied) {
-        setMessage(
-          transactionId ? 'Transaction ID copied.' : 'Log ID copied (no transaction ID).',
-        );
-      } else {
-        setMessage('Failed to copy value.');
-      }
-    });
-    return;
-  }
-
-  if (action === 'create-report') {
-    if (!transactionId) {
-      setMessage('Missing transaction ID. Cannot create linked report.');
-      return;
-    }
-    void openReportModalForTransaction(transactionId);
-  }
 });
 
 txDetailCloseBtn?.addEventListener('click', closeTransactionDrawer);
 txDrawerBackdrop?.addEventListener('click', closeTransactionDrawer);
-
-dOpenReceiptBtn?.addEventListener('click', () => {
-  if (!activeDrawerTransactionId) {
-    setMessage('No active transaction selected.');
-    return;
-  }
-  void openReceiptWithButton(activeDrawerTransactionId, dOpenReceiptBtn);
-});
-
-dCopyIdBtn?.addEventListener('click', () => {
-  if (!activeDrawerTransactionId) {
-    setMessage('No active transaction selected.');
-    return;
-  }
-  void copyToClipboard(activeDrawerTransactionId).then((copied) =>
-    setMessage(copied ? 'Transaction ID copied.' : 'Failed to copy transaction ID.'),
-  );
-});
-
-dCreateReportBtn?.addEventListener('click', () => {
-  if (!activeDrawerTransactionId) {
-    setMessage('No active transaction selected.');
-    return;
-  }
-  void openReportModalForTransaction(activeDrawerTransactionId);
-});
 
 txReportCloseBtn?.addEventListener('click', closeReportModal);
 txReportCancelBtn?.addEventListener('click', closeReportModal);

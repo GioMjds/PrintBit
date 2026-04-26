@@ -16,6 +16,7 @@ export interface PrintLifecycleStatePayload {
   jobDispatchedAt?: string;
   timedOut?: boolean;
   refundDisposition?: string;
+  receipt?: any;
 }
 
 export interface PersistPrintLifecycleStateOptions {

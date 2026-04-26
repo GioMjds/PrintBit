@@ -171,6 +171,12 @@ export interface HopperStats {
   lastSelfTestAt: string | null;
 }
 
+export interface InkRefillBaseline {
+  colorPages: number;
+  bwPages: number;
+  updatedAt: string | null;
+}
+
 export interface OwedChangeEntry {
   id: string;
   timestamp: string;
@@ -499,6 +505,7 @@ export type Schema = {
   recovery: RecoveryState;
   receiptRecords: ReceiptRecordEntry[];
   receiptAccessTokens: ReceiptAccessTokenEntry[];
+  inkRefillBaseline: InkRefillBaseline;
 };
 
 const DEFAULT_DATA: Schema = {
@@ -631,6 +638,11 @@ const DEFAULT_DATA: Schema = {
   },
   receiptRecords: [],
   receiptAccessTokens: [],
+  inkRefillBaseline: {
+    colorPages: 0,
+    bwPages: 0,
+    updatedAt: null,
+  },
 };
 
 /**
@@ -1609,6 +1621,14 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
     receiptAccessTokens: normalizeReceiptAccessTokens(
       data?.receiptAccessTokens,
     ),
+    inkRefillBaseline: {
+      colorPages: finiteOr(data?.inkRefillBaseline?.colorPages, 0),
+      bwPages: finiteOr(data?.inkRefillBaseline?.bwPages, 0),
+      updatedAt:
+        typeof data?.inkRefillBaseline?.updatedAt === 'string'
+          ? data.inkRefillBaseline.updatedAt
+          : null,
+    },
   };
 }
 

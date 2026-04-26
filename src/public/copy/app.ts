@@ -23,6 +23,7 @@ void initializePageIdleTimeout({
     // Clear state before redirect
     sessionStorage.removeItem('printbit.config');
     sessionStorage.removeItem('printbit.sessionId');
+    sessionStorage.removeItem('printbit.copyPreviewPath');
     sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     window.location.replace('/');
   },
@@ -545,6 +546,10 @@ async function checkForDocument(): Promise<void> {
       }
       previewPath = data.previewPath;
       previewReleaseToken = data.releaseToken;
+
+      sessionStorage.setItem('printbit.copyPreviewPath', previewPath);
+      sessionStorage.setItem('printbit.copyPreviewReleaseToken', previewReleaseToken);
+
       await showPreview(data.previewPath);
     } else {
       showError(
@@ -580,3 +585,15 @@ continueBtn?.addEventListener('click', () => {
 });
 
 window.addEventListener('beforeunload', clearPreviewImageUrl);
+
+async function initializeCopyPage(): Promise<void> {
+  previewPath = sessionStorage.getItem('printbit.copyPreviewPath');
+  previewReleaseToken = sessionStorage.getItem('printbit.copyPreviewReleaseToken');
+
+  if (previewPath) {
+    console.log('[COPY] Restoring preview from session:', previewPath);
+    await showPreview(previewPath);
+  }
+}
+
+void initializeCopyPage();

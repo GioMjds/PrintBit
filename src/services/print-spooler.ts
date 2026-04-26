@@ -62,6 +62,7 @@ export interface SpoolerMonitorOptions {
     pagesPrinted: number;
     totalPages: number;
   }) => Promise<void>;
+  receipt?: any;
 }
 
 export interface SpoolerMonitorResult {
@@ -366,6 +367,7 @@ export async function monitorSpoolerJob(
     io,
     jobContext,
     onConfirmed,
+    receipt,
   } = options;
 
   const startedAtMs = Date.now();
@@ -434,6 +436,7 @@ export async function monitorSpoolerJob(
       transactionId,
       spoolerCorrelationKey: correlationKey,
       jobDispatchedAt,
+      receipt,
     },
     {
       requiredAmount: chargedAmount,
@@ -460,6 +463,7 @@ export async function monitorSpoolerJob(
         totalPages: 0,
         reason,
         timedOut: true,
+        receipt,
       },
       {
         requiredAmount: chargedAmount,
@@ -484,6 +488,7 @@ export async function monitorSpoolerJob(
       monitorWindowMs: MONITOR_WINDOW_MS,
       queryFailureCount,
       reason,
+      receipt,
     });
     try {
       await adminService.appendAdminLog(
@@ -580,6 +585,7 @@ export async function monitorSpoolerJob(
         totalPages: lastTotalPages,
         reason,
         timedOut: true,
+        receipt,
       },
       {
         requiredAmount: chargedAmount,
@@ -607,6 +613,7 @@ export async function monitorSpoolerJob(
       lastQueryErrorCode,
       lastQueryErrorDetail,
       reason,
+      receipt,
     });
     try {
       await adminService.appendAdminLog(
@@ -801,6 +808,7 @@ export async function monitorSpoolerJob(
                 totalPages: 0,
                 reason:
                   'No spooler job snapshot detected after dispatch; treating pdftoprinter synchronous dispatch as completed.',
+                receipt,
               },
               {
                 requiredAmount: chargedAmount,
@@ -828,6 +836,7 @@ export async function monitorSpoolerJob(
               handoffLatencyMs,
               pollCount,
               queryFailureCount,
+              receipt,
             });
 
             try {
@@ -1020,6 +1029,7 @@ export async function monitorSpoolerJob(
             jobStatus: job.status,
             pagesPrinted: job.pagesPrinted,
             totalPages: job.totalPages,
+            receipt,
           },
           {
             requiredAmount: chargedAmount,
@@ -1044,6 +1054,7 @@ export async function monitorSpoolerJob(
           handoffLatencyMs,
           pollCount,
           queryFailureCount,
+          receipt,
         });
         if (transactionId) {
           try {

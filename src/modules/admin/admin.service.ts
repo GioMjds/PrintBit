@@ -246,7 +246,7 @@ export class AdminService {
   }
 
   isTransactionLog(entry: AdminLogEntry): boolean {
-    const transactionId = entry.meta?.transactionId;
+    const transactionId = entry.meta?.transactionId ?? entry.meta?.transaction_id;
     if (typeof transactionId === 'string' && transactionId.trim().length > 0) {
       return true;
     }
@@ -263,6 +263,14 @@ export class AdminService {
     return TRANSACTION_TYPE_PREFIXES.some((prefix) =>
       lowerType.startsWith(prefix),
     );
+  }
+
+  private getTransactionId(entry: AdminLogEntry): string | null {
+    const txId = entry.meta?.transactionId ?? entry.meta?.transaction_id;
+    if (typeof txId === 'string' && txId.trim().length > 0) {
+      return txId.trim();
+    }
+    return null;
   }
 
   private filterTransactionLogs(
@@ -322,11 +330,43 @@ export class AdminService {
   }
 
   listAllTransactionLogs(filters: TransactionLogFilters): AdminLogEntry[] {
-    return this.filterTransactionLogs(
+    const logs = this.filterTransactionLogs(
       this.listAllLogs().filter((entry) => this.isTransactionLog(entry)),
       filters,
     );
+    return this.groupLogsByTransaction(logs);
   }
+
+  private groupLogsByTransaction(logs: AdminLogEntry[]): AdminLogEntry[] {
+    const groups = new Map<string, AdminLogEntry[]>();
+    const withoutId: AdminLogEntry[] = [];
+
+    for (const log of logs) {
+      const id = this.getTransactionId(log);
+      if (id) {
+        if (!groups.has(id)) groups.set(id, []);
+        groups.get(id)!.push(log);
+      } else {
+        withoutId.push(log);
+      }
+    }
+
+    const grouped: AdminLogEntry[] = [];
+    for (const txLogs of groups.values()) {
+      txLogs.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+      const latest = txLogs[0];
+      const earliest = txLogs[txLogs.length - 1];
+      grouped.push({
+        ...latest,
+        timestamp: earliest.timestamp,
+      });
+    }
+
+    return [...grouped, ...withoutId].sort(
+      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    );
+  }
+
 
   listLogs(limit: number): AdminLogEntry[] {
     return this.listSystemLogs(limit);
@@ -884,6 +924,20 @@ export class AdminService {
     }
 
     return { fileCount, bytes };
+  }
+
+  async resetInkRefillBaseline(colorPages: number, bwPages: number): Promise<void> {
+    const trusted = getTrustedTimestamp();
+    db.data!.inkRefillBaseline = {
+      colorPages,
+      bwPages,
+      updatedAt: trusted.timestamp,
+    };
+    await db.write();
+    await this.appendAdminLog(
+      'ink_refill_reset',
+      `Ink refill counters reset to ${colorPages} color and ${bwPages} B&W pages.`,
+    );
   }
 
   logsToCsv(logs: AdminLogEntry[]): string {

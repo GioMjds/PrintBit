@@ -199,6 +199,7 @@ const ENGINE_CAPABILITIES: Record<
   ghostscript: new Set<PrintDispatchCapability>([
     'copies',
     'grayscale',
+    'landscape',
     'duplex',
     'page-range',
   ]),
@@ -696,6 +697,11 @@ export class PrintDispatcher {
       const range = parseSimplePageRange(options.pageRange);
       if (range) {
         args.push(`-dFirstPage=${range.firstPage}`, `-dLastPage=${range.lastPage}`);
+      }
+      // For landscape, instruct GhostScript to use a rotated media orientation.
+      // Combined with the pre-rotated PDF artifact this gives robust landscape output.
+      if (options.orientation === 'landscape') {
+        args.push('-dFIXEDMEDIA', '-dPDFFitPage', '-r600');
       }
       args.push(filePath);
       const runResult = await this.executeCommand(

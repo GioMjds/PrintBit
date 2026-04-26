@@ -130,14 +130,19 @@ export class PrinterService {
     }
 
     const rotationDeg = normalizeRotationDeg(options.rotationDeg, 0);
-    const dispatchOptions: PrintJobOptions = {
-      ...options,
-      rotationDeg,
-    };
+    // Bake rotation AND target orientation physically into the PDF artifact.
+    // This ensures the page geometry in the output file already matches the
+    // requested orientation before the print engine sees it, making landscape
+    // work correctly for every engine (Sumatra, GhostScript, PDFtoPrinter).
     const prepared = await preparePrintRotationArtifact({
       sourcePath: filePath,
       rotationDeg,
+      targetOrientation: options.orientation,
     });
+    const dispatchOptions: PrintJobOptions = {
+      ...options,
+      rotationDeg: 0, // Already applied in artifact step
+    };
     try {
       return await printDispatcher.dispatchFile(
         prepared.printPath,

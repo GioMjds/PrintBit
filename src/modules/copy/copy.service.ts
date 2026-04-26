@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
+import type { Request } from 'express';
 import { PrintDispatchError } from '@/services/print-dispatcher';
 import { jobStore } from '@/services/job-store';
 import { printFile, type PrintJobOptions } from '@/services/printer';
@@ -95,6 +96,7 @@ interface NormalizedCopyJobInput {
 
 export interface CopyServiceDeps {
   io: Server;
+  resolvePublicBaseUrl: (req: Request) => URL;
 }
 
 export class CopyService {
@@ -139,6 +141,7 @@ export class CopyService {
     input: CreateCopyJobInput,
     idempotencyKeyClaimed: boolean,
     idempotencyKey: string,
+    req: Request,
   ): Promise<CreateCopyJobResult> {
     if (typeof input.rotationDeg !== 'undefined' && parseRotationDeg(input.rotationDeg) === null) {
       return {
@@ -303,7 +306,13 @@ export class CopyService {
         requiredAmount,
       },
     );
-    this.runCopyJob(job.id, normalized, previewFilename, requiredAmount);
+    this.runCopyJob(
+      job.id,
+      normalized,
+      previewFilename,
+      requiredAmount,
+      this.deps.resolvePublicBaseUrl(req).toString(),
+    );
 
     const responseBody = JSON.parse(JSON.stringify(job)) as typeof job;
     return {
@@ -387,6 +396,7 @@ export class CopyService {
     normalized: NormalizedCopyJobInput,
     previewFilename: string,
     requiredAmount: number,
+    publicBaseUrl: string,
   ): void {
     void (async () => {
       jobStore.updateJobState(jobId, 'processing');
@@ -593,8 +603,8 @@ export class CopyService {
           this.safeUpsertSettledReceiptSnapshot({
             transactionId: jobId,
             chargedAmount: settlement.chargedAmount,
-            colorPages: normalized.colorMode === 'colored' ? 1 : 0,
-            bwPages: normalized.colorMode === 'colored' ? 0 : 1,
+            colorPages: normalized.colorMode === 'colored' ? normalized.copies : 0,
+            bwPages: normalized.colorMode === 'colored' ? 0 : normalized.copies,
             change: {
               requested: settlement.change.requested,
               dispensed: settlement.change.dispensed,
@@ -617,6 +627,33 @@ export class CopyService {
             };
           }
           jobStore.updateJobState(jobId, 'printed');
+          try {
+            const tokenData = this.receiptService.mintToken(jobId, {
+              revokeExisting: true,
+            });
+            if (tokenData) {
+              const viewUrl = new URL(
+                `/receipt/t/${encodeURIComponent(tokenData.token)}`,
+                publicBaseUrl,
+              ).toString();
+              jobStore.updateJobState(jobId, 'printed', {
+                receipt: {
+                  token: tokenData.token,
+                  viewUrl: viewUrl,
+                  expiresAt: tokenData.expiresAt,
+                },
+              });
+            }
+          } catch (receiptError) {
+            console.error('[COPY] Failed to mint receipt token.', {
+              error:
+                receiptError instanceof Error
+                  ? receiptError.message
+                  : String(receiptError),
+              jobId,
+            });
+          }
+
           await persistAndEmitPrintLifecycleState(
             this.deps.io,
             {

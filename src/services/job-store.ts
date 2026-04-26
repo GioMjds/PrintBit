@@ -51,6 +51,7 @@ export interface BaseJob {
   failure: JobFailure | null;
   createdAt: string;
   updatedAt: string;
+  receipt?: any;
 }
 
 export interface CopyJob extends BaseJob {
@@ -71,6 +72,7 @@ interface UpdateExtra {
   progress?: JobProgress;
   failure?: JobFailure;
   resultPath?: string;
+  receipt?: any;
 }
 
 class JobStore {
@@ -132,6 +134,9 @@ class JobStore {
     }
     if (extra?.resultPath !== undefined && job.type === 'scan') {
       job.resultPath = extra.resultPath;
+    }
+    if (extra?.receipt !== undefined) {
+      job.receipt = extra.receipt;
     }
   }
 

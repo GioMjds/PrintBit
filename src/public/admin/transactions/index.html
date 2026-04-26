@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Transaction Logs · Admin · PrintBit</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
@@ -464,110 +467,101 @@
                     Transaction Details
                   </h4>
                 </div>
-                <button id="txDetailCloseBtn" class="tx-drawer__close" type="button">
+                <button
+                  id="txDetailCloseBtn"
+                  class="tx-drawer__close"
+                  type="button"
+                >
                   ×
                 </button>
               </header>
 
-              <p id="txDetailState" class="tx-drawer__state" aria-live="polite">
-                Select a transaction to inspect details.
-              </p>
-
-              <dl class="tx-detail-grid">
-                <div><dt>Transaction ID</dt><dd id="dTransactionId">—</dd></div>
-                <div><dt>Mode</dt><dd id="dMode">—</dd></div>
-                <div><dt>Charged Amount</dt><dd id="dAmount">—</dd></div>
-                <div><dt>Status</dt><dd id="dStatus">—</dd></div>
-                <div><dt>Change Requested</dt><dd id="dChangeRequested">—</dd></div>
-                <div><dt>Change Dispensed</dt><dd id="dChangeDispensed">—</dd></div>
-                <div><dt>Remaining Owed</dt><dd id="dChangeRemaining">—</dd></div>
-                <div><dt>Change Status</dt><dd id="dChangeStatus">—</dd></div>
-                <div><dt>Change Message</dt><dd id="dChangeMessage">—</dd></div>
-                <div><dt>Settled At</dt><dd id="dSettledAt">—</dd></div>
-                <div><dt>Terminal At</dt><dd id="dTerminalAt">—</dd></div>
-                <div><dt>Generated At</dt><dd id="dGeneratedAt">—</dd></div>
-              </dl>
-
-              <section class="tx-drawer__section">
-                <h5>Context flags</h5>
-                <p id="dContextHint" class="tx-drawer__hint">—</p>
-                <ul id="dMissingReasons" class="tx-missing-reasons"></ul>
-              </section>
-
-              <section class="tx-drawer__section">
-                <h5>Recent related logs</h5>
-                <div class="tx-detail-log-scroll">
-                  <table class="tx-detail-log-table">
-                    <thead>
-                      <tr>
-                        <th>Timestamp</th>
-                        <th>Type</th>
-                        <th>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody id="dRelatedLogsBody"></tbody>
-                  </table>
-                </div>
-              </section>
-
-              <footer class="tx-drawer__actions">
-                <button id="dOpenReceiptBtn" class="tx-action-btn" type="button">
-                  Open E-Receipt
-                </button>
-                <button id="dCopyIdBtn" class="tx-action-btn" type="button">
-                  Copy Transaction ID
-                </button>
-                <button
-                  id="dCreateReportBtn"
-                  class="tx-action-btn tx-action-btn--accent"
-                  type="button"
+              <div class="tx-drawer__body">
+                <p
+                  id="txDetailState"
+                  class="tx-drawer__state"
+                  aria-live="polite"
                 >
-                  Create Report
-                </button>
-              </footer>
-            </aside>
+                  Select a transaction to inspect details.
+                </p>
 
-            <div id="txReportModal" class="tx-report-modal hidden" role="dialog" aria-modal="true" aria-labelledby="txReportTitle">
-              <div class="tx-report-card">
-                <header class="tx-report-card__head">
-                  <h4 id="txReportTitle">Create Report from Transaction</h4>
-                  <button id="txReportCloseBtn" class="tx-drawer__close" type="button">×</button>
-                </header>
-                <p id="txReportSummary" class="tx-report-summary">—</p>
-                <label class="tx-filter-field">
-                  <span>Title</span>
-                  <input id="txReportTitleInput" class="tx-input" type="text" maxlength="120" />
-                </label>
-                <label class="tx-filter-field">
-                  <span>Category</span>
-                  <select id="txReportCategoryInput" class="tx-select">
-                    <option value="payment">Payment</option>
-                    <option value="print">Print</option>
-                    <option value="copy">Copy</option>
-                    <option value="scan">Scan</option>
-                    <option value="hardware">Hardware</option>
-                    <option value="software">Software</option>
-                    <option value="network">Network</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
-                <label class="tx-filter-field">
-                  <span>Description</span>
-                  <textarea
-                    id="txReportDescriptionInput"
-                    class="tx-textarea"
-                    rows="6"
-                    maxlength="1200"
-                  ></textarea>
-                </label>
-                <div class="tx-report-actions">
-                  <button id="txReportCancelBtn" class="topbar-btn" type="button">Cancel</button>
-                  <button id="txReportSubmitBtn" class="topbar-btn topbar-btn--accent" type="button">
-                    Submit Report
-                  </button>
-                </div>
+                <dl class="tx-detail-grid">
+                  <div>
+                    <dt>Transaction ID</dt>
+                    <dd id="dTransactionId">—</dd>
+                  </div>
+                  <div>
+                    <dt>Mode</dt>
+                    <dd id="dMode">—</dd>
+                  </div>
+                  <div>
+                    <dt>Charged Amount</dt>
+                    <dd id="dAmount">—</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd id="dStatus">—</dd>
+                  </div>
+                  <div>
+                    <dt>Change Requested</dt>
+                    <dd id="dChangeRequested">—</dd>
+                  </div>
+                  <div>
+                    <dt>Change Dispensed</dt>
+                    <dd id="dChangeDispensed">—</dd>
+                  </div>
+                  <div>
+                    <dt>Remaining Owed</dt>
+                    <dd id="dChangeRemaining">—</dd>
+                  </div>
+                  <div>
+                    <dt>Change Status</dt>
+                    <dd id="dChangeStatus">—</dd>
+                  </div>
+                  <div>
+                    <dt>Change Message</dt>
+                    <dd id="dChangeMessage">—</dd>
+                  </div>
+                  <div>
+                    <dt>Settled At</dt>
+                    <dd id="dSettledAt">—</dd>
+                  </div>
+                  <div>
+                    <dt>Terminal At</dt>
+                    <dd id="dTerminalAt">—</dd>
+                  </div>
+                  <div>
+                    <dt>Generated At</dt>
+                    <dd id="dGeneratedAt">—</dd>
+                  </div>
+                </dl>
+
+                <section class="tx-drawer__section">
+                  <h5>Context flags</h5>
+                  <p id="dContextHint" class="tx-drawer__hint">—</p>
+                  <ul id="dMissingReasons" class="tx-missing-reasons"></ul>
+                </section>
+
+                <section class="tx-drawer__section">
+                  <h5>Recent related logs</h5>
+                  <div class="tx-detail-log-scroll">
+                    <table class="tx-detail-log-table">
+                      <thead>
+                        <tr>
+                          <th>Timestamp</th>
+                          <th>Type</th>
+                          <th>Message</th>
+                        </tr>
+                      </thead>
+                      <tbody id="dRelatedLogsBody"></tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
-            </div>
+              <!-- /.tx-drawer__body -->
+
+              <footer class="tx-drawer__actions"></footer>
+            </aside>
           </section>
         </div>
       </div>

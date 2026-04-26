@@ -103,6 +103,9 @@ export type SummaryResponse = {
     todayBwPages: number;
     totalColorPages: number;
     totalBwPages: number;
+    refillColorPages: number;
+    refillBwPages: number;
+    lastRefillAt: string | null;
   };
   status: {
     serverRunning: boolean;

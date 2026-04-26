@@ -1489,16 +1489,37 @@ async function loadPreview(): Promise<void> {
   if (mode === 'scan') {
     clearOrientationNotice();
     detectedOrientation = null;
-    if (!scanFilename) return;
+    if (!scanFilename) {
+      previewLog('loadPreview() scan mode - no scanFilename');
+      return;
+    }
 
     const url = `/api/scan/preview/${encodeURIComponent(scanFilename)}`;
+    previewLog('loadPreview() scan mode - loading', { url });
     try {
       const resp = await fetch(url, { cache: 'no-store' });
-      if (!resp.ok) return;
-      const mime = (resp.headers.get('Content-Type') ?? '').toLowerCase();
+      if (!resp.ok) {
+        previewLog('loadPreview() scan mode - HTTP error', { status: resp.status, statusText: resp.statusText });
+        return;
+      }
+      let mime = (resp.headers.get('Content-Type') ?? '').toLowerCase();
+      previewLog('loadPreview() scan mode - content type', { mime });
+
+      // Fallback to guessing MIME type from filename extension if header is missing
+      if (!mime || mime === '' || mime === 'application/octet-stream') {
+        const ext = scanFilename.toLowerCase().split('.').pop() || '';
+        previewLog('loadPreview() scan mode - guessing mime from extension', { ext });
+        if (ext === 'pdf') mime = 'application/pdf';
+        else if (['jpg', 'jpeg'].includes(ext)) mime = 'image/jpeg';
+        else if (ext === 'png') mime = 'image/png';
+      }
+
       const buf = await resp.arrayBuffer();
+      previewLog('loadPreview() scan mode - buffer received', { size: buf.byteLength });
       await preview.loadFromBuffer(buf, mime || 'application/octet-stream');
-    } catch {
+      previewLog('loadPreview() scan mode - preview loaded successfully');
+    } catch (err) {
+      previewLog('loadPreview() scan mode - exception', err);
       // Preview is helpful but not required for scan mode.
     }
 

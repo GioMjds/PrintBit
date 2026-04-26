@@ -95,125 +95,184 @@ window.setInterval(updateClock, 1000);
 
 // ── Guide overlay modal ────────────────────────────────────────────────────────
 
-interface PrintGuideStep {
+interface GuideStep {
   imageUrl: string;
   captionKey: string;
   captionFallback: string;
 }
 
-const printGuideSteps: PrintGuideStep[] = [
-  {
-    imageUrl: '/assets/print-steps/step-1.png',
-    captionKey: 'print.guide.step1',
-    captionFallback: 'Scan "PrintBit"\'s QR code from your device to connect first.',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-2.png',
-    captionKey: 'print.guide.step2',
-    captionFallback: 'Scan the QR code shown in the kiosk to open the upload page on your device.',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-3.jpg',
-    captionKey: 'print.guide.step3',
-    captionFallback: 'Upload your document file(s) from your device.',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-4.jpg',
-    captionKey: 'print.guide.step4',
-    captionFallback: 'Press "Send to Kiosk" to transfer your file(s) to the kiosk.',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-5.jpg',
-    captionKey: 'print.guide.step5',
-    captionFallback: 'Wait for the upload to complete. If it is successful, please check in the kiosk to review your file(s).',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-6.png',
-    captionKey: 'print.guide.step6',
-    captionFallback: 'Your uploaded file(s) will appear on the kiosk screen. Review your file(s) and press "Proceed to Config" for the next step.',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-7.png',
-    captionKey: 'print.guide.step7',
-    captionFallback: 'Configure your print settings (e.g. number of copies, color or black & white) and then press "Continue" for confirmation step and to insert coins.',
-  },
-  {
-    imageUrl: '/assets/print-steps/step-8.png',
-    captionKey: 'print.guide.step8',
-    captionFallback: 'You may now proceed to insert coins. Press "Confirm & Print" and wait for the printing to start.',
-  },
-];
+const guides: Record<string, GuideStep[]> = {
+  print: [
+    {
+      imageUrl: '/assets/print-steps/step-1.png',
+      captionKey: 'print.guide.step1',
+      captionFallback: 'Scan "PrintBit"\'s QR code from your device to connect first.',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-2.png',
+      captionKey: 'print.guide.step2',
+      captionFallback: 'Scan the QR code shown in the kiosk to open the upload page on your device.',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-3.jpg',
+      captionKey: 'print.guide.step3',
+      captionFallback: 'Upload your document file(s) from your device.',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-4.jpg',
+      captionKey: 'print.guide.step4',
+      captionFallback: 'Press "Send to Kiosk" to transfer your file(s) to the kiosk.',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-5.jpg',
+      captionKey: 'print.guide.step5',
+      captionFallback: 'Wait for the upload to complete. If it is successful, please check in the kiosk to review your file(s).',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-6.png',
+      captionKey: 'print.guide.step6',
+      captionFallback: 'Your uploaded file(s) will appear on the kiosk screen. Review your file(s) and press "Proceed to Config" for the next step.',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-7.png',
+      captionKey: 'print.guide.step7',
+      captionFallback: 'Configure your print settings (e.g. number of copies, color or black & white) and then press "Continue" for confirmation step and to insert coins.',
+    },
+    {
+      imageUrl: '/assets/print-steps/step-8.png',
+      captionKey: 'print.guide.step8',
+      captionFallback: 'You may now proceed to insert coins. Press "Confirm & Print" and wait for the printing to start.',
+    },
+  ],
+  copy: [
+    {
+      imageUrl: '/assets/copy-steps/copy-1.png',
+      captionKey: 'copy.guide.step1',
+      captionFallback: 'Place your document face-down first on the scanner glass. If it is ready, press "Check Document" on the kiosk screen to preview the scan.',
+    },
+    {
+      imageUrl: '/assets/copy-steps/copy-2.png',
+      captionKey: 'copy.guide.step2',
+      captionFallback: 'Please wait for your document to finish scanning.',
+    },
+    {
+      imageUrl: '/assets/copy-steps/copy-3.png',
+      captionKey: 'copy.guide.step3',
+      captionFallback: 'Review the scanned preview on the screen. If it is correct, press "Continue to Config" for the next step.',
+    },
+    {
+      imageUrl: '/assets/copy-steps/copy-4.png',
+      captionKey: 'copy.guide.step4',
+      captionFallback: 'Select your preferred copy settings (size, color, copies) and proceed.',
+    },
+    {
+      imageUrl: '/assets/copy-steps/copy-5.png',
+      captionKey: 'copy.guide.step5',
+      captionFallback: 'Insert the required coins for your copy job and confirm payment.',
+    },
+    {
+      imageUrl: '/assets/copy-steps/copy-6.png',
+      captionKey: 'copy.guide.step6',
+      captionFallback: 'Wait for the copying to finish and collect your documents.',
+    },
+  ],
+  scan: [
+    {
+      imageUrl: '/assets/scan-steps/scan-1.png',
+      captionKey: 'scan.guide.step1',
+      captionFallback: 'Place your document in the printer document feeder. If it is ready, press "Scan Document".',
+    },
+    {
+      imageUrl: '/assets/scan-steps/scan-2.png',
+      captionKey: 'scan.guide.step2',
+      captionFallback: 'Your physical document is feeding into the printer. Please wait for it to finish scanning.',
+    },
+    {
+      imageUrl: '/assets/scan-steps/scan-3.png',
+      captionKey: 'scan.guide.step3',
+      captionFallback: 'Your scanned document will appear on the kiosk screen. Review the preview.',
+    },
+    {
+      imageUrl: '/assets/scan-steps/scan-4.png',
+      captionKey: 'scan.guide.step4',
+      captionFallback: 'Insert the required coins for your scan job and confirm payment.',
+    },
+    {
+      imageUrl: '/assets/scan-steps/scan-5.png',
+      captionKey: 'scan.guide.step5',
+      captionFallback: 'After confirmation, the kiosk generates the image QR code link to download as soft copy.',
+    },
+  ],
+};
 
 const guideOverlay = document.getElementById('guideOverlay');
 const guideCards = guideOverlay?.querySelectorAll<HTMLElement>('.guide-card');
-const printGuideImage = document.getElementById(
-  'printGuideImage',
-) as HTMLImageElement | null;
-const printGuideCounter = document.getElementById('printGuideCounter');
-const printGuideCaption = document.getElementById('printGuideCaption');
-const printGuidePrevBtn = document.getElementById(
-  'printGuidePrevBtn',
-) as HTMLButtonElement | null;
-const printGuideNextBtn = document.getElementById(
-  'printGuideNextBtn',
-) as HTMLButtonElement | null;
 
 let activeGuide: string | null = null;
-let printGuideIndex = 0;
-const PRINT_GUIDE_NEXT_KEY = 'print.guide.next';
-const PRINT_GUIDE_GOT_IT_KEY = 'print.guide.got_it';
-const PRINT_GUIDE_NEXT_ARIA_KEY = 'print.guide.next_aria';
-const PRINT_GUIDE_CLOSE_ARIA_KEY = 'print.guide.close_aria';
+const guideIndices: Record<string, number> = { print: 0, copy: 0, scan: 0 };
+
+const GUIDE_NEXT_KEY = 'guide.next';
+const GUIDE_GOT_IT_KEY = 'guide.got_it';
+const GUIDE_NEXT_ARIA_KEY = 'guide.next_aria';
+const GUIDE_CLOSE_ARIA_KEY = 'guide.close_aria';
 
 function isGuideOverlayVisible(): boolean {
   return guideOverlay?.classList.contains('is-visible') ?? false;
 }
 
-function renderPrintGuideStep(): void {
-  if (
-    !printGuideSteps.length ||
-    !printGuideImage ||
-    !printGuideCounter ||
-    !printGuideCaption ||
-    !printGuidePrevBtn ||
-    !printGuideNextBtn
-  ) {
+function getGuideElements(name: string) {
+  return {
+    image: document.getElementById(`${name}GuideImage`) as HTMLImageElement | null,
+    counter: document.getElementById(`${name}GuideCounter`),
+    caption: document.getElementById(`${name}GuideCaption`),
+    prevBtn: document.getElementById(`${name}GuidePrevBtn`) as HTMLButtonElement | null,
+    nextBtn: document.getElementById(`${name}GuideNextBtn`) as HTMLButtonElement | null,
+  };
+}
+
+function renderGuideStep(name: string): void {
+  const steps = guides[name];
+  const elements = getGuideElements(name);
+  if (!steps || !steps.length || !elements.image || !elements.counter || !elements.caption || !elements.prevBtn || !elements.nextBtn) {
     return;
   }
 
-  const step = printGuideSteps[printGuideIndex];
-  const isLastStep = printGuideIndex === printGuideSteps.length - 1;
-  const nextActionLabel = translation(PRINT_GUIDE_NEXT_KEY, 'Next');
+  const index = guideIndices[name];
+  const step = steps[index];
+  const isLastStep = index === steps.length - 1;
+  const nextActionLabel = translation(GUIDE_NEXT_KEY, 'Next');
   const nextVisualLabel = isLastStep
-    ? translation(PRINT_GUIDE_GOT_IT_KEY, '✖')
+    ? translation(GUIDE_GOT_IT_KEY, '✖')
     : '❯';
   const isCloseIconState =
     isLastStep && nextVisualLabel.trim().replace(/\uFE0F/g, '').length <= 1;
   const nextAriaLabel = isLastStep
-    ? translation(PRINT_GUIDE_CLOSE_ARIA_KEY, 'Close print guide modal')
-    : translation(PRINT_GUIDE_NEXT_ARIA_KEY, 'Next print guide step');
-  printGuideCounter.textContent = `Step ${printGuideIndex + 1} of ${printGuideSteps.length}`;
-  printGuideCaption.textContent = translation(step.captionKey, step.captionFallback);
-  printGuideImage.alt = `Print guide step ${printGuideIndex + 1}`;
-  printGuideImage.style.visibility = 'visible';
-  printGuideImage.src = step.imageUrl;
-  printGuidePrevBtn.disabled = printGuideIndex === 0;
-  printGuideNextBtn.disabled = false;
-  printGuideNextBtn.textContent = nextVisualLabel;
-  printGuideNextBtn.classList.toggle('is-label', isLastStep && !isCloseIconState);
-  printGuideNextBtn.classList.toggle('is-close-icon', isCloseIconState);
-  printGuideNextBtn.title = isLastStep ? nextAriaLabel : nextActionLabel;
-  printGuideNextBtn.setAttribute('aria-label', nextAriaLabel);
+    ? translation(GUIDE_CLOSE_ARIA_KEY, `Close ${name} guide modal`)
+    : translation(GUIDE_NEXT_ARIA_KEY, `Next ${name} guide step`);
+
+  elements.counter.textContent = `Step ${index + 1} of ${steps.length}`;
+  elements.caption.textContent = translation(step.captionKey, step.captionFallback);
+  elements.image.alt = `${name} guide step ${index + 1}`;
+  elements.image.style.visibility = 'visible';
+  elements.image.src = step.imageUrl;
+  elements.prevBtn.disabled = index === 0;
+  elements.nextBtn.disabled = false;
+  elements.nextBtn.textContent = nextVisualLabel;
+  elements.nextBtn.classList.toggle('is-label', isLastStep && !isCloseIconState);
+  elements.nextBtn.classList.toggle('is-close-icon', isCloseIconState);
+  elements.nextBtn.title = isLastStep ? nextAriaLabel : nextActionLabel;
+  elements.nextBtn.setAttribute('aria-label', nextAriaLabel);
 }
 
-function setPrintGuideStep(nextIndex: number): void {
-  if (!printGuideSteps.length) return;
+function setGuideStep(name: string, nextIndex: number): void {
+  const steps = guides[name];
+  if (!steps || !steps.length) return;
   if (nextIndex < 0) nextIndex = 0;
-  if (nextIndex > printGuideSteps.length - 1) {
-    nextIndex = printGuideSteps.length - 1;
+  if (nextIndex > steps.length - 1) {
+    nextIndex = steps.length - 1;
   }
-  printGuideIndex = nextIndex;
-  renderPrintGuideStep();
+  guideIndices[name] = nextIndex;
+  renderGuideStep(name);
 }
 
 function openGuide(name: string): void {
@@ -226,7 +285,7 @@ function openGuide(name: string): void {
   activeGuide = name;
   const target = document.getElementById(`guide-${name}`) as HTMLElement | null;
   if (target) target.style.display = 'flex';
-  if (name === 'print') setPrintGuideStep(0);
+  if (guides[name]) setGuideStep(name, 0);
 
   guideOverlay.classList.add('is-visible');
   guideOverlay.setAttribute('aria-hidden', 'false');
@@ -240,33 +299,37 @@ function closeGuide(): void {
 }
 
 window.addEventListener(KIOSK_LANGUAGE_CHANGED_EVENT, () => {
-  if (activeGuide === 'print' && isGuideOverlayVisible()) {
-    renderPrintGuideStep();
+  if (activeGuide && isGuideOverlayVisible() && guides[activeGuide]) {
+    renderGuideStep(activeGuide);
   }
 });
 
-if (printGuideImage) {
-  printGuideImage.addEventListener('load', () => {
-    printGuideImage.style.visibility = 'visible';
+['print', 'copy', 'scan'].forEach((name) => {
+  const elements = getGuideElements(name);
+  if (elements.image) {
+    elements.image.addEventListener('load', () => {
+      elements.image!.style.visibility = 'visible';
+    });
+    elements.image.addEventListener('error', () => {
+      elements.image!.style.visibility = 'hidden';
+      if (elements.caption) {
+        elements.caption.textContent = 'Step image unavailable for this step.';
+      }
+    });
+  }
+
+  elements.prevBtn?.addEventListener('click', () => {
+    setGuideStep(name, guideIndices[name] - 1);
   });
-  printGuideImage.addEventListener('error', () => {
-    printGuideImage.style.visibility = 'hidden';
-    if (printGuideCaption) {
-      printGuideCaption.textContent = 'Step image unavailable for this step.';
+
+  elements.nextBtn?.addEventListener('click', () => {
+    const steps = guides[name];
+    if (guideIndices[name] === steps.length - 1) {
+      closeGuide();
+      return;
     }
+    setGuideStep(name, guideIndices[name] + 1);
   });
-}
-
-printGuidePrevBtn?.addEventListener('click', () => {
-  setPrintGuideStep(printGuideIndex - 1);
-});
-
-printGuideNextBtn?.addEventListener('click', () => {
-  if (printGuideIndex === printGuideSteps.length - 1) {
-    closeGuide();
-    return;
-  }
-  setPrintGuideStep(printGuideIndex + 1);
 });
 
 document.querySelectorAll<HTMLElement>('.action-card__help').forEach((btn) => {
@@ -291,7 +354,7 @@ guideOverlay?.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (!isGuideOverlayVisible()) return;
+  if (!activeGuide || !isGuideOverlayVisible()) return;
 
   if (event.key === 'Escape') {
     event.preventDefault();
@@ -299,22 +362,23 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
-  if (activeGuide !== 'print') return;
+  const steps = guides[activeGuide];
+  if (!steps) return;
 
   if (event.key === 'ArrowLeft') {
-    if (printGuideIndex === 0) return;
+    if (guideIndices[activeGuide] === 0) return;
     event.preventDefault();
-    setPrintGuideStep(printGuideIndex - 1);
+    setGuideStep(activeGuide, guideIndices[activeGuide] - 1);
     return;
   }
 
   if (event.key === 'ArrowRight') {
     event.preventDefault();
-    if (printGuideIndex === printGuideSteps.length - 1) {
+    if (guideIndices[activeGuide] === steps.length - 1) {
       closeGuide();
       return;
     }
-    setPrintGuideStep(printGuideIndex + 1);
+    setGuideStep(activeGuide, guideIndices[activeGuide] + 1);
   }
 });
 

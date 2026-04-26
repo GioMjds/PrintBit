@@ -53,6 +53,8 @@ interface StoredScanConfig {
   mode?: string;
   scanFilename?: string;
   scanReleaseToken?: string | null;
+  scannedPages?: string[];
+  currentPage?: number;
 }
 
 type ScanFailureCause =
@@ -429,6 +431,8 @@ function goToPage(n: number): void {
   pagePrev.disabled = n <= 0;
   pageNext.disabled = n >= total - 1;
   pageCountText.textContent = `${total} page${total !== 1 ? 's' : ''}`;
+
+  saveScanStateToSession();
 }
 
 function updatePager(): void {
@@ -466,6 +470,26 @@ async function loadPricing(): Promise<void> {
   }
 }
 
+function saveScanStateToSession(): void {
+  if (!scanFilename) return;
+  sessionStorage.setItem(
+    'printbit.config',
+    JSON.stringify({
+      mode: 'scan',
+      scanFilename,
+      scanReleaseToken,
+      scannedPages,
+      currentPage,
+      sessionId: null,
+      colorMode: 'colored',
+      copies: 1,
+      orientation: 'portrait',
+      paperSize: 'A4',
+      rotationDeg: 0,
+    }),
+  );
+}
+
 async function restoreScanPreviewFromSession(): Promise<boolean> {
   const rawConfig = sessionStorage.getItem('printbit.config');
   if (!rawConfig) return false;
@@ -498,14 +522,20 @@ async function restoreScanPreviewFromSession(): Promise<boolean> {
     return false;
   }
 
-  scannedPages = [previewUrl];
+  if (Array.isArray(storedConfig.scannedPages) && storedConfig.scannedPages.length > 0) {
+    scannedPages = storedConfig.scannedPages;
+  } else {
+    scannedPages = [previewUrl];
+  }
+
   scanFilename = restoredFilename;
   scanReleaseToken =
     typeof storedConfig.scanReleaseToken === 'string' &&
     storedConfig.scanReleaseToken.trim().length > 0
       ? storedConfig.scanReleaseToken.trim()
       : null;
-  currentPage = 0;
+  currentPage = typeof storedConfig.currentPage === 'number' ? storedConfig.currentPage : 0;
+  currentPage = Math.max(0, Math.min(scannedPages.length - 1, currentPage));
 
   showPreview('result', 'Restored your scanned document preview.');
   hideScanTroubleshooting();
@@ -582,6 +612,8 @@ async function startScan(): Promise<void> {
     scanReleaseToken = data.releaseToken;
     currentPage = 0;
 
+    saveScanStateToSession();
+
     if (previousReleaseToken && previousReleaseToken !== data.releaseToken) {
       void releaseScanFile(previousReleaseToken, 'scan_replaced_by_new_scan');
     }
@@ -643,6 +675,7 @@ function resetToIdle(): void {
     void releaseScanFile(scanReleaseToken, 'scan_reset_to_idle');
     scanReleaseToken = null;
   }
+  sessionStorage.removeItem('printbit.config');
   scannedPages = [];
   scanFilename = null;
   currentPage = 0;
@@ -674,20 +707,7 @@ rescanBtn.addEventListener('click', () => {
 proceedBtn.addEventListener('click', () => {
   if (!scannedPages.length || !scanFilename) return;
 
-  sessionStorage.setItem(
-    'printbit.config',
-    JSON.stringify({
-      mode: 'scan',
-      scanFilename,
-      scanReleaseToken,
-      sessionId: null,
-      colorMode: 'colored',
-      copies: 1,
-      orientation: 'portrait',
-      paperSize: 'A4',
-      rotationDeg: 0,
-    }),
-  );
+  saveScanStateToSession();
   sessionStorage.setItem('printbit.mode', 'scan');
   window.location.href = '/confirm';
 });
