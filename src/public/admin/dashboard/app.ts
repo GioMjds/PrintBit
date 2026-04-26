@@ -17,10 +17,10 @@ const storageBytes = document.getElementById('storageBytes') as HTMLElement;
 const owedChangeOpen = document.getElementById(
   'owedChangeOpen',
 ) as HTMLElement | null;
-const colorPagesEl = document.getElementById('colorPages') as HTMLElement | null;
-const bwPagesEl = document.getElementById('bwPages') as HTMLElement | null;
-const refillColorPagesEl = document.getElementById('refillColorPages') as HTMLElement | null;
-const refillBwPagesEl = document.getElementById('refillBwPages') as HTMLElement | null;
+// ── Ink tank gauge elements ──────────────────────────────
+const inkAlertBanner = document.getElementById('inkAlertBanner') as HTMLElement | null;
+const inkAlertText = document.getElementById('inkAlertText') as HTMLElement | null;
+const inkAlertBadge = document.getElementById('inkAlertBadge') as HTMLElement | null;
 const owedChangeHint = document.getElementById(
   'owedChangeHint',
 ) as HTMLElement | null;
@@ -61,6 +61,63 @@ const openAlertBadgeMob = document.getElementById(
 ) as HTMLElement | null;
 
 let refreshTimer: number | null = null;
+
+function formatNumber(n: number): string {
+  return n.toLocaleString();
+}
+
+function applyInkEstimation(summary: SummaryResponse): void {
+  const est = summary.inkEstimation;
+  if (!est) {
+    // No ink estimation data — hide the panel alert
+    if (inkAlertBanner) inkAlertBanner.classList.add('hidden');
+    if (inkAlertBadge) inkAlertBadge.textContent = '';
+    return;
+  }
+
+  const tanks: Array<{ key: 'grayscale' | 'color'; label: string; id: string }> = [
+    { key: 'grayscale', label: 'Grayscale ink', id: 'Grayscale' },
+    { key: 'color', label: 'Color ink', id: 'Color' },
+  ];
+
+  let alertCount = 0;
+  const lowNames: string[] = [];
+
+  for (const { key, label, id } of tanks) {
+    const tank = est[key];
+    const fillEl = document.getElementById(`inkFill${id}`);
+    const percentEl = document.getElementById(`inkPercent${id}`);
+    const pagesEl = document.getElementById(`inkPages${id}`);
+    const tankEl = document.getElementById(`inkTank${id}`);
+
+    if (fillEl) fillEl.style.height = `${tank.remainingPercent}%`;
+    if (percentEl) percentEl.textContent = `${tank.remainingPercent.toFixed(1)}%`;
+    if (pagesEl) {
+      pagesEl.textContent = `${formatNumber(tank.pagesUsed)} / ${formatNumber(tank.maxPages)} pages`;
+    }
+    if (tankEl) {
+      tankEl.classList.toggle('ink-tank--alert', tank.alertTriggered);
+    }
+    if (tank.alertTriggered) {
+      alertCount += 1;
+      lowNames.push(label);
+    }
+  }
+
+  // Alert banner
+  if (inkAlertBanner) {
+    inkAlertBanner.classList.toggle('hidden', !est.anyAlertTriggered);
+  }
+  if (inkAlertText && est.anyAlertTriggered) {
+    inkAlertText.textContent =
+      lowNames.length === 1
+        ? `${lowNames[0]} is running low — consider refilling soon.`
+        : `${lowNames.join(' and ')} are running low — consider refilling soon.`;
+  }
+  if (inkAlertBadge) {
+    inkAlertBadge.textContent = alertCount > 0 ? String(alertCount) : '';
+  }
+}
 
 function formatDaysRemaining(daysRemaining: number | null): string {
   if (daysRemaining === null) return '--';
@@ -180,24 +237,7 @@ function applySummary(summary: SummaryResponse): void {
   if (barScan)
     barScan.style.width = `${Math.round((summary.jobStats.scan / total) * 100)}%`;
   applyConsumablesForecast(summary);
-
-  // Page counts (if available)
-  if (colorPagesEl) {
-    const v = summary.pageCounts?.todayColorPages ?? 0;
-    colorPagesEl.textContent = String(v);
-  }
-  if (bwPagesEl) {
-    const v = summary.pageCounts?.todayBwPages ?? 0;
-    bwPagesEl.textContent = String(v);
-  }
-  if (refillColorPagesEl) {
-    const v = summary.pageCounts?.refillColorPages ?? 0;
-    refillColorPagesEl.textContent = String(v);
-  }
-  if (refillBwPagesEl) {
-    const v = summary.pageCounts?.refillBwPages ?? 0;
-    refillBwPagesEl.textContent = String(v);
-  }
+  applyInkEstimation(summary);
 }
 
 async function loadData(): Promise<void> {

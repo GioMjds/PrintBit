@@ -821,6 +821,37 @@ export class AdminController {
         lastRefillAt: baseline.updatedAt,
       };
 
+      // ── Page-count-based ink depletion estimation ──────────────
+      const INK_GRAYSCALE_MAX_PAGES = 4500;
+      const INK_COLOR_MAX_PAGES = 7500; // combined yield for C+M+Y
+      const INK_ALERT_THRESHOLD = 30;
+
+      const refillColor = pageCounts.refillColorPages;
+      const refillBw = pageCounts.refillBwPages;
+
+      const computeTank = (pagesUsed: number, maxPages: number) => {
+        const remaining = Math.max(0, Math.min(100, 100 - (pagesUsed / maxPages) * 100));
+        return {
+          pagesUsed,
+          maxPages,
+          remainingPercent: Math.round(remaining * 10) / 10,
+          alertTriggered: remaining <= INK_ALERT_THRESHOLD,
+        };
+      };
+
+      // Grayscale ink tracks BW pages only
+      const grayscaleTank = computeTank(refillBw, INK_GRAYSCALE_MAX_PAGES);
+      // Color ink (C+M+Y combined) tracks color pages only
+      const colorTank = computeTank(refillColor, INK_COLOR_MAX_PAGES);
+
+      const inkEstimation = {
+        grayscale: grayscaleTank,
+        color: colorTank,
+        alertThresholdPercent: INK_ALERT_THRESHOLD,
+        anyAlertTriggered:
+          grayscaleTank.alertTriggered || colorTank.alertTriggered,
+      };
+
       res.json({
       balance: db.data!.balance,
       earnings: this.adminService.computeEarningsBuckets(),
@@ -873,6 +904,7 @@ export class AdminController {
         wifiActive,
       },
       pageCounts,
+      inkEstimation,
     });
     } catch (e) {
       // Fallback: return summary without pageCounts if DB query fails

@@ -1023,7 +1023,7 @@ body {
   gap: 0;
   border-top: 1px solid rgba(167, 170, 225, 0.1);
   flex-shrink: 0;
-  padding-bottom: 18px;
+  padding: 0 48px 48px;
 }
 
 /* ── Compact scan settings strip ── */

@@ -21,12 +21,27 @@ type ReceiptLookup =
   | { kind: 'token'; value: string }
   | { kind: 'transaction'; value: string };
 
-const receiptGrid = document.getElementById(
-  'receiptGrid',
+declare function html2canvas(
+  element: HTMLElement,
+  options?: Record<string, unknown>,
+): Promise<HTMLCanvasElement>;
+
+/* ── DOM references ─────────────────────────────────────────────── */
+const receiptCard = document.getElementById(
+  'receiptCard',
+) as HTMLElement | null;
+const receiptBody = document.getElementById(
+  'receiptBody',
 ) as HTMLElement | null;
 const receiptMessage = document.getElementById(
   'receiptMessage',
 ) as HTMLElement | null;
+const receiptActions = document.getElementById(
+  'receiptActions',
+) as HTMLElement | null;
+const downloadBtn = document.getElementById(
+  'downloadBtn',
+) as HTMLButtonElement | null;
 
 const fields = {
   transactionId: document.getElementById(
@@ -61,6 +76,7 @@ const TERMINAL_STATUSES = new Set([
   'refunded_pending_review',
 ]);
 
+/* ── Helpers ────────────────────────────────────────────────────── */
 function setField(el: HTMLElement | null, value: string): void {
   if (el) el.textContent = value;
 }
@@ -111,6 +127,13 @@ function fmtChangeState(value: string | null): string {
   if (value === 'dispensed') return 'dispensed';
   if (value === 'none') return 'none';
   return value.replace(/_/g, ' ');
+}
+
+function resolveStatusBadge(status: string | null): 'success' | 'pending' | 'error' {
+  if (!status) return 'pending';
+  if (status === 'printed' || status === 'completed') return 'success';
+  if (status === 'failed' || status === 'refunded' || status === 'refunded_pending_review') return 'error';
+  return 'pending';
 }
 
 function resolveChangeDetails(payload: ReceiptPayload): {
@@ -172,6 +195,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/* ── URL parsing ────────────────────────────────────────────────── */
 function parseLookupFromPath(): ReceiptLookup | null {
   const parts = window.location.pathname.split('/').filter(Boolean);
   const receiptIndex = parts.indexOf('receipt');
@@ -212,6 +236,7 @@ function resolveTokenErrorMessage(status: number, code: string | null): string {
   return 'Failed to load receipt details.';
 }
 
+/* ── API fetch ──────────────────────────────────────────────────── */
 async function fetchReceiptPayload(
   lookup: ReceiptLookup,
 ): Promise<
@@ -257,6 +282,7 @@ async function fetchReceiptPayload(
   }
 }
 
+/* ── Render receipt data ────────────────────────────────────────── */
 function renderReceipt(payload: ReceiptPayload): void {
   const change = resolveChangeDetails(payload);
   const changeMessage =
@@ -275,9 +301,52 @@ function renderReceipt(payload: ReceiptPayload): void {
   setField(fields.status, fmtStatus(payload.status));
   setField(fields.settledAt, fmtDate(payload.settledAt));
   setField(fields.generatedAt, fmtDate(payload.generatedAt));
-  receiptGrid?.removeAttribute('hidden');
+
+  // Set status badge color
+  if (fields.status) {
+    fields.status.setAttribute('data-status', resolveStatusBadge(payload.status));
+  }
+
+  // Show receipt body and actions
+  receiptBody?.removeAttribute('hidden');
+  receiptActions?.removeAttribute('hidden');
 }
 
+/* ── Download as image ──────────────────────────────────────────── */
+async function downloadReceiptAsImage(): Promise<void> {
+  if (!receiptCard || !downloadBtn) return;
+
+  const originalText = downloadBtn.textContent ?? 'Save as Image';
+  downloadBtn.classList.add('is-saving');
+  downloadBtn.textContent = 'Saving…';
+
+  try {
+    const canvas = await html2canvas(receiptCard, {
+      backgroundColor: '#0e0d1f',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+
+    const link = document.createElement('a');
+    link.download = `printbit-receipt-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    console.error('[RECEIPT] Failed to capture receipt image:', err);
+    setMessage('Failed to save receipt image. Please try again.', 'error');
+  } finally {
+    downloadBtn.classList.remove('is-saving');
+    downloadBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${originalText}`;
+  }
+}
+
+/* ── Event listeners ────────────────────────────────────────────── */
+downloadBtn?.addEventListener('click', () => {
+  void downloadReceiptAsImage();
+});
+
+/* ── Load receipt ───────────────────────────────────────────────── */
 async function loadReceipt(): Promise<void> {
   const lookup = parseLookupFromPath();
   if (!lookup) {

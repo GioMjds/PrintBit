@@ -815,9 +815,23 @@ const receiptCtaContainer = document.getElementById(
 const receiptQrCanvas = document.getElementById(
   'receiptQrCanvas',
 ) as HTMLCanvasElement | null;
-const receiptQrLink = document.getElementById('receiptQrLink') as HTMLElement | null;
+const receiptQrLink = document.getElementById(
+  'receiptQrLink',
+) as HTMLElement | null;
 const receiptQrExpiry = document.getElementById(
   'receiptQrExpiry',
+) as HTMLElement | null;
+const remainingFilesHint = document.getElementById(
+  'remainingFilesHint',
+) as HTMLElement | null;
+const printAnotherBtn = document.getElementById(
+  'printAnotherBtn',
+) as HTMLButtonElement | null;
+const thankYouCountdown = document.getElementById(
+  'thankYouCountdown',
+) as HTMLElement | null;
+const thankYouCountdownSeconds = document.getElementById(
+  'thankYouCountdownSeconds',
 ) as HTMLElement | null;
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
@@ -857,6 +871,8 @@ if (!persistedFingerprintMatchesCurrent) {
 let jamRefundFocusTrapHandler: ((event: KeyboardEvent) => void) | null = null;
 let latestPrinterStatusLabel = 'Checking...';
 let spoolerTimedOut = false;
+let thankYouAutoRedirectHandle: number | null = null;
+const THANKYOU_AUTO_REDIRECT_SECONDS = 10;
 const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
 const COPY_JOB_POLL_INTERVAL_MS = 1_500;
 const COPY_JOB_POLL_TIMEOUT_MS = 5 * 60 * 1_000;
@@ -971,7 +987,10 @@ function extractReceiptUrl(payload: unknown): {
   const normalizedUrl = receiptUrl ?? null;
 
   if (!normalizedUrl) {
-    console.warn('[RECEIPT] Failed to extract valid receipt URL from payload:', payload);
+    console.warn(
+      '[RECEIPT] Failed to extract valid receipt URL from payload:',
+      payload,
+    );
     return null;
   }
 
@@ -1231,7 +1250,9 @@ function scheduleSpoolerFinalizationTimeout(
   }, timeoutMs);
 }
 
-function matchesCurrentPrintHandoff(spoolerCorrelationKey: string | null): boolean {
+function matchesCurrentPrintHandoff(
+  spoolerCorrelationKey: string | null,
+): boolean {
   if (config.mode !== 'print') return true;
   if (!spoolerCorrelationKey) return false;
   return (
@@ -1250,8 +1271,8 @@ function matchesCurrentPrintLifecycle(event: {
   }
   return Boolean(
     event.transactionId &&
-      currentTransactionId &&
-      event.transactionId === currentTransactionId,
+    currentTransactionId &&
+    event.transactionId === currentTransactionId,
   );
 }
 
@@ -1270,7 +1291,6 @@ function finalizePrintSuccess(
       ? `Printing complete on "${printerName}". Thank you!`
       : 'Printing complete. Thank you!';
   }
-  clearConfirmSessionStorage();
   if (pendingReceiptData) {
     captureReceiptCta(pendingReceiptData);
   } else {
@@ -1280,6 +1300,10 @@ function finalizePrintSuccess(
   spoolerTimedOut = false;
   isProcessingPayment = false;
   applyConfirmGate();
+
+  // After showing the thank-you overlay, check for remaining session files
+  // and offer the user to continue printing if files remain.
+  void checkRemainingFilesAndPrompt();
 }
 
 function syncPendingPaymentSessionState(): void {
@@ -1427,39 +1451,35 @@ function showSpoolerFailureNotice(ev: SpoolerFailureEvent): void {
       : 'No pages were printed.';
 
   if (jamRefundTitle) {
-    jamRefundTitle.textContent =
-      isAutoRefund
-        ? 'Print Failed — Refund Applied'
-        : isTrustedTimeBlocked
-          ? 'Print Failed — Refund Blocked (Time Sync)'
-          : 'Print Failed — Refund Pending Review';
+    jamRefundTitle.textContent = isAutoRefund
+      ? 'Print Failed — Refund Applied'
+      : isTrustedTimeBlocked
+        ? 'Print Failed — Refund Blocked (Time Sync)'
+        : 'Print Failed — Refund Pending Review';
   }
 
   if (jamRefundMessage) {
-    jamRefundMessage.textContent =
-      isAutoRefund
-        ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} ₱${ev.chargedAmount.toFixed(2)} was returned to your machine balance.`
-        : isTrustedTimeBlocked
-          ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} Refund creation is blocked until trusted time synchronization recovers.`
-          : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${refundReference}).`;
+    jamRefundMessage.textContent = isAutoRefund
+      ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} ₱${ev.chargedAmount.toFixed(2)} was returned to your machine balance.`
+      : isTrustedTimeBlocked
+        ? `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} Refund creation is blocked until trusted time synchronization recovers.`
+        : `Printer reported "${ev.jobStatus}" on ${ev.printerName ?? 'the printer'}. ${pagesMessage} A pending refund record was created (ID: ${refundReference}).`;
   }
 
   if (jamRefundHint) {
-    jamRefundHint.textContent =
-      isAutoRefund
-        ? 'You may retry once the printer recovers. If the issue persists, contact staff.'
-        : isTrustedTimeBlocked
-          ? 'Please wait for trusted time sync recovery, then contact staff with this reference if refund is still needed.'
-          : 'Please contact staff and provide the refund ID shown above for manual refund handling.';
+    jamRefundHint.textContent = isAutoRefund
+      ? 'You may retry once the printer recovers. If the issue persists, contact staff.'
+      : isTrustedTimeBlocked
+        ? 'Please wait for trusted time sync recovery, then contact staff with this reference if refund is still needed.'
+        : 'Please contact staff and provide the refund ID shown above for manual refund handling.';
   }
 
   if (statusMessage) {
-    statusMessage.textContent =
-      isAutoRefund
-        ? `Printer issue detected. ₱ ${ev.restoredBalanceAmount.toFixed(2)} returned to balance.`
-        : isTrustedTimeBlocked
-          ? 'Printer issue detected. Refund is blocked until trusted time synchronizes.'
-          : 'Printer issue detected. Staff review is required for refund processing.';
+    statusMessage.textContent = isAutoRefund
+      ? `Printer issue detected. ₱ ${ev.restoredBalanceAmount.toFixed(2)} returned to balance.`
+      : isTrustedTimeBlocked
+        ? 'Printer issue detected. Refund is blocked until trusted time synchronizes.'
+        : 'Printer issue detected. Staff review is required for refund processing.';
   }
 
   setCoinEventMessage(
@@ -1490,6 +1510,132 @@ function clearConfirmSessionStorage(): void {
   sessionStorage.removeItem('printbit.uploadedDocumentId');
   sessionStorage.removeItem('printbit.sessionId');
   sessionStorage.removeItem('printbit.sessionToken');
+}
+
+/** Clears print-specific state but preserves session identity so the user can
+ *  return to /print and pick another file from the same session. */
+function clearConfirmSessionStorageKeepSession(): void {
+  setTransactionReference(null);
+  clearPendingPaymentSessionState();
+  sessionStorage.removeItem('printbit.config');
+  sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
+  sessionStorage.removeItem('printbit.uploadedFile');
+  sessionStorage.removeItem('printbit.uploadedDocumentId');
+  // Intentionally keep printbit.sessionId and printbit.sessionToken
+}
+
+// ── "Print Another File" continuation logic ───────────────────────────────────
+
+function stopThankYouAutoRedirect(): void {
+  if (thankYouAutoRedirectHandle !== null) {
+    window.clearInterval(thankYouAutoRedirectHandle);
+    thankYouAutoRedirectHandle = null;
+  }
+}
+
+function startThankYouAutoRedirect(): void {
+  stopThankYouAutoRedirect();
+  let remaining = THANKYOU_AUTO_REDIRECT_SECONDS;
+  if (thankYouCountdownSeconds) {
+    thankYouCountdownSeconds.textContent = String(remaining);
+  }
+  if (thankYouCountdown) {
+    thankYouCountdown.removeAttribute('hidden');
+  }
+
+  thankYouAutoRedirectHandle = window.setInterval(() => {
+    remaining -= 1;
+    if (thankYouCountdownSeconds) {
+      thankYouCountdownSeconds.textContent = String(Math.max(0, remaining));
+    }
+    if (remaining <= 0) {
+      stopThankYouAutoRedirect();
+      clearConfirmSessionStorage();
+      window.location.href = '/';
+    }
+  }, 1000);
+}
+
+async function deletePrintedDocumentFromSession(): Promise<void> {
+  const sessionId = config.sessionId;
+  const documentId = config.documentId ?? uploadedDocumentId;
+  const sessionToken = sessionStorage.getItem('printbit.sessionToken');
+  if (!sessionId || !documentId || !sessionToken) return;
+
+  try {
+    await fetch(
+      `/api/wireless/sessions/${encodeURIComponent(sessionId)}/documents/${encodeURIComponent(documentId)}?token=${encodeURIComponent(sessionToken)}`,
+      { method: 'DELETE' },
+    );
+  } catch {
+    // Best-effort cleanup — don't block the thank-you flow.
+  }
+}
+
+async function checkRemainingFilesAndPrompt(): Promise<void> {
+  if (config.mode !== 'print') {
+    clearConfirmSessionStorage();
+    startThankYouAutoRedirect();
+    return;
+  }
+
+  const sessionId = config.sessionId;
+  if (!sessionId) {
+    clearConfirmSessionStorage();
+    startThankYouAutoRedirect();
+    return;
+  }
+
+  // Delete the just-printed document from the session so it won't reappear.
+  await deletePrintedDocumentFromSession();
+
+  // Check how many files remain in the session.
+  try {
+    const response = await fetch(
+      `/api/wireless/sessions/${encodeURIComponent(sessionId)}`,
+    );
+    if (!response.ok) {
+      clearConfirmSessionStorage();
+      startThankYouAutoRedirect();
+      return;
+    }
+
+    const session = (await response.json()) as {
+      documents?: Array<{ documentId?: string; filename: string }>;
+      document?: { documentId?: string; filename: string };
+    };
+
+    const docs =
+      session.documents && session.documents.length > 0
+        ? session.documents
+        : session.document
+          ? [session.document]
+          : [];
+
+    if (docs.length > 0) {
+      // Show the continuation prompt.
+      const fileWord = docs.length === 1 ? 'file' : 'files';
+      if (remainingFilesHint) {
+        remainingFilesHint.textContent = `You still have ${docs.length} ${fileWord} uploaded. Print another?`;
+        remainingFilesHint.removeAttribute('hidden');
+      }
+      if (printAnotherBtn) {
+        printAnotherBtn.removeAttribute('hidden');
+      }
+      // Don't clear sessionId/token yet — user may continue.
+      // Only clear the print-specific config.
+      clearConfirmSessionStorageKeepSession();
+    } else {
+      // No remaining files — standard cleanup.
+      clearConfirmSessionStorage();
+    }
+  } catch {
+    // Network error — safe fallback: clear everything.
+    clearConfirmSessionStorage();
+  }
+
+  startThankYouAutoRedirect();
 }
 
 function setupJamRefundFocusTrap(): void {
@@ -1669,19 +1815,23 @@ modalConfirmBtn?.addEventListener('click', async () => {
       statusMessage.textContent = 'Sending checked document to printer...';
 
     try {
-      const createRes = await fetchWithTimeout('/api/copy/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          copies: config.copies,
-          colorMode: config.colorMode,
-          orientation: config.orientation,
-          rotationDeg: config.rotationDeg,
-          paperSize: config.paperSize,
-          amount: totalPrice,
-          previewPath: config.copyPreviewPath,
-        }),
-      }, 5_000);
+      const createRes = await fetchWithTimeout(
+        '/api/copy/jobs',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            copies: config.copies,
+            colorMode: config.colorMode,
+            orientation: config.orientation,
+            rotationDeg: config.rotationDeg,
+            paperSize: config.paperSize,
+            amount: totalPrice,
+            previewPath: config.copyPreviewPath,
+          }),
+        },
+        5_000,
+      );
 
       // Read the body once — re-reading an already-consumed stream throws TypeError.
       const createData = (await createRes.json()) as {
@@ -1707,7 +1857,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
       if (!jobId) {
         hideOverlay(printingOverlay);
         if (statusMessage)
-          statusMessage.textContent = 'Copy job created but returned no ID. Please try again.';
+          statusMessage.textContent =
+            'Copy job created but returned no ID. Please try again.';
         isProcessingPayment = false;
         confirmBtn.disabled = false;
         modalConfirmBtn.disabled = false;
@@ -1779,27 +1930,31 @@ modalConfirmBtn?.addEventListener('click', async () => {
     lastSpoolerCorrelationKey = spoolerCorrelationKey;
 
     try {
-      const response = await fetchWithTimeout('/api/confirm-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': requestIdempotencyKey,
+      const response = await fetchWithTimeout(
+        '/api/confirm-payment',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': requestIdempotencyKey,
+          },
+          body: JSON.stringify({
+            amount: totalPrice,
+            mode: config.mode,
+            sessionId: config.sessionId,
+            documentId: config.documentId ?? uploadedDocumentId ?? undefined,
+            copies: config.copies,
+            colorMode: getDisplayColorMode(),
+            orientation: config.orientation,
+            rotationDeg: config.rotationDeg,
+            paperSize: config.paperSize,
+            pageRange: config.pageRange,
+            duplex: config.duplex === true,
+            spoolerCorrelationKey,
+          }),
         },
-        body: JSON.stringify({
-          amount: totalPrice,
-          mode: config.mode,
-          sessionId: config.sessionId,
-          documentId: config.documentId ?? uploadedDocumentId ?? undefined,
-          copies: config.copies,
-          colorMode: getDisplayColorMode(),
-          orientation: config.orientation,
-          rotationDeg: config.rotationDeg,
-          paperSize: config.paperSize,
-          pageRange: config.pageRange,
-          duplex: config.duplex === true,
-          spoolerCorrelationKey,
-        }),
-      }, NETWORK_REQUEST_TIMEOUT_MS);
+        NETWORK_REQUEST_TIMEOUT_MS,
+      );
 
       if (!response.ok) {
         clearSpoolerFinalizationTimer();
@@ -1953,7 +2108,10 @@ async function pollCopyJob(
 
       if (state === 'queued' && statusMessage) {
         statusMessage.textContent = 'Preparing printer...';
-      } else if ((state === 'processing' || state === 'running') && statusMessage) {
+      } else if (
+        (state === 'processing' || state === 'running') &&
+        statusMessage
+      ) {
         if (progress && progress.pagesTotal) {
           statusMessage.textContent = `Printing copy ${progress.pagesCompleted} of ${progress.pagesTotal}...`;
         } else {
@@ -2000,8 +2158,17 @@ async function pollCopyJob(
 }
 
 thankYouDoneBtn?.addEventListener('click', () => {
+  stopThankYouAutoRedirect();
+  clearConfirmSessionStorage();
   hideOverlay(thankYouOverlay);
   window.location.href = '/';
+});
+
+printAnotherBtn?.addEventListener('click', () => {
+  stopThankYouAutoRedirect();
+  // Session is already preserved by clearConfirmSessionStorageKeepSession().
+  hideOverlay(thankYouOverlay);
+  window.location.href = '/print';
 });
 jamRefundDoneBtn?.addEventListener('click', () => {
   teardownJamRefundFocusTrap();
@@ -2196,16 +2363,18 @@ if (typeof ioFactory === 'function') {
       if (awaitingPrintTerminal) {
         setPrintingPhase('printing');
         if (statusMessage) {
-          statusMessage.textContent = dispensed > 0
-            ? `Partial change dispensed (₱ ${dispensed}). Remaining ₱ ${remaining} needs staff settlement after print confirmation.`
-            : 'Change dispensing failed. Print confirmation is still pending; please contact staff.';
+          statusMessage.textContent =
+            dispensed > 0
+              ? `Partial change dispensed (₱ ${dispensed}). Remaining ₱ ${remaining} needs staff settlement after print confirmation.`
+              : 'Change dispensing failed. Print confirmation is still pending; please contact staff.';
         }
       } else {
         setPrintingPhase('failed');
         if (statusMessage) {
-          statusMessage.textContent = dispensed > 0
-            ? `Partial change dispensed (₱ ${dispensed}). Remaining ₱ ${remaining} needs staff settlement.`
-            : 'Change dispensing failed. Please contact staff for settlement.';
+          statusMessage.textContent =
+            dispensed > 0
+              ? `Partial change dispensed (₱ ${dispensed}). Remaining ₱ ${remaining} needs staff settlement.`
+              : 'Change dispensing failed. Please contact staff for settlement.';
         }
       }
     }

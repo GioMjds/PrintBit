@@ -785,7 +785,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0 20px;
+  padding: 14px 48px 48px;
   border-top: 1px solid rgba(167, 170, 225, 0.1);
   flex-shrink: 0;
 }

@@ -379,7 +379,8 @@ export async function monitorSpoolerJob(
   const correlationKey = normalizeOptionalString(spoolerCorrelationKey);
   const dispatchEngine =
     normalizeOptionalString(jobContext.dispatchEngine)?.toLowerCase() ?? null;
-  const allowNoJobSuccessFallback = dispatchEngine === 'pdftoprinter';
+  const allowNoJobSuccessFallback =
+    dispatchEngine === 'pdftoprinter' || dispatchEngine === 'ghostscript';
   const dispatchedAtMs = Date.parse(jobDispatchedAt);
   const submittedTimeCutoffMs = Number.isFinite(dispatchedAtMs)
     ? dispatchedAtMs - JOB_SUBMITTED_TIME_SKEW_MS
@@ -531,6 +532,8 @@ export async function monitorSpoolerJob(
   let lastTotalPages = 0;
   let trackedJobId: number | null = null;
   let emptyPollCountWithoutTrackedJob = 0;
+  let missingTrackedJobPollCount = 0;
+  const MISSING_TRACKED_JOB_SUCCESS_THRESHOLD = 3;
   let warnedSubmittedTimeFallback = false;
 
   let ps = createPersistentPS();
@@ -807,7 +810,7 @@ export async function monitorSpoolerJob(
                 pagesPrinted: 0,
                 totalPages: 0,
                 reason:
-                  'No spooler job snapshot detected after dispatch; treating pdftoprinter synchronous dispatch as completed.',
+                  `No spooler job snapshot detected after ${dispatchEngine ?? 'unknown'} dispatch; treating synchronous dispatch as completed.`,
                 receipt,
               },
               {
@@ -815,7 +818,7 @@ export async function monitorSpoolerJob(
                 sessionId,
                 documentId,
                 meta: buildLifecycleMeta({
-                  marker: 'printed_inferred_pdftoprinter',
+                  marker: 'printed_inferred_no_spooler_job',
                   dispatchEngine,
                   emptyPollCountWithoutTrackedJob,
                 }),
@@ -842,7 +845,7 @@ export async function monitorSpoolerJob(
             try {
               await adminService.appendAdminLog(
                 'print_spooler_inferred_success',
-                'No spooler job detected after pdftoprinter dispatch; marked as printed.',
+                `No spooler job detected after ${dispatchEngine ?? 'unknown'} dispatch; marked as printed.`,
                 {
                   transactionId,
                   spoolerCorrelationKey: correlationKey,
@@ -877,7 +880,7 @@ export async function monitorSpoolerJob(
             await safeUpdateReceiptTerminalStatus({
               transactionId,
               status: 'printed',
-              phase: 'printed_inferred_pdftoprinter',
+              phase: 'printed_inferred_no_spooler_job',
               spoolerCorrelationKey: correlationKey,
               spoolerJobId: null,
               reason: inferredStatus,
@@ -887,6 +890,130 @@ export async function monitorSpoolerJob(
               detected: false,
               jobStatus: inferredStatus,
               pagesPrinted: 0,
+              failed: false,
+            };
+          }
+        } else {
+          // Tracked job was found previously, but now the entire queue is empty.
+          // Windows purges completed jobs from the spooler; if the last known
+          // status was NOT a terminal failure, treat disappearance as success.
+          missingTrackedJobPollCount += 1;
+          console.warn(
+            `[SPOOLER-MONITOR] Tracked job #${trackedJobId} missing (queue empty), consecutive count: ${missingTrackedJobPollCount}.`,
+            {
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              trackedJobId,
+              lastStatus,
+              missingTrackedJobPollCount,
+            },
+          );
+          const lastStatusWasFailure =
+            lastStatus !== null && matchesStatusSet(lastStatus, TERMINAL_FAILURE_TOKENS);
+          if (
+            missingTrackedJobPollCount >= MISSING_TRACKED_JOB_SUCCESS_THRESHOLD &&
+            !lastStatusWasFailure &&
+            correlationKey
+          ) {
+            const inferredStatus = 'TRACKED_JOB_PURGED_INFERRED_SUCCESS';
+            console.log(
+              `[SPOOLER-MONITOR] ✓ Tracked job #${trackedJobId} disappeared from spooler; inferring success (last status: ${lastStatus ?? 'none'}).`,
+            );
+            await persistAndEmitPrintLifecycleState(
+              io,
+              {
+                mode: 'print',
+                state: 'printed',
+                printerName: normalizedPrinterName,
+                transactionId,
+                spoolerCorrelationKey: correlationKey,
+                spoolerJobId: trackedJobId,
+                jobStatus: inferredStatus,
+                pagesPrinted: lastPagesPrinted,
+                totalPages: lastTotalPages,
+                reason:
+                  `Tracked spooler job #${trackedJobId} was purged from queue without a terminal failure status; inferring successful print.`,
+                receipt,
+              },
+              {
+                requiredAmount: chargedAmount,
+                sessionId,
+                documentId,
+                meta: buildLifecycleMeta({
+                  marker: 'printed_inferred_job_purged',
+                  dispatchEngine,
+                  trackedJobId,
+                  lastStatus,
+                  missingTrackedJobPollCount,
+                }),
+              },
+            );
+            io.emit('printerSpoolerConfirmed', {
+              jobStatus: inferredStatus,
+              pagesPrinted: lastPagesPrinted,
+              totalPages: lastTotalPages,
+              printerName: normalizedPrinterName,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: trackedJobId,
+              jobDispatchedAt,
+              monitorStartedAt: startedAtIso,
+              monitorElapsedMs: Date.now() - startedAtMs,
+              handoffLatencyMs,
+              pollCount,
+              queryFailureCount,
+              receipt,
+            });
+            try {
+              await adminService.appendAdminLog(
+                'print_spooler_inferred_success',
+                `Tracked job #${trackedJobId} purged from spooler; inferred as printed (last status: ${lastStatus ?? 'none'}).`,
+                {
+                  transactionId,
+                  spoolerCorrelationKey: correlationKey,
+                  printerName: normalizedPrinterName,
+                  dispatchEngine,
+                  trackedJobId,
+                  lastStatus,
+                  lastPagesPrinted,
+                  lastTotalPages,
+                  missingTrackedJobPollCount,
+                  monitorElapsedMs: Date.now() - startedAtMs,
+                },
+              );
+            } catch (error) {
+              console.error(
+                '[SPOOLER-MONITOR] Failed to append inferred-success admin log for purged job.',
+                error,
+              );
+            }
+            if (onConfirmed) {
+              try {
+                await onConfirmed({
+                  spoolerJobId: trackedJobId,
+                  status: inferredStatus,
+                  pagesPrinted: lastPagesPrinted,
+                  totalPages: lastTotalPages,
+                });
+              } catch (cleanupError) {
+                console.error(
+                  '[SPOOLER-MONITOR] Post-confirmed cleanup callback failed for purged job success.',
+                  cleanupError,
+                );
+              }
+            }
+            await safeUpdateReceiptTerminalStatus({
+              transactionId,
+              status: 'printed',
+              phase: 'printed_inferred_job_purged',
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: trackedJobId,
+              reason: inferredStatus,
+            });
+            return {
+              detected: true,
+              jobStatus: inferredStatus,
+              pagesPrinted: lastPagesPrinted,
               failed: false,
             };
           }
@@ -938,14 +1065,166 @@ export async function monitorSpoolerJob(
           : scopedJobs.reduce((a, b) => (b.id > a.id ? b : a));
 
       if (job === null) {
+        // Tracked job was found previously but is now missing from this snapshot.
+        // Windows removes completed jobs from the spooler; count consecutive misses
+        // and infer success when the threshold is met and last status was non-failure.
+        missingTrackedJobPollCount += 1;
         console.warn(
-          '[SPOOLER-MONITOR] Tracked job missing in current spooler snapshot.',
+          `[SPOOLER-MONITOR] Tracked job #${trackedJobId} missing in snapshot, consecutive count: ${missingTrackedJobPollCount}.`,
           {
             transactionId,
             spoolerCorrelationKey: correlationKey,
             trackedJobId,
+            lastStatus,
+            missingTrackedJobPollCount,
           },
         );
+        const lastStatusWasFailure =
+          lastStatus !== null && matchesStatusSet(lastStatus, TERMINAL_FAILURE_TOKENS);
+        if (
+          missingTrackedJobPollCount >= MISSING_TRACKED_JOB_SUCCESS_THRESHOLD &&
+          !lastStatusWasFailure &&
+          correlationKey
+        ) {
+          const inferredStatus = 'TRACKED_JOB_PURGED_INFERRED_SUCCESS';
+          console.log(
+            `[SPOOLER-MONITOR] ✓ Tracked job #${trackedJobId} disappeared from spooler; inferring success (last status: ${lastStatus ?? 'none'}).`,
+          );
+          await persistAndEmitPrintLifecycleState(
+            io,
+            {
+              mode: 'print',
+              state: 'printed',
+              printerName: normalizedPrinterName,
+              transactionId,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: trackedJobId,
+              jobStatus: inferredStatus,
+              pagesPrinted: lastPagesPrinted,
+              totalPages: lastTotalPages,
+              reason:
+                `Tracked spooler job #${trackedJobId} was purged from queue without a terminal failure status; inferring successful print.`,
+              receipt,
+            },
+            {
+              requiredAmount: chargedAmount,
+              sessionId,
+              documentId,
+              meta: buildLifecycleMeta({
+                marker: 'printed_inferred_job_purged',
+                dispatchEngine,
+                trackedJobId,
+                lastStatus,
+                missingTrackedJobPollCount,
+              }),
+            },
+          );
+          io.emit('printerSpoolerConfirmed', {
+            jobStatus: inferredStatus,
+            pagesPrinted: lastPagesPrinted,
+            totalPages: lastTotalPages,
+            printerName: normalizedPrinterName,
+            transactionId,
+            spoolerCorrelationKey: correlationKey,
+            spoolerJobId: trackedJobId,
+            jobDispatchedAt,
+            monitorStartedAt: startedAtIso,
+            monitorElapsedMs: Date.now() - startedAtMs,
+            handoffLatencyMs,
+            pollCount,
+            queryFailureCount,
+            receipt,
+          });
+          try {
+            await adminService.appendAdminLog(
+              'print_spooler_inferred_success',
+              `Tracked job #${trackedJobId} purged from spooler; inferred as printed (last status: ${lastStatus ?? 'none'}).`,
+              {
+                transactionId,
+                spoolerCorrelationKey: correlationKey,
+                printerName: normalizedPrinterName,
+                dispatchEngine,
+                trackedJobId,
+                lastStatus,
+                lastPagesPrinted,
+                lastTotalPages,
+                missingTrackedJobPollCount,
+                monitorElapsedMs: Date.now() - startedAtMs,
+              },
+            );
+          } catch (error) {
+            console.error(
+              '[SPOOLER-MONITOR] Failed to append inferred-success admin log for purged job.',
+              error,
+            );
+          }
+          if (onConfirmed) {
+            try {
+              await onConfirmed({
+                spoolerJobId: trackedJobId,
+                status: inferredStatus,
+                pagesPrinted: lastPagesPrinted,
+                totalPages: lastTotalPages,
+              });
+            } catch (cleanupError) {
+              console.error(
+                '[SPOOLER-MONITOR] Post-confirmed cleanup callback failed for purged job success.',
+                cleanupError,
+              );
+            }
+          }
+          if (trackedJobId !== null) {
+            try {
+              await checkpointRecoverySession({
+                transactionId,
+                mode: 'print',
+                phase: 'reconciled',
+                requiredAmount: chargedAmount,
+                chargedAmount,
+                sessionId,
+                documentId,
+                spoolerCorrelationKey: correlationKey,
+                spoolerJobId: trackedJobId,
+                jobDispatchedAt,
+                spoolerTerminalAt: new Date().toISOString(),
+                reconciledAt: new Date().toISOString(),
+                startupReconciled: false,
+                reconciliationAction: 'none',
+                reconciliationReason: 'Tracked spooler job purged; inferred as completed.',
+                context: {
+                  spoolerOutcome: 'inferred_purged',
+                  lastStatus,
+                  pagesPrinted: lastPagesPrinted,
+                  totalPages: lastTotalPages,
+                  monitorElapsedMs: Date.now() - startedAtMs,
+                  handoffLatencyMs,
+                  pollCount,
+                  queryFailureCount,
+                  missingTrackedJobPollCount,
+                },
+              });
+            } catch (checkpointError) {
+              console.error(
+                '[SPOOLER-MONITOR] Failed to checkpoint recovery session (purged job inferred success)',
+                checkpointError,
+              );
+            }
+          }
+          await safeUpdateReceiptTerminalStatus({
+            transactionId,
+            status: 'printed',
+            phase: 'printed_inferred_job_purged',
+            spoolerCorrelationKey: correlationKey,
+            spoolerJobId: trackedJobId,
+            reason: inferredStatus,
+          });
+          return {
+            detected: true,
+            jobStatus: inferredStatus,
+            pagesPrinted: lastPagesPrinted,
+            failed: false,
+          };
+        }
         await new Promise<void>((resolve) =>
           setTimeout(resolve, POLL_INTERVAL_MS),
         );
@@ -954,6 +1233,9 @@ export async function monitorSpoolerJob(
         lastQueryElapsedMs = queryResult.elapsedMs;
         continue;
       }
+
+      // Job found — reset missing counter since it's still in the spooler
+      missingTrackedJobPollCount = 0;
 
       if (trackedJobId === null) {
         trackedJobId = job.id;

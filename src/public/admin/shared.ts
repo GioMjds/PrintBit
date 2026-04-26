@@ -1,3 +1,10 @@
+export type InkTankEstimate = {
+  pagesUsed: number;
+  maxPages: number;
+  remainingPercent: number;
+  alertTriggered: boolean;
+};
+
 export type SummaryResponse = {
   balance: number;
   earnings: {
@@ -106,6 +113,13 @@ export type SummaryResponse = {
     refillColorPages: number;
     refillBwPages: number;
     lastRefillAt: string | null;
+  };
+  // Page-count-based ink depletion estimation
+  inkEstimation?: {
+    grayscale: InkTankEstimate;
+    color: InkTankEstimate;
+    alertThresholdPercent: number;
+    anyAlertTriggered: boolean;
   };
   status: {
     serverRunning: boolean;

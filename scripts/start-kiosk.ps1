@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     PrintBit Kiosk Startup Script
     Self-elevates to Administrator, starts the PrintBit server,
