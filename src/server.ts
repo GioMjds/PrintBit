@@ -8,7 +8,10 @@ import {
   UPLOAD_DIR,
   CAPTIVE_PORTAL_ENABLED,
   SESSION_EXPIRY_ENABLED,
+  REDIS_HOST,
+  REDIS_PORT,
 } from '@/config';
+import { Queue } from 'bullmq';
 import {
   createCaptivePortalMiddleware,
   createCsrfProtectionMiddleware,
@@ -56,6 +59,16 @@ import { getLocalIPv4 } from '@/utils/network';
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// Configure BullMQ connection to WSL Redis
+const redisConnection = {
+  host: REDIS_HOST, // WSL2 automatically forwards localhost
+  port: REDIS_PORT,
+  maxRetriesPerRequest: null, // BullMQ requires this for IORedis
+};
+
+// Example queue initialization
+export const printQueue = new Queue('print-jobs', { connection: redisConnection });
 
 type StartupPhase = 'booting' | 'ready' | 'failed';
 
