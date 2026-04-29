@@ -152,7 +152,9 @@ function normalizeRotationDeg(value: unknown): RotationDeg | null {
   return null;
 }
 
-function parseWorkflowMode(value: string | null | undefined): WorkflowMode | null {
+function parseWorkflowMode(
+  value: string | null | undefined,
+): WorkflowMode | null {
   if (value === 'print' || value === 'copy' || value === 'scan') {
     return value;
   }
@@ -206,8 +208,10 @@ class PrintPreview {
   private pdfDoc: PDFDocumentProxy | null = null;
   private currentPage = 1;
   private totalPages = 1;
-  private latestImageInfo: { naturalWidth: number; naturalHeight: number } | null =
-    null;
+  private latestImageInfo: {
+    naturalWidth: number;
+    naturalHeight: number;
+  } | null = null;
 
   get pageCount(): number {
     return this.totalPages;
@@ -708,7 +712,8 @@ const scanReleaseToken =
     : null;
 const initialOrientation: Orientation =
   storedConfig?.orientation === 'landscape' ? 'landscape' : 'portrait';
-let rotationDeg: RotationDeg = normalizeRotationDeg(storedConfig?.rotationDeg) ?? 0;
+let rotationDeg: RotationDeg =
+  normalizeRotationDeg(storedConfig?.rotationDeg) ?? 0;
 
 const backLink = document.getElementById(
   'backLink',
@@ -783,13 +788,21 @@ const singlePageDec = document.getElementById(
 const singlePageInc = document.getElementById(
   'singlePageInc',
 ) as HTMLButtonElement | null;
-const colorModeGroup = document.getElementById('colorModeGroup') as HTMLElement | null;
+const colorModeGroup = document.getElementById(
+  'colorModeGroup',
+) as HTMLElement | null;
 const orientationGroup = document.getElementById(
   'orientationGroup',
 ) as HTMLElement | null;
-const rotationGroup = document.getElementById('rotationGroup') as HTMLElement | null;
-const paperSizeGroup = document.getElementById('paperSizeGroup') as HTMLElement | null;
-const copiesGroup = document.getElementById('copiesGroup') as HTMLElement | null;
+const rotationGroup = document.getElementById(
+  'rotationGroup',
+) as HTMLElement | null;
+const paperSizeGroup = document.getElementById(
+  'paperSizeGroup',
+) as HTMLElement | null;
+const copiesGroup = document.getElementById(
+  'copiesGroup',
+) as HTMLElement | null;
 const rotateLeftBtn = document.getElementById(
   'rotateLeftBtn',
 ) as HTMLButtonElement | null;
@@ -812,10 +825,12 @@ function setContinueEnabled(canContinue: boolean): void {
 }
 
 if (backLink) {
-  backLink.href = mode === 'copy' ? '/copy' : mode === 'scan' ? '/scan' : '/print';
+  backLink.href =
+    mode === 'copy' ? '/copy' : mode === 'scan' ? '/scan' : '/print';
 }
 if (filePillLabel) {
-  filePillLabel.textContent = mode === 'scan' ? (scanFilename || '—') : (selectedFile ?? '—');
+  filePillLabel.textContent =
+    mode === 'scan' ? scanFilename || '—' : (selectedFile ?? '—');
 }
 
 if (mode === 'print' && continueBtn) {
@@ -1073,20 +1088,25 @@ function syncPageRangeAvailability(): void {
       pageModeAll.checked = true;
       pageModeAll.disabled = false;
     } else if (maxPages > maxAllowed) {
-      pageModeAll.disabled = false;
+      pageModeAll.disabled = true; // Disable "All Pages"
       if (pageModeAll.checked) {
-        if (pageModeCustom) pageModeCustom.checked = false;
-        if (pageModeSingle) pageModeSingle.value = '1-30';
+        if (pageModeCustom) pageModeCustom.checked = true; // Auto-select "Page Range"
+        if (customRangeStartInput) customRangeStartInput.value = '1';
+        if (customRangeEndInput)
+          customRangeEndInput.value = String(Math.min(maxAllowed, maxPages));
       }
     } else {
       pageModeAll.disabled = false;
     }
   }
 
-  const allPagesLabel = pageModeAll?.closest('.option-card');
+  const allPagesLabel = pageModeAll?.closest<HTMLElement>('.option-card');
   if (allPagesLabel) {
-    allPagesLabel.classList.toggle('disabled', maxPages > maxAllowed);
-    allPagesLabel.setAttribute('title', maxPages > maxAllowed ? 'Max 30 pages allowed' : '');
+    allPagesLabel.style.display = maxPages > maxAllowed ? 'none' : '';
+    allPagesLabel.setAttribute(
+      'title',
+      maxPages > maxAllowed ? 'Max 30 pages allowed' : '',
+    );
   }
 
   syncPageRangeUI();
@@ -1164,7 +1184,11 @@ function applyImageOrientationDetection(): void {
   }
 
   const imageInfo = preview.imageInfo;
-  if (!imageInfo || imageInfo.naturalWidth <= 0 || imageInfo.naturalHeight <= 0) {
+  if (
+    !imageInfo ||
+    imageInfo.naturalWidth <= 0 ||
+    imageInfo.naturalHeight <= 0
+  ) {
     detectedOrientation = null;
     clearOrientationNotice();
     return;
@@ -1521,7 +1545,10 @@ async function loadPreview(): Promise<void> {
     try {
       const resp = await fetch(url, { cache: 'no-store' });
       if (!resp.ok) {
-        previewLog('loadPreview() scan mode - HTTP error', { status: resp.status, statusText: resp.statusText });
+        previewLog('loadPreview() scan mode - HTTP error', {
+          status: resp.status,
+          statusText: resp.statusText,
+        });
         return;
       }
       let mime = (resp.headers.get('Content-Type') ?? '').toLowerCase();
@@ -1530,14 +1557,18 @@ async function loadPreview(): Promise<void> {
       // Fallback to guessing MIME type from filename extension if header is missing
       if (!mime || mime === '' || mime === 'application/octet-stream') {
         const ext = scanFilename.toLowerCase().split('.').pop() || '';
-        previewLog('loadPreview() scan mode - guessing mime from extension', { ext });
+        previewLog('loadPreview() scan mode - guessing mime from extension', {
+          ext,
+        });
         if (ext === 'pdf') mime = 'application/pdf';
         else if (['jpg', 'jpeg'].includes(ext)) mime = 'image/jpeg';
         else if (ext === 'png') mime = 'image/png';
       }
 
       const buf = await resp.arrayBuffer();
-      previewLog('loadPreview() scan mode - buffer received', { size: buf.byteLength });
+      previewLog('loadPreview() scan mode - buffer received', {
+        size: buf.byteLength,
+      });
       await preview.loadFromBuffer(buf, mime || 'application/octet-stream');
       previewLog('loadPreview() scan mode - preview loaded successfully');
     } catch (err) {

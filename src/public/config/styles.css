@@ -564,6 +564,9 @@ body {
     0 0 0 1px rgba(105, 111, 199, 0.25),
     0 6px 20px rgba(105, 111, 199, 0.15);
 }
+.option-card.hidden {
+  display: none;
+}
 
 .option-card__icon {
   width: 36px;
