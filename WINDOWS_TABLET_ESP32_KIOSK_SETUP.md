@@ -13,7 +13,7 @@ This guide covers:
 - Node.js + pnpm installed
 - Microsoft Edge installed
 - PrintBit repo cloned on the tablet
-- ESP32 AP online (example gateway `192.168.4.1`)
+- ESP32 flashed with current `esp32-captive-portal.ino` firmware (first boot exposes provisioning AP `PrintBit-Setup`)
 
 ## 2) Repository setup (PrintBit)
 
@@ -29,11 +29,11 @@ Set machine-wide env vars (run PowerShell as Administrator):
 
 ```powershell
 setx PRINTBIT_NETWORK_PROVIDER esp32 /M
-setx PRINTBIT_ESP32_AP_BASE_URL http://192.168.4.1 /M
-setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX 192.168.4. /M
-setx PRINTBIT_ESP32_KIOSK_IP 192.168.4.2 /M
+setx PRINTBIT_ESP32_AP_BASE_URL http://<esp32-lan-ip> /M
+setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX <your-lan-subnet-prefix> /M
+setx PRINTBIT_ESP32_KIOSK_IP <kiosk-lan-ip> /M
 setx PRINTBIT_ESP32_STATIC_IP_ENFORCE true /M
-setx PRINTBIT_ESP32_KIOSK_NETMASK 255.255.255.0 /M
+setx PRINTBIT_ESP32_KIOSK_NETMASK <your-lan-netmask> /M
 setx PORT 3000 /M
 setx PRINTBIT_KIOSK_LOCKDOWN true /M
 setx PRINTBIT_USB_EXPORT_ENABLED false /M
@@ -44,28 +44,21 @@ setx PRINTBIT_WATCHDOG_UNREACHABLE_RESTART_THRESHOLD 3 /M
 
 Then reboot once so services/tasks pick up new machine env vars.
 
-## 3) Configure Windows Wi-Fi for auto-connect (ESP32 AP)
+## 3) Provision ESP32 Wi-Fi + runtime config (WiFiManager)
 
-1. Connect the tablet once to ESP32 SSID (example: `PrintBit`).
-2. Set profile auto-connect + top priority (Admin PowerShell):
+1. Power on ESP32 and connect a phone/tablet/laptop to SSID `PrintBit-Setup`.
+2. Open the captive portal and submit all required fields:
+   - `backend_url`
+   - `device_id`
+   - `api_key`
+   - `printer_model`
+3. Save, then wait for ESP32 to reboot and join your production Wi-Fi.
+4. Put the Windows kiosk tablet on the same Wi-Fi/LAN as ESP32.
+5. Set `PRINTBIT_ESP32_AP_BASE_URL` to the ESP32 LAN URL (for example `http://192.168.1.50`).
 
-```powershell
-netsh wlan set profileparameter name="PrintBit" connectionmode=auto
-netsh wlan set profileorder name="PrintBit" interface="Wi-Fi" priority=1
-```
+Field recovery:
 
-3. Set static IPv4 on the kiosk Wi-Fi adapter (Admin PowerShell):
-
-```powershell
-netsh interface ipv4 set address name="Wi-Fi" static 192.168.4.2 255.255.255.0 192.168.4.1
-netsh interface ipv4 set dnsservers name="Wi-Fi" static 192.168.4.1 primary
-```
-
-Optional startup safety task (connect Wi-Fi on boot):
-
-```powershell
-schtasks /Create /TN "PrintBit Ensure WiFi" /SC ONSTART /RL HIGHEST /RU SYSTEM /TR "cmd /c netsh wlan connect name=""PrintBit"""
-```
+- Hold the firmware reprovision button (GPIO 19, active-low) for ~5 seconds to wipe Wi-Fi + provisioning config and reopen setup mode.
 
 ## 4) Create dedicated users (recommended)
 
@@ -90,14 +83,14 @@ net localgroup Administrators PrintBitAdmin /add
 2. Create/select `PrintBitKiosk`.
 3. Choose **Microsoft Edge**.
 4. Choose kiosk experience (`Digital signage` is typical).
-5. Set URL to `http://192.168.4.2:3000/loading`.
+5. Set URL to `http://<kiosk-lan-ip>:3000/loading`.
 
 ## Windows 10
 
 1. Go to `Settings > Accounts > Family & other users > Set up assigned access`.
 2. Select/create `PrintBitKiosk`.
 3. Select **Microsoft Edge** as assigned app.
-4. Configure start URL to `http://192.168.4.2:3000/loading`.
+4. Configure start URL to `http://<kiosk-lan-ip>:3000/loading`.
 
 Note: Windows Home has limited kiosk capabilities; Pro/Edu/Enterprise is strongly preferred.
 
@@ -111,7 +104,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStart
 pnpm run watchdog:verify
 ```
 
-If your dedicated kiosk login still cannot reach `http://192.168.4.2:3000/loading`, install a kiosk-user targeted startup task (server-only at kiosk logon):
+If your dedicated kiosk login still cannot reach `http://<kiosk-lan-ip>:3000/loading`, install a kiosk-user targeted startup task (server-only at kiosk logon):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
@@ -135,21 +128,21 @@ What this gives you:
 
 After power-on/reboot:
 
-1. Tablet boots and connects to ESP32 Wi-Fi (`PrintBit`) automatically.
+1. Tablet boots and connects to production Wi-Fi/LAN.
 2. Startup task runs PrintBit launcher.
 3. Server starts in background on port `3000`.
-4. Assigned Access opens Edge in kiosk mode for `PrintBitKiosk` at `http://192.168.4.2:3000/loading`.
+4. Assigned Access opens Edge in kiosk mode for `PrintBitKiosk` at `http://<kiosk-lan-ip>:3000/loading`.
 5. `/loading` polls startup readiness and auto-redirects to `/` when services are ready.
-6. In ESP32 mode, PrintBit attempts kiosk registration to ESP32 (`/kiosk/register`) and uses `192.168.4.x` network path.
-7. ESP32 firmware should run captive DNS hijack and probe redirects (`/hotspot-detect.html`, `/generate_204`, `/ncsi.txt`, `/connecttest.txt`) to the registered kiosk portal URL.
-8. ESP32 coin forwarding should target `GET http://<kiosk-ip>:3000/coin?value=<coin>` (compatibility bridge endpoint).
+6. In ESP32 mode, PrintBit attempts kiosk registration to ESP32 (`/kiosk/register`) on the configured ESP32 LAN URL.
+7. ESP32 firmware auto-connects using saved credentials; if unavailable, it falls back to captive portal (`PrintBit-Setup`) in non-blocking mode.
+8. ESP32 coin forwarding targets the provisioned `backend_url` until kiosk registration is posted, then uses `GET http://<kiosk-ip>:3000/coin?value=<coin>` (compatibility bridge endpoint).
 
 ## 8) Validation checklist
 
 - `PrintBit Kiosk` and `PrintBit Watchdog` tasks exist and are `Ready/Running`.
 - `GET http://127.0.0.1:3000/api/startup/ready` eventually returns `ready=true`.
 - `GET http://127.0.0.1:3000/api/watchdog/health` returns healthy locally after boot settles.
-- `Get-NetIPAddress -InterfaceAlias "Wi-Fi" -AddressFamily IPv4` includes `192.168.4.2`.
+- `Get-NetIPAddress -InterfaceAlias "Wi-Fi" -AddressFamily IPv4` includes `<kiosk-lan-ip>`.
 - `GET /api/admin/summary` shows healthy watchdog/recovery stats.
 - Kiosk UI appears after reboot without manual login steps (if auto-sign-in is configured).
 

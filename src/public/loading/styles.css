@@ -1,0 +1,60 @@
+:root {
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0f1020;
+  color: #f7f8ff;
+}
+.card {
+  width: min(560px, 92vw);
+  padding: 30px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #181a33, #131425);
+  border: 1px solid rgba(132, 145, 255, 0.25);
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.4);
+}
+h1 {
+  margin: 0 0 10px;
+  font-size: 1.5rem;
+}
+p {
+  margin: 8px 0;
+  color: #d6dafd;
+  line-height: 1.45;
+}
+.muted {
+  font-size: 0.95rem;
+  color: #adb5ef;
+}
+.dot {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: #7f93ff;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.error {
+  color: #ffd4d4;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

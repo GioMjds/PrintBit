@@ -135,6 +135,7 @@ Ephemeral (process memory):
 - PDFtoPrinter, GhostScript, and LibreOffice binaries for print dispatch
 - Optional Sumatra fallback in phased mode
 - Serial device for coin input + coin hopper (shared 115200-baud line via Arduino Uno)
+- ESP32 bridge firmware (`esp32-captive-portal.ino`) using WiFiManager STA-first provisioning with captive-portal fallback and long-press reprovision reset
 - Scanner hardware adapter
 
 ## Design considerations

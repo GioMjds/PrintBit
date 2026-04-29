@@ -65,14 +65,6 @@ export function createCaptivePortalMiddleware(_sessionStore: SessionStore) {
       (IOS_PROBE_PATHS.has(pathname) || APPLE_HOSTS.has(host)) &&
       pathname !== '/portal'
     ) {
-      void adminService.appendAdminLog(
-        'captive_ios_redirect',
-        'iOS captive probe redirected to /portal.',
-        {
-          path: pathname,
-          host,
-        },
-      );
       res.redirect(302, '/portal');
       return;
     }
