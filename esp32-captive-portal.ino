@@ -2,13 +2,17 @@
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 #include <HTTPClient.h>
+#include <WiFiManager.h>
+#include <Preferences.h>
 
 #define coinAcceptorPin 4
 #define hopperSensorPin 5
 #define relayPin 18
+#define reprovisionButtonPin 19
 
-const char* ssid = "PrintBit";
-const char* password = "printbit123";
+const char* provisioningApSsid = "PrintBit-Setup";
+const char* provisioningApPassword = "printbit123";
+const char* provisioningPrefsNamespace = "printbit";
 
 const char* fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
@@ -19,13 +23,65 @@ const char* coinBridgeApiKey = "printbit-coin-bridge-key";
 const char* hopperControlToken = "printbit-coin-bridge-key";
 
 NetworkServer server(80);
+WiFiManager wifiManager;
+
+char backendUrlParamValue[161] = "";
+char deviceIdParamValue[65] = "";
+char apiKeyParamValue[129] = "";
+char printerModelParamValue[65] = "";
+
+WiFiManagerParameter backendUrlParam(
+    "backend_url",
+    "Backend URL",
+    backendUrlParamValue,
+    sizeof(backendUrlParamValue) - 1);
+WiFiManagerParameter deviceIdParam(
+    "device_id",
+    "Device ID",
+    deviceIdParamValue,
+    sizeof(deviceIdParamValue) - 1);
+WiFiManagerParameter apiKeyParam(
+    "api_key",
+    "API Key",
+    apiKeyParamValue,
+    sizeof(apiKeyParamValue) - 1);
+WiFiManagerParameter printerModelParam(
+    "printer_model",
+    "Printer Model",
+    printerModelParamValue,
+    sizeof(printerModelParamValue) - 1);
 
 String kioskIp = fallbackKioskIp;
 uint16_t kioskPort = fallbackKioskPort;
 String kioskPortalPath = fallbackKioskPortalPath;
 String kioskPortalUrl = "";
 String tabletServer = "";
+String provisionedBackendUrl = "";
+String provisionedDeviceId = "";
+String provisionedApiKey = "";
+String provisionedPrinterModel = "";
 bool hasKioskRegistration = false;
+bool customServerRunning = false;
+bool shouldSaveProvisioningConfig = false;
+bool reprovisionPending = false;
+
+enum WifiLifecycleState {
+  WIFI_CONNECTING,
+  WIFI_PROVISIONING_PORTAL,
+  WIFI_RUNNING
+};
+
+WifiLifecycleState wifiState = WIFI_CONNECTING;
+unsigned long wifiConnectStartedAt = 0;
+unsigned long wifiDisconnectedAt = 0;
+unsigned long lastPortalEnsureAt = 0;
+unsigned long reprovisionButtonPressedAt = 0;
+bool reprovisionButtonHeld = false;
+
+const unsigned long wifiConnectingGraceMs = 10000;
+const unsigned long wifiReconnectPortalDelayMs = 15000;
+const unsigned long wifiPortalEnsureIntervalMs = 12000;
+const unsigned long reprovisionButtonHoldMs = 5000;
 
 // COIN ACCEPTOR
 volatile byte pulseCount = 0;
@@ -145,11 +201,282 @@ bool isValidIpv4Address(const String& ip) {
   return start == ip.length() + 1;
 }
 
+bool isLikelyHttpUrl(const String& url) {
+  if (url.length() < 10) return false;
+  String normalized = url;
+  normalized.toLowerCase();
+  return normalized.startsWith("http://") || normalized.startsWith("https://");
+}
+
+void copyStringToBuffer(const String& source, char* destination, size_t destinationSize) {
+  if (destinationSize == 0) return;
+  size_t copyLength = source.length();
+  if (copyLength >= destinationSize) copyLength = destinationSize - 1;
+  memcpy(destination, source.c_str(), copyLength);
+  destination[copyLength] = '\0';
+}
+
+bool validateProvisioningFields(
+    const String& backendUrl,
+    const String& deviceId,
+    const String& apiKey,
+    const String& printerModel,
+    String& reason) {
+  if (backendUrl.length() == 0 || deviceId.length() == 0 || apiKey.length() == 0 ||
+      printerModel.length() == 0) {
+    reason = "missing_required_field";
+    return false;
+  }
+  if (!isLikelyHttpUrl(backendUrl)) {
+    reason = "invalid_backend_url";
+    return false;
+  }
+  if (backendUrl.length() >= sizeof(backendUrlParamValue) ||
+      deviceId.length() >= sizeof(deviceIdParamValue) ||
+      apiKey.length() >= sizeof(apiKeyParamValue) ||
+      printerModel.length() >= sizeof(printerModelParamValue)) {
+    reason = "field_too_long";
+    return false;
+  }
+  return true;
+}
+
+void loadProvisioningConfig() {
+  Preferences prefs;
+  if (!prefs.begin(provisioningPrefsNamespace, true)) {
+    Serial.println("provisioning_load_failed:prefs_begin_failed");
+    return;
+  }
+
+  provisionedBackendUrl = prefs.getString("backend_url", "");
+  provisionedDeviceId = prefs.getString("device_id", "");
+  provisionedApiKey = prefs.getString("api_key", "");
+  provisionedPrinterModel = prefs.getString("printer_model", "");
+  prefs.end();
+
+  provisionedBackendUrl.trim();
+  provisionedDeviceId.trim();
+  provisionedApiKey.trim();
+  provisionedPrinterModel.trim();
+
+  copyStringToBuffer(provisionedBackendUrl, backendUrlParamValue, sizeof(backendUrlParamValue));
+  copyStringToBuffer(provisionedDeviceId, deviceIdParamValue, sizeof(deviceIdParamValue));
+  copyStringToBuffer(provisionedApiKey, apiKeyParamValue, sizeof(apiKeyParamValue));
+  copyStringToBuffer(
+      provisionedPrinterModel,
+      printerModelParamValue,
+      sizeof(printerModelParamValue));
+
+  String reason = "";
+  if (validateProvisioningFields(
+          provisionedBackendUrl,
+          provisionedDeviceId,
+          provisionedApiKey,
+          provisionedPrinterModel,
+          reason)) {
+    Serial.println("provisioning_config_loaded");
+    return;
+  }
+  if (provisionedBackendUrl.length() == 0 && provisionedDeviceId.length() == 0 &&
+      provisionedApiKey.length() == 0 && provisionedPrinterModel.length() == 0) {
+    Serial.println("provisioning_config_empty");
+    return;
+  }
+  Serial.print("provisioning_config_invalid:");
+  Serial.println(reason);
+  provisionedBackendUrl = "";
+  provisionedDeviceId = "";
+  provisionedApiKey = "";
+  provisionedPrinterModel = "";
+}
+
+void clearProvisioningConfig() {
+  Preferences prefs;
+  if (!prefs.begin(provisioningPrefsNamespace, false)) {
+    Serial.println("provisioning_clear_failed:prefs_begin_failed");
+    return;
+  }
+  prefs.remove("backend_url");
+  prefs.remove("device_id");
+  prefs.remove("api_key");
+  prefs.remove("printer_model");
+  prefs.end();
+}
+
+bool saveProvisioningConfig() {
+  String backendUrl = String(backendUrlParam.getValue());
+  String deviceId = String(deviceIdParam.getValue());
+  String apiKey = String(apiKeyParam.getValue());
+  String printerModel = String(printerModelParam.getValue());
+  backendUrl.trim();
+  deviceId.trim();
+  apiKey.trim();
+  printerModel.trim();
+
+  String reason = "";
+  if (!validateProvisioningFields(backendUrl, deviceId, apiKey, printerModel, reason)) {
+    Serial.print("provisioning_save_rejected:");
+    Serial.println(reason);
+    return false;
+  }
+
+  Preferences prefs;
+  if (!prefs.begin(provisioningPrefsNamespace, false)) {
+    Serial.println("provisioning_save_failed:prefs_begin_failed");
+    return false;
+  }
+  prefs.putString("backend_url", backendUrl);
+  prefs.putString("device_id", deviceId);
+  prefs.putString("api_key", apiKey);
+  prefs.putString("printer_model", printerModel);
+  prefs.end();
+
+  provisionedBackendUrl = backendUrl;
+  provisionedDeviceId = deviceId;
+  provisionedApiKey = apiKey;
+  provisionedPrinterModel = printerModel;
+  hasKioskRegistration = false;
+  Serial.println("provisioning_saved");
+  return true;
+}
+
+void onWiFiConfigPortal(WiFiManager* wm) {
+  wifiState = WIFI_PROVISIONING_PORTAL;
+  lastPortalEnsureAt = millis();
+  if (customServerRunning) {
+    server.stop();
+    customServerRunning = false;
+  }
+  Serial.print("wifi_provisioning_portal_started:ssid=");
+  Serial.println(wm->getConfigPortalSSID());
+}
+
+void onWiFiSaveConfig() {
+  shouldSaveProvisioningConfig = true;
+}
+
+void configureWiFiManager() {
+  wifiManager.setConfigPortalBlocking(false);
+  wifiManager.setConfigPortalTimeout(180);
+  wifiManager.setConnectTimeout(20);
+  wifiManager.setBreakAfterConfig(true);
+  wifiManager.setAPCallback(onWiFiConfigPortal);
+  wifiManager.setSaveConfigCallback(onWiFiSaveConfig);
+  wifiManager.addParameter(&backendUrlParam);
+  wifiManager.addParameter(&deviceIdParam);
+  wifiManager.addParameter(&apiKeyParam);
+  wifiManager.addParameter(&printerModelParam);
+}
+
+void startCustomServerIfNeeded() {
+  if (customServerRunning) return;
+  server.begin();
+  customServerRunning = true;
+  Serial.println("http_server_started");
+}
+
+void stopCustomServerIfRunning() {
+  if (!customServerRunning) return;
+  server.stop();
+  customServerRunning = false;
+  Serial.println("http_server_stopped");
+}
+
+void beginProvisioningPortal() {
+  wifiState = WIFI_PROVISIONING_PORTAL;
+  stopCustomServerIfRunning();
+  lastPortalEnsureAt = millis();
+  wifiManager.startConfigPortal(provisioningApSsid, provisioningApPassword);
+}
+
 void refreshTargets() {
+  if (!hasKioskRegistration && provisionedBackendUrl.length() > 0) {
+    tabletServer = provisionedBackendUrl;
+    kioskPortalUrl = provisionedBackendUrl;
+    return;
+  }
   kioskPortalPath = normalizedPath(kioskPortalPath);
   kioskPortalUrl =
       "http://" + kioskIp + ":" + String(kioskPort) + kioskPortalPath;
   tabletServer = "http://" + kioskIp + ":" + String(kioskPort) + "/coin";
+}
+
+void processNetworkLifecycle() {
+  wifiManager.process();
+
+  if (shouldSaveProvisioningConfig) {
+    shouldSaveProvisioningConfig = false;
+    if (!saveProvisioningConfig()) {
+      Serial.println("provisioning_save_failed");
+    }
+    refreshTargets();
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiDisconnectedAt = 0;
+    if (wifiState != WIFI_RUNNING) {
+      wifiState = WIFI_RUNNING;
+      refreshTargets();
+      startCustomServerIfNeeded();
+      Serial.print("wifi_connected:ip=");
+      Serial.println(WiFi.localIP());
+    }
+    return;
+  }
+
+  stopCustomServerIfRunning();
+
+  if (wifiState == WIFI_CONNECTING) {
+    if (millis() - wifiConnectStartedAt > wifiConnectingGraceMs) {
+      Serial.println("wifi_connect_timeout:starting_provisioning");
+      beginProvisioningPortal();
+    }
+    return;
+  }
+
+  if (wifiState == WIFI_RUNNING) {
+    if (wifiDisconnectedAt == 0) {
+      wifiDisconnectedAt = millis();
+      return;
+    }
+    if (millis() - wifiDisconnectedAt > wifiReconnectPortalDelayMs) {
+      Serial.println("wifi_lost:starting_provisioning");
+      beginProvisioningPortal();
+    }
+    return;
+  }
+
+  if (wifiState == WIFI_PROVISIONING_PORTAL &&
+      millis() - lastPortalEnsureAt > wifiPortalEnsureIntervalMs) {
+    lastPortalEnsureAt = millis();
+    wifiManager.startConfigPortal(provisioningApSsid, provisioningApPassword);
+  }
+}
+
+void triggerReprovisionReset() {
+  if (reprovisionPending) return;
+  reprovisionPending = true;
+  Serial.println("reprovision_reset_triggered");
+  stopCustomServerIfRunning();
+  wifiManager.resetSettings();
+  clearProvisioningConfig();
+  delay(300);
+  ESP.restart();
+}
+
+void processReprovisionButton() {
+  if (digitalRead(reprovisionButtonPin) == LOW) {
+    if (!reprovisionButtonHeld) {
+      reprovisionButtonHeld = true;
+      reprovisionButtonPressedAt = millis();
+      return;
+    }
+    if (millis() - reprovisionButtonPressedAt >= reprovisionButtonHoldMs) {
+      triggerReprovisionReset();
+    }
+    return;
+  }
+  reprovisionButtonHeld = false;
 }
 
 void replyRedirect(NetworkClient& client, const String& location) {
@@ -261,8 +588,8 @@ void emitHopperError(
 }
 
 void sendCoinToTablet(int value) {
-  if (WiFi.softAPgetStationNum() == 0) {
-    logCoinSendFailure("network_unreachable_no_station", 0, "");
+  if (WiFi.status() != WL_CONNECTED) {
+    logCoinSendFailure("network_unreachable_no_wifi", 0, "");
     return;
   }
   if (tabletServer.length() == 0) {
@@ -278,8 +605,16 @@ void sendCoinToTablet(int value) {
     HTTPClient http;
     http.begin(url);
     http.addHeader("x-coin-source", coinBridgeSource);
-    http.addHeader("x-coin-api-key", coinBridgeApiKey);
+    String apiKeyHeader =
+        provisionedApiKey.length() > 0 ? provisionedApiKey : String(coinBridgeApiKey);
+    http.addHeader("x-coin-api-key", apiKeyHeader);
     http.addHeader("x-coin-event-id", eventId);
+    if (provisionedDeviceId.length() > 0) {
+      http.addHeader("x-device-id", provisionedDeviceId);
+    }
+    if (provisionedPrinterModel.length() > 0) {
+      http.addHeader("x-printer-model", provisionedPrinterModel);
+    }
     int code = http.GET();
     String body = http.getString();
     http.end();
@@ -629,6 +964,7 @@ void setup() {
   pinMode(coinAcceptorPin, INPUT_PULLUP);
   pinMode(hopperSensorPin, INPUT_PULLUP);
   pinMode(relayPin, OUTPUT);
+  pinMode(reprovisionButtonPin, INPUT_PULLUP);
 
   digitalWrite(relayPin, LOW);
 
@@ -637,24 +973,36 @@ void setup() {
   attachInterrupt(coinAcceptorPin, countPulse, FALLING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
 
+  loadProvisioningConfig();
   refreshTargets();
-  WiFi.softAP(ssid, password, 1, 0);
+  configureWiFiManager();
 
-  Serial.println("AP Started");
-  Serial.print("AP_IP:");
-  Serial.println(WiFi.softAPIP());
+  WiFi.mode(WIFI_STA);
+  wifiConnectStartedAt = millis();
+  bool connected = wifiManager.autoConnect(provisioningApSsid, provisioningApPassword);
+  if (connected && WiFi.status() == WL_CONNECTED) {
+    wifiState = WIFI_RUNNING;
+    startCustomServerIfNeeded();
+    Serial.print("wifi_connected:ip=");
+    Serial.println(WiFi.localIP());
+  } else if (wifiState != WIFI_PROVISIONING_PORTAL) {
+    wifiState = WIFI_CONNECTING;
+    Serial.println("wifi_connect_pending");
+  }
+
   Serial.print("coin_target:");
   Serial.println(tabletServer);
   Serial.print("portal_target:");
   Serial.println(kioskPortalUrl);
-
-  server.begin();
 
   Serial.println("SYSTEM READY");
 }
 
 // LOOP
 void loop() {
+  processNetworkLifecycle();
+  processReprovisionButton();
+
   byte tempCount;
   unsigned long tempLastPulse;
 
@@ -698,9 +1046,11 @@ void loop() {
   }
 
   // WIFI REQUEST
-  NetworkClient client = server.accept();
-  if (client) {
-    handleWifiRequest(client);
+  if (customServerRunning) {
+    NetworkClient client = server.accept();
+    if (client) {
+      handleWifiRequest(client);
+    }
   }
 
   int dispensedSnapshot = 0;
@@ -749,7 +1099,8 @@ void loop() {
   }
 
   static unsigned long lastRegistrationStatusAt = 0;
-  if (!hasKioskRegistration && millis() - lastRegistrationStatusAt > 15000) {
+  if (!hasKioskRegistration && provisionedBackendUrl.length() == 0 &&
+      millis() - lastRegistrationStatusAt > 15000) {
     lastRegistrationStatusAt = millis();
     Serial.println("kiosk_register_pending:waiting_for_post");
   }

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import http from 'http';
+import path from 'node:path';
 import { Server } from 'socket.io';
 import cookieParser from 'cookie-parser';
 import {
@@ -68,7 +69,9 @@ const redisConnection = {
 };
 
 // Example queue initialization
-export const printQueue = new Queue('print-jobs', { connection: redisConnection });
+export const printQueue = new Queue('print-jobs', {
+  connection: redisConnection,
+});
 
 type StartupPhase = 'booting' | 'ready' | 'failed';
 
@@ -118,77 +121,6 @@ function getStartupReadinessSnapshot() {
   };
 }
 
-const LOADING_PAGE_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta http-equiv="cache-control" content="no-store" />
-  <meta name="robots" content="noindex,nofollow" />
-  <title>Starting PrintBit…</title>
-  <style>
-    :root{color-scheme:dark}
-    *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',system-ui,sans-serif;background:#0f1020;color:#f7f8ff}
-    .card{width:min(560px,92vw);padding:30px;border-radius:20px;background:linear-gradient(180deg,#181a33,#131425);border:1px solid rgba(132,145,255,.25);box-shadow:0 22px 40px rgba(0,0,0,.4)}
-    h1{margin:0 0 10px;font-size:1.5rem}
-    p{margin:8px 0;color:#d6dafd;line-height:1.45}
-    .muted{font-size:.95rem;color:#adb5ef}
-    .dot{display:inline-block;width:.75rem;height:.75rem;margin-right:.5rem;border-radius:50%;background:#7f93ff;animation:pulse 1.2s ease-in-out infinite}
-    .error{color:#ffd4d4}
-    @keyframes pulse{0%,100%{opacity:.35;transform:scale(.9)}50%{opacity:1;transform:scale(1)}}
-  </style>
-</head>
-<body>
-  <main class="card" aria-live="polite">
-    <h1><span class="dot" aria-hidden="true"></span>Starting PrintBit…</h1>
-    <p id="statusText">Preparing kiosk services. This page will continue automatically.</p>
-    <p class="muted" id="metaText">Waiting for readiness signal.</p>
-  </main>
-  <script>
-    (function(){
-      const statusText = document.getElementById('statusText');
-      const metaText = document.getElementById('metaText');
-      const setBooting = () => {
-        statusText.textContent = 'Preparing kiosk services. This page will continue automatically.';
-        statusText.classList.remove('error');
-      };
-      const setFailed = (message) => {
-        statusText.textContent = message || 'Startup failed. Waiting for automatic recovery.';
-        statusText.classList.add('error');
-      };
-      const poll = async () => {
-        let retryAfterMs = ${STARTUP_POLL_INTERVAL_MS};
-        try {
-          const response = await fetch('/api/startup/ready', { cache: 'no-store' });
-          const payload = await response.json();
-          if (typeof payload.retryAfterMs === 'number' && payload.retryAfterMs > 0) {
-            retryAfterMs = payload.retryAfterMs;
-          }
-          if (payload.ready === true) {
-            window.location.replace('/');
-            return;
-          }
-          if (payload.phase === 'failed') {
-            setFailed(payload.message);
-            metaText.textContent = 'Automatic recovery is running. Retrying…';
-          } else {
-            setBooting();
-            metaText.textContent = 'Waiting for readiness signal.';
-          }
-        } catch (_error) {
-          setBooting();
-          metaText.textContent = 'Network unavailable. Retrying…';
-          retryAfterMs = Math.max(retryAfterMs, 3000);
-        }
-        window.setTimeout(poll, retryAfterMs);
-      };
-      poll();
-    })();
-  </script>
-</body>
-</html>`;
-
 app.get('/loading', (_req, res) => {
   res.setHeader(
     'Cache-Control',
@@ -196,7 +128,7 @@ app.get('/loading', (_req, res) => {
   );
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.type('html').send(LOADING_PAGE_HTML);
+  res.sendFile(path.resolve('src/public/loading/index.html'));
 });
 
 app.get('/api/startup/ready', (_req, res) => {
@@ -566,7 +498,6 @@ function gracefulShutdown(signal: NodeJS.Signals): void {
             error: error.message,
           });
           process.exit(1);
-          return;
         }
         process.exit(0);
       });
