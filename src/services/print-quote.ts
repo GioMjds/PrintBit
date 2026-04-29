@@ -179,7 +179,7 @@ export function buildPrintQuote(input: {
   pageRange?: unknown;
   duplex?: boolean;
 }): PrintQuoteComputation {
-  const safeCopies = Math.max(1, Math.floor(input.copies));
+  const safeCopies = Math.min(30, Math.max(1, Math.floor(input.copies)));
   const parsedRange = parsePageRange(input.pageRange);
   if (parsedRange.error) {
     return { ok: false, error: parsedRange.error };
@@ -253,6 +253,20 @@ export function buildPrintQuote(input: {
       ok: false,
       error: 'Document analysis mismatch for selected pages.',
     };
+  }
+
+  if (selectedCount > 30) {
+    return {
+      ok: false,
+      error: 'Maximum 30 printed pages allowed per job.',
+    }
+  }
+
+  if (selectedCount * safeCopies > 30) {
+    return {
+      ok: false,
+      error: `Job exceeds maximum length of 30 pages (requested ${selectedCount * safeCopies} pages).`,
+    }
   }
 
   const effectiveColorMode: ColorMode =

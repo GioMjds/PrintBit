@@ -1063,10 +1063,32 @@ function hasMultiplePages(): boolean {
 
 function syncPageRangeAvailability(): void {
   const visible = hasMultiplePages();
+  const maxPages = getPageRangeMaxPages();
+  const maxAllowed: number = 30; // Maximum pages allowed for custom range selection and if the file has >30 pages, only allow single page selection to avoid overwhelming the user and the printer.
+
   pageRangeGroup?.classList.toggle('hidden', !visible);
-  if (!visible && pageModeAll) {
-    pageModeAll.checked = true;
+
+  if (pageModeAll) {
+    if (!visible) {
+      pageModeAll.checked = true;
+      pageModeAll.disabled = false;
+    } else if (maxPages > maxAllowed) {
+      pageModeAll.disabled = false;
+      if (pageModeAll.checked) {
+        if (pageModeCustom) pageModeCustom.checked = false;
+        if (pageModeSingle) pageModeSingle.value = '1-30';
+      }
+    } else {
+      pageModeAll.disabled = false;
+    }
   }
+
+  const allPagesLabel = pageModeAll?.closest('.option-card');
+  if (allPagesLabel) {
+    allPagesLabel.classList.toggle('disabled', maxPages > maxAllowed);
+    allPagesLabel.setAttribute('title', maxPages > maxAllowed ? 'Max 30 pages allowed' : '');
+  }
+
   syncPageRangeUI();
   syncCustomRangeInputs();
   syncCustomRangeValidity();
@@ -1082,7 +1104,7 @@ function getRadio(name: string): string {
 function getCopies(): number {
   return Math.max(
     1,
-    Math.min(99, parseInt(copiesInput?.value ?? '1', 10) || 1),
+    Math.min(30, parseInt(copiesInput?.value ?? '1', 10) || 1),
   );
 }
 
@@ -1419,7 +1441,7 @@ copiesDec?.addEventListener('click', () => {
 });
 copiesInc?.addEventListener('click', () => {
   const v = getCopies();
-  if (v < 99 && copiesInput) {
+  if (v < 30 && copiesInput) {
     copiesInput.value = String(v + 1);
     updateSummary();
     schedulePrintQuoteRefresh();
