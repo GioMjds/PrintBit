@@ -1,12 +1,7 @@
 import { adminService } from './admin';
 import type { ColorMode } from './db';
 import type { DocumentAnalysis } from './session';
-import {
-  computeJobPricing,
-  legacyComputeJobAmount,
-  type JobPricingBreakdown,
-  type PagePricingBreakdown,
-} from './pricing-engine';
+import { computeJobPricing, type PagePricingBreakdown } from './pricing-engine';
 
 type PageRangeSelectionPayload =
   | { type: 'all' }
@@ -36,7 +31,9 @@ export interface PrintQuoteResult {
     colorSurcharge: number;
   };
   analysisConfidence: 'high' | 'medium' | 'low';
-  billingPageDetection: 'high-confidence-page-detection' | 'fallback-assumptions';
+  billingPageDetection:
+    | 'high-confidence-page-detection'
+    | 'fallback-assumptions';
   analysisFallbackReasonFlags: string[];
 }
 
@@ -263,9 +260,12 @@ export function buildEnhancedPrintQuote(input: {
       },
     };
   } catch (error) {
-    console.error('[print-quote] Pricing engine breakdown computation failed.', {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    console.error(
+      '[print-quote] Pricing engine breakdown computation failed.',
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
     return { ok: true, quote: baseQuote };
   }
 }
@@ -357,14 +357,14 @@ export function buildPrintQuote(input: {
     return {
       ok: false,
       error: 'Maximum 30 printed pages allowed per job.',
-    }
+    };
   }
 
   if (selectedCount * safeCopies > 30) {
     return {
       ok: false,
       error: `Job exceeds maximum length of 30 pages (requested ${selectedCount * safeCopies} pages).`,
-    }
+    };
   }
 
   const effectiveColorMode: ColorMode =

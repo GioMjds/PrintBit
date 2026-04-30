@@ -44,7 +44,11 @@ export interface JobPricingBreakdown {
 }
 
 /**
- * Computes per-page coverage as a value in [0.0, 1.0] from analysis
+ * Extracts the coverage ratio for a specific page index from the `DocumentAnalysis` object.
+ * It ensures the return value is normalized between 0.0 and 1.0.
+ * @param analysis: DocumentAnalysis - The result of the document scan/analysis
+ * @param pageIndex: number - The zero-based index of the page to query
+ * @returns number - A float representing the coverage ratio (0.0 for blank, up to 1.0 for full color)
  */
 function extractPageCoverage(
   analysis: DocumentAnalysis,
@@ -60,7 +64,11 @@ function extractPageCoverage(
 }
 
 /**
- * Classifies a page based on coverage and configured thresholds
+ * Categorizes a page into one of 4 types based on its ink coverage and the system's defined thresholds:
+ * @param coverage: number - The normalized coverage value
+ * @param isBlank: boolean - Explicit flag indicating if the page contains no content
+ * @param thresholds: RuntimePricingConfig['thresholds'] - The `bwMax` and `fullColorMin` limits
+ * @returns PageClassification - 'blank' | 'bw' | 'partial' | 'full_color'.
  */
 function classifyPageCoverage(
   coverage: number,
@@ -74,7 +82,12 @@ function classifyPageCoverage(
 }
 
 /**
- * Computes raw page price before bulk discounts
+ * Calculates the raw price of a single page before any job-level discounts. It implements "Partial Color" logic, where the price scales proportionally with coverage:
+ * `rawPrice = baseBwPrice + (coverage * colorMultiplier)`
+ * @param classification: PageClassification - The category of the page
+ * @param coverage: number - The ink coverage ratio
+ * @param config: RuntimePricingConfig - The active pricing rules and base prices
+ * @returns number - The calculated price for one copy of the page
  */
 function computePagePrice(
   classification: PageClassification,
@@ -84,25 +97,26 @@ function computePagePrice(
   const { baseBwPrice, baseColorPrice, colorMultiplier } = config.pricing;
   const { blankPagePolicy } = config;
 
-  if (classification === 'blank') {
-    return blankPagePolicy === 'charge_zero' ? 0 : baseBwPrice;
+  switch (classification) {
+    case 'blank':
+      return blankPagePolicy === 'charge_zero' ? 0 : baseBwPrice;
+    case 'bw':
+      return baseBwPrice;
+    case 'full_color':
+      return baseColorPrice;
+    case 'partial':
+      const rawPrice = baseBwPrice + coverage * colorMultiplier;
+      return Math.min(rawPrice, baseColorPrice);
+    default:
+      return baseBwPrice;
   }
-
-  if (classification === 'bw') {
-    return baseBwPrice;
-  }
-
-  if (classification === 'full_color') {
-    return baseColorPrice;
-  }
-
-  // Partial color: proportional pricing
-  const rawPrice = baseBwPrice + coverage * colorMultiplier;
-  return Math.min(rawPrice, baseColorPrice);
 }
 
 /**
- * Looks up bulk tier discount for the given billable page count
+ * Searches the configuration for a matching bulk discount tier based on the total number of billable pages in the job.
+ * @param totalBillablePages: number - The total count of non-blank pages (multiplied by copies)
+ * @param tiers: RuntimePricingConfig['bulkTierDiscounts'] - Array of discount ranges
+ * @returns number - The total currency amount to be subtracted from the subtotal
  */
 function lookupBulkDiscount(
   totalBillablePages: number,
@@ -120,7 +134,8 @@ function lookupBulkDiscount(
 }
 
 /**
- * Loads and normalizes pricing engine config from db.data.settings.pricingEngine
+ * Retrieves settings from the database and applies default values if specific configurations are missing. It normalizes the data into a RuntimePricingConfig object.
+ * @returns RuntimePricingConfig - The active configuration for the pricing engine, ready to be used in calculations
  */
 function loadPricingEngineConfig(): RuntimePricingConfig {
   const cfg = db.data?.settings?.pricingEngine as
@@ -151,8 +166,13 @@ function loadPricingEngineConfig(): RuntimePricingConfig {
   };
 }
 
+// Exported functions
+
 /**
- * Computes per-page and job-level pricing breakdown given analysis, copies, and selected pages
+ * The primary logic gate for the pricing engine. It iterates through selected pages, classifies them, calculates individual costs, and aggregates them into a final job breakdown.
+ * @param input.analysis: The `DocumentAnalysis` object
+ * @param input.selectedPageIndices: A `Set` of indices the user wants to print
+ * @param input.copies: The number of sets to be printed
  */
 export function computeJobPricing(input: {
   analysis: DocumentAnalysis;
