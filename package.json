@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --ignore-watch uploads --ignore-watch printbit.sqlite --ignore-watch printbit.sqlite-shm --ignore-watch printbit.sqlite-wal -r tsconfig-paths/register src/server.ts",
+    "audit": "",
     "build": "node scripts/build-client.js",
     "build:server": "node scripts/build-server.js",
     "build:kiosk": "pnpm run build && pnpm run build:server",

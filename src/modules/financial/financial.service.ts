@@ -874,10 +874,11 @@ export class FinancialService {
         : 'grayscale';
     const duplex = req.body?.duplex === true;
 
-    // Check if pricing engine breakdown is requested (for shadow mode testing/diagnostics)
-    const includePricingEngine =
-      req.query.includePricingEngine === 'true' ||
-      req.query.includePricingEngine === '1';
+    // Get pricing mode from config
+    const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
+    
+    // In live and shadow modes, include pricing engine breakdown in response
+    const includePricingEngine = pricingMode === 'shadow' || pricingMode === 'live';
 
     const quoteBuilder = includePricingEngine
       ? buildEnhancedPrintQuote
@@ -901,6 +902,7 @@ export class FinancialService {
       documentId: target.documentId,
       filename: target.filename,
       quote: quoteComputation.quote,
+      pricingMode,
     });
   };
 
