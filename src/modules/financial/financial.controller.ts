@@ -18,6 +18,7 @@ export class FinancialController {
     this.router.get('/coin', this.addCoinCompatibility);
     this.router.get('/api/balance', this.getBalance);
     this.router.get('/api/pricing', this.getPricing);
+    this.router.get('/api/pricing-config', this.getPricingConfig);
     this.router.get(
       '/api/transactions/:transactionId/receipt',
       this.getTransactionReceipt,
@@ -49,6 +50,10 @@ export class FinancialController {
 
   private getPricing = (req: Request, res: Response): void => {
     this.financialService.getPricing(req, res);
+  };
+
+  private getPricingConfig = (req: Request, res: Response): void => {
+    this.financialService.getPricingConfig(req, res);
   };
 
   private getTransactionReceipt = (req: Request, res: Response): void => {

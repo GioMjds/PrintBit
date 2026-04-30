@@ -611,6 +611,25 @@ export class FinancialService {
     res.json(adminService.getPricingSettings());
   };
 
+  getPricingConfig = (_req: Request, res: Response): void => {
+    const config = db.data?.settings?.pricingEngine;
+    res.json({
+      enabledMode: config?.enabledMode ?? 'legacy',
+      paperProfiles: config?.paperProfiles ?? {
+        shortBond: { baseBwPrice: 5, baseColorPrice: 15 },
+        longBond: { baseBwPrice: 7, baseColorPrice: 20 },
+      },
+      thresholds: config?.thresholds ?? {
+        bwMax: 0.1,
+        fullColorMin: 0.5,
+      },
+      colorMultiplier: config?.colorMultiplier ?? 20,
+      blankPagePolicy: config?.blankPagePolicy ?? 'charge_zero',
+      bulkDiscountTiers: config?.bulkDiscountTiers ?? [],
+      rounding: config?.rounding ?? 'whole_peso_total_only',
+    });
+  };
+
   addCoinCompatibility = async (
     req: Request,
     res: Response,
