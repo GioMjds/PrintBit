@@ -46,7 +46,7 @@ import {
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
-import { buildPrintQuote } from '@/services/print-quote';
+import { buildPrintQuote, buildEnhancedPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
 import {
   checkpointRecoverySession,
@@ -855,12 +855,22 @@ export class FinancialService {
         : 'grayscale';
     const duplex = req.body?.duplex === true;
 
-    const quoteComputation = buildPrintQuote({
+    // Check if pricing engine breakdown is requested (for shadow mode testing/diagnostics)
+    const includePricingEngine =
+      req.query.includePricingEngine === 'true' ||
+      req.query.includePricingEngine === '1';
+
+    const quoteBuilder = includePricingEngine
+      ? buildEnhancedPrintQuote
+      : buildPrintQuote;
+
+    const quoteComputation = quoteBuilder({
       analysis: target.analysis,
       copies: safeCopies,
       colorMode: requestedColorMode,
       pageRange: req.body?.pageRange,
       duplex,
+      includePricingEngineBreakdown: includePricingEngine,
     });
     if (!quoteComputation.ok) {
       return res.status(400).json({ error: quoteComputation.error });
