@@ -1,6 +1,12 @@
 import { adminService } from './admin';
 import type { ColorMode } from './db';
 import type { DocumentAnalysis } from './session';
+import {
+  computeJobPricing,
+  legacyComputeJobAmount,
+  type JobPricingBreakdown,
+  type PagePricingBreakdown,
+} from './pricing-engine';
 
 type PageRangeSelectionPayload =
   | { type: 'all' }
@@ -34,8 +40,29 @@ export interface PrintQuoteResult {
   analysisFallbackReasonFlags: string[];
 }
 
+/**
+ * Enhanced quote result with per-page breakdown and pricing engine details
+ */
+export interface EnhancedPrintQuoteResult extends PrintQuoteResult {
+  pricingEngine?: {
+    mode: 'legacy' | 'shadow' | 'live';
+    perPageBreakdown?: PagePricingBreakdown[];
+    subtotalExact: number;
+    discountExact: number;
+    finalExact: number;
+    finalPayablePeso: number;
+  };
+}
+
 export type PrintQuoteComputation =
   | { ok: true; quote: PrintQuoteResult }
+  | { ok: false; error: string };
+
+/**
+ * Enhanced quote computation that may include pricing engine breakdown
+ */
+export type EnhancedPrintQuoteComputation =
+  | { ok: true; quote: EnhancedPrintQuoteResult }
   | { ok: false; error: string };
 
 function normalizeRangeString(raw: string): string | null {
@@ -170,6 +197,77 @@ function parseSelectedPages(
   }
 
   return { selected };
+}
+
+/**
+ * Builds an enhanced print quote that includes pricing engine breakdown
+ * Supports legacy/shadow/live rollout modes
+ */
+export function buildEnhancedPrintQuote(input: {
+  analysis: DocumentAnalysis;
+  colorMode: ColorMode;
+  copies: number;
+  pageRange?: unknown;
+  duplex?: boolean;
+  includePricingEngineBreakdown?: boolean;
+}): EnhancedPrintQuoteComputation {
+  // Build the legacy quote first (validates all inputs, page selections, etc.)
+  const legacyQuoteResult = buildPrintQuote({
+    analysis: input.analysis,
+    colorMode: input.colorMode,
+    copies: input.copies,
+    pageRange: input.pageRange,
+    duplex: input.duplex,
+  });
+
+  if (!legacyQuoteResult.ok) {
+    return legacyQuoteResult;
+  }
+
+  const baseQuote = legacyQuoteResult.quote;
+
+  // If pricing engine breakdown not requested, return legacy quote
+  if (!input.includePricingEngineBreakdown) {
+    return { ok: true, quote: baseQuote };
+  }
+
+  // Compute pricing engine breakdown for diagnosis/shadow mode
+  try {
+    const totalPages = getTotalPages(input.analysis);
+    const selectedPages = parseSelectedPages(
+      parsePageRange(input.pageRange).normalized,
+      totalPages,
+    );
+    if (selectedPages.error) {
+      return { ok: true, quote: baseQuote };
+    }
+
+    const pricingBreakdown = computeJobPricing({
+      analysis: input.analysis,
+      selectedPageIndices: selectedPages.selected,
+      copies: Math.min(30, Math.max(1, Math.floor(input.copies))),
+    });
+
+    return {
+      ok: true,
+      quote: {
+        ...baseQuote,
+        pricingEngine: {
+          mode: pricingBreakdown.pricingMode,
+          perPageBreakdown: pricingBreakdown.pages,
+          subtotalExact: pricingBreakdown.subtotalExact,
+          discountExact: pricingBreakdown.discountExact,
+          finalExact: pricingBreakdown.finalExact,
+          finalPayablePeso: pricingBreakdown.finalPayablePeso,
+        },
+      },
+    };
+  } catch (error) {
+    console.error('[print-quote] Pricing engine breakdown computation failed.', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: true, quote: baseQuote };
+  }
 }
 
 export function buildPrintQuote(input: {

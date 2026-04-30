@@ -303,6 +303,57 @@ When analysis completes (via session fetch payloads / manual analysis endpoint),
 - `confidence`: global analysis confidence (`high|medium|low`).
 - `pages[].fallbackReasonFlags` (optional): present when a page used fallback analysis logic.
 
+### `POST /api/analyze-job`
+
+Queues or checks status for pricing analysis jobs.
+
+Requires the session token via query/header (`token`, `x-session-token`, `x-upload-token`, or `Authorization: Bearer <token>`) and body field `sessionId`.
+
+Queue request:
+
+```json
+{
+  "sessionId": "uuid",
+  "documentId": "doc_uuid",
+  "forceReanalyze": false
+}
+```
+
+Queue response (`202`):
+
+```json
+{
+  "ok": true,
+  "jobId": "sessionId:documentId",
+  "status": "waiting"
+}
+```
+
+Status request:
+
+```json
+{
+  "sessionId": "uuid",
+  "jobId": "sessionId:documentId"
+}
+```
+
+Status response (`200`):
+
+```json
+{
+  "ok": true,
+  "jobId": "sessionId:documentId",
+  "status": "active",
+  "failedReason": null
+}
+```
+
+Notes:
+
+- `jobId` must belong to the provided `sessionId`.
+- Queue status values are: `waiting`, `active`, `completed`, `failed`, `delayed`, `unknown`.
+
 ---
 
 ## Upload portal pages

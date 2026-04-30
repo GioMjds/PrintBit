@@ -20,6 +20,9 @@ export type AnalyzedFileType =
 export interface PageAnalysis {
   index: number;
   isColor: boolean;
+  coverage?: number;
+  classification?: 'blank' | 'bw' | 'partial' | 'full_color';
+  isBlank?: boolean;
   fallbackReasonFlags?: string[];
 }
 
@@ -140,15 +143,46 @@ function isColorFrame(frame: RgbaFrame): boolean {
   return false;
 }
 
+function computeFrameCoverage(frame: RgbaFrame): number {
+  const totalPixels = frame.width * frame.height;
+  if (totalPixels === 0) return 0;
+
+  const step = Math.max(1, Math.ceil(totalPixels / MAX_PIXELS_TO_SAMPLE));
+  let colorPixels = 0;
+  let sampledPixels = 0;
+
+  for (let pixelIndex = 0; pixelIndex < totalPixels; pixelIndex += step) {
+    const offset = pixelIndex * 4;
+    const alpha = frame.data[offset + 3];
+    if (alpha < 8) continue;
+
+    sampledPixels += 1;
+    const r = frame.data[offset];
+    const g = frame.data[offset + 1];
+    const b = frame.data[offset + 2];
+
+    if (isColorPixel(r, g, b)) {
+      colorPixels += 1;
+    }
+  }
+
+  return sampledPixels === 0 ? 0 : colorPixels / sampledPixels;
+}
+
 async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
   const { data, info } = await sharp(filePath)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  const coverage = computeFrameCoverage({ data, width: info.width, height: info.height });
+  const isColor = coverage > 0.05; // Threshold: > 5% color pixels = colored page
 
   const page: PageAnalysis = {
     index: 1,
-    isColor: isColorFrame({ data, width: info.width, height: info.height }),
+    isColor,
+    coverage,
+    classification: isColor ? (coverage > 0.95 ? 'full_color' : 'partial') : 'bw',
+    isBlank: coverage === 0,
   };
 
   return {
@@ -177,28 +211,38 @@ async function analyzePdfFile(
   try {
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum += 1) {
       const page = await doc.getPage(pageNum);
-      let isColor = true;
+      let coverage = 0;
+      let isColor = false;
+      let classification: 'blank' | 'bw' | 'partial' | 'full_color' = 'bw';
+      let isBlank = true;
       try {
         const opList = (await page.getOperatorList()) as PdfOperatorList;
-        isColor = isPdfPageColorByOperatorList(opList, ops);
+        const analysis = analyzePageOperatorList(opList, ops);
+        coverage = analysis.coverage;
+        isColor = analysis.hasColor;
+        isBlank = analysis.isBlank;
+        classification = analysis.classification;
       } catch (error) {
         console.warn(
           `[document-analysis] Page ${pageNum} operator scan failed; defaulting to colored.`,
           error,
         );
+        coverage = 1;
         isColor = true;
+        classification = 'full_color';
         fallbackPageCount += 1;
-        pages.push({
-          index: pageNum,
-          isColor,
-          fallbackReasonFlags: ['operator_scan_failed_default_color'],
-        });
-        continue;
       } finally {
         page.cleanup();
       }
 
-      pages.push({ index: pageNum, isColor });
+      pages.push({
+        index: pageNum,
+        isColor,
+        coverage,
+        classification,
+        isBlank,
+        fallbackReasonFlags: fallbackPageCount > 0 ? ['operator_scan_failed_default_color'] : undefined,
+      });
     }
   } finally {
     await doc.destroy();
@@ -298,6 +342,91 @@ function isPdfPageColorByOperatorList(
   }
 
   return false;
+}
+
+interface PageAnalysisMetrics {
+  hasColor: boolean;
+  coverage: number;
+  isBlank: boolean;
+  classification: 'blank' | 'bw' | 'partial' | 'full_color';
+}
+
+function analyzePageOperatorList(
+  opList: PdfOperatorList,
+  ops: PdfOps,
+): PageAnalysisMetrics {
+  const imagePaintOps = new Set(
+    [
+      ops.paintImageXObject,
+      ops.paintInlineImageXObject,
+      ops.paintImageMaskXObject,
+      ops.paintJpegXObject,
+    ].filter((op): op is number => typeof op === 'number'),
+  );
+
+  let hasColor = false;
+  let hasImages = false;
+  let hasContent = false;
+  let colorOps = 0;
+
+  for (let i = 0; i < opList.fnArray.length; i += 1) {
+    const op = opList.fnArray[i];
+    const args = opList.argsArray[i];
+
+    if (imagePaintOps.has(op)) {
+      hasImages = true;
+      hasContent = true;
+      hasColor = true;
+      colorOps += 1;
+    }
+
+    if (op === ops.setFillRGBColor || op === ops.setStrokeRGBColor) {
+      const rgb = parseRgbArgs(args);
+      if (!rgb) continue;
+      const [r, g, b] = rgb;
+      const spread = Math.max(r, g, b) - Math.min(r, g, b);
+      if (spread > 10) {
+        hasColor = true;
+        colorOps += 1;
+      }
+      hasContent = true;
+    }
+
+    if (op === ops.setFillCMYKColor || op === ops.setStrokeCMYKColor) {
+      if (!Array.isArray(args) || args.length < 4) continue;
+      const [c, m, y] = args as number[];
+      if (c > 0.01 || m > 0.01 || y > 0.01) {
+        hasColor = true;
+        colorOps += 1;
+      }
+      hasContent = true;
+    }
+  }
+
+  // Estimate coverage: total color operators as a ratio of total ops
+  const estimatedCoverage =
+    hasContent && opList.fnArray.length > 0
+      ? Math.min(1.0, colorOps / opList.fnArray.length)
+      : 0;
+
+  const isBlank = !hasContent;
+  let classification: 'blank' | 'bw' | 'partial' | 'full_color';
+  if (isBlank) {
+    classification = 'blank';
+  } else if (!hasColor) {
+    classification = 'bw';
+  } else if (estimatedCoverage > 0.8 || hasImages) {
+    classification = 'full_color';
+  } else {
+    classification = 'partial';
+  }
+
+  return {
+    hasColor,
+    coverage: estimatedCoverage,
+    isBlank,
+    classification,
+  };
 }
 
 export async function analyzeDocument(
