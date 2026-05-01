@@ -297,7 +297,19 @@ function getDisplayColorMode(): 'colored' | 'grayscale' {
 }
 
 function formatColorMode(mode: 'colored' | 'grayscale'): string {
-  return mode === 'colored' ? 'Colored' : 'Grayscale';
+  return mode === 'colored' ? 'Colored' : 'Black & White';
+}
+
+function formatPaperSizeForPricing(paperSize: 'A4' | 'Letter' | 'Legal'): string {
+  switch (paperSize) {
+    case 'A4':
+    case 'Letter':
+      return 'Short Bond Paper';
+    case 'Legal':
+      return 'Long Bond Paper';
+    default:
+      return paperSize;
+  }
 }
 
 function getColorModeSummaryLabel(): string {
@@ -364,9 +376,10 @@ if (fileValue)
 if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
-if (orientationValue) orientationValue.textContent = config.orientation;
+// Hide orientation as a pricing factor per design spec
+if (orientationRow) orientationRow.setAttribute('hidden', '');
 if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
-if (paperSizeValue) paperSizeValue.textContent = config.paperSize;
+if (paperSizeValue) paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
 if (priceValue) priceValue.textContent = 'Loading...';
 
 function applyLockState(locked: boolean): void {
@@ -1396,8 +1409,10 @@ function showModal(): void {
     }
   }
   if (modalOrientation) modalOrientation.textContent = config.orientation;
+  // Hide orientation as a pricing factor in modal per design spec
+  if (modalOrientationRow) modalOrientationRow.setAttribute('hidden', '');
   if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
-  if (modalPaper) modalPaper.textContent = config.paperSize;
+  if (modalPaper) modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
   const change = currentBalance - totalPrice;
   if (modalChangeRow && modalChange) {
