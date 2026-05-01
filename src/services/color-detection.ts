@@ -1,10 +1,22 @@
+/**
+ * @file color-detection.ts
+ * @description Provides utilities for detecting chromatic (color) content within document(s).
+ * It analyzes PDF operator lists for RGB/CMYK color settings and performs statistical 
+ * sampling on embedded image data to differentiate between true grayscale and color files.
+ */
+
 import fs from 'node:fs';
 
+/** The maximum difference between R, G, and B values to be considered grayscale. */
 const RGB_SPREAD_THRESHOLD = 10;
+/** Threshold for CMYK channels (C, M, Y). If any channel exceeds this, the operator is flagged as a color operation. */
 const CMYK_COLOR_THRESHOLD = 0.01;
+/** Target number of pixels to sample when analyzing embedded images to balance accuracy and performance. */
 const IMAGE_SAMPLE_PIXEL_TARGET = 10_000;
+/** The minimum ratio of colored pixels to sampled pixels required to classify an image as "colored". */
 const IMAGE_COLOR_RATIO_THRESHOLD = 0.001;
 
+/** Represents the final determination of the color analysis. */
 export interface ColorDetectionResult {
   hasColor: boolean;
   isGrayscale: boolean;
@@ -23,6 +35,7 @@ interface PdfOps {
   paintJpegXObject?: number;
 }
 
+/** Structure of the operator list returned by PDF.js for a specific page. */
 interface PdfOperatorList {
   fnArray: number[];
   argsArray: unknown[];
@@ -62,12 +75,21 @@ interface ImageColorStats {
   isColor: boolean;
 }
 
-/** Parse pdfjs RGB args — may be ["#rrggbb"] or [r, g, b] (0–1 or 0–255). */
+/**
+ * Ensures a numeric value is within the standard 0-255 byte range.
+ * @param value The number to clamp.
+ */
 function clampByte(value: number): number {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
 
-/** Parse pdfjs RGB args — may be ["#rrggbb"] or [r, g, b] floats (0–1) */
+/**
+ * Normalizes RGB arguments from PDF.js into a standard [r, g, b] byte array.
+ * Handles both hex string formats and float arrays (0.0 - 1.0).
+ * 
+ * @param args The arguments array from a PDF operator.
+ * @returns A tuple of [r, g, b] or null if parsing fails.
+ */
 function parseRgbArgs(args: unknown): [number, number, number] | null {
   if (!Array.isArray(args) || args.length === 0) return null;
 
@@ -125,6 +147,13 @@ function isPendingPdfObjectLookupError(error: unknown): boolean {
   return /isn't resolved yet/i.test(error.message);
 }
 
+/**
+ * Retrieves an image object from the PDF page's object store.
+ * Handles both synchronous cached lookups and asynchronous fetches.
+ * 
+ * @param page The PDF page proxy.
+ * @param imageName The resource name of the image.
+ */
 async function resolveImageObject(
   page: PdfPageProxy,
   imageName: string,
@@ -182,6 +211,13 @@ async function resolveImageObject(
   });
 }
 
+/**
+ * Analyzes the raw pixel data of an image to detect color.
+ * Uses a sampling stride to efficiently process large images.
+ * 
+ * @param image The image object containing raw data.
+ * @returns Statistics regarding pixel color distribution.
+ */
 function getImageColorStats(image: PdfImageObject): ImageColorStats {
   const width = image.width;
   const height = image.height;
@@ -252,6 +288,16 @@ function getImageColorStats(image: PdfImageObject): ImageColorStats {
   };
 }
 
+/**
+ * Main entry point for PDF color detection.
+ * 
+ * Iterates through every page of a PDF and scans the underlying drawing 
+ * instructions (operators). If an instruction specifies a non-gray color 
+ * or draws a color image, the function returns immediately with a positive result.
+ * 
+ * @param pdfPath Absolute path to the PDF file on disk.
+ * @returns A promise resolving to the color detection result.
+ */
 export async function detectPdfColorContent(
   pdfPath: string,
 ): Promise<ColorDetectionResult> {
