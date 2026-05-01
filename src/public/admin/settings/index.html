@@ -427,6 +427,162 @@
                 </div>
               </div>
 
+              <!-- Pricing Engine Configuration -->
+              <div class="sg">
+                <div class="sg__head">
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M3.5 2a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm0 5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm0 5a1.5 1.5 0 100 3 1.5 1.5 0 000-3zm6.5-10a1 1 0 11-2 0 1 1 0 012 0zM9.5 7a1 1 0 100-2 1 1 0 000 2zm1 4a1 1 0 11-2 0 1 1 0 012 0z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                  <h3 class="sg__title">Pricing Engine</h3>
+                </div>
+                <div class="fields">
+                  <!-- Pricing Mode -->
+                  <div class="field">
+                    <label class="field__lbl" for="settingPricingMode"
+                      >Pricing Mode</label
+                    >
+                    <select id="settingPricingMode" class="field__input">
+                      <option value="legacy">Legacy (Original Pricing Only)</option>
+                      <option value="shadow">Shadow (Legacy + Engine Comparison)</option>
+                      <option value="live">Live (Pricing Engine Enabled)</option>
+                    </select>
+                  </div>
+
+                  <!-- Short Bond Paper (A4/Letter) -->
+                  <div class="field">
+                    <label class="field__lbl" for="settingShortBondBwPrice"
+                      >Short Bond Paper — B&W per page</label
+                    >
+                    <div class="field__wrap field__wrap--pre">
+                      <span class="field__affix">₱</span>
+                      <input
+                        id="settingShortBondBwPrice"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="field__input"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field__lbl" for="settingShortBondColorPrice"
+                      >Short Bond Paper — Color per page</label
+                    >
+                    <div class="field__wrap field__wrap--pre">
+                      <span class="field__affix">₱</span>
+                      <input
+                        id="settingShortBondColorPrice"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="field__input"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Long Bond Paper (Legal) -->
+                  <div class="field">
+                    <label class="field__lbl" for="settingLongBondBwPrice"
+                      >Long Bond Paper — B&W per page</label
+                    >
+                    <div class="field__wrap field__wrap--pre">
+                      <span class="field__affix">₱</span>
+                      <input
+                        id="settingLongBondBwPrice"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="field__input"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="field__lbl" for="settingLongBondColorPrice"
+                      >Long Bond Paper — Color per page</label
+                    >
+                    <div class="field__wrap field__wrap--pre">
+                      <span class="field__affix">₱</span>
+                      <input
+                        id="settingLongBondColorPrice"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="field__input"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Color Multiplier -->
+                  <div class="field">
+                    <label class="field__lbl" for="settingColorMultiplier"
+                      >Color Multiplier</label
+                    >
+                    <input
+                      id="settingColorMultiplier"
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      class="field__input"
+                      required
+                    />
+                  </div>
+
+                  <!-- Coverage Thresholds -->
+                  <div class="field">
+                    <label class="field__lbl" for="settingBwMaxCoverage"
+                      >B&W Max Coverage (0.0-1.0)</label
+                    >
+                    <input
+                      id="settingBwMaxCoverage"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      class="field__input"
+                      required
+                    />
+                  </div>
+                  <div class="field">
+                    <label class="field__lbl" for="settingFullColorMinCoverage"
+                      >Full Color Min Coverage (0.0-1.0)</label
+                    >
+                    <input
+                      id="settingFullColorMinCoverage"
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      class="field__input"
+                      required
+                    />
+                  </div>
+
+                  <!-- Blank Page Policy -->
+                  <div class="field">
+                    <label class="field__lbl" for="settingBlankPagePolicy"
+                      >Blank Page Charge Policy</label
+                    >
+                    <select id="settingBlankPagePolicy" class="field__input">
+                      <option value="charge_zero">No Charge</option>
+                      <option value="charge_bw">B&W Page Rate</option>
+                      <option value="charge_color">Color Page Rate</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <!-- Kiosk Behaviour -->
               <div class="sg">
                 <div class="sg__head">

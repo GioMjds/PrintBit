@@ -41,6 +41,35 @@ const settingPaperCurrentSheets = document.getElementById(
   'settingPaperCurrentSheets',
 ) as HTMLInputElement | null;
 
+// ── Pricing Engine settings (may be commented out in HTML) ──────────────────
+const settingPricingMode = document.getElementById(
+  'settingPricingMode',
+) as HTMLSelectElement | null;
+const settingShortBondBwPrice = document.getElementById(
+  'settingShortBondBwPrice',
+) as HTMLInputElement | null;
+const settingShortBondColorPrice = document.getElementById(
+  'settingShortBondColorPrice',
+) as HTMLInputElement | null;
+const settingLongBondBwPrice = document.getElementById(
+  'settingLongBondBwPrice',
+) as HTMLInputElement | null;
+const settingLongBondColorPrice = document.getElementById(
+  'settingLongBondColorPrice',
+) as HTMLInputElement | null;
+const settingColorMultiplier = document.getElementById(
+  'settingColorMultiplier',
+) as HTMLInputElement | null;
+const settingBwMaxCoverage = document.getElementById(
+  'settingBwMaxCoverage',
+) as HTMLInputElement | null;
+const settingFullColorMinCoverage = document.getElementById(
+  'settingFullColorMinCoverage',
+) as HTMLInputElement | null;
+const settingBlankPagePolicy = document.getElementById(
+  'settingBlankPagePolicy',
+) as HTMLSelectElement | null;
+
 // ── Optional sections (may be commented out in HTML) ─────────────────────────
 const settingIdleTimeout = document.getElementById(
   'settingIdleTimeout',
@@ -162,6 +191,45 @@ function applySettings(settings: SettingsResponse): void {
     settingPaperCurrentSheets.value = String(
       settings.consumablesForecasting.paperCurrentSheets,
     );
+
+  // Pricing Engine (optional)
+  if (settingPricingMode) {
+    settingPricingMode.value = settings.pricingEngine.enabledMode;
+  }
+  if (settingShortBondBwPrice) {
+    settingShortBondBwPrice.value = String(
+      settings.pricingEngine.paperProfiles.shortBond.baseBwPrice,
+    );
+  }
+  if (settingShortBondColorPrice) {
+    settingShortBondColorPrice.value = String(
+      settings.pricingEngine.paperProfiles.shortBond.baseColorPrice,
+    );
+  }
+  if (settingLongBondBwPrice) {
+    settingLongBondBwPrice.value = String(
+      settings.pricingEngine.paperProfiles.longBond.baseBwPrice,
+    );
+  }
+  if (settingLongBondColorPrice) {
+    settingLongBondColorPrice.value = String(
+      settings.pricingEngine.paperProfiles.longBond.baseColorPrice,
+    );
+  }
+  if (settingColorMultiplier) {
+    settingColorMultiplier.value = String(settings.pricingEngine.colorMultiplier);
+  }
+  if (settingBwMaxCoverage) {
+    settingBwMaxCoverage.value = String(settings.pricingEngine.thresholds.bwMax);
+  }
+  if (settingFullColorMinCoverage) {
+    settingFullColorMinCoverage.value = String(
+      settings.pricingEngine.thresholds.fullColorMin,
+    );
+  }
+  if (settingBlankPagePolicy) {
+    settingBlankPagePolicy.value = settings.pricingEngine.blankPagePolicy;
+  }
 
   // Admin Alerts (optional)
   if (alertSeverityThreshold)
@@ -305,6 +373,55 @@ settingsForm.addEventListener('submit', (e) => {
     return;
   }
 
+  // Pricing engine validation — only when the section is present
+  let shortBondBwPrice = 0;
+  let shortBondColorPrice = 0;
+  let longBondBwPrice = 0;
+  let longBondColorPrice = 0;
+  let colorMultiplier = 1;
+  let bwMaxCoverage = 0.5;
+  let fullColorMinCoverage = 0.8;
+
+  if (settingShortBondBwPrice) {
+    shortBondBwPrice = Number(settingShortBondBwPrice.value);
+    shortBondColorPrice = Number(settingShortBondColorPrice?.value ?? 0);
+    longBondBwPrice = Number(settingLongBondBwPrice?.value ?? 0);
+    longBondColorPrice = Number(settingLongBondColorPrice?.value ?? 0);
+    colorMultiplier = Number(settingColorMultiplier?.value ?? 1);
+    bwMaxCoverage = Number(settingBwMaxCoverage?.value ?? 0.5);
+    fullColorMinCoverage = Number(settingFullColorMinCoverage?.value ?? 0.8);
+
+    const isValidPrice = (n: number): boolean =>
+      Number.isFinite(n) && n >= 0;
+    const isValidMultiplier = (n: number): boolean =>
+      Number.isFinite(n) && n >= 1;
+    const isValidCoverage = (n: number): boolean =>
+      Number.isFinite(n) && n >= 0 && n <= 1;
+
+    if (!isValidPrice(shortBondBwPrice) ||
+        !isValidPrice(shortBondColorPrice) ||
+        !isValidPrice(longBondBwPrice) ||
+        !isValidPrice(longBondColorPrice)) {
+      setMessage('Paper prices must be non-negative numbers.');
+      return;
+    }
+
+    if (!isValidMultiplier(colorMultiplier)) {
+      setMessage('Color multiplier must be a number >= 1.');
+      return;
+    }
+
+    if (!isValidCoverage(bwMaxCoverage) || !isValidCoverage(fullColorMinCoverage)) {
+      setMessage('Coverage thresholds must be between 0.0 and 1.0.');
+      return;
+    }
+
+    if (bwMaxCoverage >= fullColorMinCoverage) {
+      setMessage('B&W max coverage must be less than full color min coverage.');
+      return;
+    }
+  }
+
   const payload: Record<string, unknown> = {
     pricing: {
       printPerPage: Number(settingPrintPerPage.value),
@@ -342,6 +459,32 @@ settingsForm.addEventListener('submit', (e) => {
       alertDaysThreshold,
       paperTrayCapacitySheets,
       paperCurrentSheets,
+    };
+  }
+
+  // Only include pricingEngine if the section is present
+  if (settingPricingMode) {
+    payload.pricingEngine = {
+      enabledMode: settingPricingMode.value as 'legacy' | 'shadow' | 'live',
+      paperProfiles: {
+        shortBond: {
+          baseBwPrice: shortBondBwPrice,
+          baseColorPrice: shortBondColorPrice,
+        },
+        longBond: {
+          baseBwPrice: longBondBwPrice,
+          baseColorPrice: longBondColorPrice,
+        },
+      },
+      thresholds: {
+        bwMax: bwMaxCoverage,
+        fullColorMin: fullColorMinCoverage,
+      },
+      colorMultiplier,
+      blankPagePolicy: (settingBlankPagePolicy?.value ?? 'charge_zero') as
+        | 'charge_zero'
+        | 'charge_bw'
+        | 'charge_color',
     };
   }
 

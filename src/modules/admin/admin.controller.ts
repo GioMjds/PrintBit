@@ -1158,6 +1158,19 @@ export class AdminController {
           }
         >;
       };
+      pricingEngine?: {
+        enabledMode?: 'legacy' | 'shadow' | 'live';
+        paperProfiles?: {
+          shortBond?: { baseBwPrice?: number; baseColorPrice?: number };
+          longBond?: { baseBwPrice?: number; baseColorPrice?: number };
+        };
+        thresholds?: {
+          bwMax?: number;
+          fullColorMin?: number;
+        };
+        colorMultiplier?: number;
+        blankPagePolicy?: 'charge_zero' | 'charge_bw' | 'charge_color';
+      };
     };
 
     const printPerPage = body.pricing?.printPerPage;
@@ -1223,6 +1236,18 @@ export class AdminController {
       kioskPreferences: { ...originalSettings.kioskPreferences },
       inkMonitoring: { ...originalSettings.inkMonitoring },
       consumablesForecasting: { ...originalSettings.consumablesForecasting },
+      pricingEngine: {
+        enabledMode: originalSettings.pricingEngine.enabledMode,
+        paperProfiles: {
+          shortBond: { ...originalSettings.pricingEngine.paperProfiles.shortBond },
+          longBond: { ...originalSettings.pricingEngine.paperProfiles.longBond },
+        },
+        thresholds: { ...originalSettings.pricingEngine.thresholds },
+        colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
+        blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
+        bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
+        rounding: originalSettings.pricingEngine.rounding,
+      },
       consumableEstimation: {
         defaultCoefficients: {
           ...originalSettings.consumableEstimation.defaultCoefficients,
@@ -1536,6 +1561,123 @@ export class AdminController {
       }
 
       nextSettings.consumableEstimation = next;
+    }
+
+    if (body.pricingEngine) {
+      const incoming = body.pricingEngine;
+      const next = {
+        enabledMode: originalSettings.pricingEngine.enabledMode,
+        paperProfiles: {
+          shortBond: { ...originalSettings.pricingEngine.paperProfiles.shortBond },
+          longBond: { ...originalSettings.pricingEngine.paperProfiles.longBond },
+        },
+        thresholds: { ...originalSettings.pricingEngine.thresholds },
+        colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
+        blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
+        bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
+        rounding: originalSettings.pricingEngine.rounding,
+      };
+
+      if (incoming.enabledMode !== undefined) {
+        if (
+          incoming.enabledMode !== 'legacy' &&
+          incoming.enabledMode !== 'shadow' &&
+          incoming.enabledMode !== 'live'
+        ) {
+          return res.status(400).json({
+            error: 'pricingEngine.enabledMode must be "legacy", "shadow", or "live".',
+          });
+        }
+        next.enabledMode = incoming.enabledMode;
+      }
+
+      if (incoming.paperProfiles?.shortBond) {
+        if (!isFiniteNumber(incoming.paperProfiles.shortBond.baseBwPrice) ||
+            incoming.paperProfiles.shortBond.baseBwPrice < 0) {
+          return res.status(400).json({
+            error: 'pricingEngine.paperProfiles.shortBond.baseBwPrice must be >= 0.',
+          });
+        }
+        if (!isFiniteNumber(incoming.paperProfiles.shortBond.baseColorPrice) ||
+            incoming.paperProfiles.shortBond.baseColorPrice < 0) {
+          return res.status(400).json({
+            error: 'pricingEngine.paperProfiles.shortBond.baseColorPrice must be >= 0.',
+          });
+        }
+        next.paperProfiles.shortBond.baseBwPrice = incoming.paperProfiles.shortBond.baseBwPrice;
+        next.paperProfiles.shortBond.baseColorPrice = incoming.paperProfiles.shortBond.baseColorPrice;
+      }
+
+      if (incoming.paperProfiles?.longBond) {
+        if (!isFiniteNumber(incoming.paperProfiles.longBond.baseBwPrice) ||
+            incoming.paperProfiles.longBond.baseBwPrice < 0) {
+          return res.status(400).json({
+            error: 'pricingEngine.paperProfiles.longBond.baseBwPrice must be >= 0.',
+          });
+        }
+        if (!isFiniteNumber(incoming.paperProfiles.longBond.baseColorPrice) ||
+            incoming.paperProfiles.longBond.baseColorPrice < 0) {
+          return res.status(400).json({
+            error: 'pricingEngine.paperProfiles.longBond.baseColorPrice must be >= 0.',
+          });
+        }
+        next.paperProfiles.longBond.baseBwPrice = incoming.paperProfiles.longBond.baseBwPrice;
+        next.paperProfiles.longBond.baseColorPrice = incoming.paperProfiles.longBond.baseColorPrice;
+      }
+
+      if (incoming.thresholds) {
+        if (incoming.thresholds.bwMax !== undefined) {
+          if (!isFiniteNumber(incoming.thresholds.bwMax) ||
+              incoming.thresholds.bwMax < 0 ||
+              incoming.thresholds.bwMax > 1) {
+            return res.status(400).json({
+              error: 'pricingEngine.thresholds.bwMax must be between 0 and 1.',
+            });
+          }
+          next.thresholds.bwMax = incoming.thresholds.bwMax;
+        }
+        if (incoming.thresholds.fullColorMin !== undefined) {
+          if (!isFiniteNumber(incoming.thresholds.fullColorMin) ||
+              incoming.thresholds.fullColorMin < 0 ||
+              incoming.thresholds.fullColorMin > 1) {
+            return res.status(400).json({
+              error: 'pricingEngine.thresholds.fullColorMin must be between 0 and 1.',
+            });
+          }
+          next.thresholds.fullColorMin = incoming.thresholds.fullColorMin;
+        }
+      }
+
+      if (next.thresholds.bwMax >= next.thresholds.fullColorMin) {
+        return res.status(400).json({
+          error: 'pricingEngine.thresholds.bwMax must be < fullColorMin.',
+        });
+      }
+
+      if (incoming.colorMultiplier !== undefined) {
+        if (!isFiniteNumber(incoming.colorMultiplier) ||
+            incoming.colorMultiplier < 1) {
+          return res.status(400).json({
+            error: 'pricingEngine.colorMultiplier must be >= 1.',
+          });
+        }
+        next.colorMultiplier = incoming.colorMultiplier;
+      }
+
+      if (incoming.blankPagePolicy !== undefined) {
+        if (
+          incoming.blankPagePolicy !== 'charge_zero' &&
+          incoming.blankPagePolicy !== 'charge_bw' &&
+          incoming.blankPagePolicy !== 'charge_color'
+        ) {
+          return res.status(400).json({
+            error: 'pricingEngine.blankPagePolicy must be "charge_zero", "charge_bw", or "charge_color".',
+          });
+        }
+        next.blankPagePolicy = incoming.blankPagePolicy;
+      }
+
+      nextSettings.pricingEngine = next;
     }
 
     db.data!.settings = nextSettings;
