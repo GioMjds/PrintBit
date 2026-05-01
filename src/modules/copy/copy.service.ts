@@ -39,10 +39,12 @@ import { consumablesStore } from '@/core/database/sqlite-storage';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
+import { analyzeDocument } from '@/services/document-analysis';
+import { buildEnhancedPrintQuote } from '@/services/print-quote';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
-const VALID_PAPER_SIZES = new Set(['A4', 'Letter', 'Legal']);
+const VALID_PAPER_SIZES = new Set(['A4', 'Legal']);
 const IDEMPOTENCY_SCOPE = 'POST:/api/copy/jobs';
 
 export interface CreateCopyJobInput {
@@ -89,7 +91,7 @@ interface NormalizedCopyJobInput {
   colorMode: 'colored' | 'grayscale';
   orientation: 'portrait' | 'landscape';
   rotationDeg: RotationDeg;
-  paperSize: 'A4' | 'Letter' | 'Legal';
+  paperSize: 'A4' | 'Legal';
   amount?: number;
   previewPath: string;
 }
@@ -359,6 +361,58 @@ export class CopyService {
     };
   }
 
+  async getCopyQuote(input: any): Promise<ServiceResponse> {
+    const previewPath = input.copyPreviewPath;
+    if (!previewPath) {
+      return {
+        statusCode: 400,
+        body: { error: 'No document to analyze.' },
+      };
+    }
+
+    const previewFilename = path.basename(previewPath);
+    const previewAbsPath = path.resolve('uploads', 'scans', previewFilename);
+    if (!fs.existsSync(previewAbsPath)) {
+      return {
+        statusCode: 404,
+        body: { error: 'Document not found.' },
+      };
+    }
+
+    try {
+      const analysis = await analyzeDocument({
+        filePath: previewAbsPath,
+        filename: previewFilename,
+        contentType: 'application/pdf', // Scans are usually PDFs
+      });
+
+      const quote = buildEnhancedPrintQuote({
+        analysis: {
+          ...analysis,
+          analyzedAt: new Date(),
+          confidence: 'high',
+        },
+        copies: input.copies || 1,
+        colorMode: input.colorMode || 'grayscale',
+        paperSize: input.paperSize || 'A4',
+        pageRange: input.pageRange || { type: 'all' },
+        duplex: input.duplex || false,
+        includePricingEngineBreakdown: true,
+      });
+
+      return {
+        statusCode: 200,
+        body: quote,
+      };
+    } catch (error) {
+      console.error('[COPY] Quote calculation failed:', error);
+      return {
+        statusCode: 500,
+        body: { error: 'Failed to calculate price.' },
+      };
+    }
+  }
+
   private normalizeInput(input: CreateCopyJobInput): NormalizedCopyJobInput {
     const safeCopies =
       typeof input.copies === 'number' && Number.isFinite(input.copies)
@@ -372,10 +426,8 @@ export class CopyService {
       input.orientation && VALID_ORIENTATIONS.has(input.orientation)
         ? (input.orientation as 'portrait' | 'landscape')
         : 'portrait';
-    const safePaperSize =
-      input.paperSize && VALID_PAPER_SIZES.has(input.paperSize)
-        ? (input.paperSize as 'A4' | 'Letter' | 'Legal')
-        : 'A4';
+    const safePaperSize: 'A4' | 'Legal' =
+      input.paperSize === 'Legal' ? 'Legal' : 'A4';
     const safeRotationDeg = normalizeRotationDeg(input.rotationDeg, 0);
     const safePreviewPath =
       typeof input.previewPath === 'string' ? input.previewPath.trim() : '';

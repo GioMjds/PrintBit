@@ -245,12 +245,19 @@ export function buildEnhancedPrintQuote(input: {
       analysis: input.analysis,
       selectedPageIndices: selectedPages.selected,
       copies: Math.min(30, Math.max(1, Math.floor(input.copies))),
+      paperSize: input.paperSize,
+      colorMode: input.colorMode,
     });
+
+    const isLive = pricingBreakdown.pricingMode === 'live';
 
     return {
       ok: true,
       quote: {
         ...baseQuote,
+        requiredAmount: isLive
+          ? pricingBreakdown.finalPayablePeso
+          : baseQuote.requiredAmount,
         pricingEngine: {
           mode: pricingBreakdown.pricingMode,
           perPageBreakdown: pricingBreakdown.pages,

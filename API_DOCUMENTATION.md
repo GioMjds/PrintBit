@@ -53,19 +53,19 @@ Success response:
 
 ```json
 {
-  "enabledMode": "legacy",
+  "enabledMode": "live",
   "paperProfiles": [
     {
       "name": "A4",
-      "displayName": "Short Bond Paper",
+      "displayName": "Short Bond (A4/Letter)",
       "baseBwPrice": 5,
-      "baseColorPrice": 7
+      "baseColorPrice": 15
     },
     {
       "name": "Legal",
-      "displayName": "Long Bond Paper",
-      "baseBwPrice": 6,
-      "baseColorPrice": 8
+      "displayName": "Long Bond (Legal)",
+      "baseBwPrice": 7,
+      "baseColorPrice": 20
     }
   ],
   "thresholds": {

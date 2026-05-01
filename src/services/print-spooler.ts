@@ -137,12 +137,16 @@ async function safeUpdateReceiptTerminalStatus(input: {
         },
       );
     } catch (logError) {
-      console.error('[SPOOLER-MONITOR] Failed to append receipt update failure log.', {
-        transactionId: input.transactionId,
-        spoolerCorrelationKey: input.spoolerCorrelationKey,
-        spoolerJobId: input.spoolerJobId,
-        error: logError instanceof Error ? logError.message : String(logError),
-      });
+      console.error(
+        '[SPOOLER-MONITOR] Failed to append receipt update failure log.',
+        {
+          transactionId: input.transactionId,
+          spoolerCorrelationKey: input.spoolerCorrelationKey,
+          spoolerJobId: input.spoolerJobId,
+          error:
+            logError instanceof Error ? logError.message : String(logError),
+        },
+      );
     }
   }
 }
@@ -502,11 +506,14 @@ export async function monitorSpoolerJob(
         },
       );
     } catch (error) {
-      console.error('[SPOOLER-MONITOR] Failed to append monitor-unavailable log.', {
-        error: error instanceof Error ? error.message : String(error),
-        transactionId,
-        spoolerCorrelationKey: correlationKey,
-      });
+      console.error(
+        '[SPOOLER-MONITOR] Failed to append monitor-unavailable log.',
+        {
+          error: error instanceof Error ? error.message : String(error),
+          transactionId,
+          spoolerCorrelationKey: correlationKey,
+        },
+      );
     }
     await safeUpdateReceiptTerminalStatus({
       transactionId,
@@ -809,8 +816,7 @@ export async function monitorSpoolerJob(
                 jobStatus: inferredStatus,
                 pagesPrinted: 0,
                 totalPages: 0,
-                reason:
-                  `No spooler job snapshot detected after ${dispatchEngine ?? 'unknown'} dispatch; treating synchronous dispatch as completed.`,
+                reason: `No spooler job snapshot detected after ${dispatchEngine ?? 'unknown'} dispatch; treating synchronous dispatch as completed.`,
                 receipt,
               },
               {
@@ -909,9 +915,11 @@ export async function monitorSpoolerJob(
             },
           );
           const lastStatusWasFailure =
-            lastStatus !== null && matchesStatusSet(lastStatus, TERMINAL_FAILURE_TOKENS);
+            lastStatus !== null &&
+            matchesStatusSet(lastStatus, TERMINAL_FAILURE_TOKENS);
           if (
-            missingTrackedJobPollCount >= MISSING_TRACKED_JOB_SUCCESS_THRESHOLD &&
+            missingTrackedJobPollCount >=
+              MISSING_TRACKED_JOB_SUCCESS_THRESHOLD &&
             !lastStatusWasFailure &&
             correlationKey
           ) {
@@ -931,8 +939,7 @@ export async function monitorSpoolerJob(
                 jobStatus: inferredStatus,
                 pagesPrinted: lastPagesPrinted,
                 totalPages: lastTotalPages,
-                reason:
-                  `Tracked spooler job #${trackedJobId} was purged from queue without a terminal failure status; inferring successful print.`,
+                reason: `Tracked spooler job #${trackedJobId} was purged from queue without a terminal failure status; inferring successful print.`,
                 receipt,
               },
               {
@@ -987,18 +994,41 @@ export async function monitorSpoolerJob(
                 error,
               );
             }
-            if (onConfirmed) {
+            if (transactionId) {
               try {
-                await onConfirmed({
+                await checkpointRecoverySession({
+                  transactionId,
+                  mode: 'print',
+                  phase: 'reconciled',
+                  requiredAmount: chargedAmount,
+                  chargedAmount,
+                  sessionId,
+                  documentId,
+                  spoolerCorrelationKey: correlationKey,
                   spoolerJobId: trackedJobId,
-                  status: inferredStatus,
-                  pagesPrinted: lastPagesPrinted,
-                  totalPages: lastTotalPages,
+                  jobDispatchedAt,
+                  spoolerTerminalAt: new Date().toISOString(),
+                  reconciledAt: new Date().toISOString(),
+                  startupReconciled: false,
+                  reconciliationAction: 'none',
+                  reconciliationReason:
+                    'Tracked spooler job purged; inferred as completed.',
+                  context: {
+                    spoolerOutcome: 'inferred_purged',
+                    lastStatus,
+                    pagesPrinted: lastPagesPrinted,
+                    totalPages: lastTotalPages,
+                    monitorElapsedMs: Date.now() - startedAtMs,
+                    handoffLatencyMs,
+                    pollCount,
+                    queryFailureCount,
+                    missingTrackedJobPollCount,
+                  },
                 });
-              } catch (cleanupError) {
+              } catch (checkpointError) {
                 console.error(
-                  '[SPOOLER-MONITOR] Post-confirmed cleanup callback failed for purged job success.',
-                  cleanupError,
+                  '[SPOOLER-MONITOR] Failed to checkpoint recovery session (purged job inferred success)',
+                  checkpointError,
                 );
               }
             }
@@ -1065,6 +1095,17 @@ export async function monitorSpoolerJob(
           : scopedJobs.reduce((a, b) => (b.id > a.id ? b : a));
 
       if (job === null) {
+        // If we haven't latched onto a job yet, just continue and wait for the handoff.
+        if (trackedJobId === null) {
+          await new Promise<void>((resolve) =>
+            setTimeout(resolve, POLL_INTERVAL_MS),
+          );
+          queryResult = await queryRecentPrintJobs(normalizedPrinterName, ps);
+          pollCount += 1;
+          lastQueryElapsedMs = queryResult.elapsedMs;
+          continue;
+        }
+
         // Tracked job was found previously but is now missing from this snapshot.
         // Windows removes completed jobs from the spooler; count consecutive misses
         // and infer success when the threshold is met and last status was non-failure.
@@ -1080,7 +1121,8 @@ export async function monitorSpoolerJob(
           },
         );
         const lastStatusWasFailure =
-          lastStatus !== null && matchesStatusSet(lastStatus, TERMINAL_FAILURE_TOKENS);
+          lastStatus !== null &&
+          matchesStatusSet(lastStatus, TERMINAL_FAILURE_TOKENS);
         if (
           missingTrackedJobPollCount >= MISSING_TRACKED_JOB_SUCCESS_THRESHOLD &&
           !lastStatusWasFailure &&
@@ -1102,8 +1144,7 @@ export async function monitorSpoolerJob(
               jobStatus: inferredStatus,
               pagesPrinted: lastPagesPrinted,
               totalPages: lastTotalPages,
-              reason:
-                `Tracked spooler job #${trackedJobId} was purged from queue without a terminal failure status; inferring successful print.`,
+              reason: `Tracked spooler job #${trackedJobId} was purged from queue without a terminal failure status; inferring successful print.`,
               receipt,
             },
             {
@@ -1173,42 +1214,41 @@ export async function monitorSpoolerJob(
               );
             }
           }
-          if (trackedJobId !== null) {
-            try {
-              await checkpointRecoverySession({
-                transactionId,
-                mode: 'print',
-                phase: 'reconciled',
-                requiredAmount: chargedAmount,
-                chargedAmount,
-                sessionId,
-                documentId,
-                spoolerCorrelationKey: correlationKey,
-                spoolerJobId: trackedJobId,
-                jobDispatchedAt,
-                spoolerTerminalAt: new Date().toISOString(),
-                reconciledAt: new Date().toISOString(),
-                startupReconciled: false,
-                reconciliationAction: 'none',
-                reconciliationReason: 'Tracked spooler job purged; inferred as completed.',
-                context: {
-                  spoolerOutcome: 'inferred_purged',
-                  lastStatus,
-                  pagesPrinted: lastPagesPrinted,
-                  totalPages: lastTotalPages,
-                  monitorElapsedMs: Date.now() - startedAtMs,
-                  handoffLatencyMs,
-                  pollCount,
-                  queryFailureCount,
-                  missingTrackedJobPollCount,
-                },
-              });
-            } catch (checkpointError) {
-              console.error(
-                '[SPOOLER-MONITOR] Failed to checkpoint recovery session (purged job inferred success)',
-                checkpointError,
-              );
-            }
+          try {
+            await checkpointRecoverySession({
+              transactionId: transactionId!,
+              mode: 'print',
+              phase: 'reconciled',
+              requiredAmount: chargedAmount,
+              chargedAmount,
+              sessionId,
+              documentId,
+              spoolerCorrelationKey: correlationKey,
+              spoolerJobId: trackedJobId,
+              jobDispatchedAt,
+              spoolerTerminalAt: new Date().toISOString(),
+              reconciledAt: new Date().toISOString(),
+              startupReconciled: false,
+              reconciliationAction: 'none',
+              reconciliationReason:
+                'Tracked spooler job purged; inferred as completed.',
+              context: {
+                spoolerOutcome: 'inferred_purged',
+                lastStatus,
+                pagesPrinted: lastPagesPrinted,
+                totalPages: lastTotalPages,
+                monitorElapsedMs: Date.now() - startedAtMs,
+                handoffLatencyMs,
+                pollCount,
+                queryFailureCount,
+                missingTrackedJobPollCount,
+              },
+            });
+          } catch (checkpointError) {
+            console.error(
+              '[SPOOLER-MONITOR] Failed to checkpoint recovery session (purged job inferred success)',
+              checkpointError,
+            );
           }
           await safeUpdateReceiptTerminalStatus({
             transactionId,

@@ -873,31 +873,18 @@ export class FinancialService {
         ? req.body.colorMode
         : 'grayscale';
     const duplex = req.body?.duplex === true;
-    const requestedPaperSize =
-      req.body?.paperSize === 'A4' ||
-      req.body?.paperSize === 'Letter' ||
-      req.body?.paperSize === 'Legal'
-        ? req.body.paperSize
-        : 'A4';
+    const requestedPaperSize: 'A4' | 'Legal' =
+      req.body?.paperSize === 'Legal' ? 'Legal' : 'A4';
 
-    // Get pricing mode from config
-    const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
-    
-    // In live and shadow modes, include pricing engine breakdown in response
-    const includePricingEngine = pricingMode === 'shadow' || pricingMode === 'live';
-
-    const quoteBuilder = includePricingEngine
-      ? buildEnhancedPrintQuote
-      : buildPrintQuote;
-
-    const quoteComputation = quoteBuilder({
+    // Pricing Engine is now mandatory
+    const quoteComputation = buildEnhancedPrintQuote({
       analysis: target.analysis,
       copies: safeCopies,
       colorMode: requestedColorMode,
       paperSize: requestedPaperSize,
       pageRange: req.body?.pageRange,
       duplex,
-      includePricingEngineBreakdown: includePricingEngine,
+      includePricingEngineBreakdown: true,
     });
     if (!quoteComputation.ok) {
       return res.status(400).json({ error: quoteComputation.error });
@@ -909,7 +896,7 @@ export class FinancialService {
       documentId: target.documentId,
       filename: target.filename,
       quote: quoteComputation.quote,
-      pricingMode,
+      pricingMode: 'live',
     });
   };
 
@@ -1324,16 +1311,12 @@ export class FinancialService {
       return;
     }
     const rotationDeg = normalizeRotationDeg(req.body?.rotationDeg, 0);
-    const paperSize =
-      req.body?.paperSize === 'A4' ||
-      req.body?.paperSize === 'Letter' ||
-      req.body?.paperSize === 'Legal'
-        ? req.body.paperSize
-        : 'A4';
+    const paperSize: 'A4' | 'Legal' =
+      req.body?.paperSize === 'Legal' ? 'Legal' : 'A4';
     const duplex = req.body?.duplex === true;
     let requiredAmount =
       mode === 'copy'
-        ? adminService.calculateJobAmount('copy', colorMode, copies)
+        ? adminService.calculateJobAmount('copy', colorMode, copies, paperSize)
         : 0;
 
     let serverFilename: string | null = null;

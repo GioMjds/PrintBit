@@ -7,18 +7,6 @@ import {
 } from '../shared';
 
 const settingsForm = document.getElementById('settingsForm') as HTMLFormElement;
-const settingPrintPerPage = document.getElementById(
-  'settingPrintPerPage',
-) as HTMLInputElement;
-const settingCopyPerPage = document.getElementById(
-  'settingCopyPerPage',
-) as HTMLInputElement;
-const settingScanDocument = document.getElementById(
-  'settingScanDocument',
-) as HTMLInputElement;
-const settingColorSurcharge = document.getElementById(
-  'settingColorSurcharge',
-) as HTMLInputElement;
 const settingAdminPin = document.getElementById(
   'settingAdminPin',
 ) as HTMLInputElement;
@@ -41,10 +29,9 @@ const settingPaperCurrentSheets = document.getElementById(
   'settingPaperCurrentSheets',
 ) as HTMLInputElement | null;
 
-// ── Pricing Engine settings (may be commented out in HTML) ──────────────────
-const settingPricingMode = document.getElementById(
-  'settingPricingMode',
-) as HTMLSelectElement | null;
+// ...
+
+// ── Pricing Engine settings ──────────────────
 const settingShortBondBwPrice = document.getElementById(
   'settingShortBondBwPrice',
 ) as HTMLInputElement | null;
@@ -69,6 +56,12 @@ const settingFullColorMinCoverage = document.getElementById(
 const settingBlankPagePolicy = document.getElementById(
   'settingBlankPagePolicy',
 ) as HTMLSelectElement | null;
+const settingScanDocument = document.getElementById(
+  'settingScanDocument',
+) as HTMLInputElement | null;
+const settingCopyPerPage = document.getElementById(
+  'settingCopyPerPage',
+) as HTMLInputElement | null;
 
 // ── Optional sections (may be commented out in HTML) ─────────────────────────
 const settingIdleTimeout = document.getElementById(
@@ -137,10 +130,6 @@ let refreshTimer: number | null = null;
 let loadedAdminLocalOnly: boolean = false;
 
 function applySettings(settings: SettingsResponse): void {
-  settingPrintPerPage.value = String(settings.pricing.printPerPage);
-  settingCopyPerPage.value = String(settings.pricing.copyPerPage);
-  settingScanDocument.value = String(settings.pricing.scanDocument);
-  settingColorSurcharge.value = String(settings.pricing.colorSurcharge);
   settingAdminPin.value = '';
   loadedAdminLocalOnly = settings.adminLocalOnly;
   if (settingAdminLocalOnly) {
@@ -192,10 +181,7 @@ function applySettings(settings: SettingsResponse): void {
       settings.consumablesForecasting.paperCurrentSheets,
     );
 
-  // Pricing Engine (optional)
-  if (settingPricingMode) {
-    settingPricingMode.value = settings.pricingEngine.enabledMode;
-  }
+  // Pricing Configuration
   if (settingShortBondBwPrice) {
     settingShortBondBwPrice.value = String(
       settings.pricingEngine.paperProfiles.shortBond.baseBwPrice,
@@ -229,6 +215,12 @@ function applySettings(settings: SettingsResponse): void {
   }
   if (settingBlankPagePolicy) {
     settingBlankPagePolicy.value = settings.pricingEngine.blankPagePolicy;
+  }
+  if (settingScanDocument) {
+    settingScanDocument.value = String(settings.pricing.scanDocument);
+  }
+  if (settingCopyPerPage) {
+    settingCopyPerPage.value = String(settings.pricing.copyPerPage);
   }
 
   // Admin Alerts (optional)
@@ -364,81 +356,52 @@ settingsForm.addEventListener('submit', (e) => {
     setMessage('Current paper must be a whole number greater than or equal to 0.');
     return;
   }
-  if (
-    settingPaperCurrentSheets &&
-    settingPaperTrayCapacitySheets &&
-    paperCurrentSheets > paperTrayCapacitySheets
-  ) {
-    setMessage('Current paper cannot exceed tray capacity.');
-    return;
-  }
 
-  // Pricing engine validation — only when the section is present
-  let shortBondBwPrice = 0;
-  let shortBondColorPrice = 0;
-  let longBondBwPrice = 0;
-  let longBondColorPrice = 0;
-  let colorMultiplier = 1;
-  let bwMaxCoverage = 0.5;
-  let fullColorMinCoverage = 0.8;
-
-  if (settingShortBondBwPrice) {
-    shortBondBwPrice = Number(settingShortBondBwPrice.value);
-    shortBondColorPrice = Number(settingShortBondColorPrice?.value ?? 0);
-    longBondBwPrice = Number(settingLongBondBwPrice?.value ?? 0);
-    longBondColorPrice = Number(settingLongBondColorPrice?.value ?? 0);
-    colorMultiplier = Number(settingColorMultiplier?.value ?? 1);
-    bwMaxCoverage = Number(settingBwMaxCoverage?.value ?? 0.5);
-    fullColorMinCoverage = Number(settingFullColorMinCoverage?.value ?? 0.8);
-
-    const isValidPrice = (n: number): boolean =>
-      Number.isFinite(n) && n >= 0;
-    const isValidMultiplier = (n: number): boolean =>
-      Number.isFinite(n) && n >= 1;
-    const isValidCoverage = (n: number): boolean =>
-      Number.isFinite(n) && n >= 0 && n <= 1;
-
-    if (!isValidPrice(shortBondBwPrice) ||
-        !isValidPrice(shortBondColorPrice) ||
-        !isValidPrice(longBondBwPrice) ||
-        !isValidPrice(longBondColorPrice)) {
-      setMessage('Paper prices must be non-negative numbers.');
-      return;
-    }
-
-    if (!isValidMultiplier(colorMultiplier)) {
-      setMessage('Color multiplier must be a number >= 1.');
-      return;
-    }
-
-    if (!isValidCoverage(bwMaxCoverage) || !isValidCoverage(fullColorMinCoverage)) {
-      setMessage('Coverage thresholds must be between 0.0 and 1.0.');
-      return;
-    }
-
-    if (bwMaxCoverage >= fullColorMinCoverage) {
-      setMessage('B&W max coverage must be less than full color min coverage.');
-      return;
-    }
-  }
+  // Pricing configuration values
+  const shortBondBwPrice = Number(settingShortBondBwPrice?.value ?? 0);
+  const shortBondColorPrice = Number(settingShortBondColorPrice?.value ?? 0);
+  const longBondBwPrice = Number(settingLongBondBwPrice?.value ?? 0);
+  const longBondColorPrice = Number(settingLongBondColorPrice?.value ?? 0);
+  const colorMultiplier = Number(settingColorMultiplier?.value ?? 1);
+  const bwMaxCoverage = Number(settingBwMaxCoverage?.value ?? 0.5);
+  const fullColorMinCoverage = Number(settingFullColorMinCoverage?.value ?? 0.8);
+  const scanDocumentPrice = Number(settingScanDocument?.value ?? 0);
+  const copyPerPagePrice = Number(settingCopyPerPage?.value ?? 0);
 
   const payload: Record<string, unknown> = {
     pricing: {
-      printPerPage: Number(settingPrintPerPage.value),
-      copyPerPage: Number(settingCopyPerPage.value),
-      scanDocument: Number(settingScanDocument.value),
-      colorSurcharge: Number(settingColorSurcharge.value),
+      printPerPage: shortBondBwPrice,
+      copyPerPage: copyPerPagePrice,
+      scanDocument: scanDocumentPrice,
+      colorSurcharge: shortBondColorPrice - shortBondBwPrice,
     },
-    ...(newPin ? { adminPin: newPin } : {}),
+    pricingEngine: {
+      enabledMode: 'live',
+      paperProfiles: {
+        shortBond: {
+          baseBwPrice: shortBondBwPrice,
+          baseColorPrice: shortBondColorPrice,
+        },
+        longBond: {
+          baseBwPrice: longBondBwPrice,
+          baseColorPrice: longBondColorPrice,
+        },
+      },
+      thresholds: {
+        bwMax: bwMaxCoverage,
+        fullColorMin: fullColorMinCoverage,
+      },
+      colorMultiplier,
+      blankPagePolicy: (settingBlankPagePolicy?.value ?? 'charge_zero') as any,
+    },
     adminLocalOnly: settingAdminLocalOnly ? settingAdminLocalOnly.checked : loadedAdminLocalOnly,
+    ...(newPin ? { adminPin: newPin } : {}),
   };
 
-  // Only include idleTimeoutSeconds if the field is present
   if (settingIdleTimeout) {
     payload.idleTimeoutSeconds = Number(settingIdleTimeout.value);
   }
 
-  // Only include inkMonitoring if the section is present
   if (inkMonitoringEnabled) {
     payload.inkMonitoring = {
       enabled: inkMonitoringEnabled.checked,
@@ -462,35 +425,7 @@ settingsForm.addEventListener('submit', (e) => {
     };
   }
 
-  // Only include pricingEngine if the section is present
-  if (settingPricingMode) {
-    payload.pricingEngine = {
-      enabledMode: settingPricingMode.value as 'legacy' | 'shadow' | 'live',
-      paperProfiles: {
-        shortBond: {
-          baseBwPrice: shortBondBwPrice,
-          baseColorPrice: shortBondColorPrice,
-        },
-        longBond: {
-          baseBwPrice: longBondBwPrice,
-          baseColorPrice: longBondColorPrice,
-        },
-      },
-      thresholds: {
-        bwMax: bwMaxCoverage,
-        fullColorMin: fullColorMinCoverage,
-      },
-      colorMultiplier,
-      blankPagePolicy: (settingBlankPagePolicy?.value ?? 'charge_zero') as
-        | 'charge_zero'
-        | 'charge_bw'
-        | 'charge_color',
-    };
-  }
-
-  // Only send alert settings if the section is rendered in the DOM
-  const alertSectionVisible = alertSeverityThreshold !== null;
-  const alertPayload = alertSectionVisible ? buildAlertPayload() : null;
+  const alertPayload = (alertSeverityThreshold !== null) ? buildAlertPayload() : null;
 
   setMessage('Saving settings...');
 
@@ -507,52 +442,16 @@ settingsForm.addEventListener('submit', (e) => {
 
   void Promise.all([settingsFetch, alertsFetch])
     .then(async ([settingsResponse, alertsResponse]) => {
-      let settingsError: string | null = null;
-      let alertsError: string | null = null;
-
-      if (!settingsResponse.ok) {
-        const body = (await settingsResponse.json()) as { error?: string };
-        settingsError = body.error ?? 'Failed to save settings.';
+      if (!settingsResponse.ok || (alertsResponse !== null && !alertsResponse.ok)) {
+        throw new Error('Failed to save settings.');
       }
-      // alertsResponse is null when the section is hidden — skip validation
-      if (alertsResponse !== null && !alertsResponse.ok) {
-        const body = (await alertsResponse.json()) as { error?: string };
-        alertsError = body.error ?? 'Failed to save alert settings.';
-      }
-
-      if (settingsError || alertsError) {
-        if (
-          settingsResponse.ok ||
-          (alertsResponse !== null && alertsResponse.ok)
-        ) {
-          try {
-            await loadData();
-            await loadAlertStats();
-          } catch (reloadError) {
-            console.error(
-              '[ADMIN_SETTINGS] Failed to resync after save error.',
-              {
-                error:
-                  reloadError instanceof Error
-                    ? reloadError.message
-                    : String(reloadError),
-              },
-            );
-          }
-        }
-        throw new Error(
-          alertsError ?? settingsError ?? 'Failed to save settings.',
-        );
-      }
-
       if (newPin) setAdminPin(newPin);
       await loadData();
       await loadAlertStats();
       setMessage('Settings saved.');
     })
     .catch((error: unknown) => {
-      const msg =
-        error instanceof Error ? error.message : 'Failed to save settings.';
+      const msg = error instanceof Error ? error.message : 'Failed to save settings.';
       setMessage(msg);
     });
 });

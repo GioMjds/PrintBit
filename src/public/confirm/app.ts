@@ -71,7 +71,7 @@ type ConfirmConfig = {
   copies: number;
   orientation: 'portrait' | 'landscape';
   rotationDeg?: number;
-  paperSize: 'A4' | 'Letter' | 'Legal';
+  paperSize: 'A4' | 'Legal';
   pageRange?: PageRangeSelection;
   totalPages?: number;
   quote?: PrintQuote;

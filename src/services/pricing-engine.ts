@@ -135,28 +135,34 @@ function lookupBulkDiscount(
 
 /**
  * Retrieves settings from the database and applies default values if specific configurations are missing. It normalizes the data into a RuntimePricingConfig object.
+ * @param paperSize: 'A4' | 'Letter' | 'Legal' - The requested paper size to determine base prices
  * @returns RuntimePricingConfig - The active configuration for the pricing engine, ready to be used in calculations
  */
-function loadPricingEngineConfig(): RuntimePricingConfig {
+function loadPricingEngineConfig(
+  paperSize: 'A4' | 'Letter' | 'Legal' = 'A4',
+): RuntimePricingConfig {
   const cfg = db.data?.settings?.pricingEngine as
     | PricingEngineSettings
     | undefined;
 
   const thresholds = cfg?.thresholds ?? { bwMax: 0.1, fullColorMin: 0.5 };
-  const shortBond = cfg?.paperProfiles?.shortBond ?? {
-    baseBwPrice: 5,
-    baseColorPrice: 15,
+
+  // Determine which profile to use. Legal = longBond; A4/Letter = shortBond.
+  const profileKey = paperSize === 'Legal' ? 'longBond' : 'shortBond';
+  const profile = cfg?.paperProfiles?.[profileKey] ?? {
+    baseBwPrice: profileKey === 'longBond' ? 7 : 5,
+    baseColorPrice: profileKey === 'longBond' ? 20 : 15,
   };
 
   return {
-    pricingMode: (cfg?.enabledMode ?? 'legacy') as 'legacy' | 'shadow' | 'live',
+    pricingMode: 'live',
     thresholds: {
       bwMax: thresholds.bwMax,
       fullColorMin: thresholds.fullColorMin,
     },
     pricing: {
-      baseBwPrice: shortBond.baseBwPrice,
-      baseColorPrice: shortBond.baseColorPrice,
+      baseBwPrice: profile.baseBwPrice,
+      baseColorPrice: profile.baseColorPrice,
       colorMultiplier: cfg?.colorMultiplier ?? 20,
     },
     blankPagePolicy:
@@ -173,13 +179,17 @@ function loadPricingEngineConfig(): RuntimePricingConfig {
  * @param input.analysis: The `DocumentAnalysis` object
  * @param input.selectedPageIndices: A `Set` of indices the user wants to print
  * @param input.copies: The number of sets to be printed
+ * @param input.paperSize: Optional paper size override
+ * @param input.colorMode: Optional color mode override (if 'grayscale', all colored pages are forced to BW price)
  */
 export function computeJobPricing(input: {
   analysis: DocumentAnalysis;
   selectedPageIndices: Set<number>;
   copies: number;
+  paperSize?: 'A4' | 'Letter' | 'Legal';
+  colorMode?: ColorMode;
 }): JobPricingBreakdown {
-  const config = loadPricingEngineConfig();
+  const config = loadPricingEngineConfig(input.paperSize);
   const pages: PagePricingBreakdown[] = [];
 
   let subtotalExact = 0;
@@ -189,11 +199,23 @@ export function computeJobPricing(input: {
   for (const pageIndex of input.selectedPageIndices) {
     const coverage = extractPageCoverage(input.analysis, pageIndex);
     const isBlank = coverage === 0;
-    const classification = classifyPageCoverage(
+    let classification = classifyPageCoverage(
       coverage,
       isBlank,
       config.thresholds,
     );
+
+    // If user requested grayscale, force all non-blank pages to 'bw'
+    if (input.colorMode === 'grayscale' && classification !== 'blank') {
+      classification = 'bw';
+    }
+
+    // If user requested colored, force all non-blank pages to be charged as full color
+    // This ensures selecting "Colored" mode provides a clear pricing distinction.
+    if (input.colorMode === 'colored' && classification !== 'blank') {
+      classification = 'full_color';
+    }
+
     const rawPrice = computePagePrice(classification, coverage, config);
 
     pages.push({

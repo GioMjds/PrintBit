@@ -16,7 +16,13 @@ export class CopyController {
     this.router.post('/jobs', this.createCopyJob);
     this.router.get('/jobs/:id', this.getCopyJob);
     this.router.post('/jobs/:id/cancel', this.cancelCopyJob);
+    this.router.post('/quote', this.getCopyQuote);
   }
+
+  private getCopyQuote = async (req: Request, res: Response): Promise<void> => {
+    const result = await this.copyService.getCopyQuote(req.body);
+    res.status(result.statusCode).json(result.body);
+  };
 
   private createCopyJob = async (req: Request, res: Response): Promise<void> => {
     const idempotencyKey = req.get('Idempotency-Key') ?? '';

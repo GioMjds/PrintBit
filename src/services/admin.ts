@@ -23,52 +23,44 @@ class AdminService {
     mode: PrintMode,
     colorOrPageCounts: ColorMode | { colorPages: number; bwPages: number },
     copies: number,
+    paperSize: 'A4' | 'Letter' | 'Legal' = 'A4',
   ): number {
     const safeCopies = Math.max(1, Math.floor(copies));
     const pricing = this.getPricingSettings();
+    const engineCfg = db.data?.settings?.pricingEngine;
 
     if (mode === 'scan') {
       return pricing.scanDocument;
     }
 
-    const basePerPage =
-      mode === 'print' ? pricing.printPerPage : pricing.copyPerPage;
+    // Pricing Engine logic is now mandatory
+    const profileKey = paperSize === 'Legal' ? 'longBond' : 'shortBond';
+    const profile = engineCfg?.paperProfiles?.[profileKey] ?? {
+      baseBwPrice: profileKey === 'longBond' ? 7 : 5,
+      baseColorPrice: profileKey === 'longBond' ? 20 : 15,
+    };
 
-    if (typeof colorOrPageCounts === 'object' && colorOrPageCounts !== null) {
-      const safeColorPages = Math.max(
-        0,
-        Math.floor(colorOrPageCounts.colorPages),
-      );
-      const safeBwPages = Math.max(0, Math.floor(colorOrPageCounts.bwPages));
+    const { colorPages, bwPages } =
+      typeof colorOrPageCounts === 'string'
+        ? {
+            colorPages: colorOrPageCounts === 'colored' ? 1 : 0,
+            bwPages: colorOrPageCounts === 'colored' ? 0 : 1,
+          }
+        : colorOrPageCounts;
 
-      return (
-        (safeColorPages * (basePerPage + pricing.colorSurcharge) +
-          safeBwPages * basePerPage) *
-        safeCopies
-      );
-    }
-
-    const color = colorOrPageCounts === 'colored' ? pricing.colorSurcharge : 0;
-    return (basePerPage + color) * safeCopies;
+    return (
+      (colorPages * profile.baseColorPrice + bwPages * profile.baseBwPrice) *
+      safeCopies
+    );
   }
 
   calculateDocumentAmount(
     mode: Exclude<PrintMode, 'scan'>,
     pageCounts: { colorPages: number; bwPages: number },
     copies: number,
+    paperSize: 'A4' | 'Letter' | 'Legal' = 'A4',
   ): number {
-    const safeCopies = Math.max(1, Math.floor(copies));
-    const safeColorPages = Math.max(0, Math.floor(pageCounts.colorPages));
-    const safeBwPages = Math.max(0, Math.floor(pageCounts.bwPages));
-    const pricing = this.getPricingSettings();
-    const basePerPage =
-      mode === 'print' ? pricing.printPerPage : pricing.copyPerPage;
-
-    return (
-      (safeColorPages * (basePerPage + pricing.colorSurcharge) +
-        safeBwPages * basePerPage) *
-      safeCopies
-    );
+    return this.calculateJobAmount(mode, pageCounts, copies, paperSize);
   }
 
   async appendAdminLog(

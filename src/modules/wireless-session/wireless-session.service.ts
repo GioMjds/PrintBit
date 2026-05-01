@@ -47,7 +47,9 @@ function isWhitespaceCharacter(value: string): boolean {
 export class WirelessSessionService {
   private static pricingAnalysisWorkerInitialized = false;
 
-  constructor(private readonly deps: WirelessSessionServiceDeps) {}
+  constructor(private readonly deps: WirelessSessionServiceDeps) {
+    this.ensurePricingAnalysisWorkerStarted();
+  }
 
   extractUploadToken(req: Request): string {
     const queryToken = req.query.token;
@@ -920,12 +922,20 @@ export class WirelessSessionService {
 
     try {
       this.ensurePricingAnalysisWorkerStarted();
-      const queued = await enqueuePricingAnalysisJob({
+
+      const enqueuePromise = enqueuePricingAnalysisJob({
         sessionId,
         documentId: targetLookup.target.documentId,
         source,
         forceReanalyze,
       });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Queue timeout')), 2000),
+      );
+
+      const queued = await Promise.race([enqueuePromise, timeoutPromise]);
+
       return {
         ok: true,
         jobId: queued.jobId,
@@ -934,20 +944,32 @@ export class WirelessSessionService {
     } catch (error) {
       const reason =
         error instanceof Error ? error.message : 'Failed to enqueue analysis.';
-      this.deps.sessionStore.markDocumentAnalysisFailure(
-        sessionId,
-        targetLookup.target.documentId,
-        reason,
+
+      console.warn(
+        `[wireless-session] Analysis enqueuing failed or timed out. Falling back to fire-and-forget local analysis. Reason: ${reason}`,
       );
-      this.deps.io.to(`session:${sessionId}`).emit('AnalysisFailed', {
-        documentId: targetLookup.target.documentId,
-        filename: targetLookup.target.filename,
-        error: reason,
-      });
+
+      void (async () => {
+        try {
+          await this.processQueuedAnalysisJob({
+            sessionId,
+            documentId: targetLookup.target.documentId,
+            source,
+            forceReanalyze,
+            requestedAt: new Date().toISOString(),
+          });
+        } catch (innerError) {
+          console.error(
+            '[wireless-session] Local analysis fallback failed.',
+            innerError,
+          );
+        }
+      })();
+
       return {
-        ok: false,
-        status: 503,
-        error: reason,
+        ok: true,
+        jobId: `local:${targetLookup.target.documentId}:${Date.now()}`,
+        status: 'active',
       };
     }
   }

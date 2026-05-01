@@ -1,4 +1,4 @@
-import type { Request } from 'express';
+import type { Express, Request } from 'express';
 import type { ModuleContext } from '../module.types';
 import { CopyService } from './copy.service';
 import { CopyController } from './copy.controller';

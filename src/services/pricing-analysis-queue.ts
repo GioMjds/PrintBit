@@ -40,6 +40,12 @@ const redisConnection = {
   host: REDIS_HOST,
   port: REDIS_PORT,
   maxRetriesPerRequest: null,
+  connectTimeout: 5000,
+  retryStrategy: (times: number) => {
+    // Fail fast if Redis is not available
+    if (times > 1) return null; 
+    return 50;
+  },
 };
 
 const jobOptions: JobsOptions = {

@@ -38,7 +38,7 @@ void initializePageIdleTimeout({
 });
 type ColorMode = 'colored' | 'grayscale';
 type Orientation = 'portrait' | 'landscape';
-type PaperSize = 'A4' | 'Letter' | 'Legal';
+type PaperSize = 'A4' | 'Legal';
 type RotationDeg = 0 | 90 | 180 | 270;
 type WorkflowMode = 'print' | 'copy' | 'scan';
 
@@ -85,6 +85,13 @@ interface PrintQuote {
     printPerPage: number;
     colorSurcharge: number;
   };
+  pricingEngine?: {
+    mode: 'legacy' | 'shadow' | 'live';
+    subtotalExact: number;
+    discountExact: number;
+    finalExact: number;
+    finalPayablePeso: number;
+  };
 }
 
 interface PreviewConfig {
@@ -130,9 +137,8 @@ interface PDFViewport {
 }
 
 const PAPER_MM: Record<PaperSize, [number, number]> = {
-  A4: [210, 297],
-  Letter: [216, 279],
-  Legal: [216, 356],
+  A4: [210, 297], // Short (A4/LTR)
+  Legal: [216, 356], // Long (Legal)
 };
 
 /** Return [widthPx, heightPx] of the paper sheet at 96 dpi,
@@ -1251,8 +1257,10 @@ function waitForQuoteRetry(ms: number): Promise<void> {
 }
 
 async function refreshPrintQuote(): Promise<void> {
-  if (mode !== 'print' || !sessionId) return;
+  if ((mode !== 'print' && mode !== 'copy') || (!sessionId && mode === 'print')) return;
+  
   if (
+    mode === 'print' &&
     hasMultiplePages() &&
     pageModeCustom?.checked &&
     pageRangeInput &&
@@ -1275,9 +1283,7 @@ async function refreshPrintQuote(): Promise<void> {
 
   try {
     const cfg = currentPreviewConfig();
-    const requestBody = JSON.stringify({
-      sessionId,
-      documentId: selectedDocumentId ?? undefined,
+    const requestBody: any = {
       copies: getCopies(),
       colorMode: cfg.colorMode,
       orientation: cfg.orientation,
@@ -1285,20 +1291,31 @@ async function refreshPrintQuote(): Promise<void> {
       paperSize: cfg.paperSize,
       pageRange: getPageRange(),
       duplex: false,
-    });
+    };
+
+    if (mode === 'print') {
+      requestBody.sessionId = sessionId;
+      requestBody.documentId = selectedDocumentId ?? undefined;
+    } else if (mode === 'copy') {
+      requestBody.sessionId = 'copy-session'; // Special marker for copy analysis if supported
+      requestBody.isCopyJob = true;
+      requestBody.copyPreviewPath = copyPreviewPath;
+    }
 
     let resolvedQuote: PrintQuote | null = null;
     let resolvedError: string | null = null;
+
+    const endpoint = mode === 'print' ? '/api/print/quote' : '/api/copy/quote';
 
     for (let attempt = 0; attempt < QUOTE_409_RETRY_ATTEMPTS; attempt += 1) {
       if (requestVersion !== quoteRequestVersion) return;
 
       let response: Response;
       try {
-        response = await fetch('/api/print/quote', {
+        response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: requestBody,
+          body: JSON.stringify(requestBody),
         });
       } catch {
         resolvedError = 'Network error while calculating price.';
@@ -1354,7 +1371,7 @@ async function refreshPrintQuote(): Promise<void> {
 }
 
 function schedulePrintQuoteRefresh(): void {
-  if (mode !== 'print') return;
+  if (mode !== 'print' && mode !== 'copy') return;
   if (quoteDebounceHandle !== null) {
     window.clearTimeout(quoteDebounceHandle);
   }
@@ -1366,10 +1383,8 @@ function schedulePrintQuoteRefresh(): void {
 
 function updateSummary(): void {
   if (!footerSummary) return;
-  if (mode === 'copy') return;
-
-  const cfg = currentPreviewConfig();
   if (mode === 'scan') {
+    const cfg = currentPreviewConfig();
     footerSummary.classList.add('ready');
     footerSummary.textContent =
       `Scan mode · ${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
@@ -1377,24 +1392,38 @@ function updateSummary(): void {
     return;
   }
 
+  const cfg = currentPreviewConfig();
   const n = getCopies();
   const pages = pageRangeLabel(getPageRange());
   let suffix = '';
-  if (mode === 'print') {
-    if (quoteLoading) {
-      suffix = ' · Calculating price...';
-      footerSummary.classList.remove('ready');
-    } else if (currentPrintQuote) {
-      suffix = ` · ₱${currentPrintQuote.requiredAmount}`;
-      footerSummary.classList.add('ready');
-    } else if (quoteError) {
-      suffix = ` · ${quoteError}`;
-      footerSummary.classList.remove('ready');
-    } else {
-      footerSummary.classList.remove('ready');
-    }
-  } else {
+
+  if (quoteLoading) {
+    suffix = ' · Calculating price...';
+    footerSummary.classList.remove('ready');
+  } else if (currentPrintQuote) {
     footerSummary.classList.add('ready');
+    const isLongBond = cfg.paperSize === 'Legal';
+    const paperLabel = isLongBond ? 'Long Bond' : 'Short Bond';
+
+    if (currentPrintQuote.pricingEngine) {
+      const pe = currentPrintQuote.pricingEngine;
+      suffix = ` · ${paperLabel} · ₱${pe.finalPayablePeso}`;
+      if (pe.discountExact > 0) {
+        suffix += ` (Incl. ₱${pe.discountExact.toFixed(2)} discount)`;
+      }
+    } else {
+      suffix = ` · ${paperLabel} · ₱${currentPrintQuote.requiredAmount}`;
+    }
+  } else if (quoteError) {    suffix = ` · ${quoteError}`;
+    footerSummary.classList.remove('ready');
+  } else if (mode === 'copy') {
+     // Fallback for copy mode if quote not yet loaded
+     const hasCopyPreview = Boolean(copyPreviewPath);
+     if (hasCopyPreview) {
+       suffix = ' · Ready to calculate';
+     } else {
+       suffix = ' · No document';
+     }
   }
 
   footerSummary.textContent =
