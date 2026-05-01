@@ -1444,12 +1444,21 @@ export class FinancialService {
         return;
       }
 
-      const quoteComputation = buildPrintQuote({
+      // Use mode-aware quote builder: pricing engine in shadow/live modes, legacy otherwise
+      const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
+      const includePricingEngine = pricingMode === 'shadow' || pricingMode === 'live';
+      
+      const quoteBuilder = includePricingEngine
+        ? buildEnhancedPrintQuote
+        : buildPrintQuote;
+
+      const quoteComputation = quoteBuilder({
         analysis: target.analysis,
         copies,
         colorMode,
         pageRange: req.body?.pageRange,
         duplex,
+        includePricingEngineBreakdown: includePricingEngine,
       });
       if (!quoteComputation.ok) {
         void adminService.appendAdminLog(
