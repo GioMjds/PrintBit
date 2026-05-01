@@ -204,6 +204,7 @@ export function buildEnhancedPrintQuote(input: {
   analysis: DocumentAnalysis;
   colorMode: ColorMode;
   copies: number;
+  paperSize?: 'A4' | 'Letter' | 'Legal';
   pageRange?: unknown;
   duplex?: boolean;
   includePricingEngineBreakdown?: boolean;
@@ -213,6 +214,7 @@ export function buildEnhancedPrintQuote(input: {
     analysis: input.analysis,
     colorMode: input.colorMode,
     copies: input.copies,
+    paperSize: input.paperSize,
     pageRange: input.pageRange,
     duplex: input.duplex,
   });
@@ -274,6 +276,7 @@ export function buildPrintQuote(input: {
   analysis: DocumentAnalysis;
   colorMode: ColorMode;
   copies: number;
+  paperSize?: 'A4' | 'Letter' | 'Legal';
   pageRange?: unknown;
   duplex?: boolean;
 }): PrintQuoteComputation {

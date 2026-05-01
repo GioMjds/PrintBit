@@ -873,6 +873,12 @@ export class FinancialService {
         ? req.body.colorMode
         : 'grayscale';
     const duplex = req.body?.duplex === true;
+    const requestedPaperSize =
+      req.body?.paperSize === 'A4' ||
+      req.body?.paperSize === 'Letter' ||
+      req.body?.paperSize === 'Legal'
+        ? req.body.paperSize
+        : 'A4';
 
     // Get pricing mode from config
     const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
@@ -888,6 +894,7 @@ export class FinancialService {
       analysis: target.analysis,
       copies: safeCopies,
       colorMode: requestedColorMode,
+      paperSize: requestedPaperSize,
       pageRange: req.body?.pageRange,
       duplex,
       includePricingEngineBreakdown: includePricingEngine,
@@ -1456,6 +1463,7 @@ export class FinancialService {
         analysis: target.analysis,
         copies,
         colorMode,
+        paperSize,
         pageRange: req.body?.pageRange,
         duplex,
         includePricingEngineBreakdown: includePricingEngine,
