@@ -20,6 +20,9 @@ import {
 export interface DocumentPageAnalysis {
   index: number;
   isColor: boolean;
+  coverage?: number;
+  classification?: 'blank' | 'bw' | 'partial' | 'full_color';
+  isBlank?: boolean;
   fallbackReasonFlags?: string[];
 }
 
@@ -53,6 +56,9 @@ export interface UploadedDocument {
   /** The full path to the uploaded file on the server, e.g. "uploads/abc123" */
   filePath: string;
   analysis?: DocumentAnalysis;
+  analysisStatus?: 'pending' | 'completed' | 'failed';
+  analysisError?: string | null;
+  analysisRequestedAt?: Date;
 }
 
 export interface Session {
@@ -343,6 +349,9 @@ export class SessionStore {
       sizeBytes: file.size,
       uploadedAt: new Date(),
       filePath: destPath,
+      analysisStatus: 'pending',
+      analysisError: null,
+      analysisRequestedAt: new Date(),
     };
 
     const documents = session.documents
@@ -413,13 +422,83 @@ export class SessionStore {
     };
 
     target.analysis = stamped;
+    target.analysisStatus = 'completed';
+    target.analysisError = null;
+    if (!target.analysisRequestedAt) {
+      target.analysisRequestedAt = new Date();
+    }
     if (session.document?.documentId === documentId) {
       session.document.analysis = stamped;
+      session.document.analysisStatus = 'completed';
+      session.document.analysisError = null;
+      if (!session.document.analysisRequestedAt) {
+        session.document.analysisRequestedAt = new Date();
+      }
     }
 
     session.lastActivityAt = new Date();
     this.persistSessionSnapshot(session);
     return stamped;
+  }
+
+  markDocumentAnalysisPending(
+    sessionId: string,
+    documentId: string,
+  ): UploadedDocument | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    if (this.isSessionExpired(session)) {
+      void this.pruneExpiredSession(sessionId, session);
+      return null;
+    }
+
+    const docs =
+      session.documents ?? (session.document ? [session.document] : []);
+    const target = docs.find((doc) => doc.documentId === documentId);
+    if (!target) return null;
+
+    target.analysisStatus = 'pending';
+    target.analysisError = null;
+    target.analysisRequestedAt = new Date();
+    if (session.document?.documentId === documentId) {
+      session.document.analysisStatus = 'pending';
+      session.document.analysisError = null;
+      session.document.analysisRequestedAt = target.analysisRequestedAt;
+    }
+    session.lastActivityAt = new Date();
+    this.persistSessionSnapshot(session);
+    return target;
+  }
+
+  markDocumentAnalysisFailure(
+    sessionId: string,
+    documentId: string,
+    reason: string,
+  ): UploadedDocument | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    if (this.isSessionExpired(session)) {
+      void this.pruneExpiredSession(sessionId, session);
+      return null;
+    }
+
+    const docs =
+      session.documents ?? (session.document ? [session.document] : []);
+    const target = docs.find((doc) => doc.documentId === documentId);
+    if (!target) return null;
+
+    const trimmedReason = reason.trim();
+    target.analysisStatus = 'failed';
+    target.analysisError = trimmedReason || 'Document analysis failed.';
+    target.analysisRequestedAt = target.analysisRequestedAt ?? new Date();
+    if (session.document?.documentId === documentId) {
+      session.document.analysisStatus = 'failed';
+      session.document.analysisError = target.analysisError;
+      session.document.analysisRequestedAt = target.analysisRequestedAt;
+    }
+    session.lastActivityAt = new Date();
+    this.persistSessionSnapshot(session);
+    return target;
   }
 
   async removeDocument(
@@ -631,13 +710,26 @@ export class SessionStore {
       sizeBytes: Math.max(0, Math.floor(entry.sizeBytes)),
       uploadedAt,
       filePath: entry.filePath,
+      analysisStatus: entry.analysisStatus,
+      analysisError: entry.analysisError,
     };
+    if (entry.analysisRequestedAt) {
+      const parsedRequestedAt = new Date(entry.analysisRequestedAt);
+      if (!Number.isNaN(parsedRequestedAt.getTime())) {
+        document.analysisRequestedAt = parsedRequestedAt;
+      }
+    }
     if (entry.analysisJson) {
       document.analysis = this.parseDocumentAnalysis(
         entry.analysisJson,
         entry.sessionId,
         entry.documentId,
       );
+      document.analysisStatus = 'completed';
+      document.analysisError = null;
+      document.analysisRequestedAt = document.analysisRequestedAt ?? uploadedAt;
+    } else if (!document.analysisStatus) {
+      document.analysisStatus = 'pending';
     }
     return document;
   }
@@ -737,9 +829,28 @@ export class SessionStore {
           `Malformed fallback reason flags at index ${index} for ${sessionId}/${documentId}`,
         );
       }
+      const coverage =
+        typeof pageCandidate.coverage === 'number' &&
+        Number.isFinite(pageCandidate.coverage)
+          ? Math.max(0, Math.min(1, pageCandidate.coverage))
+          : undefined;
+      const classification: 'blank' | 'bw' | 'partial' | 'full_color' | undefined =
+        pageCandidate.classification === 'blank' ||
+        pageCandidate.classification === 'bw' ||
+        pageCandidate.classification === 'partial' ||
+        pageCandidate.classification === 'full_color'
+          ? pageCandidate.classification
+          : undefined;
+      const isBlank =
+        typeof pageCandidate.isBlank === 'boolean'
+          ? pageCandidate.isBlank
+          : undefined;
       return {
         index: Math.floor(pageCandidate.index),
         isColor: pageCandidate.isColor,
+        ...(coverage !== undefined ? { coverage } : {}),
+        ...(classification ? { classification } : {}),
+        ...(isBlank !== undefined ? { isBlank } : {}),
         ...(fallbackReasonFlags
           ? { fallbackReasonFlags: fallbackReasonFlags as string[] }
           : {}),
@@ -799,6 +910,17 @@ export class SessionStore {
       analysisJson: document.analysis
         ? this.serializeDocumentAnalysis(document.analysis)
         : null,
+      analysisStatus:
+        document.analysisStatus === 'completed'
+          ? 'completed'
+          : document.analysisStatus === 'failed'
+            ? 'failed'
+            : 'pending',
+      analysisError:
+        typeof document.analysisError === 'string' && document.analysisError.trim()
+          ? document.analysisError.trim()
+          : null,
+      analysisRequestedAt: document.analysisRequestedAt?.toISOString() ?? null,
     };
   }
 

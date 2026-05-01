@@ -185,6 +185,25 @@ export type SettingsResponse = {
     scanDocument: number;
     colorSurcharge: number;
   };
+  pricingEngine: {
+    enabledMode: 'legacy' | 'shadow' | 'live';
+    paperProfiles: {
+      shortBond: { baseBwPrice: number; baseColorPrice: number };
+      longBond: { baseBwPrice: number; baseColorPrice: number };
+    };
+    thresholds: {
+      bwMax: number;
+      fullColorMin: number;
+    };
+    colorMultiplier: number;
+    blankPagePolicy: 'charge_zero' | 'charge_bw' | 'charge_color';
+    bulkDiscountTiers: Array<{
+      minPages: number;
+      maxPages?: number;
+      discountPerPage: number;
+    }>;
+    rounding: 'whole_peso_total_only';
+  };
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;

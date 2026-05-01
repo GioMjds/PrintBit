@@ -23,6 +23,43 @@ export interface PricingSettings {
   colorSurcharge: number;
 }
 
+export type PricingEngineMode = 'legacy' | 'shadow' | 'live';
+export type PricingEngineBlankPagePolicy =
+  | 'charge_zero'
+  | 'charge_bw'
+  | 'charge_color';
+export type PricingEngineRoundingMode = 'whole_peso_total_only';
+export type PricingEnginePageClassification = 'blank' | 'bw' | 'partial' | 'full_color';
+
+export interface PricingEnginePaperProfile {
+  baseBwPrice: number;
+  baseColorPrice: number;
+}
+
+export interface PricingEngineThresholds {
+  bwMax: number;
+  fullColorMin: number;
+}
+
+export interface PricingEngineBulkDiscountTier {
+  minPages: number;
+  maxPages?: number;
+  discountPerPage: number;
+}
+
+export interface PricingEngineSettings {
+  enabledMode: PricingEngineMode;
+  paperProfiles: {
+    shortBond: PricingEnginePaperProfile;
+    longBond: PricingEnginePaperProfile;
+  };
+  thresholds: PricingEngineThresholds;
+  colorMultiplier: number;
+  blankPagePolicy: PricingEngineBlankPagePolicy;
+  bulkDiscountTiers: PricingEngineBulkDiscountTier[];
+  rounding: PricingEngineRoundingMode;
+}
+
 export type InkTelemetryUnknownPolicy = 'warn_allow' | 'block';
 
 export interface InkMonitoringSettings {
@@ -59,6 +96,7 @@ export interface ConsumableEstimationSettings {
 
 export interface AdminSettings {
   pricing: PricingSettings;
+  pricingEngine: PricingEngineSettings;
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
@@ -522,6 +560,30 @@ const DEFAULT_DATA: Schema = {
       scanDocument: 5,
       colorSurcharge: 2,
     },
+    pricingEngine: {
+      enabledMode: 'legacy',
+      paperProfiles: {
+        shortBond: {
+          baseBwPrice: 3,
+          baseColorPrice: 18,
+        },
+        longBond: {
+          baseBwPrice: 4,
+          baseColorPrice: 20,
+        },
+      },
+      thresholds: {
+        bwMax: 0.05,
+        fullColorMin: 0.6,
+      },
+      colorMultiplier: 15,
+      blankPagePolicy: 'charge_zero',
+      bulkDiscountTiers: [
+        { minPages: 10, maxPages: 50, discountPerPage: 0.5 },
+        { minPages: 51, discountPerPage: 0.75 },
+      ],
+      rounding: 'whole_peso_total_only',
+    },
     idleTimeoutSeconds: 120,
     adminPin:
       '$argon2id$v=19$m=65536,t=3,p=4$gqSpsbLttLcalBC6SYKG0A$T34vxa4BxPcJ++fLZ+19qp9FGaQufJCCCqWu1fb35TQ',
@@ -680,8 +742,59 @@ function normalizeConsumableEstimationOverrideKey(value: string): string {
   if (!compact) return '';
   return compact.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
+
+function normalizePricingEngineMode(value: unknown): PricingEngineMode {
+  if (value === 'shadow' || value === 'live') return value;
+  return 'legacy';
+}
+
+function normalizePricingEngineBlankPagePolicy(
+  value: unknown,
+): PricingEngineBlankPagePolicy {
+  if (value === 'charge_bw' || value === 'charge_color') return value;
+  return 'charge_zero';
+}
+
+function normalizePricingEngineThreshold(
+  value: unknown,
+  fallback: number,
+): number {
+  return Math.max(0, Math.min(1, finiteOr(value, fallback)));
+}
+
+function normalizePricingEngineBulkDiscountTiers(
+  raw: unknown,
+  fallback: PricingEngineBulkDiscountTier[],
+): PricingEngineBulkDiscountTier[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return fallback.map((entry) => ({ ...entry }));
+  }
+  const normalized: PricingEngineBulkDiscountTier[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const candidate = entry as Partial<PricingEngineBulkDiscountTier>;
+    const minPages = Math.max(1, Math.floor(finiteOr(candidate.minPages, 0)));
+    const discountPerPage = Math.max(0, finiteOr(candidate.discountPerPage, 0));
+    const maxPages =
+      typeof candidate.maxPages === 'number' && Number.isFinite(candidate.maxPages)
+        ? Math.max(minPages, Math.floor(candidate.maxPages))
+        : undefined;
+    normalized.push({
+      minPages,
+      ...(maxPages !== undefined ? { maxPages } : {}),
+      discountPerPage,
+    });
+  }
+  if (normalized.length === 0) {
+    return fallback.map((entry) => ({ ...entry }));
+  }
+  normalized.sort((a, b) => a.minPages - b.minPages);
+  return normalized;
+}
+
 function normalizeSchema(data: Partial<Schema> | undefined): Schema {
   const pricing = data?.settings?.pricing;
+  const pricingEngine = data?.settings?.pricingEngine;
   const alertSettings = data?.settings?.alerts;
   const inkMonitoring = data?.settings?.inkMonitoring;
   const consumablesForecasting = data?.settings?.consumablesForecasting;
@@ -1269,6 +1382,77 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           ),
         ),
       },
+      pricingEngine: (() => {
+        const defaultPricingEngine = DEFAULT_DATA.settings.pricingEngine;
+        const shortBond = pricingEngine?.paperProfiles?.shortBond;
+        const longBond = pricingEngine?.paperProfiles?.longBond;
+        const bwMax = normalizePricingEngineThreshold(
+          pricingEngine?.thresholds?.bwMax,
+          defaultPricingEngine.thresholds.bwMax,
+        );
+        const fullColorMinRaw = normalizePricingEngineThreshold(
+          pricingEngine?.thresholds?.fullColorMin,
+          defaultPricingEngine.thresholds.fullColorMin,
+        );
+        const fullColorMin = Math.max(bwMax, fullColorMinRaw);
+
+        return {
+          enabledMode: normalizePricingEngineMode(pricingEngine?.enabledMode),
+          paperProfiles: {
+            shortBond: {
+              baseBwPrice: Math.max(
+                0,
+                finiteOr(
+                  shortBond?.baseBwPrice,
+                  defaultPricingEngine.paperProfiles.shortBond.baseBwPrice,
+                ),
+              ),
+              baseColorPrice: Math.max(
+                0,
+                finiteOr(
+                  shortBond?.baseColorPrice,
+                  defaultPricingEngine.paperProfiles.shortBond.baseColorPrice,
+                ),
+              ),
+            },
+            longBond: {
+              baseBwPrice: Math.max(
+                0,
+                finiteOr(
+                  longBond?.baseBwPrice,
+                  defaultPricingEngine.paperProfiles.longBond.baseBwPrice,
+                ),
+              ),
+              baseColorPrice: Math.max(
+                0,
+                finiteOr(
+                  longBond?.baseColorPrice,
+                  defaultPricingEngine.paperProfiles.longBond.baseColorPrice,
+                ),
+              ),
+            },
+          },
+          thresholds: {
+            bwMax,
+            fullColorMin,
+          },
+          colorMultiplier: Math.max(
+            0,
+            finiteOr(
+              pricingEngine?.colorMultiplier,
+              defaultPricingEngine.colorMultiplier,
+            ),
+          ),
+          blankPagePolicy: normalizePricingEngineBlankPagePolicy(
+            pricingEngine?.blankPagePolicy,
+          ),
+          bulkDiscountTiers: normalizePricingEngineBulkDiscountTiers(
+            pricingEngine?.bulkDiscountTiers,
+            defaultPricingEngine.bulkDiscountTiers,
+          ),
+          rounding: 'whole_peso_total_only',
+        };
+      })(),
       idleTimeoutSeconds: finiteOr(
         data?.settings?.idleTimeoutSeconds,
         DEFAULT_DATA.settings.idleTimeoutSeconds,

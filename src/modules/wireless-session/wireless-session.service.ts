@@ -1,12 +1,27 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { Request, RequestHandler } from 'express';
 import type { Server } from 'socket.io';
 import { adminService } from '@/services/admin';
 import { db, withBalanceLock } from '@/services/db';
-import type { DocumentAnalysis, SessionStore } from '@/services/session';
+import type {
+  DocumentAnalysis,
+  SessionStore,
+  UploadedDocument,
+} from '@/services/session';
 import { generateHtmlPreview, supportsHtmlPreview } from '@/services/preview';
 import { detectPdfColorContent } from '@/services/color-detection';
 import { analyzeDocument } from '@/services/document-analysis';
+import {
+  enqueuePricingAnalysisJob,
+  getPricingAnalysisJobStatus,
+  setPricingAnalysisJobProcessor,
+  startPricingAnalysisWorker,
+  type PricingAnalysisJobData,
+} from '@/services/pricing-analysis-queue';
+import { PORT } from '@/config/http.config';
+import { pricingAnalysisCacheStore } from '@/core/database/sqlite-storage';
 
 export interface WirelessSessionServiceDeps {
   io: Server;
@@ -30,6 +45,8 @@ function isWhitespaceCharacter(value: string): boolean {
 }
 
 export class WirelessSessionService {
+  private static pricingAnalysisWorkerInitialized = false;
+
   constructor(private readonly deps: WirelessSessionServiceDeps) {}
 
   extractUploadToken(req: Request): string {
@@ -161,6 +178,53 @@ export class WirelessSessionService {
 
       next();
     });
+  };
+
+  verifyAnalyzeJobTarget: RequestHandler = (req, res, next) => {
+    const payload =
+      typeof req.body === 'object' && req.body !== null
+        ? (req.body as Record<string, unknown>)
+        : {};
+    const sessionId =
+      typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+    const token = this.extractUploadToken(req);
+
+    if (!sessionId || !token) {
+      res.status(401).json({ error: 'Missing session or token.' });
+      return;
+    }
+
+    const sessionState = this.deps.sessionStore.getSessionState(sessionId);
+    if (sessionState === 'expired') {
+      res.status(410).json({
+        code: 'SESSION_EXPIRED',
+        error: 'Session has expired. Please start a new session.',
+      });
+      return;
+    }
+    if (sessionState === 'missing') {
+      res.status(404).json({ error: 'Session not found.' });
+      return;
+    }
+
+    const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
+    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    if (!session) {
+      res.status(410).json({
+        code: 'SESSION_EXPIRED',
+        error: 'Session has expired. Please start a new session.',
+      });
+      return;
+    }
+
+    if (session.token !== token) {
+      res.status(403).json({ error: 'Invalid token for session.' });
+      return;
+    }
+
+    payload.sessionId = sessionId;
+    req.body = payload;
+    next();
   };
 
   createSession: RequestHandler = async (req, res) => {
@@ -559,6 +623,27 @@ export class WirelessSessionService {
       },
     );
 
+    const queued = await this.enqueueAnalysisJob(
+      sessionId,
+      doc.documentId,
+      'upload',
+      false,
+      req,
+    );
+
+    if (!queued.ok) {
+      await adminService.appendAdminLog(
+        'analysis_queue_failed',
+        'Failed to queue pricing analysis for uploaded document.',
+        {
+          sessionId,
+          documentId: doc.documentId,
+          filename: doc.filename,
+          reason: queued.error,
+        },
+      );
+    }
+
     res.status(200).json({
       documentId: doc.documentId,
       sessionId: doc.sessionId,
@@ -566,48 +651,9 @@ export class WirelessSessionService {
       contentType: doc.contentType,
       sizeBytes: doc.sizeBytes,
       uploadedAt: doc.uploadedAt,
+      analysisJobId: queued.ok ? queued.jobId : null,
+      analysisStatus: queued.ok ? queued.status : 'failed',
     });
-
-    this.deps.io.to(`session:${sessionId}`).emit('AnalysisStarted', {
-      documentId: doc.documentId,
-      filename: doc.filename,
-    });
-
-    try {
-      const analyzed = await this.analyzeAndStoreDocument(
-        req,
-        sessionId,
-        doc.documentId,
-      );
-      if ('analysis' in analyzed) {
-        this.deps.io.to(`session:${sessionId}`).emit('AnalysisCompleted', {
-          documentId: doc.documentId,
-          filename: doc.filename,
-          analysis: analyzed.analysis,
-        });
-      } else {
-        this.deps.io.to(`session:${sessionId}`).emit('AnalysisFailed', {
-          documentId: doc.documentId,
-          filename: doc.filename,
-          error: analyzed.error,
-        });
-        console.warn(
-          `[analyze-document] Analysis failed for ${doc.filename}:`,
-          analyzed.error,
-        );
-      }
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Unknown error';
-      this.deps.io.to(`session:${sessionId}`).emit('AnalysisFailed', {
-        documentId: doc.documentId,
-        filename: doc.filename,
-        error: reason,
-      });
-      console.warn(
-        '[analyze-document] Failed to analyze uploaded file:',
-        error,
-      );
-    }
   };
 
   removeSessionDocument: RequestHandler<{
@@ -715,33 +761,96 @@ export class WirelessSessionService {
     });
   };
 
+  analyzeJob: RequestHandler = async (req, res) => {
+    const payload =
+      typeof req.body === 'object' && req.body !== null
+        ? (req.body as Record<string, unknown>)
+        : {};
+    const sessionId =
+      typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+    const jobIdRaw = typeof payload.jobId === 'string' ? payload.jobId.trim() : '';
+    const documentIdRaw =
+      typeof payload.documentId === 'string' ? payload.documentId.trim() : '';
+    const forceReanalyze = payload.forceReanalyze === true;
+
+    if (!sessionId) {
+      res.status(400).json({ error: 'sessionId is required.' });
+      return;
+    }
+
+    if (jobIdRaw) {
+      if (!jobIdRaw.startsWith(`${sessionId}:`)) {
+        res.status(403).json({
+          error: 'jobId does not belong to the provided session.',
+        });
+        return;
+      }
+
+      try {
+        const status = await getPricingAnalysisJobStatus(jobIdRaw);
+        res.status(200).json({
+          ok: true,
+          jobId: status.jobId,
+          status: status.status,
+          ...(status.failedReason ? { failedReason: status.failedReason } : {}),
+        });
+      } catch (error) {
+        res.status(503).json({
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Failed to retrieve analysis job status.',
+        });
+      }
+      return;
+    }
+
+    const queued = await this.enqueueAnalysisJob(
+      sessionId,
+      documentIdRaw || undefined,
+      'manual',
+      forceReanalyze,
+      req,
+    );
+    if (!queued.ok) {
+      res.status(queued.status).json({ ok: false, error: queued.error });
+      return;
+    }
+
+    res.status(202).json({
+      ok: true,
+      jobId: queued.jobId,
+      status: queued.status,
+    });
+  };
+
   analyzeSessionDocument: RequestHandler<{ sessionId: string }> = async (
     req,
     res,
   ) => {
     const { sessionId } = req.params;
-    const { documentId } = (req.body ?? {}) as { documentId?: string };
-
-    try {
-      const analyzed = await this.analyzeAndStoreDocument(
-        req,
-        sessionId,
-        documentId,
-      );
-      if (!('analysis' in analyzed)) {
-        res.status(analyzed.status).json({ error: analyzed.error });
-        return;
-      }
-
-      res.status(200).json({
-        documentId: analyzed.documentId,
-        fileName: analyzed.fileName,
-        ...analyzed.analysis,
-      });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ error: 'Document analysis failed.', reason });
+    const { documentId, forceReanalyze } = (req.body ?? {}) as {
+      documentId?: string;
+      forceReanalyze?: boolean;
+    };
+    const queued = await this.enqueueAnalysisJob(
+      sessionId,
+      documentId,
+      'manual',
+      forceReanalyze === true,
+      req,
+    );
+    if (!queued.ok) {
+      res.status(queued.status).json({ ok: false, error: queued.error });
+      return;
     }
+
+    res.status(202).json({
+      ok: true,
+      jobId: queued.jobId,
+      status: queued.status,
+    });
   };
 
   private statusForClaimError(
@@ -759,24 +868,128 @@ export class WirelessSessionService {
     return 404;
   }
 
-  private async analyzeAndStoreDocument(
-    req: Request,
+  private ensurePricingAnalysisWorkerStarted(): void {
+    if (WirelessSessionService.pricingAnalysisWorkerInitialized) return;
+
+    setPricingAnalysisJobProcessor(async (data) => {
+      await this.processQueuedAnalysisJob(data);
+    });
+    startPricingAnalysisWorker();
+    WirelessSessionService.pricingAnalysisWorkerInitialized = true;
+  }
+
+  private async enqueueAnalysisJob(
     sessionId: string,
-    documentId?: string,
+    documentId: string | undefined,
+    source: 'upload' | 'manual',
+    forceReanalyze: boolean,
+    req?: Request,
   ): Promise<
-    | { error: string; status: 404 | 422 | 500 }
-    | {
-        status: 200;
-        analysis: DocumentAnalysis;
-        documentId: string;
-        fileName: string;
-      }
+    | { ok: true; jobId: string; status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed' | 'unknown' }
+    | { ok: false; status: 404 | 503; error: string }
   > {
-    const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(
+    const targetLookup = this.resolveAnalysisTargetDocument(
       sessionId,
-      publicBaseUrl,
+      req ? this.deps.resolvePublicBaseUrl(req) : this.buildInternalBaseUrl(),
+      documentId,
     );
+    if (!('target' in targetLookup)) {
+      return {
+        ok: false,
+        status: targetLookup.status,
+        error: targetLookup.error,
+      };
+    }
+
+    const markedPending = this.deps.sessionStore.markDocumentAnalysisPending(
+      sessionId,
+      targetLookup.target.documentId,
+    );
+    if (!markedPending) {
+      return {
+        ok: false,
+        status: 404,
+        error: 'Document not found.',
+      };
+    }
+
+    this.deps.io.to(`session:${sessionId}`).emit('AnalysisStarted', {
+      documentId: targetLookup.target.documentId,
+      filename: targetLookup.target.filename,
+    });
+
+    try {
+      this.ensurePricingAnalysisWorkerStarted();
+      const queued = await enqueuePricingAnalysisJob({
+        sessionId,
+        documentId: targetLookup.target.documentId,
+        source,
+        forceReanalyze,
+      });
+      return {
+        ok: true,
+        jobId: queued.jobId,
+        status: queued.status,
+      };
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'Failed to enqueue analysis.';
+      this.deps.sessionStore.markDocumentAnalysisFailure(
+        sessionId,
+        targetLookup.target.documentId,
+        reason,
+      );
+      this.deps.io.to(`session:${sessionId}`).emit('AnalysisFailed', {
+        documentId: targetLookup.target.documentId,
+        filename: targetLookup.target.filename,
+        error: reason,
+      });
+      return {
+        ok: false,
+        status: 503,
+        error: reason,
+      };
+    }
+  }
+
+  private async processQueuedAnalysisJob(
+    job: PricingAnalysisJobData,
+  ): Promise<void> {
+    const analyzed = await this.analyzeAndStoreDocument(
+      job.sessionId,
+      job.documentId,
+      this.buildInternalBaseUrl(),
+      { forceReanalyze: job.forceReanalyze },
+    );
+    if (!('analysis' in analyzed)) {
+      this.deps.sessionStore.markDocumentAnalysisFailure(
+        job.sessionId,
+        job.documentId,
+        analyzed.error,
+      );
+      this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisFailed', {
+        documentId: job.documentId,
+        filename: job.documentId,
+        error: analyzed.error,
+      });
+      throw new Error(analyzed.error);
+    }
+
+    this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisCompleted', {
+      documentId: analyzed.documentId,
+      filename: analyzed.fileName,
+      analysis: analyzed.analysis,
+    });
+  }
+
+  private resolveAnalysisTargetDocument(
+    sessionId: string,
+    publicBaseUrl: URL,
+    documentId?: string,
+  ):
+    | { target: UploadedDocument }
+    | { error: string; status: 404 } {
+    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
     if (!session) {
       return { error: 'Session not found.', status: 404 };
     }
@@ -787,7 +1000,6 @@ export class WirelessSessionService {
         : session.document
           ? [session.document]
           : [];
-
     const fallbackDocumentId = session.document?.documentId;
     const targetDocumentId = documentId ?? fallbackDocumentId;
     const target = targetDocumentId
@@ -798,8 +1010,189 @@ export class WirelessSessionService {
       return { error: 'Document not found.', status: 404 };
     }
 
+    return { target };
+  }
+
+  private buildInternalBaseUrl(): URL {
+    return new URL(`http://127.0.0.1:${PORT}`);
+  }
+
+  private buildPricingConfigFingerprint(): string {
+    const pricingEngine = db.data?.settings?.pricingEngine ?? null;
+    return createHash('sha256')
+      .update(JSON.stringify(pricingEngine))
+      .digest('hex');
+  }
+
+  private async computeFileHash(filePath: string): Promise<string> {
+    const fileBuffer = await fs.promises.readFile(filePath);
+    return createHash('sha256').update(fileBuffer).digest('hex');
+  }
+
+  private normalizeAnalysisPayload(
+    candidate: unknown,
+  ): Omit<DocumentAnalysis, 'analyzedAt'> | null {
+    if (typeof candidate !== 'object' || candidate === null) return null;
+    const value = candidate as Record<string, unknown>;
+
+    const fileType = value.fileType;
+    if (
+      fileType !== 'pdf' &&
+      fileType !== 'docx' &&
+      fileType !== 'doc' &&
+      fileType !== 'xlsx' &&
+      fileType !== 'xls' &&
+      fileType !== 'pptx' &&
+      fileType !== 'ppt' &&
+      fileType !== 'image' &&
+      fileType !== 'unknown'
+    ) {
+      return null;
+    }
+
+    if (
+      typeof value.pageCount !== 'number' ||
+      !Number.isFinite(value.pageCount) ||
+      typeof value.colorPages !== 'number' ||
+      !Number.isFinite(value.colorPages) ||
+      typeof value.bwPages !== 'number' ||
+      !Number.isFinite(value.bwPages) ||
+      typeof value.totalPages !== 'number' ||
+      !Number.isFinite(value.totalPages) ||
+      !Array.isArray(value.pages)
+    ) {
+      return null;
+    }
+
+    const pages: Array<DocumentAnalysis['pages'][number]> = [];
+    for (const page of value.pages) {
+      if (typeof page !== 'object' || page === null) {
+        return null;
+      }
+      const pageValue = page as Record<string, unknown>;
+      if (
+        typeof pageValue.index !== 'number' ||
+        !Number.isFinite(pageValue.index) ||
+        typeof pageValue.isColor !== 'boolean'
+      ) {
+        return null;
+      }
+
+      const coverage =
+        typeof pageValue.coverage === 'number' && Number.isFinite(pageValue.coverage)
+          ? Math.max(0, Math.min(1, pageValue.coverage))
+          : undefined;
+      const classificationRaw = pageValue.classification;
+      const classification: 'blank' | 'bw' | 'partial' | 'full_color' | undefined =
+        classificationRaw === 'blank' ||
+        classificationRaw === 'bw' ||
+        classificationRaw === 'partial' ||
+        classificationRaw === 'full_color'
+          ? classificationRaw
+          : undefined;
+      const isBlank =
+        typeof pageValue.isBlank === 'boolean' ? pageValue.isBlank : undefined;
+      const fallbackReasonFlags = Array.isArray(pageValue.fallbackReasonFlags)
+        ? pageValue.fallbackReasonFlags.filter(
+            (flag): flag is string => typeof flag === 'string',
+          )
+        : undefined;
+
+      pages.push({
+        index: Math.floor(pageValue.index),
+        isColor: pageValue.isColor,
+        ...(coverage !== undefined ? { coverage } : {}),
+        ...(classification ? { classification } : {}),
+        ...(isBlank !== undefined ? { isBlank } : {}),
+        ...(fallbackReasonFlags && fallbackReasonFlags.length > 0
+          ? { fallbackReasonFlags }
+          : {}),
+      });
+    }
+
+    const confidenceRaw = value.confidence;
+    const confidence =
+      confidenceRaw === 'high' ||
+      confidenceRaw === 'medium' ||
+      confidenceRaw === 'low'
+        ? confidenceRaw
+        : 'medium';
+
+    return {
+      fileType,
+      pageCount: Math.max(0, Math.floor(value.pageCount)),
+      pages,
+      colorPages: Math.max(0, Math.floor(value.colorPages)),
+      bwPages: Math.max(0, Math.floor(value.bwPages)),
+      totalPages: Math.max(0, Math.floor(value.totalPages)),
+      confidence,
+    };
+  }
+
+  private async analyzeAndStoreDocument(
+    sessionId: string,
+    documentId: string | undefined,
+    publicBaseUrl: URL,
+    options?: { forceReanalyze?: boolean },
+  ): Promise<
+    | { error: string; status: 404 | 422 | 500 }
+    | {
+        status: 200;
+        analysis: DocumentAnalysis;
+        documentId: string;
+        fileName: string;
+      }
+  > {
+    const targetLookup = this.resolveAnalysisTargetDocument(
+      sessionId,
+      publicBaseUrl,
+      documentId,
+    );
+    if (!('target' in targetLookup)) {
+      return targetLookup;
+    }
+    const target = targetLookup.target;
+    const absoluteFilePath = path.resolve(target.filePath);
+    const configFingerprint = this.buildPricingConfigFingerprint();
+    const fileHash = await this.computeFileHash(absoluteFilePath);
+
+    if (!options?.forceReanalyze) {
+      const cached = pricingAnalysisCacheStore.getByHash(fileHash, configFingerprint);
+      if (cached) {
+        try {
+          const cachedAnalysis = this.normalizeAnalysisPayload(
+            JSON.parse(cached.analysisJson),
+          );
+          if (cachedAnalysis) {
+            const persistedFromCache = this.deps.sessionStore.setDocumentAnalysis(
+              sessionId,
+              target.documentId,
+              cachedAnalysis,
+            );
+            if (persistedFromCache) {
+              return {
+                status: 200,
+                analysis: persistedFromCache,
+                documentId: target.documentId,
+                fileName: target.filename,
+              };
+            }
+          }
+        } catch (error) {
+          console.warn(
+            '[pricing-analysis] Failed to parse cached analysis payload.',
+            {
+              sessionId,
+              documentId: target.documentId,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        }
+      }
+    }
+
     const targetExtension = path.extname(target.filename).toLowerCase();
-    let analysisFilePath = target.filePath;
+    let analysisFilePath = absoluteFilePath;
     let analysisContentType = target.contentType;
     let analysisFilename = target.filename;
 
@@ -809,7 +1202,7 @@ export class WirelessSessionService {
     ) {
       try {
         analysisFilePath = await this.deps.convertToPdfPreview(
-          path.resolve(target.filePath),
+          absoluteFilePath,
         );
       } catch (error) {
         const reason =
@@ -831,10 +1224,16 @@ export class WirelessSessionService {
       convertToPdfPreview: this.deps.convertToPdfPreview,
     });
 
-    const analysisForStore = {
+    const analysisForStore = this.normalizeAnalysisPayload({
       ...analysis,
       confidence: analysis.confidence ?? 'medium',
-    } as Omit<import('@/services/document-analysis').DocumentAnalysisResult & { confidence: 'high' | 'medium' | 'low' }, 'analyzedAt'>;
+    });
+    if (!analysisForStore) {
+      return {
+        error: 'Invalid analysis payload.',
+        status: 500,
+      };
+    }
 
     const persisted = this.deps.sessionStore.setDocumentAnalysis(
       sessionId,
@@ -847,6 +1246,25 @@ export class WirelessSessionService {
         error: 'Failed to persist document analysis.',
         status: 500,
       };
+    }
+
+    const nowIso = new Date().toISOString();
+    try {
+      pricingAnalysisCacheStore.upsert({
+        fileHash,
+        configFingerprint,
+        contentType: target.contentType,
+        pageCount: analysisForStore.pageCount,
+        analysisJson: JSON.stringify(analysisForStore),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    } catch (error) {
+      console.error('[pricing-analysis] Failed to persist analysis cache row.', {
+        sessionId,
+        documentId: target.documentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     return {

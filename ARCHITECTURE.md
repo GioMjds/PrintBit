@@ -40,6 +40,9 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `settlement.ts`: shared payment settlement logic (charge balance + dispense change) used by print and copy flows.
 - `printer.ts` + `print-dispatcher.ts`: mode-based print dispatch orchestration
   (`legacy`, `phased`, `new-only`) with engine adapters.
+- `document-analysis.ts`: per-page coverage analysis for PDFs and images (pixel sampling for images, operator-based estimation for PDFs); returns classification (blank/bw/partial/full_color) and coverage (0.0-1.0).
+- `pricing-engine.ts`: PH-localized pricing logic with threshold classification, proportional partial-page pricing, blank-page policy, bulk tier discounts, and whole-peso rounding.
+- `print-quote.ts`: quote builder with optional pricing engine breakdown integration.
 - `session.ts`: in-memory wireless upload session domain.
 - `hotspot.ts`: MyPublicWiFi process/config integration.
 - `scanner.ts`: scanner adapter integration.
@@ -68,10 +71,11 @@ Persistent (`printbit.sqlite`):
 
 - `balance`
 - `earnings`
-- `settings` (pricing, admin settings, timeout)
+- `settings` (pricing, pricing engine config, admin settings, timeout)
 - `coinStats`
 - `jobStats`
 - `logs`
+- `analysisCache` (per-file hash, coverage/classification results)
 
 Ephemeral (process memory):
 
@@ -89,12 +93,30 @@ Ephemeral (process memory):
    - Session ownership is single-device (`x-upload-client-id`) to prevent multi-phone collisions.
    - Session TTL is idle-based; clients receive countdown metadata and show warning before expiry.
    - On timeout, uploaded files are cleaned and session state is released.
-4. User selects print settings.
-5. Confirm endpoint validates funds and dispatches print.
-6. Settlement: balance zeroed, earnings updated, change dispensed via coin hopper.
-7. Socket.IO emits balance update and change dispense status events.
+4. Document analysis computes per-page coverage and classification (blank/bw/partial/full_color).
+5. Quote endpoint returns legacy or enhanced pricing:
+   - `legacy` mode: original pricing logic only.
+   - `shadow` mode: both legacy and pricing engine breakdown (for validation).
+   - `live` mode: pricing engine as billing source.
+6. User selects print settings.
+7. Confirm endpoint validates funds using quote-consistent amounts and dispatches print.
+8. Settlement: balance zeroed, earnings updated, change dispensed via coin hopper.
+9. Socket.IO emits balance update and change dispense status events.
 
-## B) Copy flow
+## B) Document analysis (per-page pricing classification)
+
+1. Document analysis service processes PDFs and images to compute per-page coverage.
+2. For images: pixel sampling (bounded by max sample count) computes color pixel ratio (0.0-1.0).
+3. For PDFs: operator-based analysis counts color-related operators as proportion of total operators.
+4. Per-page classification applied:
+   - blank: coverage < 0.05 → apply blankPagePolicy (charge_zero | charge_bw | charge_color).
+   - bw: coverage <= bwMax threshold → base BW price.
+   - partial: coverage between thresholds → proportional pricing (base + coverage × multiplier, capped at full color).
+   - full_color: coverage >= fullColorMin → base color price.
+5. Analysis results cached by file hash to avoid recomputation.
+6. Results persisted in session documents and returned in quote response.
+
+## C) Copy flow
 
 1. Kiosk scans preview.
 2. User confirms copy settings.
@@ -102,7 +124,7 @@ Ephemeral (process memory):
 4. Print dispatch runs asynchronously via job state updates.
 5. Settlement: same as print — balance zeroed, change dispensed via hopper.
 
-## C) Change dispensing (coin hopper)
+## D) Change dispensing (coin hopper)
 
 1. Settlement logic computes `changeAmount = previousBalance - requiredAmount`.
 2. If `changeAmount > 0`, hopper service requests payout in whole 1-peso coin count (serial `HOPPER DISPENSE ...` or ESP32 HTTP bridge, based on provider mode).
@@ -113,7 +135,7 @@ Ephemeral (process memory):
 7. On dispense failure, owed change is recorded for admin resolution (`owedChanges` in SQLite state).
 8. Retries happen only for retryable error codes (JAM, MOTOR_TIMEOUT, PARTIAL).
 
-## D) Admin flow
+## E) Admin flow
 
 1. Admin authenticates with PIN.
 2. UI reads summary/status/settings/logs.

@@ -46,7 +46,7 @@ import {
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
-import { buildPrintQuote } from '@/services/print-quote';
+import { buildPrintQuote, buildEnhancedPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
 import {
   checkpointRecoverySession,
@@ -611,6 +611,25 @@ export class FinancialService {
     res.json(adminService.getPricingSettings());
   };
 
+  getPricingConfig = (_req: Request, res: Response): void => {
+    const config = db.data?.settings?.pricingEngine;
+    res.json({
+      enabledMode: config?.enabledMode ?? 'legacy',
+      paperProfiles: config?.paperProfiles ?? {
+        shortBond: { baseBwPrice: 5, baseColorPrice: 15 },
+        longBond: { baseBwPrice: 7, baseColorPrice: 20 },
+      },
+      thresholds: config?.thresholds ?? {
+        bwMax: 0.1,
+        fullColorMin: 0.5,
+      },
+      colorMultiplier: config?.colorMultiplier ?? 20,
+      blankPagePolicy: config?.blankPagePolicy ?? 'charge_zero',
+      bulkDiscountTiers: config?.bulkDiscountTiers ?? [],
+      rounding: config?.rounding ?? 'whole_peso_total_only',
+    });
+  };
+
   addCoinCompatibility = async (
     req: Request,
     res: Response,
@@ -854,13 +873,31 @@ export class FinancialService {
         ? req.body.colorMode
         : 'grayscale';
     const duplex = req.body?.duplex === true;
+    const requestedPaperSize =
+      req.body?.paperSize === 'A4' ||
+      req.body?.paperSize === 'Letter' ||
+      req.body?.paperSize === 'Legal'
+        ? req.body.paperSize
+        : 'A4';
 
-    const quoteComputation = buildPrintQuote({
+    // Get pricing mode from config
+    const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
+    
+    // In live and shadow modes, include pricing engine breakdown in response
+    const includePricingEngine = pricingMode === 'shadow' || pricingMode === 'live';
+
+    const quoteBuilder = includePricingEngine
+      ? buildEnhancedPrintQuote
+      : buildPrintQuote;
+
+    const quoteComputation = quoteBuilder({
       analysis: target.analysis,
       copies: safeCopies,
       colorMode: requestedColorMode,
+      paperSize: requestedPaperSize,
       pageRange: req.body?.pageRange,
       duplex,
+      includePricingEngineBreakdown: includePricingEngine,
     });
     if (!quoteComputation.ok) {
       return res.status(400).json({ error: quoteComputation.error });
@@ -872,6 +909,7 @@ export class FinancialService {
       documentId: target.documentId,
       filename: target.filename,
       quote: quoteComputation.quote,
+      pricingMode,
     });
   };
 
@@ -1413,12 +1451,22 @@ export class FinancialService {
         return;
       }
 
-      const quoteComputation = buildPrintQuote({
+      // Use mode-aware quote builder: pricing engine in shadow/live modes, legacy otherwise
+      const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
+      const includePricingEngine = pricingMode === 'shadow' || pricingMode === 'live';
+      
+      const quoteBuilder = includePricingEngine
+        ? buildEnhancedPrintQuote
+        : buildPrintQuote;
+
+      const quoteComputation = quoteBuilder({
         analysis: target.analysis,
         copies,
         colorMode,
+        paperSize,
         pageRange: req.body?.pageRange,
         duplex,
+        includePricingEngineBreakdown: includePricingEngine,
       });
       if (!quoteComputation.ok) {
         void adminService.appendAdminLog(

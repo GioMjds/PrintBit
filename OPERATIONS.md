@@ -36,12 +36,51 @@
 
 - Balance API: `GET /api/balance`
 - Pricing API: `GET /api/pricing`
+- Pricing config API (new): `GET /api/pricing-config` — returns active pricing engine configuration
 - Active session API: `GET /api/session/active`
 - Admin summary (requires PIN header): `GET /api/admin/summary`
 - Customer E-Receipt API (tokenized): `GET /api/receipts/by-token/:token`
 - Admin E-Receipt API (support path): `GET /api/admin/transactions/:transactionId/receipt`
 
 Admin dashboard overview now surfaces an explicit open owed-change KPI (`owedChangeOpenCount`) so unresolved payouts are visible without drilling into anomaly logs.
+
+## Pricing Engine Configuration and Rollout
+
+### Pricing Engine Modes
+
+The pricing engine supports three operational modes for safe phased rollout:
+
+1. **Legacy mode** (default): Uses original pricing logic. Pricing engine computed in parallel but not used for billing.
+2. **Shadow mode**: Both legacy and pricing engine compute in parallel. Quote endpoint returns both values for validation and comparison without affecting actual billing.
+3. **Live mode**: Pricing engine becomes the billing source. All transactions use the new pricing logic.
+
+### Mode Switching
+
+1. Access admin settings page (`/admin/settings`) or use admin API to update `settings.pricingEngine.enabledMode`.
+2. Valid values: `legacy` | `shadow` | `live`.
+3. Mode changes take effect immediately for new transactions; existing pending transactions use their computed quote amount.
+4. Before switching to `live`:
+   - Run in `shadow` mode for at least 24 hours to validate pricing calculations.
+   - Compare legacy and pricing engine amounts via `/api/print/quote?includePricingEngine=true`.
+   - Audit price deltas and confirm bulk tier behavior, blank-page policy, and color multiplier values.
+
+### Pricing Engine Configuration Fields
+
+Configuration stored in `settings.pricingEngine`:
+
+- `enabledMode`: Operating mode (`legacy` | `shadow` | `live`).
+- `paperProfiles`: Array of paper size profiles with BW and color prices.
+- `thresholds`: Coverage classification boundaries (`bwMax`, `fullColorMin`).
+- `colorMultiplier`: Proportional surcharge for partial-color pages (0.0-1.0).
+- `blankPagePolicy`: How to charge blank pages (`charge_zero` | `charge_bw` | `charge_color`).
+- `bulkTiers`: Array of volume-based discount tiers (minPages, discountPerPage).
+- `rounding`: Final amount rounding strategy (`ceil_whole_peso`).
+
+### Troubleshooting
+
+- **Quote endpoint returns `409`:** Document analysis is pending or failed. Retry after a few seconds or upload a different document.
+- **Pricing deltas visible in shadow mode:** This is expected during testing. Use admin logs to audit per-transaction pricing breakdowns.
+- **Mode switch not taking effect:** Clear session storage and refresh the confirm page to load new pricing config.
 
 ## Controlled Windows and driver updates (Issue #39)
 

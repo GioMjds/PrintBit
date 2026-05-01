@@ -23,6 +23,39 @@ export interface PricingSettings {
   colorSurcharge: number;
 }
 
+export type PricingEngineMode = 'legacy' | 'shadow' | 'live';
+export type PricingEngineBlankPagePolicy =
+  | 'charge_zero'
+  | 'charge_bw'
+  | 'charge_color';
+
+export interface PricingEnginePaperProfile {
+  baseBwPrice: number;
+  baseColorPrice: number;
+}
+
+export interface PricingEngineBulkDiscountTier {
+  minPages: number;
+  maxPages?: number;
+  discountPerPage: number;
+}
+
+export interface PricingEngineSettings {
+  enabledMode: PricingEngineMode;
+  paperProfiles: {
+    shortBond: PricingEnginePaperProfile;
+    longBond: PricingEnginePaperProfile;
+  };
+  thresholds: {
+    bwMax: number;
+    fullColorMin: number;
+  };
+  colorMultiplier: number;
+  blankPagePolicy: PricingEngineBlankPagePolicy;
+  bulkDiscountTiers: PricingEngineBulkDiscountTier[];
+  rounding: 'whole_peso_total_only';
+}
+
 export type InkTelemetryUnknownPolicy = 'warn_allow' | 'block';
 
 export interface InkMonitoringSettings {
@@ -105,6 +138,7 @@ export interface AlertSettings {
 
 export interface AdminSettings {
   pricing: PricingSettings;
+  pricingEngine: PricingEngineSettings;
   idleTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;

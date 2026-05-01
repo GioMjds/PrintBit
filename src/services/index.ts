@@ -24,6 +24,8 @@ export {
   warmPrintDispatcherProfile,
 } from './printer';
 export * from './printer-status';
+export * from './pricing-analysis-queue';
+export * from './pricing-engine';
 export * from './report-issue';
 export * from './recovery';
 export * from './scan-delivery';

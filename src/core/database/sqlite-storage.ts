@@ -289,6 +289,9 @@ function ensureSchema(db: DatabaseSync): void {
       uploaded_at TEXT NOT NULL,
       file_path TEXT NOT NULL,
       analysis_json TEXT,
+      analysis_status TEXT NOT NULL DEFAULT 'pending',
+      analysis_error TEXT,
+      analysis_requested_at TEXT,
       FOREIGN KEY(session_id) REFERENCES wireless_sessions(session_id)
         ON UPDATE CASCADE
         ON DELETE CASCADE
@@ -485,7 +488,44 @@ function ensureSchema(db: DatabaseSync): void {
       ON consumable_ink_snapshots(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name
       ON consumable_ink_snapshots(printer_name);
+
+    CREATE TABLE IF NOT EXISTS pricing_analysis_cache (
+      file_hash TEXT NOT NULL,
+      config_fingerprint TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      page_count INTEGER NOT NULL,
+      analysis_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(file_hash, config_fingerprint)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pricing_analysis_cache_updated_at
+      ON pricing_analysis_cache(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pricing_analysis_cache_config_fingerprint
+      ON pricing_analysis_cache(config_fingerprint);
   `);
+
+  const wirelessDocumentColumnRows = db
+    .prepare('PRAGMA table_info(wireless_session_documents)')
+    .all() as Array<Record<string, unknown>>;
+  const wirelessDocumentColumns = new Set(
+    wirelessDocumentColumnRows
+      .map((row) => (typeof row.name === 'string' ? row.name : ''))
+      .filter((name) => name.length > 0),
+  );
+  if (!wirelessDocumentColumns.has('analysis_status')) {
+    db.exec(
+      "ALTER TABLE wireless_session_documents ADD COLUMN analysis_status TEXT NOT NULL DEFAULT 'pending'",
+    );
+  }
+  if (!wirelessDocumentColumns.has('analysis_error')) {
+    db.exec('ALTER TABLE wireless_session_documents ADD COLUMN analysis_error TEXT');
+  }
+  if (!wirelessDocumentColumns.has('analysis_requested_at')) {
+    db.exec(
+      'ALTER TABLE wireless_session_documents ADD COLUMN analysis_requested_at TEXT',
+    );
+  }
 
   const receiptColumnRows = db
     .prepare('PRAGMA table_info(receipt_records)')
@@ -707,6 +747,9 @@ export interface WirelessSessionDocumentStorageEntry {
   uploadedAt: string;
   filePath: string;
   analysisJson: string | null;
+  analysisStatus: 'pending' | 'completed' | 'failed';
+  analysisError: string | null;
+  analysisRequestedAt: string | null;
 }
 
 export interface WirelessSessionSnapshotStorageEntry {
@@ -744,7 +787,10 @@ export class WirelessSessionSqliteStore {
         size_bytes,
         uploaded_at,
         file_path,
-        analysis_json
+        analysis_json,
+        analysis_status,
+        analysis_error,
+        analysis_requested_at
        FROM wireless_session_documents
        ORDER BY uploaded_at ASC`,
       )
@@ -792,8 +838,11 @@ export class WirelessSessionSqliteStore {
           size_bytes,
           uploaded_at,
           file_path,
-          analysis_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          analysis_json,
+          analysis_status,
+          analysis_error,
+          analysis_requested_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const doc of snapshot.documents) {
         insertDocument.run(
@@ -805,6 +854,9 @@ export class WirelessSessionSqliteStore {
           doc.uploadedAt,
           doc.filePath,
           doc.analysisJson,
+          doc.analysisStatus,
+          doc.analysisError,
+          doc.analysisRequestedAt,
         );
       }
     });
@@ -898,6 +950,97 @@ export class WirelessSessionSqliteStore {
       filePath: String(row.file_path ?? ''),
       analysisJson:
         typeof row.analysis_json === 'string' ? row.analysis_json : null,
+      analysisStatus:
+        row.analysis_status === 'failed'
+          ? 'failed'
+          : row.analysis_status === 'completed'
+            ? 'completed'
+            : 'pending',
+      analysisError:
+        typeof row.analysis_error === 'string' ? row.analysis_error : null,
+      analysisRequestedAt:
+        typeof row.analysis_requested_at === 'string'
+          ? row.analysis_requested_at
+          : null,
+    };
+  }
+}
+
+export interface PricingAnalysisCacheEntry {
+  fileHash: string;
+  configFingerprint: string;
+  contentType: string;
+  pageCount: number;
+  analysisJson: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export class PricingAnalysisCacheSqliteStore {
+  getByHash(
+    fileHash: string,
+    configFingerprint: string,
+  ): PricingAnalysisCacheEntry | null {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          file_hash,
+          config_fingerprint,
+          content_type,
+          page_count,
+          analysis_json,
+          created_at,
+          updated_at
+         FROM pricing_analysis_cache
+         WHERE file_hash = ? AND config_fingerprint = ?
+         LIMIT 1`,
+      )
+      .get(fileHash, configFingerprint) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return this.toEntry(row);
+  }
+
+  upsert(entry: PricingAnalysisCacheEntry): void {
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO pricing_analysis_cache (
+          file_hash,
+          config_fingerprint,
+          content_type,
+          page_count,
+          analysis_json,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(file_hash, config_fingerprint) DO UPDATE SET
+          content_type = excluded.content_type,
+          page_count = excluded.page_count,
+          analysis_json = excluded.analysis_json,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        entry.fileHash,
+        entry.configFingerprint,
+        entry.contentType,
+        Math.max(0, Math.floor(entry.pageCount)),
+        entry.analysisJson,
+        entry.createdAt,
+        entry.updatedAt,
+      );
+  }
+
+  private toEntry(row: Record<string, unknown>): PricingAnalysisCacheEntry {
+    return {
+      fileHash: String(row.file_hash ?? ''),
+      configFingerprint: String(row.config_fingerprint ?? ''),
+      contentType: String(row.content_type ?? ''),
+      pageCount:
+        typeof row.page_count === 'number' && Number.isFinite(row.page_count)
+          ? Math.max(0, Math.floor(row.page_count))
+          : 0,
+      analysisJson: String(row.analysis_json ?? ''),
+      createdAt: String(row.created_at ?? ''),
+      updatedAt: String(row.updated_at ?? ''),
     };
   }
 }
@@ -2581,6 +2724,7 @@ export const reportIssueStore = new ReportIssueSqliteStore();
 export const receiptStore = new ReceiptSqliteStore();
 export const consumablesStore = new ConsumablesSqliteStore();
 export const wirelessSessionStore = new WirelessSessionSqliteStore();
+export const pricingAnalysisCacheStore = new PricingAnalysisCacheSqliteStore();
 
 export function importLowDbSnapshotIfNeeded(
   snapshot: LowDbImportSnapshot,

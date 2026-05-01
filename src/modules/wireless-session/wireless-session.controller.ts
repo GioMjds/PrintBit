@@ -66,6 +66,11 @@ export class WirelessSessionController {
       this.wirelessSessionService.verifyUploadTarget,
       this.wirelessSessionService.analyzeSessionDocument,
     );
+    this.router.post(
+      '/api/analyze-job',
+      this.wirelessSessionService.verifyAnalyzeJobTarget,
+      this.wirelessSessionService.analyzeJob,
+    );
     this.router.use('/api/wireless/sessions/:sessionId/upload', handleMulterError);
   }
 }

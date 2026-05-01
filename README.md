@@ -8,6 +8,7 @@ It is designed for campus usage (students, faculty, and staff) with phone-to-kio
 - Coin balance via serial input (Arduino/coin acceptor).
 - Wireless upload sessions for print jobs (QR + hotspot flow).
 - Print and copy job charging tied to configurable pricing.
+- **PH-localized Pricing Engine** (v1): Coverage-aware per-page pricing with threshold classification, bulk tier discounts, and whole-peso settlement.
 - Tokenized E-Receipt links for settled print/copy transactions (`/receipt/t/:token`).
 - Scan and scan-preview flow for copy mode.
 - Admin dashboard for earnings, logs, settings, and diagnostics.
