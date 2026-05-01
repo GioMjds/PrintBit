@@ -45,6 +45,54 @@ Returns current `balance` and `earnings`.
 
 Returns pricing settings (`printPerPage`, `copyPerPage`, `colorSurcharge`).
 
+### `GET /api/pricing-config`
+
+Returns active pricing engine configuration. Requires authorization if `adminLocalOnly` is enabled.
+
+Success response:
+
+```json
+{
+  "enabledMode": "legacy",
+  "paperProfiles": [
+    {
+      "name": "A4",
+      "displayName": "Short Bond Paper",
+      "baseBwPrice": 5,
+      "baseColorPrice": 7
+    },
+    {
+      "name": "Legal",
+      "displayName": "Long Bond Paper",
+      "baseBwPrice": 6,
+      "baseColorPrice": 8
+    }
+  ],
+  "thresholds": {
+    "bwMax": 0.05,
+    "fullColorMin": 0.95
+  },
+  "colorMultiplier": 0.5,
+  "blankPagePolicy": "charge_zero",
+  "bulkTiers": [
+    {
+      "minPages": 100,
+      "discountPerPage": 0.5
+    }
+  ],
+  "rounding": "ceil_whole_peso"
+}
+```
+
+Notes:
+
+- `enabledMode` is one of: `legacy` (original pricing), `shadow` (parallel computation), `live` (pricing engine as billing source).
+- `thresholds` define coverage boundaries for page classification (blank < bwMax, bw <= bwMax, partial between, full_color >= fullColorMin).
+- `colorMultiplier` is the proportional surcharge for partial-color pages (applied as `bwPrice + coverage × colorMultiplier × (colorPrice - bwPrice)`).
+- `blankPagePolicy` is one of: `charge_zero`, `charge_bw`, `charge_color`.
+- `bulkTiers` are applied in order (first matching tier wins); `discountPerPage` is subtracted from the per-page price.
+- `rounding` specifies final amount rounding strategy (`ceil_whole_peso` rounds up to whole peso).
+
 ### `POST /api/print/quote`
 
 Returns a **server-verified print quote** (page counts + final amount) before payment.
