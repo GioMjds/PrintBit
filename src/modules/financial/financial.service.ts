@@ -527,8 +527,8 @@ export class FinancialService {
       this.ensureCoinBridgeEventsTable(sqliteDb);
     }
 
-    let balanceAfterCredit = db.data!.balance;
-    let nextRuntimeState: Schema | null = null;
+    let balanceAfterCredit: number;
+    let nextRuntimeState: Schema;
     sqliteDb.exec('BEGIN IMMEDIATE');
     try {
       if (shouldPersistBridgeEvent) {
@@ -578,9 +578,7 @@ export class FinancialService {
       sqliteDb.exec('ROLLBACK');
       throw error;
     }
-    if (nextRuntimeState) {
-      db.data = nextRuntimeState;
-    }
+    db.data = nextRuntimeState;
 
     await adminService.appendAdminLog(
       'coin_accepted',
@@ -1568,7 +1566,7 @@ export class FinancialService {
       });
     };
 
-    let receipt: any = null;
+    let receipt: Record<string, unknown> | null = null;
     const startSpoolerMonitor = (
       chargedAmount: number,
       monitorStartPhase: 'post_dispatch' | 'post_settlement',
@@ -1837,7 +1835,6 @@ export class FinancialService {
     }
     settlementCompleted = true;
     if (spoolerConfirmedBeforeSettlement) {
-      spoolerConfirmedBeforeSettlement = false;
       void runPostSpoolerConfirmedCallbacks().catch((error) => {
         console.error(
           '[CONFIRM-PAYMENT] Deferred post-confirmed cleanup failed:',

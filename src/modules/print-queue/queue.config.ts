@@ -7,7 +7,7 @@
  * Phase 1: Queue platform foundation
  */
 
-import { Queue, Worker, QueueEvents } from 'bullmq';
+import { Queue, QueueEvents } from 'bullmq';
 import type { QueueOptions, WorkerOptions } from 'bullmq';
 
 /**
@@ -102,9 +102,7 @@ export enum NonRetryableFailureClass {
   PRINTER_NOT_READY = 'printer_not_ready',
 }
 
-export type FailureClass =
-  | RetryableFailureClass
-  | NonRetryableFailureClass;
+export type FailureClass = RetryableFailureClass | NonRetryableFailureClass;
 
 /**
  * Check if a failure class is retryable

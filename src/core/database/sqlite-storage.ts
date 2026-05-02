@@ -112,7 +112,9 @@ export interface ConsumableUsageEventEntry {
   billableBwPages: number;
   estimatedSheetsUsed: number;
   estimatedInkUnits: Record<string, number>;
-  billingPageDetection: 'high-confidence-page-detection' | 'fallback-assumptions';
+  billingPageDetection:
+    | 'high-confidence-page-detection'
+    | 'fallback-assumptions';
   analysisConfidence: 'high' | 'medium' | 'low' | 'unknown';
   source: string;
 }
@@ -519,7 +521,9 @@ function ensureSchema(db: DatabaseSync): void {
     );
   }
   if (!wirelessDocumentColumns.has('analysis_error')) {
-    db.exec('ALTER TABLE wireless_session_documents ADD COLUMN analysis_error TEXT');
+    db.exec(
+      'ALTER TABLE wireless_session_documents ADD COLUMN analysis_error TEXT',
+    );
   }
   if (!wirelessDocumentColumns.has('analysis_requested_at')) {
     db.exec(
@@ -619,14 +623,13 @@ function ensureSchema(db: DatabaseSync): void {
       );
     `);
     db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_timestamp ON consumable_ink_snapshots(timestamp DESC)'
+      'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_timestamp ON consumable_ink_snapshots(timestamp DESC)',
     );
     db.exec(
-      'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name ON consumable_ink_snapshots(printer_name)'
+      'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name ON consumable_ink_snapshots(printer_name)',
     );
   }
 }
-
 
 function getMetaValue(key: string): string | null {
   const db = getSqliteDb();
@@ -2034,12 +2037,22 @@ export class ReceiptSqliteStore {
         entry.mode,
         entry.chargedAmount,
         // color_pages
-        typeof (entry as any).colorPages === 'number'
-          ? Math.max(0, Math.floor((entry as any).colorPages))
+        typeof (entry as unknown as Record<string, unknown>).colorPages ===
+          'number'
+          ? Math.max(
+              0,
+              Math.floor(
+                (entry as unknown as Record<string, number>).colorPages,
+              ),
+            )
           : null,
         // bw_pages
-        typeof (entry as any).bwPages === 'number'
-          ? Math.max(0, Math.floor((entry as any).bwPages))
+        typeof (entry as unknown as Record<string, unknown>).bwPages ===
+          'number'
+          ? Math.max(
+              0,
+              Math.floor((entry as unknown as Record<string, number>).bwPages),
+            )
           : null,
         entry.status,
         entry.change.requested,
@@ -2642,7 +2655,7 @@ export class ConsumablesSqliteStore {
         row.analysis_confidence === 'medium' ||
         row.analysis_confidence === 'low'
           ? row.analysis_confidence
-          : 'unknown'
+          : 'unknown',
     };
   }
 

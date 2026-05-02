@@ -28,8 +28,8 @@ SOFTWARE.
 
 **PrintBit** is a coin-operated, self-service printing kiosk system developed
 as a capstone project. It runs on Windows and integrates Node.js/Express.js,
-Socket.IO, Arduino/ESP32 hardware (coin acceptor & hopper), ClamAV malware
-scanning, and WMI-based printer monitoring into a unified kiosk experience
+Socket.IO, Arduino/ESP32 hardware (coin acceptor & hopper),
+and WMI-based printer monitoring into a unified kiosk experience
 designed for deployment in campus environments.
 
 ### Contributors
@@ -49,11 +49,10 @@ include:
 | -------------- | ---------- |
 | Express.js     | MIT        |
 | Socket.IO      | MIT        |
-| LowDB          | MIT        |
+| SQLite         | MIT        |
 | serialport     | MIT        |
 | pdfjs-dist     | Apache 2.0 |
 | pdf-to-printer | MIT        |
-| ClamAV         | GPL-2.0    |
 | sharp          | Apache 2.0 |
 | argon2         | MIT        |
 

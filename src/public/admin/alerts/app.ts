@@ -63,7 +63,6 @@ const PAGE_SIZE = 10;
 let currentPage = 1;
 let totalItems = 0;
 let activeFilter: 'all' | 'open' | 'acknowledged' | 'resolved' = 'all';
-let currentPageItems: AnomalyIncident[] = [];
 let activeDetailId: string | null = null;
 let poller: number | null = null;
 
@@ -151,7 +150,6 @@ async function loadData(): Promise<void> {
     currentPage = lastPage;
     return loadData();
   }
-  currentPageItems = data.items;
   renderIncidents(data.items);
   updateStats(data);
   updatePagination();

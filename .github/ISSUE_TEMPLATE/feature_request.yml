@@ -1,0 +1,77 @@
+name: Feature Request
+description: Suggest an improvement or new feature for PrintBit
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+
+- type: textarea
+  id: summary
+  attributes:
+  label: Summary
+  description: What is the feature?
+  validations:
+  required: true
+
+- type: textarea
+  id: problem
+  attributes:
+  label: Problem / Motivation
+  description: What problem does this solve?
+  validations:
+  required: true
+
+- type: textarea
+  id: proposal
+  attributes:
+  label: Proposed Solution
+  description: How should this be implemented?
+  placeholder:
+  - API changes
+  - UI changes
+  - Printing pipeline impact
+  validations:
+  required: true
+
+- type: dropdown
+  id: scope
+  attributes:
+  label: Affected Area
+  options:
+  - Backend (API / Server)
+  - Frontend (UI / Browser)
+  - Printing Pipeline
+  - Database
+  - Hardware Integration
+  validations:
+  required: true
+
+- type: dropdown
+  id: risk
+  attributes:
+  label: Risk Level
+  options:
+  - Low (isolated change)
+  - Medium (affects existing flows)
+  - High (touches printing or hardware)
+  validations:
+  required: true
+
+- type: textarea
+  id: alternatives
+  attributes:
+  label: Alternatives Considered
+  description: Other approaches or why this is preferred
+
+- type: textarea
+  id: impact
+  attributes:
+  label: Impact
+  description:
+  - Performance impact
+  - Printing reliability impact
+  - Kiosk UX impact
+
+- type: textarea
+  id: additional
+  attributes:
+  label: Additional Context

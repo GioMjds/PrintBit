@@ -7,12 +7,15 @@
  * - Job state tracking and status queries
  *
  * Phase 1: Queue platform foundation
- * 
+ *
  * Note: Admin operations (pause, resume, drain, retry) in separate service
  */
 
 import { Queue } from 'bullmq';
-import type { PrintJobEnqueuePayload, PrintJobCorrelation } from './print-job.schema';
+import type {
+  PrintJobEnqueuePayload,
+  PrintJobCorrelation,
+} from './print-job.schema';
 import { PRINT_JOB_PAYLOAD_VERSION } from './print-job.schema';
 import { queueNames, printJobsQueueOptions } from './queue.config';
 
@@ -54,8 +57,11 @@ export class PrintQueueService {
       }
 
       const client = await this.queue.client;
-      if (client && typeof (client as any).ping === 'function') {
-        await (client as any).ping();
+      // Redis clients (node-redis / ioredis) expose a ping method
+      type PingableClient = { ping?: () => Promise<string> | string };
+      const pingable = client as PingableClient | undefined;
+      if (pingable && typeof pingable.ping === 'function') {
+        await pingable.ping();
       }
     } catch (error) {
       throw new PrintQueueServiceError(

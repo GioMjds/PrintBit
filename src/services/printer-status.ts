@@ -1125,10 +1125,12 @@ async function queryPrinterPropertyInk(
 
 function inferInkFromErrorState(
   printerState: number,
-  _printerStatus: number,
+  printerStatus: number,
 ): InkLevel[] {
-  const tonerLow = (printerState & 0x00040000) !== 0;
-  const noToner = (printerState & 0x00080000) !== 0;
+  const tonerLow =
+    (printerState & 0x00040000) !== 0 || (printerStatus & 0x00000400) !== 0;
+  const noToner =
+    (printerState & 0x00080000) !== 0 || (printerStatus & 0x00000800) !== 0;
   if (noToner) return [{ name: 'Toner / Ink', level: 0, status: 'empty' }];
   if (tonerLow) return [{ name: 'Toner / Ink', level: null, status: 'low' }];
   return [];

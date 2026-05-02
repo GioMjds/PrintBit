@@ -69,13 +69,6 @@ const dMissingReasons = document.getElementById('dMissingReasons') as HTMLElemen
 const dRelatedLogsBody = document.getElementById(
   'dRelatedLogsBody',
 ) as HTMLElement | null;
-const dOpenReceiptBtn = document.getElementById(
-  'dOpenReceiptBtn',
-) as HTMLButtonElement | null;
-const dCopyIdBtn = document.getElementById('dCopyIdBtn') as HTMLButtonElement | null;
-const dCreateReportBtn = document.getElementById(
-  'dCreateReportBtn',
-) as HTMLButtonElement | null;
 
 const txReportModal = document.getElementById('txReportModal') as HTMLElement | null;
 const txReportCloseBtn = document.getElementById(
@@ -87,7 +80,6 @@ const txReportCancelBtn = document.getElementById(
 const txReportSubmitBtn = document.getElementById(
   'txReportSubmitBtn',
 ) as HTMLButtonElement | null;
-const txReportSummary = document.getElementById('txReportSummary') as HTMLElement | null;
 const txReportTitleInput = document.getElementById(
   'txReportTitleInput',
 ) as HTMLInputElement | null;
@@ -106,25 +98,6 @@ let allLogs: LogsResponse['logs'] = [];
 let activeDrawerTransactionId: string | null = null;
 let reportContext: TransactionContextPayload | null = null;
 const transactionContextCache = new Map<string, TransactionContextPayload>();
-
-type AdminReceiptPayload = {
-  transactionId: string;
-  mode: string | null;
-  chargedAmount: number | null;
-  status: string | null;
-  change?: {
-    requested: number;
-    dispensed: number;
-    remaining: number;
-    state: string | null;
-    attempts: number;
-    owedChangeId: string | null;
-    message: string | null;
-  };
-  settledAt: string | null;
-  terminalAt: string | null;
-  generatedAt: string;
-};
 
 type TransactionContextPayload = {
   transactionId: string;
@@ -265,10 +238,6 @@ function getTransactionContextId(log: LogsResponse['logs'][number]): string | nu
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getTransactionId(log: LogsResponse['logs'][number]): string {
-  return getTransactionContextId(log) ?? '—';
-}
-
 function formatDate(value: string | null): string {
   if (!value) return '—';
   const parsed = new Date(value);
@@ -305,100 +274,6 @@ function setField(target: HTMLElement | null, value: string): void {
   if (target) target.textContent = value;
 }
 
-function writeReceiptWindow(windowRef: Window, html: string): void {
-  windowRef.document.open();
-  windowRef.document.write(html);
-  windowRef.document.close();
-}
-
-function loadingReceiptHtml(transactionId: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Opening E-Receipt…</title>
-  <style>
-    body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: #0b0a1a; color: #f8f8ff; display: grid; place-items: center; min-height: 100vh; }
-    p { opacity: 0.9; }
-  </style>
-</head>
-<body>
-  <p>Opening E-Receipt for <strong>${escapeHtml(transactionId)}</strong>…</p>
-</body>
-</html>`;
-}
-
-function receiptWindowHtml(payload: AdminReceiptPayload): string {
-  const amount = formatPeso(payload.chargedAmount);
-  const changeRequested =
-    typeof payload.change?.requested === 'number' &&
-    Number.isFinite(payload.change.requested)
-      ? Math.max(0, payload.change.requested)
-      : 0;
-  const changeDispensed =
-    typeof payload.change?.dispensed === 'number' &&
-    Number.isFinite(payload.change.dispensed)
-      ? Math.max(0, Math.min(payload.change.dispensed, changeRequested))
-      : 0;
-  const changeRemaining =
-    typeof payload.change?.remaining === 'number' &&
-    Number.isFinite(payload.change.remaining)
-      ? Math.max(0, payload.change.remaining)
-      : Math.max(0, changeRequested - changeDispensed);
-  const changeState =
-    typeof payload.change?.state === 'string' ? payload.change.state : 'none';
-  const changeMessage =
-    typeof payload.change?.message === 'string' && payload.change.message.trim()
-      ? payload.change.message.trim()
-      : changeRemaining > 0
-        ? 'Remaining change requires manual staff settlement.'
-        : 'No outstanding change.';
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>E-Receipt · ${escapeHtml(payload.transactionId)}</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font-family: "Plus Jakarta Sans", "Segoe UI", Arial, sans-serif; background: #0b0a1a; color: #f8f8ff; }
-    .wrap { max-width: 560px; margin: 28px auto; padding: 0 14px; }
-    .card { border: 1px solid rgba(167, 170, 225, 0.25); border-radius: 14px; background: rgba(16, 14, 36, 0.9); box-shadow: 0 8px 24px rgba(0,0,0,0.34); overflow: hidden; }
-    .head { padding: 16px; border-bottom: 1px solid rgba(167, 170, 225, 0.18); }
-    h1 { margin: 0 0 4px; font-size: 18px; }
-    .sub { margin: 0; opacity: 0.72; font-size: 13px; }
-    .grid { display: grid; grid-template-columns: minmax(120px, 32%) minmax(0, 1fr); }
-    .k, .v { padding: 11px 14px; font-size: 14px; }
-    .k { color: #b9badd; border-top: 1px solid rgba(167, 170, 225, 0.11); }
-    .v { border-top: 1px solid rgba(167, 170, 225, 0.11); font-family: "Courier New", monospace; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <section class="card">
-      <header class="head">
-        <h1>E-Receipt</h1>
-        <p class="sub">Transaction ${escapeHtml(payload.transactionId)}</p>
-      </header>
-      <div class="grid">
-        <div class="k">Transaction ID</div><div class="v">${escapeHtml(payload.transactionId)}</div>
-        <div class="k">Mode</div><div class="v">${escapeHtml(formatMode(payload.mode))}</div>
-        <div class="k">Charged</div><div class="v">${amount}</div>
-        <div class="k">Change Requested</div><div class="v">${escapeHtml(formatPeso(changeRequested))}</div>
-        <div class="k">Change Dispensed</div><div class="v">${escapeHtml(formatPeso(changeDispensed))}</div>
-        <div class="k">Remaining Owed</div><div class="v">${escapeHtml(formatPeso(changeRemaining))}</div>
-        <div class="k">Change Status</div><div class="v">${escapeHtml(formatChangeState(changeState))}</div>
-        <div class="k">Change Message</div><div class="v">${escapeHtml(changeMessage)}</div>
-        <div class="k">Status</div><div class="v">${escapeHtml(formatStatus(payload.status))}</div>
-        <div class="k">Settled At</div><div class="v">${escapeHtml(formatDate(payload.settledAt))}</div>
-        <div class="k">Generated At</div><div class="v">${escapeHtml(formatDate(payload.generatedAt))}</div>
-      </div>
-    </section>
-  </div>
-</body>
-</html>`;
-}
-
 async function resolveApiErrorMessage(
   response: Response,
   fallback: string,
@@ -412,78 +287,6 @@ async function resolveApiErrorMessage(
     // Ignore parse errors and keep fallback message
   }
   return fallback;
-}
-
-async function openReceiptForTransaction(
-  transactionId: string,
-  receiptWindow: Window,
-): Promise<void> {
-  const response = await apiFetch(
-    `/api/admin/transactions/${encodeURIComponent(transactionId)}/receipt`,
-  );
-  if (!response.ok) {
-    const fallback =
-      response.status === 404
-        ? `No E-Receipt found for transaction ${transactionId}.`
-        : response.status === 410
-          ? `E-Receipt for transaction ${transactionId} has expired.`
-          : 'Failed to load E-Receipt.';
-    const message = await resolveApiErrorMessage(response, fallback);
-    receiptWindow.close();
-    throw new Error(message);
-  }
-
-  const payload = (await response.json()) as AdminReceiptPayload;
-  writeReceiptWindow(receiptWindow, receiptWindowHtml(payload));
-}
-
-async function openReceiptWithButton(
-  transactionId: string,
-  actionButton: HTMLButtonElement,
-): Promise<void> {
-  const receiptWindow = window.open('', '_blank');
-  if (!receiptWindow) {
-    setMessage('Unable to open E-Receipt window. Please allow pop-ups and retry.');
-    return;
-  }
-  writeReceiptWindow(receiptWindow, loadingReceiptHtml(transactionId));
-
-  const defaultLabel = actionButton.textContent;
-  actionButton.disabled = true;
-  actionButton.textContent = 'Opening…';
-
-  await openReceiptForTransaction(transactionId, receiptWindow)
-    .then(() => setMessage(`Opened E-Receipt for ${transactionId}.`))
-    .catch((error: unknown) =>
-      setMessage(error instanceof Error ? error.message : 'Failed to open E-Receipt.'),
-    )
-    .finally(() => {
-      actionButton.disabled = false;
-      actionButton.textContent = defaultLabel;
-    });
-}
-
-async function copyToClipboard(value: string): Promise<boolean> {
-  const text = value.trim();
-  if (!text) return false;
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // fall through to textarea fallback
-    }
-  }
-  const area = document.createElement('textarea');
-  area.value = text;
-  area.setAttribute('readonly', 'true');
-  area.style.position = 'fixed';
-  area.style.opacity = '0';
-  document.body.appendChild(area);
-  area.select();
-  const ok = document.execCommand('copy');
-  area.remove();
-  return ok;
 }
 
 function totalPages(): number {
@@ -780,69 +583,9 @@ async function openTransactionDrawer(transactionId: string): Promise<void> {
   }
 }
 
-function resolveReportCategory(context: TransactionContextPayload): ReportCategory {
-  if (context.status === 'refunded' || context.status === 'refunded_pending_review') {
-    return 'payment';
-  }
-  if (context.mode === 'print' || context.mode === 'copy' || context.mode === 'scan') {
-    return context.mode;
-  }
-  return 'other';
-}
-
-function buildReportDescription(context: TransactionContextPayload): string {
-  const missingFlags =
-    context.contextFlags.missingReasons.length > 0
-      ? context.contextFlags.missingReasons.join('; ')
-      : 'none';
-  return [
-    `Transaction ID: ${context.transactionId}`,
-    `Mode: ${formatMode(context.mode)}`,
-    `Status: ${formatStatus(context.status)}`,
-    `Charged Amount: ${formatPeso(context.chargedAmount)}`,
-    `Change Remaining: ${formatPeso(context.change.remaining)}`,
-    `Settled At: ${formatDate(context.settledAt)}`,
-    `Terminal At: ${formatDate(context.terminalAt)}`,
-    `Spooler Phase: ${context.settlement.spoolerPhase ?? '—'}`,
-    `Reconciliation Action: ${context.settlement.reconciliationAction ?? '—'}`,
-    `Missing Context Flags: ${missingFlags}`,
-    '',
-    'Issue details:',
-  ].join('\n');
-}
-
-function openReportModalWithContext(context: TransactionContextPayload): void {
-  reportContext = context;
-  if (txReportSummary) {
-    txReportSummary.textContent =
-      `Transaction ${context.transactionId} · ${formatMode(context.mode)} · ${formatStatus(context.status)}`;
-  }
-  if (txReportTitleInput) {
-    txReportTitleInput.value = `Transaction ${context.transactionId} support follow-up`;
-  }
-  if (txReportCategoryInput) {
-    txReportCategoryInput.value = resolveReportCategory(context);
-  }
-  if (txReportDescriptionInput) {
-    txReportDescriptionInput.value = buildReportDescription(context);
-  }
-  txReportModal?.classList.remove('hidden');
-}
-
 function closeReportModal(): void {
   txReportModal?.classList.add('hidden');
   reportContext = null;
-}
-
-async function openReportModalForTransaction(transactionId: string): Promise<void> {
-  try {
-    const context = await fetchTransactionContext(transactionId);
-    openReportModalWithContext(context);
-  } catch (error: unknown) {
-    setMessage(
-      error instanceof Error ? error.message : 'Failed to prepare report draft.',
-    );
-  }
 }
 
 async function submitQuickReport(): Promise<void> {

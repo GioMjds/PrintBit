@@ -11,7 +11,6 @@
  */
 
 import { Queue } from 'bullmq';
-import type { Job } from 'bullmq';
 import { queueNames, printJobsQueueOptions } from './queue.config';
 import type { PrintJobEnqueuePayload } from './print-job.schema';
 

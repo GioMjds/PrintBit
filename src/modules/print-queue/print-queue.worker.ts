@@ -13,12 +13,7 @@
 
 import { Worker } from 'bullmq';
 import type { Server } from 'socket.io';
-import {
-  redisConfig,
-  queueNames,
-  printJobsWorkerOptions,
-  isRetryableFailureClass,
-} from './queue.config';
+import { queueNames, printJobsWorkerOptions } from './queue.config';
 import type { PrintQueueJobData } from './print-job.schema';
 import type { Job } from 'bullmq';
 import {
@@ -45,7 +40,8 @@ export class PrintWorkerError extends Error {
  * Process a single print job through the orchestration pipeline
  */
 async function processPrintJob(job: Job<PrintQueueJobData>) {
-  const io = (global as any).socketIOInstance as Server;
+  // Use globalThis to avoid NodeJS.Global typing issues in different TS configs
+  const io = (globalThis as unknown as { socketIOInstance?: Server }).socketIOInstance;
 
   if (!io) {
     throw new PrintWorkerError(
@@ -95,7 +91,7 @@ async function processPrintJob(job: Job<PrintQueueJobData>) {
  * Called on app startup to attach io instance and event handlers
  */
 export function createPrintJobWorker(io: Server) {
-  (global as any).socketIOInstance = io;
+  (globalThis as unknown as { socketIOInstance?: Server }).socketIOInstance = io;
 
   const worker = new Worker(queueNames.printJobs, processPrintJob, {
     ...printJobsWorkerOptions,
@@ -132,12 +128,13 @@ export function createPrintJobWorker(io: Server) {
       `[PRINT-WORKER] Job ${job.id} failed (attempt ${job.attemptsMade}): ${err.message}`,
     );
 
-    const isRetryable =
-      !(err instanceof PrintWorkerError) || err.isRetryable;
+    const isRetryable = !(err instanceof PrintWorkerError) || err.isRetryable;
 
     console.log(
       `[PRINT-WORKER] Job ${job.id} will ${
-        isRetryable ? `retry (attempt ${job.attemptsMade + 1}/3)` : 'be moved to dead-letter'
+        isRetryable
+          ? `retry (attempt ${job.attemptsMade + 1}/3)`
+          : 'be moved to dead-letter'
       }`,
     );
 
@@ -152,9 +149,7 @@ export function createPrintJobWorker(io: Server) {
   });
 
   worker.on('stalled', (jobId) => {
-    console.warn(
-      `[PRINT-WORKER] Job ${jobId} stalled (lockDuration exceeded)`,
-    );
+    console.warn(`[PRINT-WORKER] Job ${jobId} stalled (lockDuration exceeded)`);
 
     io.emit('printQueueJobStalled', {
       jobId,

@@ -10,8 +10,6 @@
  * Phase 1: Queue platform foundation
  */
 
-import type { PrintJobOptions } from '@/services/printer';
-
 /**
  * Payload version for schema migration/compatibility
  * Increment when adding required fields or changing behavior

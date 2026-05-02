@@ -203,10 +203,14 @@ function applySettings(settings: SettingsResponse): void {
     );
   }
   if (settingColorMultiplier) {
-    settingColorMultiplier.value = String(settings.pricingEngine.colorMultiplier);
+    settingColorMultiplier.value = String(
+      settings.pricingEngine.colorMultiplier,
+    );
   }
   if (settingBwMaxCoverage) {
-    settingBwMaxCoverage.value = String(settings.pricingEngine.thresholds.bwMax);
+    settingBwMaxCoverage.value = String(
+      settings.pricingEngine.thresholds.bwMax,
+    );
   }
   if (settingFullColorMinCoverage) {
     settingFullColorMinCoverage.value = String(
@@ -353,7 +357,9 @@ settingsForm.addEventListener('submit', (e) => {
     settingPaperCurrentSheets &&
     (!Number.isInteger(paperCurrentSheets) || paperCurrentSheets < 0)
   ) {
-    setMessage('Current paper must be a whole number greater than or equal to 0.');
+    setMessage(
+      'Current paper must be a whole number greater than or equal to 0.',
+    );
     return;
   }
 
@@ -364,7 +370,9 @@ settingsForm.addEventListener('submit', (e) => {
   const longBondColorPrice = Number(settingLongBondColorPrice?.value ?? 0);
   const colorMultiplier = Number(settingColorMultiplier?.value ?? 1);
   const bwMaxCoverage = Number(settingBwMaxCoverage?.value ?? 0.5);
-  const fullColorMinCoverage = Number(settingFullColorMinCoverage?.value ?? 0.8);
+  const fullColorMinCoverage = Number(
+    settingFullColorMinCoverage?.value ?? 0.8,
+  );
   const scanDocumentPrice = Number(settingScanDocument?.value ?? 0);
   const copyPerPagePrice = Number(settingCopyPerPage?.value ?? 0);
 
@@ -392,9 +400,12 @@ settingsForm.addEventListener('submit', (e) => {
         fullColorMin: fullColorMinCoverage,
       },
       colorMultiplier,
-      blankPagePolicy: (settingBlankPagePolicy?.value ?? 'charge_zero') as any,
+      blankPagePolicy: (settingBlankPagePolicy?.value ??
+        'charge_zero') as SettingsResponse['pricingEngine']['blankPagePolicy'],
     },
-    adminLocalOnly: settingAdminLocalOnly ? settingAdminLocalOnly.checked : loadedAdminLocalOnly,
+    adminLocalOnly: settingAdminLocalOnly
+      ? settingAdminLocalOnly.checked
+      : loadedAdminLocalOnly,
     ...(newPin ? { adminPin: newPin } : {}),
   };
 
@@ -425,7 +436,8 @@ settingsForm.addEventListener('submit', (e) => {
     };
   }
 
-  const alertPayload = (alertSeverityThreshold !== null) ? buildAlertPayload() : null;
+  const alertPayload =
+    alertSeverityThreshold !== null ? buildAlertPayload() : null;
 
   setMessage('Saving settings...');
 
@@ -442,7 +454,10 @@ settingsForm.addEventListener('submit', (e) => {
 
   void Promise.all([settingsFetch, alertsFetch])
     .then(async ([settingsResponse, alertsResponse]) => {
-      if (!settingsResponse.ok || (alertsResponse !== null && !alertsResponse.ok)) {
+      if (
+        !settingsResponse.ok ||
+        (alertsResponse !== null && !alertsResponse.ok)
+      ) {
         throw new Error('Failed to save settings.');
       }
       if (newPin) setAdminPin(newPin);
@@ -451,7 +466,8 @@ settingsForm.addEventListener('submit', (e) => {
       setMessage('Settings saved.');
     })
     .catch((error: unknown) => {
-      const msg = error instanceof Error ? error.message : 'Failed to save settings.';
+      const msg =
+        error instanceof Error ? error.message : 'Failed to save settings.';
       setMessage(msg);
     });
 });

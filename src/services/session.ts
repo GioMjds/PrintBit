@@ -368,7 +368,7 @@ export class SessionStore {
     session.document = document;
     try {
       this.persistSessionSnapshot(session);
-    } catch (error) {
+    } catch {
       session.documents = documents.slice(0, -1);
       session.status = previousStatus;
       if (previousCurrentDocument) {
@@ -553,7 +553,7 @@ export class SessionStore {
     session.lastActivityAt = new Date();
     try {
       this.persistSessionSnapshot(session);
-    } catch (error) {
+    } catch {
       session.documents = [...docs, removed];
       session.status = previousStatus;
       if (previousCurrentDocument) {
@@ -760,7 +760,7 @@ export class SessionStore {
       throw new Error(
         `Invalid analysis JSON for ${sessionId}/${documentId}: ${
           error instanceof Error ? error.message : String(error)
-        }`,
+        }`, { cause: error },
       );
     }
 

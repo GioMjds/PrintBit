@@ -1,0 +1,25 @@
+name: Ideas
+description: Share ideas or improvements without full proposal structure
+title: "[IDEA]"
+labels: ['idea']
+
+body:
+
+- type: textarea
+  id: idea
+  attributes:
+  label: Idea
+  placeholder: Describe your idea
+  validations:
+  required: true
+
+- type: textarea
+  id: motivation
+  attributes:
+  label: Why this matters
+
+- type: textarea
+  id: impact
+  attributes:
+  label: Potential Impact
+  description: UX, performance, printing reliability, etc.

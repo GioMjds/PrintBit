@@ -200,7 +200,7 @@ function sanitizeUserFacingError(rawMessage: string): string {
   const initial = rawMessage.trim();
   if (!initial) return fallback;
 
-  let safeMessage = initial
+  const safeMessage = initial
     .replace(/epson\s*l5290\s*series/gi, 'scanner')
     .replace(/naps2(?:\.console\.exe)?/gi, 'scanner service')
     .replace(/\btwain\b/gi, 'scanner driver')

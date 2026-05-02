@@ -670,29 +670,6 @@ async function startScan(): Promise<void> {
   }
 }
 
-function resetToIdle(): void {
-  if (scanReleaseToken) {
-    void releaseScanFile(scanReleaseToken, 'scan_reset_to_idle');
-    scanReleaseToken = null;
-  }
-  sessionStorage.removeItem('printbit.config');
-  scannedPages = [];
-  scanFilename = null;
-  currentPage = 0;
-
-  showPreview('idle', 'Insert document into the feeder and press Scan');
-  hideScanTroubleshooting();
-  previewControls.style.display = 'none';
-  pageCountBadge.style.display = 'none';
-  rescanBtn.style.display = 'none';
-  proceedBtn.style.display = 'none';
-  proceedBtn.disabled = true;
-
-  scanBtn.disabled = false;
-  scanBtn.setAttribute('aria-disabled', 'false');
-  scanBtnLabel.textContent = 'Scan Document';
-}
-
 pagePrev.addEventListener('click', () => goToPage(currentPage - 1));
 pageNext.addEventListener('click', () => goToPage(currentPage + 1));
 

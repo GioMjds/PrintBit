@@ -452,7 +452,6 @@ function addFilesToQueue(files: FileList | File[]): void {
     );
   }
 
-  let addedCount = 0;
   for (const file of arr) {
     const normalizedMime = normalizeMimeByExtension(file.name, file.type);
     if (!normalizedMime) continue;
@@ -473,7 +472,6 @@ function addFilesToQueue(files: FileList | File[]): void {
     qf.el = el;
     queue.push(qf);
     fileQueue.appendChild(el);
-    addedCount++;
   }
   refreshUploadBtn();
   if (unsupportedFiles.length === 0) {

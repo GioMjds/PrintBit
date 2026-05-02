@@ -15,7 +15,6 @@ let currentLanguage: SupportedLanguage = 'en';
 let currentTranslations: Record<string, string> = {};
 let initialized = false;
 let observer: MutationObserver | null = null;
-let isApplyingTranslations = false;
 let flushHandle: number | null = null;
 
 const originalTextNodes = new WeakMap<Text, string>();
@@ -95,37 +94,32 @@ function applyAttributeTranslation(el: Element): void {
 }
 
 function localizeTree(root: ParentNode): void {
-  isApplyingTranslations = true;
-  try {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const parentName = node.parentElement?.tagName.toLowerCase() ?? '';
-        if (
-          parentName === 'script' ||
-          parentName === 'style' ||
-          parentName === 'noscript'
-        ) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parentName = node.parentElement?.tagName.toLowerCase() ?? '';
+      if (
+        parentName === 'script' ||
+        parentName === 'style' ||
+        parentName === 'noscript'
+      ) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
 
-    let current = walker.nextNode();
-    while (current) {
-      applyTextNodeTranslation(current as Text);
-      current = walker.nextNode();
-    }
-
-    const elements = (root as Element).querySelectorAll
-      ? (root as Element).querySelectorAll('*')
-      : [];
-    elements.forEach((el) => {
-      applyAttributeTranslation(el);
-    });
-  } finally {
-    isApplyingTranslations = false;
+  let current = walker.nextNode();
+  while (current) {
+    applyTextNodeTranslation(current as Text);
+    current = walker.nextNode();
   }
+
+  const elements = (root as Element).querySelectorAll
+    ? (root as Element).querySelectorAll('*')
+    : [];
+  elements.forEach((el) => {
+    applyAttributeTranslation(el);
+  });
 }
 
 function ensureAriaLabels(root: ParentNode = document): void {

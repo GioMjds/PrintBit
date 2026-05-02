@@ -97,19 +97,18 @@ function computePagePrice(
   const { baseBwPrice, baseColorPrice, colorMultiplier } = config.pricing;
   const { blankPagePolicy } = config;
 
-  switch (classification) {
-    case 'blank':
-      return blankPagePolicy === 'charge_zero' ? 0 : baseBwPrice;
-    case 'bw':
-      return baseBwPrice;
-    case 'full_color':
-      return baseColorPrice;
-    case 'partial':
-      const rawPrice = baseBwPrice + coverage * colorMultiplier;
-      return Math.min(rawPrice, baseColorPrice);
-    default:
-      return baseBwPrice;
+  if (classification === 'blank') {
+    return blankPagePolicy === 'charge_zero' ? 0 : baseBwPrice;
+  } else if (classification === 'bw') {
+    return baseBwPrice;
+  } else if (classification === 'full_color') {
+    return baseColorPrice;
+  } else if (classification === 'partial') {
+    const rawPrice = baseBwPrice + coverage * colorMultiplier;
+    return Math.min(rawPrice, baseColorPrice);
   }
+
+  return baseBwPrice;
 }
 
 /**

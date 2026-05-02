@@ -75,10 +75,7 @@ function startCleanupScheduler(service: ReceiptService): void {
   );
 }
 
-export function registerReceiptModule(
-  app: Express,
-  _deps: ReceiptModuleDeps,
-): void {
+export function registerReceiptModule(app: Express): void {
   const service = new ReceiptService();
   startCleanupScheduler(service);
   const controller = new ReceiptController(service);

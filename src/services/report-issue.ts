@@ -313,7 +313,9 @@ class ReportIssueService {
       for (const att of cleanup.orphanedAttachments) {
         try {
           fs.unlinkSync(att.filePath);
-        } catch {}
+        } catch {
+          // Ignore file deletion errors, but log them for admin review
+        }
       }
     }
   }

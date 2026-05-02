@@ -121,28 +121,6 @@ function isColorPixel(r: number, g: number, b: number): boolean {
   return saturation > COLOR_SATURATION_THRESHOLD;
 }
 
-function isColorFrame(frame: RgbaFrame): boolean {
-  const totalPixels = frame.width * frame.height;
-  if (totalPixels === 0) return false;
-
-  const step = Math.max(1, Math.ceil(totalPixels / MAX_PIXELS_TO_SAMPLE));
-  for (let pixelIndex = 0; pixelIndex < totalPixels; pixelIndex += step) {
-    const offset = pixelIndex * 4;
-    const alpha = frame.data[offset + 3];
-    if (alpha < 8) continue;
-
-    const r = frame.data[offset];
-    const g = frame.data[offset + 1];
-    const b = frame.data[offset + 2];
-
-    if (isColorPixel(r, g, b)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function computeFrameCoverage(frame: RgbaFrame): number {
   const totalPixels = frame.width * frame.height;
   if (totalPixels === 0) return 0;
@@ -200,7 +178,7 @@ async function analyzePdfFile(
   pdfPath: string,
   fileType: AnalyzedFileType,
 ): Promise<DocumentAnalysisResult> {
-  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as any;
+  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs'));
   const ops = (pdfjs.OPS ?? {}) as PdfOps;
   const data = new Uint8Array(await fs.promises.readFile(pdfPath));
   const doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
@@ -302,46 +280,6 @@ function parseRgbArgs(args: unknown): [number, number, number] | null {
   }
 
   return null;
-}
-
-function isPdfPageColorByOperatorList(
-  opList: PdfOperatorList,
-  ops: PdfOps,
-): boolean {
-  const imagePaintOps = new Set(
-    [
-      ops.paintImageXObject,
-      ops.paintInlineImageXObject,
-      ops.paintImageMaskXObject,
-      ops.paintJpegXObject,
-    ].filter((op): op is number => typeof op === 'number'),
-  );
-
-  for (let i = 0; i < opList.fnArray.length; i += 1) {
-    const op = opList.fnArray[i];
-    const args = opList.argsArray[i];
-
-    if (imagePaintOps.has(op)) {
-      // Conservative pricing safety rule: treat image-heavy pages as colored.
-      return true;
-    }
-
-    if (op === ops.setFillRGBColor || op === ops.setStrokeRGBColor) {
-      const rgb = parseRgbArgs(args);
-      if (!rgb) continue;
-      const [r, g, b] = rgb;
-      const spread = Math.max(r, g, b) - Math.min(r, g, b);
-      if (spread > 10) return true;
-    }
-
-    if (op === ops.setFillCMYKColor || op === ops.setStrokeCMYKColor) {
-      if (!Array.isArray(args) || args.length < 4) continue;
-      const [c, m, y] = args as number[];
-      if (c > 0.01 || m > 0.01 || y > 0.01) return true;
-    }
-  }
-
-  return false;
 }
 
 interface PageAnalysisMetrics {
