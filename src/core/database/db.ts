@@ -1948,7 +1948,7 @@ export const db: {
 export async function initDB() {
   try {
     await db.read();
-  } catch (err) {
+  } catch {
     // If legacy file is empty/malformed, initialize with defaults.
     db.data = cloneDefaultData();
     await db.write();

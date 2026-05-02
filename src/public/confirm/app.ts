@@ -117,8 +117,6 @@ const copiesValue = document.getElementById('copiesValue');
 const pagesValue = document.getElementById('pagesValue');
 const pagesRow = document.getElementById('pagesRow');
 const orientationRow = document.getElementById('orientationRow');
-const orientationValue = document.getElementById('orientationValue');
-const rotationRow = document.getElementById('rotationRow');
 const rotationValue = document.getElementById('rotationValue');
 const paperSizeValue = document.getElementById('paperSizeValue');
 const priceValue = document.getElementById('priceValue');
@@ -741,7 +739,6 @@ async function loadPricing(): Promise<void> {
     return;
   }
 
-  let pricing = DEFAULT_PRICING;
   const response = await fetch('/api/pricing');
   if (!response.ok) throw new Error('Pricing request failed.');
 
@@ -767,7 +764,7 @@ async function loadPricing(): Promise<void> {
       ? payload.scanDocument
       : DEFAULT_PRICING.scanDocument;
 
-  pricing = {
+  const pricing = {
     printPerPage: safePrint,
     copyPerPage: safeCopy,
     colorSurcharge: safeColor,
@@ -965,10 +962,16 @@ function extractReceiptUrl(payload: unknown): {
 } | null {
   if (!payload || typeof payload !== 'object') return null;
   const receiptPayload = payload as ReceiptLinkPayload;
+  const payloadFallback = payload as {
+    receiptToken?: unknown;
+    receiptViewUrl?: unknown;
+    receiptUrl?: unknown;
+    receiptExpiresAt?: unknown;
+  };
   const token = readCandidateString(
     receiptPayload.receipt?.token,
     receiptPayload.receiptToken,
-    (payload as any).receiptToken, // Explicit fallback
+    payloadFallback.receiptToken,
   );
   const urlCandidate = readCandidateString(
     receiptPayload.receipt?.viewUrl,
@@ -977,8 +980,8 @@ function extractReceiptUrl(payload: unknown): {
     receiptPayload.receipt?.link,
     receiptPayload.receiptUrl,
     receiptPayload.receiptLink,
-    (payload as any).receiptViewUrl, // Explicit fallback
-    (payload as any).receiptUrl, // Explicit fallback
+    payloadFallback.receiptViewUrl,
+    payloadFallback.receiptUrl,
   );
   const fallbackTokenUrl = token
     ? `/receipt/t/${encodeURIComponent(token)}`
@@ -1012,7 +1015,7 @@ function extractReceiptUrl(payload: unknown): {
     expiresAt: readCandidateString(
       receiptPayload.receipt?.expiresAt,
       receiptPayload.receiptExpiresAt,
-      (payload as any).receiptExpiresAt,
+      payloadFallback.receiptExpiresAt,
     ),
   };
 }
@@ -2794,11 +2797,11 @@ if (typeof ioFactory === 'function') {
     clearSpoolerFinalizationTimer();
   });
 
-  socket.on('coinSlotLocked', (_payload: unknown) => {
+  socket.on('coinSlotLocked', () => {
     applyLockState(true);
   });
 
-  socket.on('coinSlotUnlocked', (_payload: unknown) => {
+  socket.on('coinSlotUnlocked', () => {
     applyLockState(false);
   });
 }

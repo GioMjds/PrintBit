@@ -194,7 +194,9 @@ async function loadSummary(): Promise<void> {
     if (!res.ok) return;
     const summary = (await res.json()) as SummaryResponse;
     setOpenAlertBadge(summary.anomalyStats.openCount);
-  } catch {}
+  } catch (error) {
+    console.error(`Failed to load summary data. ${error}`, { cause: error });
+  }
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────

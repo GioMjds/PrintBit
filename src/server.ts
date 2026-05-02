@@ -176,7 +176,7 @@ io.on('connection', (socket) => {
     socket.join(`session:${sessionId}`);
   });
 
-  socket.on('lockCoinSlot', (_data: unknown) => {
+  socket.on('lockCoinSlot', () => {
     const currentOwnerId = getCoinSlotLockOwnerId();
     if (isCoinSlotLocked() && currentOwnerId && currentOwnerId !== socket.id) {
       socket.emit('coinSlotLockDenied', {
@@ -192,7 +192,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('unlockCoinSlot', (_data: unknown) => {
+  socket.on('unlockCoinSlot', () => {
     const unlocked = unlockOwnedCoinSlot(socket.id);
     if (!unlocked) {
       socket.emit('coinSlotUnlockDenied', {

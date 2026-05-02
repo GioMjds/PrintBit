@@ -7,15 +7,13 @@ export interface WatchdogModuleDeps extends ModuleContext {
   // No additional dependencies needed - uses shared services
 }
 
-export function registerWatchdogModule(
-  app: Express,
-  _deps: WatchdogModuleDeps,
-): void {
+export function registerWatchdogModule(app: Express): void {
   const watchdogService = new WatchdogService();
   const watchdogController = new WatchdogController({ watchdogService });
 
   app.use('/api/watchdog', watchdogController.router);
 
-  console.log('[WATCHDOG-MODULE] ✓ Watchdog module registered at /api/watchdog');
+  console.log(
+    '[WATCHDOG-MODULE] ✓ Watchdog module registered at /api/watchdog',
+  );
 }
-

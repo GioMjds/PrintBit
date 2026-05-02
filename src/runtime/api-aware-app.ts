@@ -1,5 +1,7 @@
 import type { Express } from 'express';
 
+type RouterMethod = (...args: unknown[]) => unknown;
+
 type RoutableMethod =
   | 'get'
   | 'post'
@@ -45,10 +47,10 @@ export function createApiAwareApp(
   }
 
   const routed = Object.create(app) as Express;
-  const routerMethods = apiRouter as Record<string, Function>;
+  const routerMethods = apiRouter as Record<string, RouterMethod>;
 
   for (const method of ROUTABLE_METHODS) {
-    const appMethod = (app as unknown as Record<string, Function>)[method].bind(
+    const appMethod = (app as unknown as Record<string, RouterMethod>)[method].bind(
       app,
     );
     const routerFn = routerMethods[method];
@@ -57,7 +59,7 @@ export function createApiAwareApp(
       throw new Error(`apiRouter is missing method: ${method}`);
     }
 
-    (routed as unknown as Record<string, Function>)[method] = (
+    (routed as unknown as Record<string, RouterMethod>)[method] = (
       ...args: unknown[]
     ) => {
       const [firstArg, ...rest] = args;

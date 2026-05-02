@@ -61,6 +61,7 @@ export async function deleteTransientScanFile(
     }
     throw new Error(
       `Failed to release scan file: ${err.message ?? 'Unknown error'}`,
+      { cause: error },
     );
   }
 }

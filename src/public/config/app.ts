@@ -101,6 +101,20 @@ interface PreviewConfig {
   rotationDeg: RotationDeg;
 }
 
+interface QuoteRequestBody {
+  copies: number;
+  colorMode: ColorMode;
+  orientation: Orientation;
+  rotationDeg: RotationDeg;
+  paperSize: PaperSize;
+  pageRange: PageRangeSelection;
+  duplex: boolean;
+  sessionId?: string;
+  documentId?: string;
+  isCopyJob?: true;
+  copyPreviewPath?: string | null;
+}
+
 interface StoredConfigSeed {
   mode?: 'print' | 'copy' | 'scan';
   scanFilename?: string | null;
@@ -1283,7 +1297,7 @@ async function refreshPrintQuote(): Promise<void> {
 
   try {
     const cfg = currentPreviewConfig();
-    const requestBody: any = {
+    const requestBody: QuoteRequestBody = {
       copies: getCopies(),
       colorMode: cfg.colorMode,
       orientation: cfg.orientation,
@@ -1294,7 +1308,7 @@ async function refreshPrintQuote(): Promise<void> {
     };
 
     if (mode === 'print') {
-      requestBody.sessionId = sessionId;
+      requestBody.sessionId = sessionId ?? undefined;
       requestBody.documentId = selectedDocumentId ?? undefined;
     } else if (mode === 'copy') {
       requestBody.sessionId = 'copy-session'; // Special marker for copy analysis if supported

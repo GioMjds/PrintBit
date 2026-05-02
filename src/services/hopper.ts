@@ -436,6 +436,9 @@ class HopperService {
       if (dispensedThisAttempt > 0) {
         totalDispensedCoins += dispensedThisAttempt;
         remainingCoins -= dispensedThisAttempt;
+        if (remainingCoins <= 0) {
+          break;
+        }
       }
       if (
         lastErrorCode &&

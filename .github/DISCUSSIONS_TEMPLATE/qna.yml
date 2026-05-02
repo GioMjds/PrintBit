@@ -1,0 +1,38 @@
+name: Q&A
+description: Ask questions about setup, usage, or troubleshooting
+title: "[Q&A]"
+labels: ['question']
+
+body:
+
+- type: textarea
+  id: question
+  attributes:
+  label: Question
+  placeholder: Ask your question clearly
+  validations:
+  required: true
+
+- type: textarea
+  id: context
+  attributes:
+  label: Context
+  description: What are you trying to do?
+  placeholder: |
+  Example:
+  - Trying to print a PDF
+  - Running on kiosk setup
+
+- type: textarea
+  id: environment
+  attributes:
+  label: Environment
+  placeholder:
+  - Local / Kiosk
+  - OS
+  - Printer model (if relevant)
+
+- type: textarea
+  id: additional
+  attributes:
+  label: Additional Details

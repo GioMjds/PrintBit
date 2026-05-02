@@ -7,10 +7,7 @@ export interface HotspotModuleDeps extends ModuleContext {
   // No additional dependencies required
 }
 
-export function registerHotspotModule(
-  app: Express,
-  _deps: HotspotModuleDeps,
-): void {
+export function registerHotspotModule(app: Express): void {
   const service = new HotspotService();
   const controller = new HotspotController(service);
 
@@ -18,4 +15,3 @@ export function registerHotspotModule(
 
   console.log('[MODULE] Hotspot module registered at /api/hotspot');
 }
-

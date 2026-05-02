@@ -21,7 +21,7 @@ export interface IdleTimeoutConfig {
   onWarningHidden?: () => void;
 }
 
-let pageIdleState: PageIdleState = {
+const pageIdleState: PageIdleState = {
   enabled: false,
   timeoutSeconds: 120,
   elapsedSeconds: 0,

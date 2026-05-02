@@ -698,7 +698,7 @@ export class AdminController {
     }
 
     const storedPin = db.data!.settings.adminPin;
-    let valid = false;
+    let valid: boolean;
 
     try {
       valid = await verifyPassword(storedPin, pin);
@@ -797,20 +797,20 @@ export class AdminController {
       const todayRow = sqlite
         .prepare(
           `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
-           FROM receipt_records WHERE mode IN ('print','copy') AND created_at >= ?`
+           FROM receipt_records WHERE mode IN ('print','copy') AND created_at >= ?`,
         )
         .get(startIso) as Record<string, unknown> | undefined;
       const totalRow = sqlite
         .prepare(
           `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
-           FROM receipt_records WHERE mode IN ('print','copy')`
+           FROM receipt_records WHERE mode IN ('print','copy')`,
         )
         .get() as Record<string, unknown> | undefined;
 
       const baseline = db.data!.inkRefillBaseline;
       const totalColor = Number(totalRow?.colorSum ?? 0);
       const totalBw = Number(totalRow?.bwSum ?? 0);
- 
+
       const pageCounts = {
         todayColorPages: Number(todayRow?.colorSum ?? 0),
         todayBwPages: Number(todayRow?.bwSum ?? 0),
@@ -830,7 +830,10 @@ export class AdminController {
       const refillBw = pageCounts.refillBwPages;
 
       const computeTank = (pagesUsed: number, maxPages: number) => {
-        const remaining = Math.max(0, Math.min(100, 100 - (pagesUsed / maxPages) * 100));
+        const remaining = Math.max(
+          0,
+          Math.min(100, 100 - (pagesUsed / maxPages) * 100),
+        );
         return {
           pagesUsed,
           maxPages,
@@ -853,60 +856,60 @@ export class AdminController {
       };
 
       res.json({
-      balance: db.data!.balance,
-      earnings: this.adminService.computeEarningsBuckets(),
-      coinStats: db.data!.coinStats,
-      jobStats: db.data!.jobStats,
-      hopperStats: db.data!.hopperStats,
-      owedChangeOpenCount: db.data!.owedChanges.filter(
-        (entry) => entry.status === 'open',
-      ).length,
-      pendingRefundOpenCount: openRefunds.length,
-      refundStats: {
-        totalCount: pendingRefunds.length,
-        openCount: openRefunds.length,
-        refundedCount: refundedEntries.length,
-        dismissedCount: dismissedEntries.length,
-        autoRefundedCount: autoRefundedEntries.length,
-      },
-      anomalyStats: {
-        totalCount: db.data!.anomalyIncidents.length,
-        openCount: anomalyOpenCount,
-      },
-      recoveryStats: {
-        bootCount: recovery.lifecycle.bootCount,
-        unexpectedRestartCount: recovery.lifecycle.unexpectedRestartCount,
-        lastStartupAt: recovery.lifecycle.lastStartupAt,
-        lastShutdownAt: recovery.lifecycle.lastShutdownAt,
-        inFlightCount: recovery.sessionStats.inFlight,
-        startupPendingCount: recovery.sessionStats.startupPending,
-        autoRefundedCount: recovery.sessionStats.autoRefunded,
-        pendingAdminReviewCount: recovery.sessionStats.pendingAdminReview,
-        voidedCount: recovery.sessionStats.voided,
-      },
-      jamStats: {
-        totalEvents: jamEvents.length,
-        recent24h: recentJamEvents.length,
-        lastJamAt: jamEvents[0]?.timestamp ?? null,
-      },
-      consumables: consumablesForecast,
-      storage,
-      status: {
-        serverRunning: true,
-        uptimeSeconds: Math.floor(process.uptime()),
-        serial: this.deps.getSerialStatus(),
-        hopper: this.deps.getHopperStatus(),
-        printer,
-        scanner,
-        watchdog: getExternalWatchdogState(),
-        trustedTime: getTrustedTimeStatus(),
-        host,
-        wifiActive,
-      },
-      pageCounts,
-      inkEstimation,
-    });
-    } catch (e) {
+        balance: db.data!.balance,
+        earnings: this.adminService.computeEarningsBuckets(),
+        coinStats: db.data!.coinStats,
+        jobStats: db.data!.jobStats,
+        hopperStats: db.data!.hopperStats,
+        owedChangeOpenCount: db.data!.owedChanges.filter(
+          (entry) => entry.status === 'open',
+        ).length,
+        pendingRefundOpenCount: openRefunds.length,
+        refundStats: {
+          totalCount: pendingRefunds.length,
+          openCount: openRefunds.length,
+          refundedCount: refundedEntries.length,
+          dismissedCount: dismissedEntries.length,
+          autoRefundedCount: autoRefundedEntries.length,
+        },
+        anomalyStats: {
+          totalCount: db.data!.anomalyIncidents.length,
+          openCount: anomalyOpenCount,
+        },
+        recoveryStats: {
+          bootCount: recovery.lifecycle.bootCount,
+          unexpectedRestartCount: recovery.lifecycle.unexpectedRestartCount,
+          lastStartupAt: recovery.lifecycle.lastStartupAt,
+          lastShutdownAt: recovery.lifecycle.lastShutdownAt,
+          inFlightCount: recovery.sessionStats.inFlight,
+          startupPendingCount: recovery.sessionStats.startupPending,
+          autoRefundedCount: recovery.sessionStats.autoRefunded,
+          pendingAdminReviewCount: recovery.sessionStats.pendingAdminReview,
+          voidedCount: recovery.sessionStats.voided,
+        },
+        jamStats: {
+          totalEvents: jamEvents.length,
+          recent24h: recentJamEvents.length,
+          lastJamAt: jamEvents[0]?.timestamp ?? null,
+        },
+        consumables: consumablesForecast,
+        storage,
+        status: {
+          serverRunning: true,
+          uptimeSeconds: Math.floor(process.uptime()),
+          serial: this.deps.getSerialStatus(),
+          hopper: this.deps.getHopperStatus(),
+          printer,
+          scanner,
+          watchdog: getExternalWatchdogState(),
+          trustedTime: getTrustedTimeStatus(),
+          host,
+          wifiActive,
+        },
+        pageCounts,
+        inkEstimation,
+      });
+    } catch {
       // Fallback: return summary without pageCounts if DB query fails
       res.json({
         balance: db.data!.balance,
@@ -1239,8 +1242,12 @@ export class AdminController {
       pricingEngine: {
         enabledMode: originalSettings.pricingEngine.enabledMode,
         paperProfiles: {
-          shortBond: { ...originalSettings.pricingEngine.paperProfiles.shortBond },
-          longBond: { ...originalSettings.pricingEngine.paperProfiles.longBond },
+          shortBond: {
+            ...originalSettings.pricingEngine.paperProfiles.shortBond,
+          },
+          longBond: {
+            ...originalSettings.pricingEngine.paperProfiles.longBond,
+          },
         },
         thresholds: { ...originalSettings.pricingEngine.thresholds },
         colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
@@ -1252,7 +1259,9 @@ export class AdminController {
         defaultCoefficients: {
           ...originalSettings.consumableEstimation.defaultCoefficients,
         },
-        printerOverrides: { ...originalSettings.consumableEstimation.printerOverrides },
+        printerOverrides: {
+          ...originalSettings.consumableEstimation.printerOverrides,
+        },
       },
     };
 
@@ -1479,7 +1488,9 @@ export class AdminController {
         defaultCoefficients: {
           ...nextSettings.consumableEstimation.defaultCoefficients,
         },
-        printerOverrides: { ...nextSettings.consumableEstimation.printerOverrides },
+        printerOverrides: {
+          ...nextSettings.consumableEstimation.printerOverrides,
+        },
       };
 
       const validateCoefficient = (
@@ -1494,9 +1505,13 @@ export class AdminController {
       };
 
       if (incoming.defaultCoefficients) {
-        const fields: Array<
-          keyof typeof next.defaultCoefficients
-        > = ['bwBlack', 'colorCyan', 'colorMagenta', 'colorYellow', 'colorBlack'];
+        const fields: Array<keyof typeof next.defaultCoefficients> = [
+          'bwBlack',
+          'colorCyan',
+          'colorMagenta',
+          'colorYellow',
+          'colorBlack',
+        ];
         for (const field of fields) {
           const parsed = validateCoefficient(
             incoming.defaultCoefficients[field],
@@ -1522,15 +1537,24 @@ export class AdminController {
           });
         }
 
-        const normalizedOverrides: Record<string, typeof next.defaultCoefficients> = {};
-        for (const [rawKey, rawValue] of Object.entries(incoming.printerOverrides)) {
+        const normalizedOverrides: Record<
+          string,
+          typeof next.defaultCoefficients
+        > = {};
+        for (const [rawKey, rawValue] of Object.entries(
+          incoming.printerOverrides,
+        )) {
           const normalizedKey = rawKey
             .trim()
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '_')
             .replace(/^_+|_+$/g, '');
           if (!normalizedKey) continue;
-          if (typeof rawValue !== 'object' || rawValue === null || Array.isArray(rawValue)) {
+          if (
+            typeof rawValue !== 'object' ||
+            rawValue === null ||
+            Array.isArray(rawValue)
+          ) {
             return res.status(400).json({
               error: `consumableEstimation.printerOverrides.${rawKey} must be an object.`,
             });
@@ -1540,9 +1564,13 @@ export class AdminController {
             ...next.defaultCoefficients,
             ...(next.printerOverrides[normalizedKey] ?? {}),
           };
-          const fields: Array<
-            keyof typeof next.defaultCoefficients
-          > = ['bwBlack', 'colorCyan', 'colorMagenta', 'colorYellow', 'colorBlack'];
+          const fields: Array<keyof typeof next.defaultCoefficients> = [
+            'bwBlack',
+            'colorCyan',
+            'colorMagenta',
+            'colorYellow',
+            'colorBlack',
+          ];
           for (const field of fields) {
             const parsed = validateCoefficient(
               candidate[field],
@@ -1568,8 +1596,12 @@ export class AdminController {
       const next = {
         enabledMode: originalSettings.pricingEngine.enabledMode,
         paperProfiles: {
-          shortBond: { ...originalSettings.pricingEngine.paperProfiles.shortBond },
-          longBond: { ...originalSettings.pricingEngine.paperProfiles.longBond },
+          shortBond: {
+            ...originalSettings.pricingEngine.paperProfiles.shortBond,
+          },
+          longBond: {
+            ...originalSettings.pricingEngine.paperProfiles.longBond,
+          },
         },
         thresholds: { ...originalSettings.pricingEngine.thresholds },
         colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
@@ -1585,51 +1617,70 @@ export class AdminController {
           incoming.enabledMode !== 'live'
         ) {
           return res.status(400).json({
-            error: 'pricingEngine.enabledMode must be "legacy", "shadow", or "live".',
+            error:
+              'pricingEngine.enabledMode must be "legacy", "shadow", or "live".',
           });
         }
         next.enabledMode = incoming.enabledMode;
       }
 
       if (incoming.paperProfiles?.shortBond) {
-        if (!isFiniteNumber(incoming.paperProfiles.shortBond.baseBwPrice) ||
-            incoming.paperProfiles.shortBond.baseBwPrice < 0) {
+        if (
+          !isFiniteNumber(incoming.paperProfiles.shortBond.baseBwPrice) ||
+          incoming.paperProfiles.shortBond.baseBwPrice < 0
+        ) {
           return res.status(400).json({
-            error: 'pricingEngine.paperProfiles.shortBond.baseBwPrice must be >= 0.',
+            error:
+              'pricingEngine.paperProfiles.shortBond.baseBwPrice must be >= 0.',
           });
         }
-        if (!isFiniteNumber(incoming.paperProfiles.shortBond.baseColorPrice) ||
-            incoming.paperProfiles.shortBond.baseColorPrice < 0) {
+        if (
+          !isFiniteNumber(incoming.paperProfiles.shortBond.baseColorPrice) ||
+          incoming.paperProfiles.shortBond.baseColorPrice < 0
+        ) {
           return res.status(400).json({
-            error: 'pricingEngine.paperProfiles.shortBond.baseColorPrice must be >= 0.',
+            error:
+              'pricingEngine.paperProfiles.shortBond.baseColorPrice must be >= 0.',
           });
         }
-        next.paperProfiles.shortBond.baseBwPrice = incoming.paperProfiles.shortBond.baseBwPrice;
-        next.paperProfiles.shortBond.baseColorPrice = incoming.paperProfiles.shortBond.baseColorPrice;
+        next.paperProfiles.shortBond.baseBwPrice =
+          incoming.paperProfiles.shortBond.baseBwPrice;
+        next.paperProfiles.shortBond.baseColorPrice =
+          incoming.paperProfiles.shortBond.baseColorPrice;
       }
 
       if (incoming.paperProfiles?.longBond) {
-        if (!isFiniteNumber(incoming.paperProfiles.longBond.baseBwPrice) ||
-            incoming.paperProfiles.longBond.baseBwPrice < 0) {
+        if (
+          !isFiniteNumber(incoming.paperProfiles.longBond.baseBwPrice) ||
+          incoming.paperProfiles.longBond.baseBwPrice < 0
+        ) {
           return res.status(400).json({
-            error: 'pricingEngine.paperProfiles.longBond.baseBwPrice must be >= 0.',
+            error:
+              'pricingEngine.paperProfiles.longBond.baseBwPrice must be >= 0.',
           });
         }
-        if (!isFiniteNumber(incoming.paperProfiles.longBond.baseColorPrice) ||
-            incoming.paperProfiles.longBond.baseColorPrice < 0) {
+        if (
+          !isFiniteNumber(incoming.paperProfiles.longBond.baseColorPrice) ||
+          incoming.paperProfiles.longBond.baseColorPrice < 0
+        ) {
           return res.status(400).json({
-            error: 'pricingEngine.paperProfiles.longBond.baseColorPrice must be >= 0.',
+            error:
+              'pricingEngine.paperProfiles.longBond.baseColorPrice must be >= 0.',
           });
         }
-        next.paperProfiles.longBond.baseBwPrice = incoming.paperProfiles.longBond.baseBwPrice;
-        next.paperProfiles.longBond.baseColorPrice = incoming.paperProfiles.longBond.baseColorPrice;
+        next.paperProfiles.longBond.baseBwPrice =
+          incoming.paperProfiles.longBond.baseBwPrice;
+        next.paperProfiles.longBond.baseColorPrice =
+          incoming.paperProfiles.longBond.baseColorPrice;
       }
 
       if (incoming.thresholds) {
         if (incoming.thresholds.bwMax !== undefined) {
-          if (!isFiniteNumber(incoming.thresholds.bwMax) ||
-              incoming.thresholds.bwMax < 0 ||
-              incoming.thresholds.bwMax > 1) {
+          if (
+            !isFiniteNumber(incoming.thresholds.bwMax) ||
+            incoming.thresholds.bwMax < 0 ||
+            incoming.thresholds.bwMax > 1
+          ) {
             return res.status(400).json({
               error: 'pricingEngine.thresholds.bwMax must be between 0 and 1.',
             });
@@ -1637,11 +1688,14 @@ export class AdminController {
           next.thresholds.bwMax = incoming.thresholds.bwMax;
         }
         if (incoming.thresholds.fullColorMin !== undefined) {
-          if (!isFiniteNumber(incoming.thresholds.fullColorMin) ||
-              incoming.thresholds.fullColorMin < 0 ||
-              incoming.thresholds.fullColorMin > 1) {
+          if (
+            !isFiniteNumber(incoming.thresholds.fullColorMin) ||
+            incoming.thresholds.fullColorMin < 0 ||
+            incoming.thresholds.fullColorMin > 1
+          ) {
             return res.status(400).json({
-              error: 'pricingEngine.thresholds.fullColorMin must be between 0 and 1.',
+              error:
+                'pricingEngine.thresholds.fullColorMin must be between 0 and 1.',
             });
           }
           next.thresholds.fullColorMin = incoming.thresholds.fullColorMin;
@@ -1655,8 +1709,10 @@ export class AdminController {
       }
 
       if (incoming.colorMultiplier !== undefined) {
-        if (!isFiniteNumber(incoming.colorMultiplier) ||
-            incoming.colorMultiplier < 1) {
+        if (
+          !isFiniteNumber(incoming.colorMultiplier) ||
+          incoming.colorMultiplier < 1
+        ) {
           return res.status(400).json({
             error: 'pricingEngine.colorMultiplier must be >= 1.',
           });
@@ -1671,7 +1727,8 @@ export class AdminController {
           incoming.blankPagePolicy !== 'charge_color'
         ) {
           return res.status(400).json({
-            error: 'pricingEngine.blankPagePolicy must be "charge_zero", "charge_bw", or "charge_color".',
+            error:
+              'pricingEngine.blankPagePolicy must be "charge_zero", "charge_bw", or "charge_color".',
           });
         }
         next.blankPagePolicy = incoming.blankPagePolicy;
@@ -2456,7 +2513,7 @@ export class AdminController {
       const totalRow = sqlite
         .prepare(
           `SELECT SUM(COALESCE(color_pages, 0)) AS colorSum, SUM(COALESCE(bw_pages, 0)) AS bwSum
-           FROM receipt_records WHERE mode IN ('print','copy')`
+           FROM receipt_records WHERE mode IN ('print','copy')`,
         )
         .get() as Record<string, unknown> | undefined;
 

@@ -189,11 +189,10 @@ async function loadAnalyticsData(): Promise<void> {
   }
   const requestSeq = ++analyticsRequestSeq;
 
-  let requestPromise: Promise<void>;
-  requestPromise = (async () => {
-  const analyticsRes = await apiFetch(
-    `/api/admin/earnings/analytics?view=${encodeURIComponent(currentView)}&anchor=${encodeURIComponent(anchorDate.toISOString())}`,
-  );
+  const requestPromise: Promise<void> = (async () => {
+    const analyticsRes = await apiFetch(
+      `/api/admin/earnings/analytics?view=${encodeURIComponent(currentView)}&anchor=${encodeURIComponent(anchorDate.toISOString())}`,
+    );
     if (!analyticsRes.ok) {
       if (analyticsRes.status === 401) throw new Error('Invalid admin PIN.');
       throw new Error('Failed to load earnings analytics.');
@@ -262,7 +261,10 @@ initAuth(async () => {
   if (summaryRefreshTimer !== null) window.clearInterval(summaryRefreshTimer);
   if (analyticsRefreshTimer !== null)
     window.clearInterval(analyticsRefreshTimer);
-  summaryRefreshTimer = window.setInterval(() => void loadSummaryData(), 10_000);
+  summaryRefreshTimer = window.setInterval(
+    () => void loadSummaryData(),
+    10_000,
+  );
   analyticsRefreshTimer = window.setInterval(
     () => void loadAnalyticsData(),
     60_000,
@@ -271,5 +273,6 @@ initAuth(async () => {
 
 window.addEventListener('pagehide', () => {
   if (summaryRefreshTimer !== null) window.clearInterval(summaryRefreshTimer);
-  if (analyticsRefreshTimer !== null) window.clearInterval(analyticsRefreshTimer);
+  if (analyticsRefreshTimer !== null)
+    window.clearInterval(analyticsRefreshTimer);
 });

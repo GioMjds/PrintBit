@@ -539,9 +539,9 @@ export async function validateMagicBytes(
   const ooxmlMarker = OOXML_DIRECTORY_MARKERS[mime];
   const isOoxmlFormat = !!ooxmlMarker;
   const magicBytesFailed = !hasValidMagicBytes;
-  
+
   // Compute OOXML structure validation once to avoid duplicate parsing
-  const ooxmlStructureIsValid = 
+  const ooxmlStructureIsValid =
     isOoxmlFormat && hasValidMagicBytes
       ? validateOoxmlStructure(file.buffer, ooxmlMarker)
       : false;

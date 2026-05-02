@@ -35,7 +35,8 @@ function isValidIpv4Address(value: string): boolean {
   for (const part of parts) {
     if (!/^\d+$/.test(part)) return false;
     const numeric = Number(part);
-    if (!Number.isInteger(numeric) || numeric < 0 || numeric > 255) return false;
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric > 255)
+      return false;
   }
   return true;
 }
@@ -173,7 +174,10 @@ function detectEsp32KioskIp(): string | null {
       ) {
         return iface.address;
       }
-      if (!privateFallback && /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(iface.address)) {
+      if (
+        !privateFallback &&
+        /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(iface.address)
+      ) {
         privateFallback = iface.address;
       }
     }
@@ -323,15 +327,18 @@ class HotspotService {
     configureDatabase();
 
     try {
-      execSync('tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH', {
-        encoding: 'utf-8',
-        timeout: 5_000,
-        stdio: 'pipe',
-      }).includes('MyPublicWiFi.exe') &&
+      if (
+        execSync('tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH', {
+          encoding: 'utf-8',
+          timeout: 5_000,
+          stdio: 'pipe',
+        }).includes('MyPublicWiFi.exe')
+      ) {
         execSync('taskkill /F /IM MyPublicWiFi.exe', {
           stdio: 'ignore',
           timeout: 5_000,
         });
+      }
     } catch {
       /* not running */
     }

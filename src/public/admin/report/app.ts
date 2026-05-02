@@ -200,7 +200,9 @@ async function loadAllForStats(): Promise<void> {
     const data = (await res.json()) as ListResponse;
     allItems = data.items;
     updateStats();
-  } catch {}
+  } catch (error) {
+    console.error('Error loading all reports for stats:', error, { cause: error });
+  }
 }
 
 async function loadSummary(): Promise<void> {
@@ -209,7 +211,9 @@ async function loadSummary(): Promise<void> {
     if (!res.ok) return;
     const summary = (await res.json()) as SummaryResponse;
     setOpenAlertBadge(summary.anomalyStats.openCount);
-  } catch {}
+  } catch (error) {
+    console.error('Error loading summary:', error, { cause: error });
+  }
 }
 
 function applyFilter(): void {

@@ -115,7 +115,7 @@ export class PreviewService {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`LibreOffice conversion failed: ${message}`);
+      throw new Error(`LibreOffice conversion failed: ${message}`, { cause: err });
     }
 
     const convertedPdf = path.join(

@@ -16,7 +16,6 @@ import {
 import { adminService } from '@/services/admin';
 import {
   evaluateInkPreflight,
-  getPrinterTelemetry,
   persistAndEmitPrintLifecycleState,
   refreshPrinterTelemetry,
   settlementService,
@@ -44,7 +43,6 @@ import { buildEnhancedPrintQuote } from '@/services/print-quote';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
-const VALID_PAPER_SIZES = new Set(['A4', 'Legal']);
 const IDEMPOTENCY_SCOPE = 'POST:/api/copy/jobs';
 
 export interface CreateCopyJobInput {
@@ -55,6 +53,19 @@ export interface CreateCopyJobInput {
   paperSize?: string;
   amount?: number;
   previewPath?: string;
+}
+
+export interface GetCopyQuoteInput {
+  copyPreviewPath?: string;
+  copies?: number;
+  colorMode?: 'colored' | 'grayscale';
+  paperSize?: 'A4' | 'Legal';
+  pageRange?: {
+    type: string;
+    start?: number;
+    end?: number;
+  };
+  duplex?: boolean;
 }
 
 export interface IdempotencyKeyHitResult {
@@ -145,7 +156,10 @@ export class CopyService {
     idempotencyKey: string,
     req: Request,
   ): Promise<CreateCopyJobResult> {
-    if (typeof input.rotationDeg !== 'undefined' && parseRotationDeg(input.rotationDeg) === null) {
+    if (
+      typeof input.rotationDeg !== 'undefined' &&
+      parseRotationDeg(input.rotationDeg) === null
+    ) {
       return {
         statusCode: 400,
         body: {
@@ -361,7 +375,7 @@ export class CopyService {
     };
   }
 
-  async getCopyQuote(input: any): Promise<ServiceResponse> {
+  async getCopyQuote(input: GetCopyQuoteInput): Promise<ServiceResponse> {
     const previewPath = input.copyPreviewPath;
     if (!previewPath) {
       return {
@@ -655,7 +669,8 @@ export class CopyService {
           this.safeUpsertSettledReceiptSnapshot({
             transactionId: jobId,
             chargedAmount: settlement.chargedAmount,
-            colorPages: normalized.colorMode === 'colored' ? normalized.copies : 0,
+            colorPages:
+              normalized.colorMode === 'colored' ? normalized.copies : 0,
             bwPages: normalized.colorMode === 'colored' ? 0 : normalized.copies,
             change: {
               requested: settlement.change.requested,
@@ -859,9 +874,7 @@ export class CopyService {
             jobId,
             error: message,
             failureCode:
-              err instanceof PrintDispatchError
-                ? err.result.failureCode
-                : null,
+              err instanceof PrintDispatchError ? err.result.failureCode : null,
             requiredCapabilities:
               err instanceof PrintDispatchError
                 ? err.result.requiredCapabilities.length > 0
@@ -973,7 +986,8 @@ export class CopyService {
         );
       } catch (logError) {
         console.error('[COPY] Failed to append cleanup success admin log.', {
-          error: logError instanceof Error ? logError.message : String(logError),
+          error:
+            logError instanceof Error ? logError.message : String(logError),
           jobId: context.jobId,
           previewFilename,
         });
@@ -993,7 +1007,8 @@ export class CopyService {
         );
       } catch (logError) {
         console.error('[COPY] Failed to append cleanup failure admin log.', {
-          error: logError instanceof Error ? logError.message : String(logError),
+          error:
+            logError instanceof Error ? logError.message : String(logError),
           jobId: context.jobId,
           previewFilename,
         });

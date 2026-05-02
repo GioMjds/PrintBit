@@ -79,7 +79,7 @@ async function rotateImageFile(
   rotationDeg: RotationDeg,
   targetOrientation?: 'portrait' | 'landscape',
 ): Promise<void> {
-  let image = sharp(sourcePath).rotate(); // auto-orient based on EXIF first
+  const image = sharp(sourcePath).rotate(); // auto-orient based on EXIF first
   const metadata = await image.metadata();
   const w = metadata.width || 0;
   const h = metadata.height || 0;
@@ -139,7 +139,7 @@ export async function preparePrintRotationArtifact(input: {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown conversion error';
-      throw new Error(`Failed to convert document for rotation: ${message}`);
+      throw new Error(`Failed to convert document for rotation: ${message}`, { cause: error });
     }
   }
 
@@ -149,6 +149,7 @@ export async function preparePrintRotationArtifact(input: {
   if (workingExt !== '.pdf' && !IMAGE_EXTENSIONS.has(workingExt)) {
     throw new Error(
       `Rotation is not supported for ${sourceExt || 'this'} file type.`,
+      { cause: new Error(`Unsupported file type: ${workingExt}`) }
     );
   }
 

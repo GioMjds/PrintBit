@@ -160,7 +160,7 @@ export async function orchestratePrintJob(
   const startTime = Date.now();
   const ctx = buildPrintJobContext(job);
   let currentStage = 'initialization';
-  let chargedAmount = job.data.financial.chargedAmount ?? 0;
+  const chargedAmount = job.data.financial.chargedAmount ?? 0;
 
   try {
     // =========================================================================
@@ -268,9 +268,9 @@ export async function orchestratePrintJob(
     });
 
     if (isRetryable) {
-      throw new Error(`${failureClass}: ${failureReason}`);
+      throw new Error(`${failureClass}: ${failureReason}`, { cause: err });
     }
 
-    throw new Error(`NON_RETRYABLE - ${failureClass}: ${failureReason}`);
+    throw new Error(`NON_RETRYABLE - ${failureClass}: ${failureReason}`, { cause: err });
   }
 }

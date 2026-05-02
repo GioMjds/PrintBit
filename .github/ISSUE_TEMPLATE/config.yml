@@ -12,3 +12,7 @@ contact_links:
   - name: 📋 Full Gaps & Requirements Document
     url: https://github.com/GioMjds/printbit/blob/main/PRINTBIT_NOTES.txt
     about: See all 33 identified system gaps and their requirements before filing.
+
+  - name: 🤝 PrintBit Support Forum
+    url: https://github.com/GioMjds/printbit/discussions
+    about: Ask questions and discuss issues with the community before opening an issue.
