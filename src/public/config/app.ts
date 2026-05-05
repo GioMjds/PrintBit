@@ -2181,12 +2181,16 @@ continueBtn?.addEventListener('click', () => {
 
   sessionStorage.setItem('printbit.mode', mode);
   if (sessionId) sessionStorage.setItem('printbit.sessionId', sessionId);
+  else sessionStorage.removeItem('printbit.sessionId');
   if (sessionToken)
     sessionStorage.setItem('printbit.sessionToken', sessionToken);
+  else sessionStorage.removeItem('printbit.sessionToken');
   if (selectedFile)
     sessionStorage.setItem('printbit.uploadedFile', selectedFile);
+  else sessionStorage.removeItem('printbit.uploadedFile');
   if (selectedDocumentId)
     sessionStorage.setItem('printbit.uploadedDocumentId', selectedDocumentId);
+  else sessionStorage.removeItem('printbit.uploadedDocumentId');
   sessionStorage.setItem('printbit.config', JSON.stringify(config));
 
   window.location.href = '/confirm';

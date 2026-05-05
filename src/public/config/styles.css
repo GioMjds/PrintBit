@@ -897,8 +897,8 @@ body {
 }
 
 .pricing-analyzer-modal__close {
-  width: 38px;
-  height: 38px;
+  width: 48px;
+  height: 48px;
   border-radius: 10px;
   border: 1px solid rgba(167, 170, 225, 0.34);
   background: rgba(255, 255, 255, 0.04);

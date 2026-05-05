@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Settings · PrintBit Admin</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
@@ -333,8 +336,8 @@
               <p class="admin-page-hero__kicker">Configuration</p>
               <h3 class="admin-page-hero__title">Policy and Device Settings</h3>
               <p class="admin-page-hero__desc">
-                Adjust print pricing, runtime behavior, and machine safeguards for
-                stable kiosk operations.
+                Adjust print pricing, runtime behavior, and machine safeguards
+                for stable kiosk operations.
               </p>
             </section>
 
@@ -356,7 +359,6 @@
                   <h3 class="sg__title">Pricing Configuration</h3>
                 </div>
                 <div class="fields">
-
                   <!-- Short Bond Paper (A4/Letter) -->
                   <div class="field">
                     <label class="field__lbl" for="settingShortBondBwPrice"
@@ -521,62 +523,152 @@
               <!-- Smart Pricing Decile Tiers -->
               <div class="sg">
                 <div class="sg__head">
-                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zm6-3a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"
+                    />
                   </svg>
                   <h3 class="sg__title">Smart Pricing (Decile Tiers)</h3>
                 </div>
                 <div class="fields">
                   <div class="field field--stretch">
-                    <p class="field__desc">Set the price multiplier for each 10% coverage increment (0.0 to 1.0). 1.0 = Full Color Price.</p>
+                    <p class="field__desc">
+                      Set the price multiplier for each 10% coverage increment
+                      (0.0 to 1.0). 1.0 = Full Color Price.
+                    </p>
                   </div>
                   <div class="decile-grid">
                     <!-- Tiers will be dynamically generated or hardcoded here -->
                     <div class="field">
-                      <label class="field__lbl">1-10%</label>
-                      <input id="decile0" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile0">1-10%</label>
+                      <input
+                        id="decile0"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">11-20%</label>
-                      <input id="decile1" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile1">11-20%</label>
+                      <input
+                        id="decile1"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">21-30%</label>
-                      <input id="decile2" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile2">21-30%</label>
+                      <input
+                        id="decile2"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">31-40%</label>
-                      <input id="decile3" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile3">31-40%</label>
+                      <input
+                        id="decile3"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">41-50%</label>
-                      <input id="decile4" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile4">41-50%</label>
+                      <input
+                        id="decile4"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">51-60%</label>
-                      <input id="decile5" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile5">51-60%</label>
+                      <input
+                        id="decile5"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">61-70%</label>
-                      <input id="decile6" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile6">61-70%</label>
+                      <input
+                        id="decile6"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">71-80%</label>
-                      <input id="decile7" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile7">71-80%</label>
+                      <input
+                        id="decile7"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">81-90%</label>
-                      <input id="decile8" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile8">81-90%</label>
+                      <input
+                        id="decile8"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                     <div class="field">
-                      <label class="field__lbl">91-100%</label>
-                      <input id="decile9" type="number" step="0.01" min="0" max="1" class="field__input" />
+                      <label class="field__lbl" for="decile9">91-100%</label>
+                      <input
+                        id="decile9"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        class="field__input"
+                      />
                     </div>
                   </div>
                   <div class="field">
-                    <label class="field__lbl" for="settingSuggestionThreshold">Suggestion Threshold</label>
-                    <input id="settingSuggestionThreshold" type="number" step="0.001" min="0" max="0.1" class="field__input" />
-                    <p class="field__hint">Proximity to next tier to trigger advice (e.g. 0.02 = 2%)</p>
+                    <label class="field__lbl" for="settingSuggestionThreshold"
+                      >Suggestion Threshold</label
+                    >
+                    <input
+                      id="settingSuggestionThreshold"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      max="0.1"
+                      class="field__input"
+                    />
+                    <p class="field__hint">
+                      Proximity to next tier to trigger advice (e.g. 0.02 = 2%)
+                    </p>
                   </div>
                 </div>
               </div>

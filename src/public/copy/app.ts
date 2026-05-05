@@ -82,16 +82,24 @@ const retryBtn = document.getElementById(
 const previewSection = document.getElementById(
   'previewSection',
 ) as HTMLElement | null;
-const coverageMeter = document.getElementById('coverageMeter') as HTMLElement | null;
-const coverageValue = document.getElementById('coverageValue') as HTMLElement | null;
-const coverageBar = document.getElementById('coverageBar') as HTMLElement | null;
+const coverageMeter = document.getElementById(
+  'coverageMeter',
+) as HTMLElement | null;
+const coverageValue = document.getElementById(
+  'coverageValue',
+) as HTMLElement | null;
+const coverageBar = document.getElementById(
+  'coverageBar',
+) as HTMLElement | null;
 const tierBadge = document.getElementById('tierBadge') as HTMLElement | null;
 
 async function updateCoverageAnalysis(filename: string): Promise<void> {
   if (!coverageMeter) return;
 
   try {
-    const res = await fetch(`/api/scan/color-analysis/${encodeURIComponent(filename)}`);
+    const res = await fetch(
+      `/api/scan/color-analysis/${encodeURIComponent(filename)}`,
+    );
     if (!res.ok) throw new Error('Analysis failed');
 
     const analysis = (await res.json()) as {
@@ -115,7 +123,7 @@ async function updateCoverageAnalysis(filename: string): Promise<void> {
           tierBadge.textContent = 'Full Color Rate';
           tierBadge.style.color = '#f472b6';
         } else {
-          const decile = Math.max(1, Math.ceil(analysis.coverage * 10));
+          const decile = Math.min(10, Math.floor(analysis.coverage * 10) + 1);
           tierBadge.textContent = `Economy Tier ${decile}`;
           tierBadge.style.color = '#818cf8';
         }
@@ -126,7 +134,9 @@ async function updateCoverageAnalysis(filename: string): Promise<void> {
     if (coverageMeter) coverageMeter.style.display = 'none';
   }
 }
-const previewPaper = document.getElementById('previewPaper') as HTMLElement | null;
+const previewPaper = document.getElementById(
+  'previewPaper',
+) as HTMLElement | null;
 const previewCanvas = document.getElementById(
   'previewCanvas',
 ) as HTMLCanvasElement | null;
@@ -373,7 +383,10 @@ async function releaseCopyPreviewFile(
   if (!safeReleaseToken) return;
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), RELEASE_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    RELEASE_TIMEOUT_MS,
+  );
   try {
     const response = await fetch('/api/scanner/release', {
       method: 'POST',
@@ -473,11 +486,16 @@ async function renderPdfPreview(buf: ArrayBuffer): Promise<void> {
     const baseViewport = firstPage.getViewport({ scale: 1 });
 
     const paperWidth = Math.max((previewPaper?.clientWidth ?? 840) - 24, 240);
-    const paperHeight = Math.max((previewPaper?.clientHeight ?? 1188) - 24, 320);
+    const paperHeight = Math.max(
+      (previewPaper?.clientHeight ?? 1188) - 24,
+      320,
+    );
     const dpr = window.devicePixelRatio || 1;
     const scale =
-      Math.min(paperWidth / baseViewport.width, paperHeight / baseViewport.height) *
-      dpr;
+      Math.min(
+        paperWidth / baseViewport.width,
+        paperHeight / baseViewport.height,
+      ) * dpr;
     const viewport = firstPage.getViewport({ scale });
 
     previewCanvas.width = Math.floor(viewport.width);
@@ -516,12 +534,16 @@ async function renderImagePreview(blob: Blob): Promise<void> {
 }
 
 async function loadPreviewContent(filename: string): Promise<void> {
-  const response = await fetch(`/api/scan/preview/${encodeURIComponent(filename)}`);
+  const response = await fetch(
+    `/api/scan/preview/${encodeURIComponent(filename)}`,
+  );
   if (!response.ok) {
     throw new Error(`Preview request failed (${response.status})`);
   }
 
-  const contentType = (response.headers.get('Content-Type') ?? '').toLowerCase();
+  const contentType = (
+    response.headers.get('Content-Type') ?? ''
+  ).toLowerCase();
 
   if (contentType.includes('application/pdf')) {
     const buf = await response.arrayBuffer();
@@ -587,13 +609,19 @@ async function checkForDocument(): Promise<void> {
 
     if (data.detected && data.previewPath && data.releaseToken) {
       if (previewReleaseToken && previewReleaseToken !== data.releaseToken) {
-        void releaseCopyPreviewFile(previewReleaseToken, 'copy_preview_replaced');
+        void releaseCopyPreviewFile(
+          previewReleaseToken,
+          'copy_preview_replaced',
+        );
       }
       previewPath = data.previewPath;
       previewReleaseToken = data.releaseToken;
 
       sessionStorage.setItem('printbit.copyPreviewPath', previewPath);
-      sessionStorage.setItem('printbit.copyPreviewReleaseToken', previewReleaseToken);
+      sessionStorage.setItem(
+        'printbit.copyPreviewReleaseToken',
+        previewReleaseToken,
+      );
 
       await showPreview(data.previewPath);
     } else {
@@ -622,7 +650,10 @@ continueBtn?.addEventListener('click', () => {
     sessionStorage.setItem('printbit.copyPreviewPath', previewPath);
   }
   if (previewReleaseToken) {
-    sessionStorage.setItem('printbit.copyPreviewReleaseToken', previewReleaseToken);
+    sessionStorage.setItem(
+      'printbit.copyPreviewReleaseToken',
+      previewReleaseToken,
+    );
   } else {
     sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
   }
@@ -633,7 +664,9 @@ window.addEventListener('beforeunload', clearPreviewImageUrl);
 
 async function initializeCopyPage(): Promise<void> {
   previewPath = sessionStorage.getItem('printbit.copyPreviewPath');
-  previewReleaseToken = sessionStorage.getItem('printbit.copyPreviewReleaseToken');
+  previewReleaseToken = sessionStorage.getItem(
+    'printbit.copyPreviewReleaseToken',
+  );
 
   if (previewPath) {
     console.log('[COPY] Restoring preview from session:', previewPath);

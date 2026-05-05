@@ -205,12 +205,9 @@ function buildAnalysisUnavailablePayload(target: UploadedDocument): {
   }
 
   if (target.analysisStatus === 'failed') {
-    const analysisError =
-      typeof target.analysisError === 'string' ? target.analysisError.trim() : '';
     return {
       code: 'ANALYSIS_FAILED',
       error:
-        analysisError ||
         'Document analysis failed for this file. Retry analysis or re-upload and try again.',
     };
   }

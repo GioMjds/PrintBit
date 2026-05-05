@@ -1,12 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import {
-  isMainThread,
-  Worker as WorkerThread,
-  workerData,
-  parentPort,
-} from 'node:worker_threads';
+import { isMainThread, workerData, parentPort } from 'node:worker_threads';
 import {
   COLOR_SATURATION_THRESHOLD,
   MAX_PIXELS_TO_SAMPLE,
@@ -478,67 +473,8 @@ async function analyzeDocumentDirect(
 export async function analyzeDocument(
   input: AnalyzeDocumentInput,
 ): Promise<DocumentAnalysisResult> {
-  // If we're already in a worker thread, execute directly to avoid recursion
   if (!isMainThread) return analyzeDocumentDirect(input);
-
-  const contentType = (input.contentType ?? '').toLowerCase();
-  const filename = input.filename ?? path.basename(input.filePath);
-  const fileType = resolveFileType(contentType, filename);
-
-  // If it's an office document, we MUST convert it in the main thread first
-  // because the conversion provider (LibreOffice/Sumatra) might not be
-  // safe or easy to access/pass into a worker thread.
-  let targetFilePath = input.filePath;
-  let targetFileType = fileType;
-  if (
-    fileType === 'docx' ||
-    fileType === 'doc' ||
-    fileType === 'xlsx' ||
-    fileType === 'xls' ||
-    fileType === 'pptx' ||
-    fileType === 'ppt'
-  ) {
-    if (!input.convertToPdfPreview) {
-      throw new Error(
-        'Document conversion function is required for Office document analysis.',
-      );
-    }
-    targetFilePath = await input.convertToPdfPreview(input.filePath);
-    targetFileType = 'pdf';
-  }
-
-  // Now offload the heavy PDF/Image scanning to a worker thread
-  return new Promise((resolve, reject) => {
-    const workerPath = path.resolve(__filename);
-
-    // We pass only serializable data
-    const worker = new WorkerThread(workerPath, {
-      workerData: {
-        filePath: targetFilePath,
-        contentType: targetFileType === 'pdf' ? 'application/pdf' : contentType,
-        filename: filename,
-      },
-      // Ensure the worker can load TS files if we're running via ts-node
-      execArgv: process.execArgv.includes('--loader')
-        ? process.execArgv
-        : [...process.execArgv, '--loader', 'ts-node/esm'],
-    });
-
-    worker.on('message', (message) => {
-      if (message.type === 'success') {
-        resolve(message.result);
-      } else if (message.type === 'error') {
-        reject(new Error(message.message));
-      }
-    });
-
-    worker.on('error', reject);
-    worker.on('exit', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Analysis worker stopped with exit code ${code}`));
-      }
-    });
-  });
+  return analyzeDocumentDirect(input);
 }
 
 // Worker thread entry point

@@ -77,13 +77,13 @@ function extractPageSignals(
   }
 
   const rawCoverage = page.coverage;
-  const hasCoverage = typeof rawCoverage === 'number' && Number.isFinite(rawCoverage);
-  const coverage =
-    hasCoverage
-      ? Math.max(0, Math.min(1, rawCoverage))
-      : page.isColor
-        ? 1
-        : 0;
+  const hasCoverage =
+    typeof rawCoverage === 'number' && Number.isFinite(rawCoverage);
+  const coverage = hasCoverage
+    ? Math.max(0, Math.min(1, rawCoverage))
+    : page.isColor
+      ? 1
+      : 0;
 
   const classification =
     page.classification === 'blank' ||
@@ -96,11 +96,7 @@ function extractPageSignals(
   const isBlank =
     typeof page.isBlank === 'boolean'
       ? page.isBlank
-      : classification === 'blank'
-        ? true
-        : typeof page.coverage === 'number'
-          ? page.coverage === 0 && !page.isColor
-          : false;
+      : classification === 'blank';
 
   return {
     coverage,
@@ -275,7 +271,11 @@ export function computeJobPricing(input: {
       | undefined;
     const suggestionThreshold = engineSettings?.suggestionThreshold ?? 0.02;
 
-    if (classification === 'partial' && config.pricing.decileSurcharges) {
+    if (
+      classification === 'partial' &&
+      Array.isArray(config.pricing.decileSurcharges) &&
+      config.pricing.decileSurcharges.length === 10
+    ) {
       const decileIndex = Math.floor(coverage * 10);
       const tierBottom = decileIndex / 10;
       if (
