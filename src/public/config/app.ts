@@ -87,6 +87,14 @@ interface PrintQuote {
   };
   pricingEngine?: {
     mode: 'legacy' | 'shadow' | 'live';
+    perPageBreakdown?: Array<{
+      index: number;
+      coverage: number;
+      classification: 'blank' | 'bw' | 'partial' | 'full_color';
+      rawPriceExact: number;
+      isBlank: boolean;
+      suggestSavings?: boolean;
+    }>;
     subtotalExact: number;
     discountExact: number;
     finalExact: number;
@@ -202,6 +210,151 @@ async function fetchWithTimeout(
   }
 }
 
+// ── Smart Pricing ────────────────────────────────────────────────────────────
+const coverageMeter = document.getElementById(
+  'coverageMeter',
+) as HTMLElement | null;
+const coverageValue = document.getElementById(
+  'coverageValue',
+) as HTMLElement | null;
+const coverageBar = document.getElementById(
+  'coverageBar',
+) as HTMLElement | null;
+const tierBadge = document.getElementById('tierBadge') as HTMLElement | null;
+
+let currentAnalysisData: any = null;
+
+// Update Page Range when Preview navigates
+function onPreviewPageChange(pageNum: number): void {
+  if (pageModeSingle?.checked) {
+    if (singlePageInput) {
+      singlePageInput.value = String(pageNum);
+      clampSinglePage();
+      updateSummary();
+      schedulePrintQuoteRefresh();
+    }
+  }
+  updatePageCoverageMeter(pageNum);
+}
+
+// Sync Preview when Range Mode changes
+function syncPreviewPageWithRange(): void {
+  if (pageModeSingle?.checked && singlePageInput) {
+    const page = parseInt(singlePageInput.value, 10);
+    if (!isNaN(page)) {
+      void preview.goToPage(page);
+    }
+  }
+}
+
+function updatePageCoverageMeter(pageNum: number): void {
+  if (!coverageMeter) return;
+  if (!currentAnalysisData?.pages) {
+    coverageMeter.style.display = 'none';
+    return;
+  }
+  const pageIndex = pageNum; // 1-based
+  const page: {
+    index?: number;
+    coverage: number;
+    isColor: boolean;
+    classification: string;
+    suggestSavings?: boolean;
+  } =
+    currentAnalysisData.pages.find(
+      (p: { index?: number }) => p.index === pageIndex,
+    ) ?? currentAnalysisData.pages[pageIndex - 1];
+  if (!page) {
+    coverageMeter.style.display = 'none';
+    return;
+  }
+
+  const percent = Math.round(page.coverage * 100);
+  coverageMeter.style.display = 'flex';
+  if (coverageValue) coverageValue.textContent = `${percent}%`;
+  if (coverageBar) coverageBar.style.width = `${percent}%`;
+
+  if (tierBadge) {
+    if (page.classification === 'bw' || !page.isColor) {
+      tierBadge.textContent = 'B&W Rate';
+    } else if (page.classification === 'full_color') {
+      tierBadge.textContent = 'Full Color Rate';
+    } else {
+      const decile = Math.max(1, Math.ceil(page.coverage * 10));
+      tierBadge.textContent = `Economy Tier ${decile}`;
+    }
+  }
+
+  // Smart Suggestion Toast
+  if (page.suggestSavings && getRadio('colorMode') === 'colored') {
+    showSavingsToast(pageIndex);
+  } else {
+    hideSavingsToast();
+  }
+}
+
+function showSavingsToast(pageIndex: number): void {
+  let toast = document.getElementById('savingsToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'savingsToast';
+    toast.className = 'savings-toast';
+    toast.innerHTML = `
+      <span class="savings-toast__icon">💡</span>
+      <span class="savings-toast__text">Page ${pageIndex} is near a lower price tier.</span>
+      <button class="savings-toast__btn" id="makeGrayscaleBtn">Go Grayscale</button>
+    `;
+    document.body.appendChild(toast);
+
+    document
+      .getElementById('makeGrayscaleBtn')
+      ?.addEventListener('click', () => {
+        alert('Tip: Setting this page to grayscale could save you money!');
+        hideSavingsToast();
+      });
+  }
+
+  toast.classList.add('is-visible');
+}
+
+function hideSavingsToast(): void {
+  document.getElementById('savingsToast')?.classList.remove('is-visible');
+}
+
+async function loadFullAnalysis(): Promise<void> {
+  if (mode === 'copy') {
+    if (copyPreviewPath) {
+      try {
+        const res = await fetch(
+          `/api/scan/color-analysis/${encodeURIComponent(copyPreviewPath)}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          currentAnalysisData = { pages: [{ ...data, index: 1 }] };
+          updatePageCoverageMeter(1);
+        }
+      } catch {
+        // Best-effort, non-critical feature
+      }
+    }
+    return;
+  }
+
+  if (sessionId && selectedDocumentId) {
+    try {
+      const res = await fetch(
+        `/api/wireless/sessions/${encodeURIComponent(sessionId)}/analysis/${encodeURIComponent(selectedDocumentId)}`,
+      );
+      if (res.ok) {
+        currentAnalysisData = await res.json();
+        updatePageCoverageMeter(preview.currentPageNumber);
+      }
+    } catch {
+      // Best-effort, non-critical feature
+    }
+  }
+}
+
 class PrintPreview {
   private viewport: HTMLElement;
   private sheet: HTMLElement;
@@ -235,6 +388,10 @@ class PrintPreview {
 
   get pageCount(): number {
     return this.totalPages;
+  }
+
+  get currentPageNumber(): number {
+    return this.currentPage;
   }
 
   get imageInfo(): { naturalWidth: number; naturalHeight: number } | null {
@@ -327,6 +484,9 @@ class PrintPreview {
     } else {
       this.sheet.removeAttribute('data-gray');
     }
+
+    // Update coverage meter if config changes (e.g. color mode)
+    updatePageCoverageMeter(this.currentPage);
   }
 
   async load(sessionId: string, filename?: string): Promise<void> {
@@ -410,6 +570,9 @@ class PrintPreview {
       this.latestImageInfo = null;
       this.showError('Unsupported preview format.');
     }
+
+    // Load analysis data in parallel
+    void loadFullAnalysis();
   }
 
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
@@ -481,6 +644,9 @@ class PrintPreview {
         this.showImg(false);
         this.showLoading(false);
         this.setHint(`Page ${pageNum} of ${this.totalPages}`);
+
+        // Update coverage meter for the new page
+        updatePageCoverageMeter(pageNum);
       } catch (e) {
         console.error('Render error:', e);
         previewLog('renderPage() failed', e);
@@ -523,6 +689,8 @@ class PrintPreview {
         this.setHint('Image preview');
         // Revoke blob URL after image loads to free memory
         if (isBlobUrl) URL.revokeObjectURL(url);
+
+        updatePageCoverageMeter(1);
         resolve();
       };
       this.img.onerror = () => {
@@ -538,11 +706,15 @@ class PrintPreview {
     });
   }
 
-  private async goToPage(n: number): Promise<void> {
+  async goToPage(n: number): Promise<void> {
     n = Math.max(1, Math.min(this.totalPages, n));
     if (n === this.currentPage) return;
     this.currentPage = n;
     this.updatePager();
+
+    // Notify the app of the page change
+    onPreviewPageChange(n);
+
     if (this.pdfDoc) {
       await this.renderPage(n);
     } else if (this.iframe.style.display !== 'none') {
@@ -586,6 +758,7 @@ class PrintPreview {
     this.currentPage = 1;
     this.iframe.contentWindow?.scrollTo(0, 0);
     this.updatePager();
+    updatePageCoverageMeter(1);
   }
 
   private showFrame(on: boolean): void {
@@ -687,6 +860,8 @@ class PrintPreview {
     } else {
       this.showError('Unsupported preview format.');
     }
+
+    void loadFullAnalysis();
   }
 }
 
@@ -746,6 +921,33 @@ const filePillLabel = document.getElementById(
 ) as HTMLElement | null;
 const footerSummary = document.getElementById(
   'footerSummary',
+) as HTMLElement | null;
+const openPricingAnalyzerBtn = document.getElementById(
+  'openPricingAnalyzerBtn',
+) as HTMLButtonElement | null;
+const pricingAnalyzerTriggerMeta = document.getElementById(
+  'pricingAnalyzerTriggerMeta',
+) as HTMLElement | null;
+const pricingAnalyzerModal = document.getElementById(
+  'pricingAnalyzerModal',
+) as HTMLElement | null;
+const pricingAnalyzerBackdrop = document.getElementById(
+  'pricingAnalyzerBackdrop',
+) as HTMLElement | null;
+const closePricingAnalyzerBtn = document.getElementById(
+  'closePricingAnalyzerBtn',
+) as HTMLButtonElement | null;
+const pricingAnalyzerModalSummary = document.getElementById(
+  'pricingAnalyzerModalSummary',
+) as HTMLElement | null;
+const pricingAnalyzerModalFormula = document.getElementById(
+  'pricingAnalyzerModalFormula',
+) as HTMLElement | null;
+const pricingAnalyzerModalTotals = document.getElementById(
+  'pricingAnalyzerModalTotals',
+) as HTMLElement | null;
+const pricingAnalyzerModalPages = document.getElementById(
+  'pricingAnalyzerModalPages',
 ) as HTMLElement | null;
 const copiesInput = document.getElementById(
   'copies',
@@ -894,18 +1096,10 @@ let quoteError: string | null = null;
 let quoteLoading = false;
 let quoteRequestVersion = 0;
 let quoteDebounceHandle: number | null = null;
-const QUOTE_409_RETRY_ATTEMPTS = 5;
-const QUOTE_409_RETRY_DELAY_MS = 300;
-
-[pageModeAll, pageModeCustom, pageModeSingle].forEach((el) => {
-  el?.addEventListener('change', () => {
-    syncPageRangeUI();
-    syncCustomRangeInputs();
-    syncCustomRangeValidity();
-    updateSummary();
-    schedulePrintQuoteRefresh();
-  });
-});
+const QUOTE_409_RETRY_ATTEMPTS = 20;
+const QUOTE_409_RETRY_DELAY_MS = 500;
+const ANALYSIS_UNAVAILABLE_ERROR =
+  'Document analysis is unavailable. Re-upload the file and try again.';
 
 function getPageRangeMaxPages(): number {
   return Math.max(1, preview.pageCount || 1);
@@ -990,37 +1184,30 @@ customRangeEndInput?.addEventListener('change', () => {
   updateSummary();
   schedulePrintQuoteRefresh();
 });
-customRangeStartInput?.addEventListener('change', () => {
-  syncCustomRangeInputs('start');
-  syncCustomRangeValidity();
-  updateSummary();
-  schedulePrintQuoteRefresh();
-});
 
-customRangeEndInput?.addEventListener('change', () => {
-  syncCustomRangeInputs('end');
-  syncCustomRangeValidity();
-  updateSummary();
-  schedulePrintQuoteRefresh();
-});
 singlePageDec?.addEventListener('click', () => {
   if (!singlePageInput) return;
-  singlePageInput.value = String(Math.max(1, clampSinglePage() - 1));
+  const next = Math.max(1, clampSinglePage() - 1);
+  singlePageInput.value = String(next);
   clampSinglePage();
+  void preview.goToPage(next);
   updateSummary();
   schedulePrintQuoteRefresh();
 });
 
 singlePageInc?.addEventListener('click', () => {
   if (!singlePageInput) return;
-  singlePageInput.value = String(clampSinglePage() + 1);
+  const next = Math.min(getPageRangeMaxPages(), clampSinglePage() + 1);
+  singlePageInput.value = String(next);
   clampSinglePage();
+  void preview.goToPage(next);
   updateSummary();
   schedulePrintQuoteRefresh();
 });
 
 singlePageInput?.addEventListener('change', () => {
-  clampSinglePage();
+  const page = clampSinglePage();
+  void preview.goToPage(page);
   updateSummary();
   schedulePrintQuoteRefresh();
 });
@@ -1099,7 +1286,7 @@ function hasMultiplePages(): boolean {
 function syncPageRangeAvailability(): void {
   const visible = hasMultiplePages();
   const maxPages = getPageRangeMaxPages();
-  const maxAllowed: number = 30; // Maximum pages allowed for custom range selection and if the file has >30 pages, only allow single page selection to avoid overwhelming the user and the printer.
+  const maxAllowed: number = 30; // Maximum pages allowed for custom range selection
 
   pageRangeGroup?.classList.toggle('hidden', !visible);
 
@@ -1270,9 +1457,32 @@ function waitForQuoteRetry(ms: number): Promise<void> {
   });
 }
 
+async function requestDocumentAnalysisRetry(): Promise<boolean> {
+  if (mode !== 'print' || !sessionId || !sessionToken) {
+    return false;
+  }
+
+  const payload = selectedDocumentId ? { documentId: selectedDocumentId } : {};
+
+  try {
+    const response = await fetch(
+      `/api/wireless/sessions/${encodeURIComponent(sessionId)}/analyze?token=${encodeURIComponent(sessionToken)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function refreshPrintQuote(): Promise<void> {
-  if ((mode !== 'print' && mode !== 'copy') || (!sessionId && mode === 'print')) return;
-  
+  if ((mode !== 'print' && mode !== 'copy') || (!sessionId && mode === 'print'))
+    return;
+
   if (
     mode === 'print' &&
     hasMultiplePages() &&
@@ -1311,13 +1521,14 @@ async function refreshPrintQuote(): Promise<void> {
       requestBody.sessionId = sessionId ?? undefined;
       requestBody.documentId = selectedDocumentId ?? undefined;
     } else if (mode === 'copy') {
-      requestBody.sessionId = 'copy-session'; // Special marker for copy analysis if supported
+      requestBody.sessionId = 'copy-session';
       requestBody.isCopyJob = true;
       requestBody.copyPreviewPath = copyPreviewPath;
     }
 
     let resolvedQuote: PrintQuote | null = null;
     let resolvedError: string | null = null;
+    let attemptedAnalysisRecovery = false;
 
     const endpoint = mode === 'print' ? '/api/print/quote' : '/api/copy/quote';
 
@@ -1338,14 +1549,42 @@ async function refreshPrintQuote(): Promise<void> {
 
       if (requestVersion !== quoteRequestVersion) return;
 
-      let payload: { error?: string; quote?: PrintQuote } = {};
+      let payload: { error?: string; code?: string; quote?: PrintQuote } = {};
       try {
         payload = (await response.json()) as {
           error?: string;
+          code?: string;
           quote?: PrintQuote;
         };
       } catch {
         payload = {};
+      }
+
+      const responseCode =
+        typeof payload.code === 'string' ? payload.code : null;
+      const isAnalysisPending = responseCode === 'ANALYSIS_PENDING';
+      const isAnalysisFailed = responseCode === 'ANALYSIS_FAILED';
+      const isAnalysisUnavailable =
+        responseCode === 'ANALYSIS_UNAVAILABLE' ||
+        payload.error === ANALYSIS_UNAVAILABLE_ERROR;
+
+      if (
+        response.status === 409 &&
+        (isAnalysisPending || isAnalysisFailed || isAnalysisUnavailable) &&
+        attempt < QUOTE_409_RETRY_ATTEMPTS - 1
+      ) {
+        if (
+          (isAnalysisFailed || isAnalysisUnavailable) &&
+          !attemptedAnalysisRecovery
+        ) {
+          attemptedAnalysisRecovery = true;
+          const retryQueued = await requestDocumentAnalysisRetry();
+          if (!retryQueued) {
+            console.warn('[config] Failed to queue analysis retry.');
+          }
+        }
+        await waitForQuoteRetry(QUOTE_409_RETRY_DELAY_MS);
+        continue;
       }
 
       if (response.status === 409 && attempt < QUOTE_409_RETRY_ATTEMPTS - 1) {
@@ -1395,6 +1634,169 @@ function schedulePrintQuoteRefresh(): void {
   }, 120);
 }
 
+function formatPeso(amount: number): string {
+  const rounded = Math.round(amount * 100) / 100;
+  return `₱${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}`;
+}
+
+function setPricingAnalyzerModalOpen(open: boolean): void {
+  if (!pricingAnalyzerModal) return;
+  pricingAnalyzerModal.hidden = !open;
+  pricingAnalyzerModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+function renderPricingAnalyzer(): void {
+  if (
+    !openPricingAnalyzerBtn ||
+    !pricingAnalyzerTriggerMeta ||
+    !pricingAnalyzerModalSummary ||
+    !pricingAnalyzerModalFormula ||
+    !pricingAnalyzerModalTotals ||
+    !pricingAnalyzerModalPages
+  ) {
+    return;
+  }
+
+  if (mode === 'scan') {
+    openPricingAnalyzerBtn.hidden = true;
+    pricingAnalyzerTriggerMeta.textContent = 'Unavailable in scan mode';
+    pricingAnalyzerModalSummary.textContent =
+      'Smart pricing analyzer is available for print and copy jobs.';
+    pricingAnalyzerModalFormula.textContent =
+      'No page-tier billing applies in scan mode.';
+    pricingAnalyzerModalTotals.innerHTML = '';
+    pricingAnalyzerModalPages.innerHTML = '';
+    setPricingAnalyzerModalOpen(false);
+    return;
+  }
+  openPricingAnalyzerBtn.hidden = false;
+
+  if (quoteLoading) {
+    pricingAnalyzerTriggerMeta.textContent = 'Recomputing smart pricing...';
+    pricingAnalyzerModalSummary.textContent = 'Recomputing smart pricing...';
+    pricingAnalyzerModalFormula.textContent =
+      'Please wait while we analyze pages.';
+    pricingAnalyzerModalTotals.innerHTML = '';
+    pricingAnalyzerModalPages.innerHTML = '';
+    return;
+  }
+
+  if (!currentPrintQuote?.pricingEngine) {
+    const selectedPages = currentPrintQuote?.selectedPages ?? 0;
+    const totalPages = currentPrintQuote?.totalPages ?? preview.pageCount;
+    const copies = currentPrintQuote?.copies ?? getCopies();
+    pricingAnalyzerTriggerMeta.textContent = `${selectedPages}/${totalPages} pages · ${copies} copy${copies === 1 ? '' : 'ies'}`;
+    pricingAnalyzerModalSummary.textContent = `Selected ${selectedPages} of ${totalPages} pages · ${copies} copy${copies === 1 ? '' : 'ies'}`;
+    pricingAnalyzerModalFormula.textContent =
+      currentPrintQuote !== null
+        ? `Estimated total: ${formatPeso(currentPrintQuote.requiredAmount)}`
+        : 'No pricing breakdown available yet.';
+    pricingAnalyzerModalTotals.innerHTML = '';
+    pricingAnalyzerModalPages.innerHTML =
+      '<p class="pricing-analyzer-modal__summary">Per-page details will appear after quote breakdown is available.</p>';
+    return;
+  }
+
+  const quote = currentPrintQuote;
+  const pe = quote.pricingEngine!;
+  const pages = Array.isArray(pe.perPageBreakdown) ? pe.perPageBreakdown : [];
+  const copies = quote.copies;
+
+  const buckets = {
+    blank: { count: 0, total: 0 },
+    bw: { count: 0, total: 0 },
+    partial: { count: 0, total: 0 },
+    full_color: { count: 0, total: 0 },
+  };
+
+  let lowCoverageColorPages = 0;
+  for (const page of pages) {
+    const bucket = buckets[page.classification];
+    bucket.count += 1;
+    bucket.total += page.rawPriceExact * copies;
+    if (
+      (page.classification === 'partial' ||
+        page.classification === 'full_color') &&
+      page.coverage <= 0.03
+    ) {
+      lowCoverageColorPages += 1;
+    }
+  }
+
+  pricingAnalyzerTriggerMeta.textContent = `${quote.selectedPages} pages · ${formatPeso(pe.finalPayablePeso)} payable`;
+
+  pricingAnalyzerModalSummary.textContent = `Selected ${quote.selectedPages} of ${quote.totalPages} pages · ${copies} copy${copies === 1 ? '' : 'ies'} · ${quote.effectiveColorMode === 'colored' ? 'Colored mode' : 'Grayscale mode'}`;
+
+  pricingAnalyzerModalTotals.innerHTML = `
+    <article class="pricing-chip pricing-chip--bw">
+      <span class="pricing-chip__label">B/W pages</span>
+      <span class="pricing-chip__value">${buckets.bw.count}</span>
+      <span class="pricing-chip__sub">${formatPeso(buckets.bw.total)}</span>
+    </article>
+    <article class="pricing-chip pricing-chip--partial">
+      <span class="pricing-chip__label">Smart tier pages</span>
+      <span class="pricing-chip__value">${buckets.partial.count}</span>
+      <span class="pricing-chip__sub">${formatPeso(buckets.partial.total)}</span>
+    </article>
+    <article class="pricing-chip pricing-chip--color">
+      <span class="pricing-chip__label">Full-color pages</span>
+      <span class="pricing-chip__value">${buckets.full_color.count}</span>
+      <span class="pricing-chip__sub">${formatPeso(buckets.full_color.total)}</span>
+    </article>
+    <article class="pricing-chip pricing-chip--blank">
+      <span class="pricing-chip__label">Blank pages</span>
+      <span class="pricing-chip__value">${buckets.blank.count}</span>
+      <span class="pricing-chip__sub">${formatPeso(buckets.blank.total)}</span>
+    </article>
+  `;
+
+  pricingAnalyzerModalFormula.textContent = `${formatPeso(pe.subtotalExact)}${pe.discountExact > 0 ? ` − ${formatPeso(pe.discountExact)} bulk discount` : ''} = ${formatPeso(pe.finalPayablePeso)} payable`;
+
+  const classificationLabel: Record<
+    'blank' | 'bw' | 'partial' | 'full_color',
+    string
+  > = {
+    blank: 'Blank',
+    bw: 'B/W',
+    partial: 'Smart Tier',
+    full_color: 'Full Color',
+  };
+
+  const classificationClass: Record<
+    'blank' | 'bw' | 'partial' | 'full_color',
+    string
+  > = {
+    blank: 'is-blank',
+    bw: 'is-bw',
+    partial: 'is-partial',
+    full_color: 'is-color',
+  };
+
+  const rows = pages
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .map((page) => {
+      const pageClass = classificationClass[page.classification];
+      const coveragePercent = `${(page.coverage * 100).toFixed(1)}%`;
+      const rowPrice = formatPeso(page.rawPriceExact * copies);
+      return `<div class="pricing-analyzer-page-row ${pageClass}">
+        <span class="pricing-analyzer-page-row__page">Page ${page.index}</span>
+        <span class="pricing-analyzer-page-row__class">${classificationLabel[page.classification]}</span>
+        <span class="pricing-analyzer-page-row__coverage">${coveragePercent} coverage</span>
+        <span class="pricing-analyzer-page-row__price">${rowPrice}</span>
+      </div>`;
+    })
+    .join('');
+
+  pricingAnalyzerModalPages.innerHTML = rows;
+
+  if (quote.totalPages > quote.selectedPages) {
+    pricingAnalyzerModalSummary.textContent += ` · Session cap active: only ${quote.selectedPages} pages are billed per job.`;
+  } else if (lowCoverageColorPages > 0) {
+    pricingAnalyzerModalSummary.textContent += ` · ${lowCoverageColorPages} page(s) were detected as color with low coverage. These often come from embedded color objects/logos in grayscale-looking PDFs.`;
+  }
+}
+
 function updateSummary(): void {
   if (!footerSummary) return;
   if (mode === 'scan') {
@@ -1403,6 +1805,7 @@ function updateSummary(): void {
     footerSummary.textContent =
       `Scan mode · ${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
       `Rotate ${cfg.rotationDeg}°`;
+    renderPricingAnalyzer();
     return;
   }
 
@@ -1428,16 +1831,16 @@ function updateSummary(): void {
     } else {
       suffix = ` · ${paperLabel} · ₱${currentPrintQuote.requiredAmount}`;
     }
-  } else if (quoteError) {    suffix = ` · ${quoteError}`;
+  } else if (quoteError) {
+    suffix = ` · ${quoteError}`;
     footerSummary.classList.remove('ready');
   } else if (mode === 'copy') {
-     // Fallback for copy mode if quote not yet loaded
-     const hasCopyPreview = Boolean(copyPreviewPath);
-     if (hasCopyPreview) {
-       suffix = ' · Ready to calculate';
-     } else {
-       suffix = ' · No document';
-     }
+    const hasCopyPreview = Boolean(copyPreviewPath);
+    if (hasCopyPreview) {
+      suffix = ' · Ready to calculate';
+    } else {
+      suffix = ' · No document';
+    }
   }
 
   footerSummary.textContent =
@@ -1445,6 +1848,7 @@ function updateSummary(): void {
     `${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
     `Rotate ${cfg.rotationDeg}° · ` +
     `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}${suffix}`;
+  renderPricingAnalyzer();
 }
 
 const preview = new PrintPreview();
@@ -1472,6 +1876,12 @@ document
   .querySelectorAll<HTMLInputElement>('input[type=radio]')
   .forEach((el) => {
     el.addEventListener('change', () => {
+      if (el.name === 'pageRangeMode') {
+        syncPreviewPageWithRange();
+        syncPageRangeUI();
+        syncCustomRangeInputs();
+        syncCustomRangeValidity();
+      }
       const cfg = currentPreviewConfig();
       preview.applyConfig(cfg);
       updateSummary();
@@ -1522,6 +1932,27 @@ copiesInput?.addEventListener('change', () => {
   }
 });
 
+openPricingAnalyzerBtn?.addEventListener('click', () => {
+  setPricingAnalyzerModalOpen(true);
+});
+
+const closePricingAnalyzerModal = (): void => {
+  setPricingAnalyzerModalOpen(false);
+};
+
+closePricingAnalyzerBtn?.addEventListener('click', closePricingAnalyzerModal);
+pricingAnalyzerBackdrop?.addEventListener('click', closePricingAnalyzerModal);
+
+window.addEventListener('keydown', (event) => {
+  if (
+    event.key === 'Escape' &&
+    pricingAnalyzerModal &&
+    !pricingAnalyzerModal.hidden
+  ) {
+    closePricingAnalyzerModal();
+  }
+});
+
 updateSummary();
 syncPageRangeAvailability();
 clampSinglePage();
@@ -1561,7 +1992,6 @@ async function loadPreview(): Promise<void> {
         };
         if (isGrayscale) {
           resetColorLock(); // ensure clean state
-          // reuse same lock logic — extract into shared helper
           lockColorMode();
         }
       }
@@ -1597,26 +2027,17 @@ async function loadPreview(): Promise<void> {
       let mime = (resp.headers.get('Content-Type') ?? '').toLowerCase();
       previewLog('loadPreview() scan mode - content type', { mime });
 
-      // Fallback to guessing MIME type from filename extension if header is missing
       if (!mime || mime === '' || mime === 'application/octet-stream') {
         const ext = scanFilename.toLowerCase().split('.').pop() || '';
-        previewLog('loadPreview() scan mode - guessing mime from extension', {
-          ext,
-        });
         if (ext === 'pdf') mime = 'application/pdf';
         else if (['jpg', 'jpeg'].includes(ext)) mime = 'image/jpeg';
         else if (ext === 'png') mime = 'image/png';
       }
 
       const buf = await resp.arrayBuffer();
-      previewLog('loadPreview() scan mode - buffer received', {
-        size: buf.byteLength,
-      });
       await preview.loadFromBuffer(buf, mime || 'application/octet-stream');
-      previewLog('loadPreview() scan mode - preview loaded successfully');
     } catch (err) {
       previewLog('loadPreview() scan mode - exception', err);
-      // Preview is helpful but not required for scan mode.
     }
 
     updateSummary();
@@ -1630,7 +2051,6 @@ async function loadPreview(): Promise<void> {
   }
 
   if (!sessionId) {
-    // Show error state in the paper placeholder
     const text = document.getElementById('placeholderText');
     if (text) text.textContent = 'No session — go back to /print';
     document.getElementById('paperLoading')?.classList.add('hidden');
@@ -1639,16 +2059,12 @@ async function loadPreview(): Promise<void> {
 
   syncOrientationDetectionContext();
   await preview.load(sessionId, selectedFile ?? undefined);
-  previewLog('preview.load() complete');
   applyImageOrientationDetection();
-  previewLog('applyImageOrientationDetection() complete');
   if (sessionId) await applyColorAnalysis(sessionId, selectedFile);
-  previewLog('applyColorAnalysis() complete');
   syncPageRangeAvailability();
   clampSinglePage();
   updateSummary();
   await refreshPrintQuote();
-  previewLog('refreshPrintQuote() complete');
 }
 
 function lockColorMode(): void {
@@ -1703,17 +2119,9 @@ async function applyColorAnalysis(
 
   let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/color-analysis`;
   if (filename) url += `?filename=${encodeURIComponent(filename)}`;
-  previewLog('applyColorAnalysis() start', {
-    sessionId,
-    filename: filename ?? null,
-  });
 
   try {
     const resp = await fetchWithTimeout(url, 10_000);
-    previewLog('applyColorAnalysis() response', {
-      status: resp.status,
-      ok: resp.ok,
-    });
     if (!resp.ok) return;
 
     const { isGrayscale } = (await resp.json()) as { isGrayscale: boolean };
@@ -1728,7 +2136,6 @@ async function applyColorAnalysis(
       grayRadio.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // Show advisory notice while keeping color controls user-editable.
     const colorGroup = document.querySelector<HTMLElement>(
       '.option-group:has(input[name="colorMode"])',
     );
@@ -1739,10 +2146,8 @@ async function applyColorAnalysis(
         'Auto-detected grayscale. Switch to Colored if your file has color.';
       colorGroup.appendChild(notice);
     }
-  } catch (error) {
+  } catch {
     detectedColorMode = null;
-    previewLog('applyColorAnalysis() failed', error);
-    // Detection failed - leave UI unlocked
   }
 }
 
@@ -1751,16 +2156,6 @@ continueBtn?.addEventListener('click', () => {
   if (mode === 'print' && !currentPrintQuote) return;
   if (mode === 'copy' && !copyPreviewPath) return;
   if (mode === 'scan' && !scanFilename) return;
-  if (mode === 'print' && hasMultiplePages() && pageModeCustom?.checked) {
-    syncCustomRangeValidity();
-    if (pageRangeInput && !pageRangeInput.checkValidity()) {
-      quoteError = pageRangeInput.validationMessage || 'Invalid page range.';
-      currentPrintQuote = null;
-      updateSummary();
-      setPrintContinueState();
-      return;
-    }
-  }
 
   const cfg = currentPreviewConfig();
   const config: PrintConfig = {
@@ -1785,26 +2180,13 @@ continueBtn?.addEventListener('click', () => {
   };
 
   sessionStorage.setItem('printbit.mode', mode);
-  if (sessionId) {
-    sessionStorage.setItem('printbit.sessionId', sessionId);
-  } else {
-    sessionStorage.removeItem('printbit.sessionId');
-  }
-  if (sessionToken) {
+  if (sessionId) sessionStorage.setItem('printbit.sessionId', sessionId);
+  if (sessionToken)
     sessionStorage.setItem('printbit.sessionToken', sessionToken);
-  } else {
-    sessionStorage.removeItem('printbit.sessionToken');
-  }
-  if (selectedFile) {
+  if (selectedFile)
     sessionStorage.setItem('printbit.uploadedFile', selectedFile);
-  } else {
-    sessionStorage.removeItem('printbit.uploadedFile');
-  }
-  if (selectedDocumentId) {
+  if (selectedDocumentId)
     sessionStorage.setItem('printbit.uploadedDocumentId', selectedDocumentId);
-  } else {
-    sessionStorage.removeItem('printbit.uploadedDocumentId');
-  }
   sessionStorage.setItem('printbit.config', JSON.stringify(config));
 
   window.location.href = '/confirm';

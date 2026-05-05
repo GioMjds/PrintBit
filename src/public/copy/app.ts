@@ -82,6 +82,50 @@ const retryBtn = document.getElementById(
 const previewSection = document.getElementById(
   'previewSection',
 ) as HTMLElement | null;
+const coverageMeter = document.getElementById('coverageMeter') as HTMLElement | null;
+const coverageValue = document.getElementById('coverageValue') as HTMLElement | null;
+const coverageBar = document.getElementById('coverageBar') as HTMLElement | null;
+const tierBadge = document.getElementById('tierBadge') as HTMLElement | null;
+
+async function updateCoverageAnalysis(filename: string): Promise<void> {
+  if (!coverageMeter) return;
+
+  try {
+    const res = await fetch(`/api/scan/color-analysis/${encodeURIComponent(filename)}`);
+    if (!res.ok) throw new Error('Analysis failed');
+
+    const analysis = (await res.json()) as {
+      hasColor: boolean;
+      isGrayscale: boolean;
+      coverage?: number;
+      classification?: string;
+    };
+
+    if (typeof analysis.coverage === 'number') {
+      const percent = Math.round(analysis.coverage * 100);
+      coverageMeter.style.display = 'block';
+      if (coverageValue) coverageValue.textContent = `${percent}%`;
+      if (coverageBar) coverageBar.style.width = `${percent}%`;
+
+      if (tierBadge) {
+        if (analysis.classification === 'bw' || !analysis.hasColor) {
+          tierBadge.textContent = 'B&W Rate';
+          tierBadge.style.color = '#94a3b8';
+        } else if (analysis.classification === 'full_color') {
+          tierBadge.textContent = 'Full Color Rate';
+          tierBadge.style.color = '#f472b6';
+        } else {
+          const decile = Math.max(1, Math.ceil(analysis.coverage * 10));
+          tierBadge.textContent = `Economy Tier ${decile}`;
+          tierBadge.style.color = '#818cf8';
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[COPY] Could not get color analysis:', error);
+    if (coverageMeter) coverageMeter.style.display = 'none';
+  }
+}
 const previewPaper = document.getElementById('previewPaper') as HTMLElement | null;
 const previewCanvas = document.getElementById(
   'previewCanvas',
@@ -521,6 +565,7 @@ async function showPreview(filename: string): Promise<void> {
     previewStatusText.textContent = 'Ready to copy';
     previewStatusText.setAttribute('data-status', 'ready');
   }
+  void updateCoverageAnalysis(filename);
 }
 
 async function checkForDocument(): Promise<void> {

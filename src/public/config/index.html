@@ -128,6 +128,7 @@
             role="toolbar"
             aria-label="Page navigation"
           >
+            <!-- (existing pager buttons ...) -->
             <button
               class="pager-btn"
               id="pagePrev"
@@ -160,12 +161,38 @@
               </svg>
             </button>
 
+            <!-- Smart Pricing Coverage Meter -->
+            <div id="coverageMeter" class="coverage-meter" style="display: none;">
+              <div class="coverage-meter__head">
+                <span class="coverage-meter__label">Color Coverage</span>
+                <span id="coverageValue" class="coverage-meter__value">0%</span>
+              </div>
+              <div class="coverage-meter__bar-bg">
+                <div id="coverageBar" class="coverage-meter__bar"></div>
+              </div>
+              <div id="tierBadge" class="coverage-meter__tier">Economy Tier</div>
+            </div>
+
+            <button
+              type="button"
+              id="openPricingAnalyzerBtn"
+              class="pricing-analyzer-trigger"
+              aria-haspopup="dialog"
+              aria-controls="pricingAnalyzerModal"
+            >
+              <span class="pricing-analyzer-trigger__label">Smart Pricing Analyzer</span>
+              <span class="pricing-analyzer-trigger__meta" id="pricingAnalyzerTriggerMeta"
+                >Tap to inspect per-page pricing</span
+              >
+            </button>
+
             <!-- Zoom Controls -->
             <div
               class="zoom-controls"
               role="toolbar"
               aria-label="Zoom controls"
             >
+              <!-- (existing zoom buttons ...) -->
               <button
                 class="zoom-btn"
                 id="zoomOut"
@@ -721,6 +748,7 @@
                 </button>
               </div>
             </div>
+
           </div>
           <!-- /.settings-scroll -->
 
@@ -755,6 +783,41 @@
       <!-- /.config-layout -->
     </div>
     <!-- /.page-shell -->
+
+    <div
+      id="pricingAnalyzerModal"
+      class="pricing-analyzer-modal"
+      hidden
+      aria-hidden="true"
+    >
+      <div class="pricing-analyzer-modal__backdrop" id="pricingAnalyzerBackdrop"></div>
+      <section
+        class="pricing-analyzer-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pricingAnalyzerModalTitle"
+      >
+        <header class="pricing-analyzer-modal__head">
+          <h2 id="pricingAnalyzerModalTitle">Smart Pricing Analyzer</h2>
+          <button
+            type="button"
+            id="closePricingAnalyzerBtn"
+            class="pricing-analyzer-modal__close"
+            aria-label="Close smart pricing analyzer"
+          >
+            ✕
+          </button>
+        </header>
+        <p id="pricingAnalyzerModalSummary" class="pricing-analyzer-modal__summary">
+          Waiting for quote breakdown...
+        </p>
+        <p id="pricingAnalyzerModalFormula" class="pricing-analyzer-modal__formula">
+          Select pages and color mode to see per-tier pricing impact.
+        </p>
+        <div id="pricingAnalyzerModalTotals" class="pricing-analyzer-modal__totals"></div>
+        <div id="pricingAnalyzerModalPages" class="pricing-analyzer-modal__pages"></div>
+      </section>
+    </div>
 
     <!-- Idle Warning Modal -->
     <div

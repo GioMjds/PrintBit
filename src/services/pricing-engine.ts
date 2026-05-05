@@ -15,6 +15,7 @@ export interface RuntimePricingConfig {
     baseBwPrice: number;
     baseColorPrice: number;
     colorMultiplier: number;
+    decileSurcharges?: number[];
   };
   blankPagePolicy: 'charge_zero' | 'charge_bw' | 'charge_color';
   bulkTierDiscounts: Array<{
@@ -32,6 +33,7 @@ export interface PagePricingBreakdown {
   classification: PageClassification;
   rawPriceExact: number;
   isBlank: boolean;
+  suggestSavings?: boolean;
 }
 
 export interface JobPricingBreakdown {
@@ -43,6 +45,12 @@ export interface JobPricingBreakdown {
   finalPayablePeso: number;
 }
 
+interface ExtractedPageSignals {
+  coverage: number;
+  isBlank: boolean;
+  classification?: PageClassification;
+}
+
 /**
  * Extracts the coverage ratio for a specific page index from the `DocumentAnalysis` object.
  * It ensures the return value is normalized between 0.0 and 1.0.
@@ -50,17 +58,55 @@ export interface JobPricingBreakdown {
  * @param pageIndex: number - The zero-based index of the page to query
  * @returns number - A float representing the coverage ratio (0.0 for blank, up to 1.0 for full color)
  */
-function extractPageCoverage(
+function extractPageSignals(
   analysis: DocumentAnalysis,
   pageIndex: number,
-): number {
-  if (!Array.isArray(analysis.pages)) return 0;
-  const page = analysis.pages.find((p) => p.index === pageIndex);
-  if (!page) return 0;
-  if (typeof page.coverage === 'number') {
-    return Math.max(0, Math.min(1, page.coverage));
+): ExtractedPageSignals {
+  if (!Array.isArray(analysis.pages)) {
+    return {
+      coverage: 0,
+      isBlank: true,
+    };
   }
-  return page.isColor ? 1 : 0;
+  const page = analysis.pages.find((p) => p.index === pageIndex);
+  if (!page) {
+    return {
+      coverage: 0,
+      isBlank: true,
+    };
+  }
+
+  const rawCoverage = page.coverage;
+  const hasCoverage = typeof rawCoverage === 'number' && Number.isFinite(rawCoverage);
+  const coverage =
+    hasCoverage
+      ? Math.max(0, Math.min(1, rawCoverage))
+      : page.isColor
+        ? 1
+        : 0;
+
+  const classification =
+    page.classification === 'blank' ||
+    page.classification === 'bw' ||
+    page.classification === 'partial' ||
+    page.classification === 'full_color'
+      ? page.classification
+      : undefined;
+
+  const isBlank =
+    typeof page.isBlank === 'boolean'
+      ? page.isBlank
+      : classification === 'blank'
+        ? true
+        : typeof page.coverage === 'number'
+          ? page.coverage === 0 && !page.isColor
+          : false;
+
+  return {
+    coverage,
+    isBlank,
+    classification,
+  };
 }
 
 /**
@@ -75,7 +121,7 @@ function classifyPageCoverage(
   isBlank: boolean,
   thresholds: RuntimePricingConfig['thresholds'],
 ): PageClassification {
-  if (isBlank || coverage === 0) return 'blank';
+  if (isBlank) return 'blank';
   if (coverage <= thresholds.bwMax) return 'bw';
   if (coverage >= thresholds.fullColorMin) return 'full_color';
   return 'partial';
@@ -84,6 +130,7 @@ function classifyPageCoverage(
 /**
  * Calculates the raw price of a single page before any job-level discounts. It implements "Partial Color" logic, where the price scales proportionally with coverage:
  * `rawPrice = baseBwPrice + (coverage * colorMultiplier)`
+ * Or using decile tiers if configured.
  * @param classification: PageClassification - The category of the page
  * @param coverage: number - The ink coverage ratio
  * @param config: RuntimePricingConfig - The active pricing rules and base prices
@@ -94,7 +141,8 @@ function computePagePrice(
   coverage: number,
   config: RuntimePricingConfig,
 ): number {
-  const { baseBwPrice, baseColorPrice, colorMultiplier } = config.pricing;
+  const { baseBwPrice, baseColorPrice, colorMultiplier, decileSurcharges } =
+    config.pricing;
   const { blankPagePolicy } = config;
 
   if (classification === 'blank') {
@@ -104,6 +152,16 @@ function computePagePrice(
   } else if (classification === 'full_color') {
     return baseColorPrice;
   } else if (classification === 'partial') {
+    // If decile tiers are configured, use them
+    if (Array.isArray(decileSurcharges) && decileSurcharges.length === 10) {
+      const decileIndex = Math.min(9, Math.floor(coverage * 10));
+      const multiplier = decileSurcharges[decileIndex] ?? 1.0;
+      const colorSurcharge = baseColorPrice - baseBwPrice;
+      const rawPrice = baseBwPrice + colorSurcharge * multiplier;
+      return Math.min(rawPrice, baseColorPrice);
+    }
+
+    // Fallback to legacy linear model
     const rawPrice = baseBwPrice + coverage * colorMultiplier;
     return Math.min(rawPrice, baseColorPrice);
   }
@@ -163,6 +221,7 @@ function loadPricingEngineConfig(
       baseBwPrice: profile.baseBwPrice,
       baseColorPrice: profile.baseColorPrice,
       colorMultiplier: cfg?.colorMultiplier ?? 20,
+      decileSurcharges: cfg?.decileSurcharges,
     },
     blankPagePolicy:
       (cfg?.blankPagePolicy as 'charge_zero' | 'charge_bw' | 'charge_color') ??
@@ -196,33 +255,44 @@ export function computeJobPricing(input: {
 
   // Process selected pages
   for (const pageIndex of input.selectedPageIndices) {
-    const coverage = extractPageCoverage(input.analysis, pageIndex);
-    const isBlank = coverage === 0;
-    let classification = classifyPageCoverage(
-      coverage,
-      isBlank,
-      config.thresholds,
-    );
+    const pageSignals = extractPageSignals(input.analysis, pageIndex);
+    const coverage = pageSignals.coverage;
+    let classification =
+      pageSignals.classification ??
+      classifyPageCoverage(coverage, pageSignals.isBlank, config.thresholds);
 
     // If user requested grayscale, force all non-blank pages to 'bw'
     if (input.colorMode === 'grayscale' && classification !== 'blank') {
       classification = 'bw';
     }
 
-    // If user requested colored, force all non-blank pages to be charged as full color
-    // This ensures selecting "Colored" mode provides a clear pricing distinction.
-    if (input.colorMode === 'colored' && classification !== 'blank') {
-      classification = 'full_color';
-    }
-
     const rawPrice = computePagePrice(classification, coverage, config);
+
+    // Smart Suggestions: If coverage is just slightly above a decile boundary, suggest saving.
+    let suggestSavings = false;
+    const engineSettings = db.data?.settings?.pricingEngine as
+      | PricingEngineSettings
+      | undefined;
+    const suggestionThreshold = engineSettings?.suggestionThreshold ?? 0.02;
+
+    if (classification === 'partial' && config.pricing.decileSurcharges) {
+      const decileIndex = Math.floor(coverage * 10);
+      const tierBottom = decileIndex / 10;
+      if (
+        coverage > tierBottom &&
+        coverage <= tierBottom + suggestionThreshold
+      ) {
+        suggestSavings = true;
+      }
+    }
 
     pages.push({
       index: pageIndex,
       coverage,
       classification,
       rawPriceExact: rawPrice,
-      isBlank,
+      isBlank: classification === 'blank',
+      suggestSavings,
     });
 
     subtotalExact += rawPrice * input.copies;

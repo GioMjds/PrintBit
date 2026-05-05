@@ -42,6 +42,10 @@ export class WirelessSessionController {
       '/api/wireless/sessions/:sessionId/color-analysis',
       this.wirelessSessionService.getSessionColorAnalysis,
     );
+    this.router.get(
+      '/api/wireless/sessions/:sessionId/analysis/:documentId',
+      this.wirelessSessionService.getSessionDocumentAnalysis,
+    );
     this.router.get('/api/wireless/sessions/:sessionId', this.wirelessSessionService.getSessionById);
     this.router.post(
       '/api/wireless/sessions/:sessionId/upload',

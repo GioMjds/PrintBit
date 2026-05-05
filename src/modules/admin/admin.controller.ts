@@ -1171,6 +1171,8 @@ export class AdminController {
           bwMax?: number;
           fullColorMin?: number;
         };
+        decileSurcharges?: number[];
+        suggestionThreshold?: number;
         colorMultiplier?: number;
         blankPagePolicy?: 'charge_zero' | 'charge_bw' | 'charge_color';
       };
@@ -1250,6 +1252,8 @@ export class AdminController {
           },
         },
         thresholds: { ...originalSettings.pricingEngine.thresholds },
+        decileSurcharges: originalSettings.pricingEngine.decileSurcharges,
+        suggestionThreshold: originalSettings.pricingEngine.suggestionThreshold,
         colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
         blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
         bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
@@ -1604,6 +1608,8 @@ export class AdminController {
           },
         },
         thresholds: { ...originalSettings.pricingEngine.thresholds },
+        decileSurcharges: originalSettings.pricingEngine.decileSurcharges,
+        suggestionThreshold: originalSettings.pricingEngine.suggestionThreshold,
         colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
         blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
         bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
@@ -1706,6 +1712,45 @@ export class AdminController {
         return res.status(400).json({
           error: 'pricingEngine.thresholds.bwMax must be < fullColorMin.',
         });
+      }
+
+      if (incoming.decileSurcharges !== undefined) {
+        if (!Array.isArray(incoming.decileSurcharges)) {
+          return res.status(400).json({
+            error: 'pricingEngine.decileSurcharges must be an array of 10 numbers.',
+          });
+        }
+        if (incoming.decileSurcharges.length !== 10) {
+          return res.status(400).json({
+            error: 'pricingEngine.decileSurcharges must contain exactly 10 values.',
+          });
+        }
+
+        const parsed: number[] = [];
+        for (let i = 0; i < incoming.decileSurcharges.length; i += 1) {
+          const value = incoming.decileSurcharges[i];
+          if (!isFiniteNumber(value) || value < 0 || value > 1) {
+            return res.status(400).json({
+              error: `pricingEngine.decileSurcharges[${i}] must be between 0 and 1.`,
+            });
+          }
+          parsed.push(value);
+        }
+        next.decileSurcharges = parsed;
+      }
+
+      if (incoming.suggestionThreshold !== undefined) {
+        if (
+          !isFiniteNumber(incoming.suggestionThreshold) ||
+          incoming.suggestionThreshold < 0 ||
+          incoming.suggestionThreshold > 1
+        ) {
+          return res.status(400).json({
+            error:
+              'pricingEngine.suggestionThreshold must be between 0 and 1.',
+          });
+        }
+        next.suggestionThreshold = incoming.suggestionThreshold;
       }
 
       if (incoming.colorMultiplier !== undefined) {

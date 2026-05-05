@@ -1,6 +1,3 @@
-/**
- * Admin module schemas and types.
- */
 import type {
   LogMeta,
   TrustedTimestampMeta,
@@ -9,7 +6,13 @@ import type {
   ColorMode,
 } from '@/core/database/shared.schema';
 
-export type { LogMeta, TrustedTimestampMeta, SupportedLanguage, PrintMode, ColorMode };
+export type {
+  LogMeta,
+  TrustedTimestampMeta,
+  SupportedLanguage,
+  PrintMode,
+  ColorMode,
+};
 
 export type AdminLockout = {
   failedAttempts: number;
@@ -50,6 +53,17 @@ export interface PricingEngineSettings {
     bwMax: number;
     fullColorMin: number;
   };
+  /**
+   * Multipliers for each decile (10% increments).
+   * Index 0 = 1-10%, Index 1 = 11-20%, ..., Index 9 = 91-100%
+   * Values are typically between 0.0 and 1.0, where 1.0 means full color price.
+   */
+  decileSurcharges?: number[];
+  /**
+   * Proximity threshold for "Smart Suggestions" (0.0 to 1.0).
+   * If a page is within this range of the next (lower) tier, suggest optimization.
+   */
+  suggestionThreshold?: number;
   colorMultiplier: number;
   blankPagePolicy: PricingEngineBlankPagePolicy;
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];

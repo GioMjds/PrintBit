@@ -54,6 +54,15 @@ export interface PricingEngineSettings {
     longBond: PricingEnginePaperProfile;
   };
   thresholds: PricingEngineThresholds;
+  /**
+   * Multipliers for each decile (10% increments).
+   * Index 0 = 1-10%, Index 1 = 11-20%, ..., Index 9 = 91-100%
+   */
+  decileSurcharges?: number[];
+  /**
+   * Proximity threshold for "Smart Suggestions" (0.0 to 1.0).
+   */
+  suggestionThreshold?: number;
   colorMultiplier: number;
   blankPagePolicy: PricingEngineBlankPagePolicy;
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];
@@ -577,6 +586,8 @@ const DEFAULT_DATA: Schema = {
         fullColorMin: 0.6,
       },
       colorMultiplier: 15,
+      decileSurcharges: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+      suggestionThreshold: 0.02,
       blankPagePolicy: 'charge_zero',
       bulkDiscountTiers: [
         { minPages: 10, maxPages: 50, discountPerPage: 0.5 },
@@ -1436,6 +1447,12 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             bwMax,
             fullColorMin,
           },
+          decileSurcharges: Array.isArray(pricingEngine?.decileSurcharges)
+            ? pricingEngine.decileSurcharges.slice(0, 10).map((v: unknown) => finiteOr(v, 1.0))
+            : undefined,
+          suggestionThreshold: pricingEngine?.suggestionThreshold !== undefined
+            ? finiteOr(pricingEngine.suggestionThreshold, 0.02)
+            : undefined,
           colorMultiplier: Math.max(
             0,
             finiteOr(

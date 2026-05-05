@@ -1,0 +1,82 @@
+[
+  {
+    "scenario": "Scenario 1: Single page blank",
+    "filename": "blank_1p.pdf",
+    "pages": [{ "index": 1, "coverage": 0.0, "isColor": false, "classification": "blank" }]
+  },
+  {
+    "scenario": "Scenario 2: 1-page B/W content",
+    "filename": "bw_1p.pdf",
+    "pages": [{ "index": 1, "coverage": 0.1, "isColor": false, "classification": "bw" }]
+  },
+  {
+    "scenario": "Scenario 2: 1-page Colored content",
+    "filename": "color_1p.pdf",
+    "pages": [{ "index": 1, "coverage": 0.9, "isColor": true, "classification": "full_color" }]
+  },
+  {
+    "scenario": "Scenario 2: 1-page B/W occupied entirety",
+    "filename": "bw_dense_1p.pdf",
+    "pages": [{ "index": 1, "coverage": 0.9, "isColor": false, "classification": "bw" }]
+  },
+  {
+    "scenario": "Scenario 2: 1-page Colored occupied entirety",
+    "filename": "color_dense_1p.pdf",
+    "pages": [{ "index": 1, "coverage": 0.95, "isColor": true, "classification": "full_color" }]
+  },
+  {
+    "scenario": "Scenario 2: Multiple pages all blank",
+    "filename": "blank_multi.pdf",
+    "pages": [
+      { "index": 1, "coverage": 0.0, "isColor": false, "classification": "blank" },
+      { "index": 2, "coverage": 0.0, "isColor": false, "classification": "blank" }
+    ]
+  },
+  {
+    "scenario": "Scenario 2: Multiple pages B/W content",
+    "filename": "bw_multi.pdf",
+    "pages": [
+      { "index": 1, "coverage": 0.1, "isColor": false, "classification": "bw" },
+      { "index": 2, "coverage": 0.1, "isColor": false, "classification": "bw" }
+    ]
+  },
+  {
+    "scenario": "Scenario 2: Multiple pages Colored content",
+    "filename": "color_multi.pdf",
+    "pages": [
+      { "index": 1, "coverage": 0.9, "isColor": true, "classification": "full_color" },
+      { "index": 2, "coverage": 0.9, "isColor": true, "classification": "full_color" }
+    ]
+  },
+  {
+    "scenario": "Scenario 2: Multiple pages mixed blank and content",
+    "filename": "mixed_blank_content.pdf",
+    "pages": [
+      { "index": 1, "coverage": 0.1, "isColor": false, "classification": "bw" },
+      { "index": 2, "coverage": 0.0, "isColor": false, "classification": "blank" }
+    ]
+  },
+  {
+    "scenario": "Scenario 2: Multiple pages mixed B/W and Colored",
+    "filename": "mixed_bw_color.pdf",
+    "pages": [
+      { "index": 1, "coverage": 0.1, "isColor": false, "classification": "bw" },
+      { "index": 2, "coverage": 0.9, "isColor": true, "classification": "full_color" }
+    ]
+  },
+  {
+    "scenario": "Scenario 4: Colored image content",
+    "filename": "image_color.png",
+    "pages": [{ "index": 1, "coverage": 0.9, "isColor": true, "classification": "full_color" }]
+  },
+  {
+    "scenario": "Scenario 4: B/W image content",
+    "filename": "image_bw.jpg",
+    "pages": [{ "index": 1, "coverage": 0.1, "isColor": false, "classification": "bw" }]
+  },
+  {
+    "scenario": "Scenario 4: Blank image content",
+    "filename": "image_blank.png",
+    "pages": [{ "index": 1, "coverage": 0.0, "isColor": false, "classification": "blank" }]
+  }
+]

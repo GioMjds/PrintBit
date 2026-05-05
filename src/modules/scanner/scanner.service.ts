@@ -17,7 +17,7 @@ import {
   listRemovableDrives,
   type RemovableDrive,
 } from '@/services/usb-drives';
-import { detectPdfColorContent } from '@/services/color-detection';
+import { analyzeDocument } from '@/services/document-analysis';
 import { jobStore, type ScanJobSettings } from '@/services/job-store';
 import { adminService } from '@/services/admin';
 import { db } from '@/services/db';
@@ -119,6 +119,8 @@ export interface ColorAnalysisResult {
   hasColor: boolean;
   isGrayscale: boolean;
   sampledPages: number;
+  coverage?: number;
+  classification?: string;
 }
 
 export interface ScanFileReleaseResult {
@@ -719,13 +721,22 @@ export class ScannerService {
     }
 
     try {
-      const result = await detectPdfColorContent(absPath);
+      const result = await analyzeDocument({
+        filePath: absPath,
+        filename: filename,
+        contentType: 'application/pdf', // Scans are usually PDFs in this system
+      });
+
+      const firstPage = result.pages[0];
       return {
-        hasColor: result.hasColor,
-        isGrayscale: !result.hasColor,
-        sampledPages: result.sampledPages,
+        hasColor: result.colorPages > 0,
+        isGrayscale: result.colorPages === 0,
+        sampledPages: result.pageCount,
+        coverage: firstPage?.coverage,
+        classification: firstPage?.classification,
       };
-    } catch {
+    } catch (error) {
+      console.error('[scanner-service] Analysis failed:', error);
       return { hasColor: true, isGrayscale: false, sampledPages: 0 };
     }
   }

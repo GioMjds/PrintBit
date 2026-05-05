@@ -2,6 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import {
+  isMainThread,
+  Worker as WorkerThread,
+  workerData,
+  parentPort,
+} from 'node:worker_threads';
+import {
   COLOR_SATURATION_THRESHOLD,
   MAX_PIXELS_TO_SAMPLE,
 } from '@/config/document-analysis.config';
@@ -65,6 +71,7 @@ interface PdfOps {
   paintInlineImageXObject?: number;
   paintImageMaskXObject?: number;
   paintJpegXObject?: number;
+  paintFormXObject?: number;
 }
 
 function resolveFileType(
@@ -89,7 +96,8 @@ function resolveFileType(
   ) {
     return 'xlsx';
   }
-  if (contentType === 'application/vnd.ms-excel' || ext === '.xls') return 'xls';
+  if (contentType === 'application/vnd.ms-excel' || ext === '.xls')
+    return 'xls';
   if (
     contentType ===
       'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
@@ -121,30 +129,49 @@ function isColorPixel(r: number, g: number, b: number): boolean {
   return saturation > COLOR_SATURATION_THRESHOLD;
 }
 
-function computeFrameCoverage(frame: RgbaFrame): number {
+/**
+ * Checks if a pixel has any content (non-white/non-transparent).
+ */
+function isContentPixel(r: number, g: number, b: number, a: number): boolean {
+  if (a < 8) return false; // Transparent
+  // Check if it's not white (with some tolerance)
+  return r < 250 || g < 250 || b < 250;
+}
+
+interface CoverageMetrics {
+  colorCoverage: number;
+  contentCoverage: number;
+}
+
+function computeFrameMetrics(frame: RgbaFrame): CoverageMetrics {
   const totalPixels = frame.width * frame.height;
-  if (totalPixels === 0) return 0;
+  if (totalPixels === 0) return { colorCoverage: 0, contentCoverage: 0 };
 
   const step = Math.max(1, Math.ceil(totalPixels / MAX_PIXELS_TO_SAMPLE));
   let colorPixels = 0;
+  let contentPixels = 0;
   let sampledPixels = 0;
 
   for (let pixelIndex = 0; pixelIndex < totalPixels; pixelIndex += step) {
     const offset = pixelIndex * 4;
-    const alpha = frame.data[offset + 3];
-    if (alpha < 8) continue;
-
-    sampledPixels += 1;
     const r = frame.data[offset];
     const g = frame.data[offset + 1];
     const b = frame.data[offset + 2];
+    const a = frame.data[offset + 3];
 
-    if (isColorPixel(r, g, b)) {
-      colorPixels += 1;
+    sampledPixels += 1;
+    if (isContentPixel(r, g, b, a)) {
+      contentPixels += 1;
+      if (isColorPixel(r, g, b)) {
+        colorPixels += 1;
+      }
     }
   }
 
-  return sampledPixels === 0 ? 0 : colorPixels / sampledPixels;
+  return {
+    colorCoverage: sampledPixels === 0 ? 0 : colorPixels / sampledPixels,
+    contentCoverage: sampledPixels === 0 ? 0 : contentPixels / sampledPixels,
+  };
 }
 
 async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
@@ -152,15 +179,26 @@ async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const coverage = computeFrameCoverage({ data, width: info.width, height: info.height });
-  const isColor = coverage > 0.05; // Threshold: > 5% color pixels = colored page
+  const metrics = computeFrameMetrics({
+    data,
+    width: info.width,
+    height: info.height,
+  });
+  const isBlank = metrics.contentCoverage < 0.001;
+  const isColor = !isBlank && metrics.colorCoverage > 0.05; // Threshold: > 5% color pixels = colored page
 
   const page: PageAnalysis = {
     index: 1,
     isColor,
-    coverage,
-    classification: isColor ? (coverage > 0.95 ? 'full_color' : 'partial') : 'bw',
-    isBlank: coverage === 0,
+    coverage: metrics.colorCoverage,
+    classification: isBlank
+      ? 'blank'
+      : isColor
+        ? metrics.colorCoverage > 0.95
+          ? 'full_color'
+          : 'partial'
+        : 'bw',
+    isBlank,
   };
 
   return {
@@ -178,9 +216,25 @@ async function analyzePdfFile(
   pdfPath: string,
   fileType: AnalyzedFileType,
 ): Promise<DocumentAnalysisResult> {
-  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs'));
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const ops = (pdfjs.OPS ?? {}) as PdfOps;
   const data = new Uint8Array(await fs.promises.readFile(pdfPath));
+
+  const pdfjsAllOps = (pdfjs.OPS ?? {}) as Record<string, number>;
+  const textOpNums = new Set<number>(
+    [
+      'beginText',
+      'endText',
+      'showText',
+      'showSpacedText',
+      'nextLine',
+      'moveText',
+      'nextLineShowText',
+      'nextLineSetSpacingShowText',
+    ]
+      .map((k) => pdfjsAllOps[k])
+      .filter((v): v is number => typeof v === 'number'),
+  );
   const doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
 
   const pages: PageAnalysis[] = [];
@@ -193,9 +247,10 @@ async function analyzePdfFile(
       let isColor = false;
       let classification: 'blank' | 'bw' | 'partial' | 'full_color' = 'bw';
       let isBlank = true;
+
       try {
         const opList = (await page.getOperatorList()) as PdfOperatorList;
-        const analysis = analyzePageOperatorList(opList, ops);
+        const analysis = analyzePageOperatorList(opList, ops, textOpNums);
         coverage = analysis.coverage;
         isColor = analysis.hasColor;
         isBlank = analysis.isBlank;
@@ -219,7 +274,10 @@ async function analyzePdfFile(
         coverage,
         classification,
         isBlank,
-        fallbackReasonFlags: fallbackPageCount > 0 ? ['operator_scan_failed_default_color'] : undefined,
+        fallbackReasonFlags:
+          fallbackPageCount > 0
+            ? ['operator_scan_failed_default_color']
+            : undefined,
       });
     }
   } finally {
@@ -292,6 +350,7 @@ interface PageAnalysisMetrics {
 function analyzePageOperatorList(
   opList: PdfOperatorList,
   ops: PdfOps,
+  textOpNums: Set<number> = new Set(),
 ): PageAnalysisMetrics {
   const imagePaintOps = new Set(
     [
@@ -305,49 +364,60 @@ function analyzePageOperatorList(
   let hasColor = false;
   let hasImages = false;
   let hasContent = false;
-  let colorOps = 0;
 
+  // Revised logic: Content detection should be broader.
+  // Many PDFs have invisible operators or metadata-only ops.
+  // We need to count actual drawing ops, not just color-changing ops.
+  let contentOpsCount = 0;
   for (let i = 0; i < opList.fnArray.length; i += 1) {
     const op = opList.fnArray[i];
-    const args = opList.argsArray[i];
+    const isDrawingOp =
+      op === ops.paintImageXObject ||
+      op === ops.paintInlineImageXObject ||
+      op === ops.paintImageMaskXObject ||
+      op === ops.paintJpegXObject ||
+      op === ops.paintFormXObject ||
+      textOpNums.has(op);
 
-    if (imagePaintOps.has(op)) {
-      hasImages = true;
+    const isColorOp =
+      op === ops.setFillRGBColor ||
+      op === ops.setStrokeRGBColor ||
+      op === ops.setFillCMYKColor ||
+      op === ops.setStrokeCMYKColor;
+
+    if (isDrawingOp || isColorOp) {
+      contentOpsCount += 1;
       hasContent = true;
-      hasColor = true;
-      colorOps += 1;
-    }
 
-    if (op === ops.setFillRGBColor || op === ops.setStrokeRGBColor) {
-      const rgb = parseRgbArgs(args);
-      if (!rgb) continue;
-      const [r, g, b] = rgb;
-      const spread = Math.max(r, g, b) - Math.min(r, g, b);
-      if (spread > 10) {
+      // Color detection logic
+      if (imagePaintOps.has(op)) {
+        hasImages = true;
         hasColor = true;
-        colorOps += 1;
+      } else if (op === ops.setFillRGBColor || op === ops.setStrokeRGBColor) {
+        const rgb = parseRgbArgs(opList.argsArray[i]);
+        if (rgb) {
+          const [r, g, b] = rgb;
+          if (Math.max(r, g, b) - Math.min(r, g, b) > 15) {
+            hasColor = true;
+          }
+        }
+      } else if (op === ops.setFillCMYKColor || op === ops.setStrokeCMYKColor) {
+        const args = opList.argsArray[i];
+        if (Array.isArray(args) && args.length >= 4) {
+          const [c, m, y] = args as number[];
+          if (c > 0.05 || m > 0.05 || y > 0.05) {
+            hasColor = true;
+          }
+        }
       }
-      hasContent = true;
-    }
-
-    if (op === ops.setFillCMYKColor || op === ops.setStrokeCMYKColor) {
-      if (!Array.isArray(args) || args.length < 4) continue;
-      const [c, m, y] = args as number[];
-      if (c > 0.01 || m > 0.01 || y > 0.01) {
-        hasColor = true;
-        colorOps += 1;
-      }
-      hasContent = true;
     }
   }
 
-  // Estimate coverage: total color operators as a ratio of total ops
-  const estimatedCoverage =
-    hasContent && opList.fnArray.length > 0
-      ? Math.min(1.0, colorOps / opList.fnArray.length)
-      : 0;
-
   const isBlank = !hasContent;
+  const estimatedCoverage =
+    !isBlank && opList.fnArray.length > 0
+      ? Math.min(1.0, contentOpsCount / opList.fnArray.length)
+      : 0;
   let classification: 'blank' | 'bw' | 'partial' | 'full_color';
   if (isBlank) {
     classification = 'blank';
@@ -367,20 +437,18 @@ function analyzePageOperatorList(
   };
 }
 
-export async function analyzeDocument(
+/**
+ * Direct implementation of document analysis, used within worker threads or as fallback.
+ */
+async function analyzeDocumentDirect(
   input: AnalyzeDocumentInput,
 ): Promise<DocumentAnalysisResult> {
   const contentType = (input.contentType ?? '').toLowerCase();
   const filename = input.filename ?? path.basename(input.filePath);
   const fileType = resolveFileType(contentType, filename);
 
-  if (fileType === 'image') {
-    return analyzeImage(input.filePath);
-  }
-
-  if (fileType === 'pdf') {
-    return analyzePdfFile(input.filePath, fileType);
-  }
+  if (fileType === 'image') return analyzeImage(input.filePath);
+  if (fileType === 'pdf') return analyzePdfFile(input.filePath, fileType);
 
   if (
     fileType === 'docx' ||
@@ -401,4 +469,89 @@ export async function analyzeDocument(
   }
 
   throw new Error('Unsupported file type for analysis.');
+}
+
+/**
+ * Public entry point for document analysis. Spawns a worker thread for heavy tasks
+ * (PDF/Image) to ensure the main event loop remains responsive.
+ */
+export async function analyzeDocument(
+  input: AnalyzeDocumentInput,
+): Promise<DocumentAnalysisResult> {
+  // If we're already in a worker thread, execute directly to avoid recursion
+  if (!isMainThread) return analyzeDocumentDirect(input);
+
+  const contentType = (input.contentType ?? '').toLowerCase();
+  const filename = input.filename ?? path.basename(input.filePath);
+  const fileType = resolveFileType(contentType, filename);
+
+  // If it's an office document, we MUST convert it in the main thread first
+  // because the conversion provider (LibreOffice/Sumatra) might not be
+  // safe or easy to access/pass into a worker thread.
+  let targetFilePath = input.filePath;
+  let targetFileType = fileType;
+  if (
+    fileType === 'docx' ||
+    fileType === 'doc' ||
+    fileType === 'xlsx' ||
+    fileType === 'xls' ||
+    fileType === 'pptx' ||
+    fileType === 'ppt'
+  ) {
+    if (!input.convertToPdfPreview) {
+      throw new Error(
+        'Document conversion function is required for Office document analysis.',
+      );
+    }
+    targetFilePath = await input.convertToPdfPreview(input.filePath);
+    targetFileType = 'pdf';
+  }
+
+  // Now offload the heavy PDF/Image scanning to a worker thread
+  return new Promise((resolve, reject) => {
+    const workerPath = path.resolve(__filename);
+
+    // We pass only serializable data
+    const worker = new WorkerThread(workerPath, {
+      workerData: {
+        filePath: targetFilePath,
+        contentType: targetFileType === 'pdf' ? 'application/pdf' : contentType,
+        filename: filename,
+      },
+      // Ensure the worker can load TS files if we're running via ts-node
+      execArgv: process.execArgv.includes('--loader')
+        ? process.execArgv
+        : [...process.execArgv, '--loader', 'ts-node/esm'],
+    });
+
+    worker.on('message', (message) => {
+      if (message.type === 'success') {
+        resolve(message.result);
+      } else if (message.type === 'error') {
+        reject(new Error(message.message));
+      }
+    });
+
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Analysis worker stopped with exit code ${code}`));
+      }
+    });
+  });
+}
+
+// Worker thread entry point
+if (!isMainThread && parentPort) {
+  (async () => {
+    try {
+      const result = await analyzeDocumentDirect(workerData);
+      parentPort!.postMessage({ type: 'success', result });
+    } catch (error) {
+      parentPort!.postMessage({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
 }

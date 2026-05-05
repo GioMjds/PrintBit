@@ -29,8 +29,6 @@ const settingPaperCurrentSheets = document.getElementById(
   'settingPaperCurrentSheets',
 ) as HTMLInputElement | null;
 
-// ...
-
 // ── Pricing Engine settings ──────────────────
 const settingShortBondBwPrice = document.getElementById(
   'settingShortBondBwPrice',
@@ -62,6 +60,13 @@ const settingScanDocument = document.getElementById(
 const settingCopyPerPage = document.getElementById(
   'settingCopyPerPage',
 ) as HTMLInputElement | null;
+
+const settingSuggestionThreshold = document.getElementById('settingSuggestionThreshold') as HTMLInputElement | null;
+const decileInputs: HTMLInputElement[] = [];
+for (let i = 0; i < 10; i++) {
+  const el = document.getElementById(`decile${i}`) as HTMLInputElement | null;
+  if (el) decileInputs.push(el);
+}
 
 // ── Optional sections (may be commented out in HTML) ─────────────────────────
 const settingIdleTimeout = document.getElementById(
@@ -217,6 +222,16 @@ function applySettings(settings: SettingsResponse): void {
       settings.pricingEngine.thresholds.fullColorMin,
     );
   }
+  
+  if (settingSuggestionThreshold) {
+    settingSuggestionThreshold.value = String(settings.pricingEngine.suggestionThreshold ?? 0.02);
+  }
+
+  const surcharges = settings.pricingEngine.decileSurcharges ?? [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+  decileInputs.forEach((input, i) => {
+    input.value = String(surcharges[i] ?? (i + 1) / 10);
+  });
+
   if (settingBlankPagePolicy) {
     settingBlankPagePolicy.value = settings.pricingEngine.blankPagePolicy;
   }
@@ -376,6 +391,30 @@ settingsForm.addEventListener('submit', (e) => {
   const scanDocumentPrice = Number(settingScanDocument?.value ?? 0);
   const copyPerPagePrice = Number(settingCopyPerPage?.value ?? 0);
 
+  const decileSurcharges = decileInputs.map(input => Number(input.value));
+  const suggestionThreshold = Number(settingSuggestionThreshold?.value ?? 0.02);
+
+  if (
+    decileInputs.length > 0 &&
+    (decileSurcharges.length !== 10 ||
+      decileSurcharges.some(
+        (value) => !Number.isFinite(value) || value < 0 || value > 1,
+      ))
+  ) {
+    setMessage('Smart Pricing decile tiers must have 10 values between 0 and 1.');
+    return;
+  }
+
+  if (
+    settingSuggestionThreshold &&
+    (!Number.isFinite(suggestionThreshold) ||
+      suggestionThreshold < 0 ||
+      suggestionThreshold > 1)
+  ) {
+    setMessage('Suggestion threshold must be a value between 0 and 1.');
+    return;
+  }
+
   const payload: Record<string, unknown> = {
     pricing: {
       printPerPage: shortBondBwPrice,
@@ -399,6 +438,8 @@ settingsForm.addEventListener('submit', (e) => {
         bwMax: bwMaxCoverage,
         fullColorMin: fullColorMinCoverage,
       },
+      ...(decileInputs.length > 0 ? { decileSurcharges } : {}),
+      ...(settingSuggestionThreshold ? { suggestionThreshold } : {}),
       colorMultiplier,
       blankPagePolicy: (settingBlankPagePolicy?.value ??
         'charge_zero') as SettingsResponse['pricingEngine']['blankPagePolicy'],

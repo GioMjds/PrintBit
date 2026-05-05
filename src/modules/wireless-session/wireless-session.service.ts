@@ -515,6 +515,48 @@ export class WirelessSessionService {
     }
   };
 
+  getSessionDocumentAnalysis: RequestHandler<{
+    sessionId: string;
+    documentId: string;
+  }> = (req, res) => {
+    const { sessionId, documentId } = req.params;
+    const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
+
+    if (!session) {
+      res.status(404).json({ error: 'Session not found.' });
+      return;
+    }
+
+    if (!this.deps.sessionStore.touchSession(sessionId)) {
+      res.status(410).json({
+        code: 'SESSION_EXPIRED',
+        error: 'Session has expired. Please start a new session.',
+      });
+      return;
+    }
+
+    const allDocs =
+      session.documents && session.documents.length > 0
+        ? session.documents
+        : session.document
+          ? [session.document]
+          : [];
+
+    const target = allDocs.find((doc) => doc.documentId === documentId);
+    if (!target || !target.analysis) {
+      res.status(404).json({
+        error: 'Document analysis not found.',
+      });
+      return;
+    }
+
+    res.json(target.analysis);
+  };
+
   getSessionById: RequestHandler<{ sessionId: string }> = (req, res) => {
     const { sessionId } = req.params;
     const sessionState = this.deps.sessionStore.getSessionState(sessionId);
@@ -977,31 +1019,37 @@ export class WirelessSessionService {
   private async processQueuedAnalysisJob(
     job: PricingAnalysisJobData,
   ): Promise<void> {
-    const analyzed = await this.analyzeAndStoreDocument(
-      job.sessionId,
-      job.documentId,
-      this.buildInternalBaseUrl(),
-      { forceReanalyze: job.forceReanalyze },
-    );
-    if (!('analysis' in analyzed)) {
+    try {
+      const analyzed = await this.analyzeAndStoreDocument(
+        job.sessionId,
+        job.documentId,
+        this.buildInternalBaseUrl(),
+        { forceReanalyze: job.forceReanalyze },
+      );
+      if (!('analysis' in analyzed)) {
+        throw new Error(analyzed.error);
+      }
+
+      this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisCompleted', {
+        documentId: analyzed.documentId,
+        filename: analyzed.fileName,
+        analysis: analyzed.analysis,
+      });
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'Document analysis failed.';
       this.deps.sessionStore.markDocumentAnalysisFailure(
         job.sessionId,
         job.documentId,
-        analyzed.error,
+        reason,
       );
       this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisFailed', {
         documentId: job.documentId,
         filename: job.documentId,
-        error: analyzed.error,
+        error: reason,
       });
-      throw new Error(analyzed.error);
+      throw error instanceof Error ? error : new Error(reason);
     }
-
-    this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisCompleted', {
-      documentId: analyzed.documentId,
-      filename: analyzed.fileName,
-      analysis: analyzed.analysis,
-    });
   }
 
   private resolveAnalysisTargetDocument(

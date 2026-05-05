@@ -1,0 +1,11 @@
+node_modules
+package-lock.json
+.env
+dist
+*bundle.js
+printbit.sqlite
+printbit.sqlite-shm
+printbit.sqlite-wal
+*app.js
+*uploads
+bin/

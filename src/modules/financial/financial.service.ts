@@ -193,6 +193,34 @@ function resolveTargetDocument(
   return allDocs.find((doc) => doc.documentId === documentId) ?? null;
 }
 
+function buildAnalysisUnavailablePayload(target: UploadedDocument): {
+  code: 'ANALYSIS_PENDING' | 'ANALYSIS_FAILED' | 'ANALYSIS_UNAVAILABLE';
+  error: string;
+} {
+  if (target.analysisStatus === 'pending') {
+    return {
+      code: 'ANALYSIS_PENDING',
+      error: 'Document analysis is still in progress. Please wait and try again.',
+    };
+  }
+
+  if (target.analysisStatus === 'failed') {
+    const analysisError =
+      typeof target.analysisError === 'string' ? target.analysisError.trim() : '';
+    return {
+      code: 'ANALYSIS_FAILED',
+      error:
+        analysisError ||
+        'Document analysis failed for this file. Retry analysis or re-upload and try again.',
+    };
+  }
+
+  return {
+    code: 'ANALYSIS_UNAVAILABLE',
+    error: 'Document analysis is unavailable. Re-upload the file and try again.',
+  };
+}
+
 async function persistLegacyUploadWithStaging(
   buffer: Buffer,
   storedFilename: string,
@@ -856,10 +884,7 @@ export class FinancialService {
     }
 
     if (!target.analysis) {
-      return res.status(409).json({
-        error:
-          'Document analysis is unavailable. Re-upload the file and try again.',
-      });
+      return res.status(409).json(buildAnalysisUnavailablePayload(target));
     }
 
     const safeCopies =
@@ -1425,10 +1450,7 @@ export class FinancialService {
             filename: target.filename,
           },
         );
-        sendResponse(409, {
-          error:
-            'Document analysis is unavailable. Re-upload the file and try again.',
-        });
+        sendResponse(409, buildAnalysisUnavailablePayload(target));
         return;
       }
 

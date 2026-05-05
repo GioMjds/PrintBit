@@ -91,7 +91,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
   });
-  registerReceiptModule(app, { io: deps.io });
+  registerReceiptModule(app);
   registerUploadPortalModule(app, {
     io: deps.io,
     portalDir: PORTAL_DIR,
@@ -112,11 +112,11 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
   });
-  registerPrinterModule(app, { io: deps.io });
+  registerPrinterModule(app);
   registerLanguageModule(app, { io: deps.io });
 
-  registerHotspotModule(app, { io: deps.io });
-  registerWatchdogModule(app, { io: deps.io });
+  registerHotspotModule(app);
+  registerWatchdogModule(app);
   registerHopperModule(app, { io: deps.io });
   registerAnomalyModule(app, { io: deps.io });
 
