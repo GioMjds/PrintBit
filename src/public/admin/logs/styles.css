@@ -184,7 +184,7 @@
 
 /* Force long log messages to wrap rather than overflow the table */
 .logs-td--msg {
-  word-break: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-wrap; 
 }
 
@@ -299,7 +299,15 @@
   }
 
   .logs-table thead {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .logs-table tbody tr {

@@ -222,60 +222,49 @@ function settingsLog(message: string, meta?: unknown): void {
  * paper profiles, etc. are currently configured.
  */
 async function fetchAndLogPricingSettings(): Promise<void> {
+  // ✅ Prevent execution in production
+  if (!process.env.DEV) return;
+
   try {
     const res = await fetch('/api/admin/settings', { cache: 'no-store' });
+
     if (!res.ok) {
       settingsLog(
         `Admin settings fetch failed (HTTP ${res.status}) — cannot verify active config`,
       );
       return;
     }
+
     const data = (await res.json()) as Record<string, unknown>;
 
-    // Navigate to the pricingEngine sub-key regardless of nesting shape
+    // ✅ Extract ONLY pricingEngine (safe subset)
     const pe = ((data as { pricingEngine?: unknown }).pricingEngine ??
       (data as { settings?: { pricingEngine?: unknown } }).settings
         ?.pricingEngine ??
-      data) as Record<string, unknown> | undefined;
+      null) as Record<string, unknown> | null;
+
+    if (!pe) {
+      settingsLog('pricingEngine not found in response');
+      return;
+    }
 
     console.groupCollapsed(
-      '%c[PRICING SETTINGS] Active admin settings (expand to inspect)',
+      '%c[PRICING SETTINGS] Active pricingEngine (sanitized)',
       'color:#a78bfa;font-weight:600',
     );
-    settingsLog(
-      'pricingMode',
-      pe?.pricingMode ?? '⚠ not set — defaulting to "live"',
-    );
-    settingsLog(
-      'blankPagePolicy',
-      pe?.blankPagePolicy ?? '⚠ not set — defaulting to "charge_zero"',
-    );
-    settingsLog(
-      'thresholds',
-      pe?.thresholds ??
-        '⚠ not set — using defaults { bwMax:0.1, fullColorMin:0.5 }',
-    );
-    settingsLog(
-      'paperProfiles',
-      pe?.paperProfiles ?? '⚠ not set — using hardcoded defaults',
-    );
-    settingsLog(
-      'colorMultiplier',
-      pe?.colorMultiplier ?? '⚠ not set — defaulting to 20',
-    );
-    settingsLog(
-      'decileSurcharges',
-      pe?.decileSurcharges ?? 'not configured — linear pricing in effect',
-    );
-    settingsLog(
-      'bulkDiscountTiers',
-      pe?.bulkDiscountTiers ?? 'not configured — no bulk discounts',
-    );
-    settingsLog(
-      'suggestionThreshold',
-      pe?.suggestionThreshold ?? '⚠ not set — defaulting to 0.02',
-    );
-    settingsLog('raw full response', data);
+
+    // ✅ Only log safe fields
+    settingsLog('pricingMode', pe.pricingMode);
+    settingsLog('blankPagePolicy', pe.blankPagePolicy);
+    settingsLog('thresholds', pe.thresholds);
+    settingsLog('paperProfiles', pe.paperProfiles);
+    settingsLog('colorMultiplier', pe.colorMultiplier);
+    settingsLog('decileSurcharges', pe.decileSurcharges);
+    settingsLog('bulkDiscountTiers', pe.bulkDiscountTiers);
+    settingsLog('suggestionThreshold', pe.suggestionThreshold);
+
+    // ❌ REMOVED: settingsLog('raw full response', data);
+
     console.groupEnd();
   } catch (err) {
     settingsLog('Could not reach /api/admin/settings — settings unknown', err);
