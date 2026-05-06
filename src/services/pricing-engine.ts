@@ -11,6 +11,7 @@ export interface RuntimePricingConfig {
     bwMax: number;
     fullColorMin: number;
   };
+  nearBlankBwMax: number;
   pricing: {
     baseBwPrice: number;
     baseColorPrice: number;
@@ -43,6 +44,19 @@ export interface JobPricingBreakdown {
   discountExact: number;
   finalExact: number;
   finalPayablePeso: number;
+}
+
+const DEFAULT_NEAR_BLANK_BW_COVERAGE_MAX = 0.08;
+
+function normalizeNearBlankClassification(
+  classification: PageClassification,
+  coverage: number,
+  nearBlankBwMax: number,
+): PageClassification {
+  if (classification === 'bw' && coverage <= nearBlankBwMax) {
+    return 'blank';
+  }
+  return classification;
 }
 
 interface ExtractedPageSignals {
@@ -213,6 +227,8 @@ function loadPricingEngineConfig(
       bwMax: thresholds.bwMax,
       fullColorMin: thresholds.fullColorMin,
     },
+    nearBlankBwMax:
+      cfg?.nearBlankBwMax ?? DEFAULT_NEAR_BLANK_BW_COVERAGE_MAX,
     pricing: {
       baseBwPrice: profile.baseBwPrice,
       baseColorPrice: profile.baseColorPrice,
@@ -253,9 +269,12 @@ export function computeJobPricing(input: {
   for (const pageIndex of input.selectedPageIndices) {
     const pageSignals = extractPageSignals(input.analysis, pageIndex);
     const coverage = pageSignals.coverage;
-    let classification =
+    let classification = normalizeNearBlankClassification(
       pageSignals.classification ??
-      classifyPageCoverage(coverage, pageSignals.isBlank, config.thresholds);
+        classifyPageCoverage(coverage, pageSignals.isBlank, config.thresholds),
+      coverage,
+      config.nearBlankBwMax,
+    );
 
     // If user requested grayscale, force all non-blank pages to 'bw'
     if (input.colorMode === 'grayscale' && classification !== 'blank') {

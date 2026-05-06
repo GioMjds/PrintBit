@@ -64,6 +64,7 @@ export interface PricingEngineSettings {
    * If a page is within this range of the next (lower) tier, suggest optimization.
    */
   suggestionThreshold?: number;
+  nearBlackBwMax?: number;
   colorMultiplier: number;
   blankPagePolicy: PricingEngineBlankPagePolicy;
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];

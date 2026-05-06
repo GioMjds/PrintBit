@@ -69,6 +69,10 @@ export interface PricingEngineSettings {
    * Proximity threshold for "Smart Suggestions" (0.0 to 1.0).
    */
   suggestionThreshold?: number;
+  /**
+   * Pages classified as B/W at or below this coverage are treated as blank for pricing.
+   */
+  nearBlankBwMax?: number;
   colorMultiplier: number;
   blankPagePolicy: PricingEngineBlankPagePolicy;
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];
@@ -594,6 +598,7 @@ const DEFAULT_DATA: Schema = {
       colorMultiplier: 15,
       decileSurcharges: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
       suggestionThreshold: 0.02,
+      nearBlankBwMax: 0.08,
       blankPagePolicy: 'charge_zero',
       bulkDiscountTiers: [
         { minPages: 10, maxPages: 50, discountPerPage: 0.5 },
@@ -1473,6 +1478,13 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
                     1,
                     finiteOr(pricingEngine.suggestionThreshold, 0.02),
                   ),
+                )
+              : undefined,
+          nearBlankBwMax:
+            pricingEngine?.nearBlankBwMax !== undefined
+              ? Math.max(
+                  0,
+                  Math.min(1, finiteOr(pricingEngine.nearBlankBwMax, 0.08)),
                 )
               : undefined,
           colorMultiplier: Math.max(

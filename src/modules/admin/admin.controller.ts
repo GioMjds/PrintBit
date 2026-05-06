@@ -1173,6 +1173,7 @@ export class AdminController {
         };
         decileSurcharges?: number[];
         suggestionThreshold?: number;
+        nearBlankBwMax?: number;
         colorMultiplier?: number;
         blankPagePolicy?: 'charge_zero' | 'charge_bw' | 'charge_color';
       };
@@ -1254,6 +1255,7 @@ export class AdminController {
         thresholds: { ...originalSettings.pricingEngine.thresholds },
         decileSurcharges: originalSettings.pricingEngine.decileSurcharges,
         suggestionThreshold: originalSettings.pricingEngine.suggestionThreshold,
+        nearBlankBwMax: originalSettings.pricingEngine.nearBlankBwMax,
         colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
         blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
         bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
@@ -1610,6 +1612,7 @@ export class AdminController {
         thresholds: { ...originalSettings.pricingEngine.thresholds },
         decileSurcharges: originalSettings.pricingEngine.decileSurcharges,
         suggestionThreshold: originalSettings.pricingEngine.suggestionThreshold,
+        nearBlankBwMax: originalSettings.pricingEngine.nearBlankBwMax,
         colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
         blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
         bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
@@ -1751,6 +1754,18 @@ export class AdminController {
           });
         }
         next.suggestionThreshold = incoming.suggestionThreshold;
+      }
+      if (incoming.nearBlankBwMax !== undefined) {
+        if (
+          !isFiniteNumber(incoming.nearBlankBwMax) ||
+          incoming.nearBlankBwMax < 0 ||
+          incoming.nearBlankBwMax > 1
+        ) {
+          return res.status(400).json({
+            error: 'pricingEngine.nearBlankBwMax must be between 0 and 1.',
+          });
+        }
+        next.nearBlankBwMax = incoming.nearBlankBwMax;
       }
 
       if (incoming.colorMultiplier !== undefined) {

@@ -197,6 +197,7 @@ export type SettingsResponse = {
     };
     decileSurcharges?: number[];
     suggestionThreshold?: number;
+    nearBlankBwMax?: number;
     colorMultiplier: number;
     blankPagePolicy: 'charge_zero' | 'charge_bw' | 'charge_color';
     bulkDiscountTiers: Array<{

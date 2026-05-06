@@ -62,6 +62,7 @@ const settingCopyPerPage = document.getElementById(
 ) as HTMLInputElement | null;
 
 const settingSuggestionThreshold = document.getElementById('settingSuggestionThreshold') as HTMLInputElement | null;
+const settingNearBlankBwMax = document.getElementById('settingNearBlankBwMax') as HTMLInputElement | null;
 const decileInputs: HTMLInputElement[] = [];
 for (let i = 0; i < 10; i++) {
   const el = document.getElementById(`decile${i}`) as HTMLInputElement | null;
@@ -225,6 +226,9 @@ function applySettings(settings: SettingsResponse): void {
   
   if (settingSuggestionThreshold) {
     settingSuggestionThreshold.value = String(settings.pricingEngine.suggestionThreshold ?? 0.02);
+  }
+  if (settingNearBlankBwMax) {
+    settingNearBlankBwMax.value = String(settings.pricingEngine.nearBlankBwMax ?? 0.08);
   }
 
   const surcharges = settings.pricingEngine.decileSurcharges ?? [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
@@ -393,6 +397,7 @@ settingsForm.addEventListener('submit', (e) => {
 
   const decileSurcharges = decileInputs.map(input => Number(input.value));
   const suggestionThreshold = Number(settingSuggestionThreshold?.value ?? 0.02);
+  const nearBlankBwMax = Number(settingNearBlankBwMax?.value ?? 0.08);
 
   if (
     decileInputs.length > 0 &&
@@ -412,6 +417,13 @@ settingsForm.addEventListener('submit', (e) => {
       suggestionThreshold > 1)
   ) {
     setMessage('Suggestion threshold must be a value between 0 and 1.');
+    return;
+  }
+  if (
+    settingNearBlankBwMax &&
+    (!Number.isFinite(nearBlankBwMax) || nearBlankBwMax < 0 || nearBlankBwMax > 1)
+  ) {
+    setMessage('Near-blank B&W threshold must be a value between 0 and 1.');
     return;
   }
 
@@ -440,6 +452,7 @@ settingsForm.addEventListener('submit', (e) => {
       },
       ...(decileInputs.length > 0 ? { decileSurcharges } : {}),
       ...(settingSuggestionThreshold ? { suggestionThreshold } : {}),
+      ...(settingNearBlankBwMax ? { nearBlankBwMax } : {}),
       colorMultiplier,
       blankPagePolicy: (settingBlankPagePolicy?.value ??
         'charge_zero') as SettingsResponse['pricingEngine']['blankPagePolicy'],

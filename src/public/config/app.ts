@@ -100,6 +100,7 @@ interface PrintQuote {
     finalExact: number;
     finalPayablePeso: number;
   };
+  isSessionCapped?: boolean;
 }
 
 interface PreviewConfig {
@@ -222,8 +223,11 @@ function settingsLog(message: string, meta?: unknown): void {
  * paper profiles, etc. are currently configured.
  */
 async function fetchAndLogPricingSettings(): Promise<void> {
-  // ✅ Prevent execution in production
-  if (!process.env.DEV) return;
+  const isDev =
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+  if (!isDev) return;
 
   try {
     const res = await fetch('/api/admin/settings', { cache: 'no-store' });
@@ -470,18 +474,26 @@ function updatePageCoverageMeter(pageNum: number): void {
     return;
   }
 
-  const percent = Math.round(page.coverage * 100);
+  const pricedPage = currentPrintQuote?.pricingEngine?.perPageBreakdown?.find(
+    (p) => p.index === pageIndex,
+  );
+  const isPricedAsBlank = pricedPage?.classification === 'blank';
+  const displayCoverage = isPricedAsBlank ? 0 : page.coverage;
+  const percent = Math.round(displayCoverage * 100);
+
   coverageMeter.style.display = 'flex';
   if (coverageValue) coverageValue.textContent = `${percent}%`;
   if (coverageBar) coverageBar.style.width = `${percent}%`;
 
   if (tierBadge) {
-    if (page.classification === 'bw' || !page.isColor) {
+    if (isPricedAsBlank) {
+      tierBadge.textContent = 'Blank (No Charge)';
+    } else if (page.classification === 'bw' || !page.isColor) {
       tierBadge.textContent = 'B&W Rate';
     } else if (page.classification === 'full_color') {
       tierBadge.textContent = 'Full Color Rate';
     } else {
-      const decile = Math.max(1, Math.ceil(page.coverage * 10));
+      const decile = Math.max(1, Math.ceil(displayCoverage * 10));
       tierBadge.textContent = `Economy Tier ${decile}`;
     }
   }
@@ -1936,7 +1948,7 @@ function renderPricingAnalyzer(): void {
 
   pricingAnalyzerTriggerMeta.textContent = `${quote.selectedPages} pages · ${formatPeso(pe.finalPayablePeso)} payable`;
 
-  pricingAnalyzerModalSummary.textContent = `Selected ${quote.selectedPages} of ${quote.totalPages} pages · ${copies} copy${copies === 1 ? '' : 'ies'} · ${quote.effectiveColorMode === 'colored' ? 'Colored mode' : 'Grayscale mode'}`;
+  pricingAnalyzerModalSummary.textContent = `Selected ${quote.selectedPages} of ${quote.totalPages} pages · ${copies} cop${copies === 1 ? 'y' : 'ies'} · ${quote.effectiveColorMode === 'colored' ? 'Colored mode' : 'Grayscale mode'}`;
 
   pricingAnalyzerModalTotals.innerHTML = `
     <article class="pricing-chip pricing-chip--bw">
@@ -1988,7 +2000,9 @@ function renderPricingAnalyzer(): void {
     .sort((a, b) => a.index - b.index)
     .map((page) => {
       const pageClass = classificationClass[page.classification];
-      const coveragePercent = `${(page.coverage * 100).toFixed(1)}%`;
+      const coveragePercent = `${(
+        (page.classification === 'blank' ? 0 : page.coverage) * 100
+      ).toFixed(1)}%`;
       const rowPrice = formatPeso(page.rawPriceExact * copies);
       return `<div class="pricing-analyzer-page-row ${pageClass}">
         <span class="pricing-analyzer-page-row__page">Page ${page.index}</span>
@@ -2001,7 +2015,7 @@ function renderPricingAnalyzer(): void {
 
   pricingAnalyzerModalPages.innerHTML = rows;
 
-  if (quote.totalPages > quote.selectedPages) {
+  if (quote.isSessionCapped) {
     pricingAnalyzerModalSummary.textContent += ` · Session cap active: only ${quote.selectedPages} pages are billed per job.`;
   } else if (lowCoverageColorPages > 0) {
     pricingAnalyzerModalSummary.textContent += ` · ${lowCoverageColorPages} page(s) were detected as color with low coverage. These often come from embedded color objects/logos in grayscale-looking PDFs.`;
