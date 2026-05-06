@@ -207,6 +207,10 @@ function mapError(r: UploadErrorResponse): string {
       return 'This session is already active on another phone. Stay on PrintBit Wi-Fi and start a new kiosk session.';
     case 'MISSING_CLIENT_ID':
       return 'Upload client identity missing. Reload this page.';
+    case 'INVALID_CLIENT_ID':
+      return 'Upload client identity is invalid. Reload this page and try again.';
+    case 'SESSION_PERSIST_FAILED':
+      return 'Kiosk could not save session changes. Please start a new kiosk session and retry.';
     default:
       return r.error ?? 'Upload failed.';
   }
@@ -250,10 +254,7 @@ function getCurrentRemainingSeconds(): number | null {
 function renderSessionCountdown(remainingSeconds: number): void {
   if (!sessionId) return;
   const countdown = formatCountdown(remainingSeconds);
-  setSessionUI(
-    `${sessionId}`,
-    'active',
-  );
+  setSessionUI(`${sessionId}`, 'active');
 
   if (
     remainingSeconds <= sessionWarningThresholdSeconds &&
@@ -331,6 +332,18 @@ async function refreshSessionLease(): Promise<void> {
         setSessionUnavailable(
           'This session is active on another phone. Stay on PrintBit Wi-Fi and start a new kiosk session.',
         );
+        return;
+      }
+      if (
+        res.status === 400 &&
+        (payload.code === 'MISSING_CLIENT_ID' ||
+          payload.code === 'INVALID_CLIENT_ID')
+      ) {
+        setSessionUnavailable(mapError(payload));
+        return;
+      }
+      if (res.status === 500 && payload.code === 'SESSION_PERSIST_FAILED') {
+        setSessionUnavailable(mapError(payload));
       }
       return;
     }
@@ -504,7 +517,10 @@ async function initSession(): Promise<void> {
   resetSessionCountdown();
   setAppState('session-loading');
   setSessionUI('Connecting to session…', 'idle');
-  setStatus('Connecting to kiosk session over local network or internet…', 'info');
+  setStatus(
+    'Connecting to kiosk session over local network or internet…',
+    'info',
+  );
 
   if (!token) {
     setSessionUnavailable(
@@ -778,33 +794,33 @@ window.addEventListener('pageshow', () => {
  */
 function detectCaptivePortalWebview(): boolean {
   const ua = navigator.userAgent.toLowerCase();
-  
+
   // Android captive portal browser indicators
   if (ua.includes('captiveportal') || ua.includes('cna')) return true;
-  
+
   // iOS CaptiveNetworkSupport
   if (ua.includes('captivenetworksupport')) return true;
-  
+
   // Check if running in standalone mode (not a real browser)
   const isStandalone =
-    'standalone' in navigator && (navigator as { standalone?: boolean }).standalone === true;
-  
+    'standalone' in navigator &&
+    (navigator as { standalone?: boolean }).standalone === true;
+
   // Check for limited features typical of captive webviews
-  let hasStorageAccess = false;
-  try {
-    hasStorageAccess = typeof window.localStorage !== 'undefined';
-  } catch {
-    hasStorageAccess = false;
-  }
+  const hasStorageAccess = (() => {
+    try {
+      return typeof window.localStorage !== 'undefined';
+    } catch {
+      return false;
+    }
+  })();
   const hasLimitedFeatures =
-    !window.indexedDB ||
-    !hasStorageAccess ||
-    typeof FileReader === 'undefined';
-  
+    !window.indexedDB || !hasStorageAccess || typeof FileReader === 'undefined';
+
   // Chrome Custom Tabs and similar can work, but captive webviews often have restrictions
   // The safest indicator is if file input doesn't work
   if (isStandalone || hasLimitedFeatures) return true;
-  
+
   return false;
 }
 
@@ -813,7 +829,7 @@ function detectCaptivePortalWebview(): boolean {
  */
 function showOpenInBrowserBanner(): void {
   const currentUrl = window.location.href;
-  
+
   const banner = document.createElement('div');
   banner.className = 'captive-banner';
   banner.innerHTML = `
@@ -837,15 +853,17 @@ function showOpenInBrowserBanner(): void {
       </button>
     </div>
   `;
-  
+
   // Insert at top of upload card
   const uploadCard = document.querySelector('.upload-card');
   if (uploadCard) {
     uploadCard.insertBefore(banner, uploadCard.firstChild);
   }
-  
+
   // Copy URL button
-  const copyBtn = document.getElementById('copyUrlBtn') as HTMLButtonElement | null;
+  const copyBtn = document.getElementById(
+    'copyUrlBtn',
+  ) as HTMLButtonElement | null;
   if (copyBtn) {
     const btn = copyBtn;
     btn.addEventListener('click', async () => {
@@ -872,7 +890,7 @@ function showOpenInBrowserBanner(): void {
       }
     });
   }
-  
+
   // Dismiss button
   const dismissBtn = document.getElementById('dismissBannerBtn');
   dismissBtn?.addEventListener('click', () => {
@@ -896,12 +914,16 @@ dropZone.addEventListener('click', () => {
   // When drop zone is clicked, file input should open dialog
   // Set a timeout - if no blur/focus change happens, dialog probably didn't open
   filePickerOpened = false;
-  
+
   if (filePickerTimeout) clearTimeout(filePickerTimeout);
-  
+
   filePickerTimeout = window.setTimeout(() => {
     // If no files added and banner not already shown, show it
-    if (!filePickerOpened && queue.length === 0 && !document.querySelector('.captive-banner')) {
+    if (
+      !filePickerOpened &&
+      queue.length === 0 &&
+      !document.querySelector('.captive-banner')
+    ) {
       showOpenInBrowserBanner();
     }
   }, 1500); // Give enough time for dialog to appear

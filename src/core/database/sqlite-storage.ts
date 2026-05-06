@@ -273,6 +273,7 @@ function openSqliteDatabase(): DatabaseSync {
 }
 
 function ensureSchema(db: DatabaseSync): void {
+  const appliedMigrations: string[] = [];
   db.exec(`
     CREATE TABLE IF NOT EXISTS storage_meta (
       key TEXT PRIMARY KEY,
@@ -535,18 +536,25 @@ function ensureSchema(db: DatabaseSync): void {
     db.exec(
       "ALTER TABLE wireless_session_documents ADD COLUMN analysis_status TEXT NOT NULL DEFAULT 'pending'",
     );
+    appliedMigrations.push('wireless_session_documents.analysis_status');
   }
   if (!wirelessDocumentColumns.has('analysis_error')) {
     db.exec(
       'ALTER TABLE wireless_session_documents ADD COLUMN analysis_error TEXT',
     );
+    appliedMigrations.push('wireless_session_documents.analysis_error');
   }
   if (!wirelessDocumentColumns.has('analysis_requested_at')) {
     db.exec(
       'ALTER TABLE wireless_session_documents ADD COLUMN analysis_requested_at TEXT',
     );
+    appliedMigrations.push('wireless_session_documents.analysis_requested_at');
   }
-  addAnalysisVersionColumnIfMissing(db, wirelessDocumentColumns);
+  addAnalysisVersionColumnIfMissing(
+    db,
+    wirelessDocumentColumns,
+    appliedMigrations,
+  );
 
   const receiptColumnRows = db
     .prepare('PRAGMA table_info(receipt_records)')
@@ -659,17 +667,30 @@ function ensureSchema(db: DatabaseSync): void {
     db.exec(
       'ALTER TABLE pricing_analysis_cache ADD COLUMN algorithm_version INTEGER NOT NULL DEFAULT 0',
     );
+    appliedMigrations.push('pricing_analysis_cache.algorithm_version');
+  }
+
+  if (appliedMigrations.length > 0) {
+    console.info(
+      `[SQLITE] Schema migrations applied during startup before session uploads are accepted: ${appliedMigrations.join(', ')}`,
+    );
+  } else {
+    console.info(
+      '[SQLITE] Schema migrations not needed at startup; wireless_session_documents analysis columns already present.',
+    );
   }
 }
 
 function addAnalysisVersionColumnIfMissing(
   db: DatabaseSync,
   wirelessDocumentColumns: Set<string>,
+  appliedMigrations: string[],
 ): void {
   if (!wirelessDocumentColumns.has('analysis_version')) {
     db.exec(
       'ALTER TABLE wireless_session_documents ADD COLUMN analysis_version INTEGER NOT NULL DEFAULT 0',
     );
+    appliedMigrations.push('wireless_session_documents.analysis_version');
   }
 }
 
@@ -867,17 +888,18 @@ export class WirelessSessionSqliteStore {
   }
 
   saveSessionSnapshot(snapshot: WirelessSessionSnapshotStorageEntry): void {
-    withTransaction(() => {
-      const db = getSqliteDb();
-      this.upsertSession(snapshot.session);
-      db.prepare(
-        `DELETE FROM wireless_session_documents
-         WHERE session_id = ?`,
-      ).run(snapshot.session.sessionId);
+    try {
+      withTransaction(() => {
+        const db = getSqliteDb();
+        this.upsertSession(snapshot.session);
+        db.prepare(
+          `DELETE FROM wireless_session_documents
+           WHERE session_id = ?`,
+        ).run(snapshot.session.sessionId);
 
-      if (snapshot.documents.length === 0) return;
-      const insertDocument = db.prepare(
-        `INSERT INTO wireless_session_documents (
+        if (snapshot.documents.length === 0) return;
+        const insertDocument = db.prepare(
+          `INSERT INTO wireless_session_documents (
           document_id,
           session_id,
           filename,
@@ -891,24 +913,44 @@ export class WirelessSessionSqliteStore {
           analysis_requested_at,
           analysis_version
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const doc of snapshot.documents) {
-        insertDocument.run(
-          doc.documentId,
-          doc.sessionId,
-          doc.filename,
-          doc.contentType,
-          Math.max(0, Math.floor(doc.sizeBytes)),
-          doc.uploadedAt,
-          doc.filePath,
-          doc.analysisJson,
-          doc.analysisStatus,
-          doc.analysisError,
-          doc.analysisRequestedAt,
-          doc.analysisVersion,
         );
-      }
-    });
+        for (const doc of snapshot.documents) {
+          insertDocument.run(
+            doc.documentId,
+            doc.sessionId,
+            doc.filename,
+            doc.contentType,
+            Math.max(0, Math.floor(doc.sizeBytes)),
+            doc.uploadedAt,
+            doc.filePath,
+            doc.analysisJson,
+            doc.analysisStatus,
+            doc.analysisError,
+            doc.analysisRequestedAt,
+            doc.analysisVersion,
+          );
+        }
+      });
+    } catch (error) {
+      const sqliteError = error as { code?: unknown; errno?: unknown };
+      console.error(
+        '[SQLITE] Failed to save wireless session document snapshot.',
+        {
+          sessionId: snapshot.session.sessionId,
+          documentCount: snapshot.documents.length,
+          error: error instanceof Error ? error.message : String(error),
+          code:
+            typeof sqliteError.code === 'string'
+              ? sqliteError.code
+              : (sqliteError.code ?? null),
+          errno:
+            typeof sqliteError.errno === 'number'
+              ? sqliteError.errno
+              : (sqliteError.errno ?? null),
+        },
+      );
+      throw error;
+    }
   }
 
   upsertSession(entry: WirelessSessionStorageEntry): void {
