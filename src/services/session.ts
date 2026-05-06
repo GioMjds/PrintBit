@@ -157,6 +157,14 @@ const DOCUMENT_ANALYSIS_FILE_TYPES = new Set<DocumentAnalysis['fileType']>([
   'unknown',
 ]);
 
+function isMissingFileError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  return (error as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
 
@@ -1149,6 +1157,10 @@ export class SessionStore {
     }> = [];
     deletionResults.forEach((result, index) => {
       if (result.status === 'rejected') {
+        if (isMissingFileError(result.reason)) {
+          return;
+        }
+
         failedDeletes.push({
           filePath: docs[index]?.filePath,
           reason: result.reason,
