@@ -197,6 +197,218 @@ function previewLog(message: string, meta?: unknown): void {
   console.log(`[CONFIG PREVIEW] ${message}`);
 }
 
+// ── Settings / Pricing Debug Logger ─────────────────────────────────────────
+// Logs admin settings and per-job pricing decisions to help diagnose issues
+// like blank-page misclassification or blankPagePolicy not taking effect.
+
+function settingsLog(message: string, meta?: unknown): void {
+  if (meta !== undefined) {
+    console.log(
+      `%c[PRICING SETTINGS] ${message}`,
+      'color:#a78bfa;font-weight:600',
+      meta,
+    );
+    return;
+  }
+  console.log(
+    `%c[PRICING SETTINGS] ${message}`,
+    'color:#a78bfa;font-weight:600',
+  );
+}
+
+/**
+ * Fetches the active pricing engine settings from the admin API and logs
+ * them so it's easy to see at a glance what blankPagePolicy, thresholds,
+ * paper profiles, etc. are currently configured.
+ */
+async function fetchAndLogPricingSettings(): Promise<void> {
+  try {
+    const res = await fetch('/api/admin/settings', { cache: 'no-store' });
+    if (!res.ok) {
+      settingsLog(
+        `Admin settings fetch failed (HTTP ${res.status}) — cannot verify active config`,
+      );
+      return;
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+
+    // Navigate to the pricingEngine sub-key regardless of nesting shape
+    const pe = ((data as { pricingEngine?: unknown }).pricingEngine ??
+      (data as { settings?: { pricingEngine?: unknown } }).settings
+        ?.pricingEngine ??
+      data) as Record<string, unknown> | undefined;
+
+    console.groupCollapsed(
+      '%c[PRICING SETTINGS] Active admin settings (expand to inspect)',
+      'color:#a78bfa;font-weight:600',
+    );
+    settingsLog(
+      'pricingMode',
+      pe?.pricingMode ?? '⚠ not set — defaulting to "live"',
+    );
+    settingsLog(
+      'blankPagePolicy',
+      pe?.blankPagePolicy ?? '⚠ not set — defaulting to "charge_zero"',
+    );
+    settingsLog(
+      'thresholds',
+      pe?.thresholds ??
+        '⚠ not set — using defaults { bwMax:0.1, fullColorMin:0.5 }',
+    );
+    settingsLog(
+      'paperProfiles',
+      pe?.paperProfiles ?? '⚠ not set — using hardcoded defaults',
+    );
+    settingsLog(
+      'colorMultiplier',
+      pe?.colorMultiplier ?? '⚠ not set — defaulting to 20',
+    );
+    settingsLog(
+      'decileSurcharges',
+      pe?.decileSurcharges ?? 'not configured — linear pricing in effect',
+    );
+    settingsLog(
+      'bulkDiscountTiers',
+      pe?.bulkDiscountTiers ?? 'not configured — no bulk discounts',
+    );
+    settingsLog(
+      'suggestionThreshold',
+      pe?.suggestionThreshold ?? '⚠ not set — defaulting to 0.02',
+    );
+    settingsLog('raw full response', data);
+    console.groupEnd();
+  } catch (err) {
+    settingsLog('Could not reach /api/admin/settings — settings unknown', err);
+  }
+}
+
+/**
+ * Logs the per-page analysis result so you can see exactly what coverage
+ * and classification the server assigned to each page (including blank pages).
+ */
+function logAnalysisResult(analysisData: unknown): void {
+  if (!analysisData || typeof analysisData !== 'object') {
+    settingsLog('Analysis data is null/empty — no per-page data to inspect');
+    return;
+  }
+  const data = analysisData as {
+    fileType?: string;
+    pageCount?: number;
+    confidence?: string;
+    pages?: Array<{
+      index: number;
+      isColor: boolean;
+      isBlank?: boolean;
+      coverage?: number;
+      classification?: string;
+    }>;
+  };
+
+  const pages = data.pages ?? [];
+
+  // ── Always-visible per-page summary (never hidden in a group) ──────────
+  for (const page of pages) {
+    const coveragePct =
+      typeof page.coverage === 'number'
+        ? `${(page.coverage * 100).toFixed(1)}%`
+        : 'n/a';
+    const flag = page.isBlank
+      ? '⬜ BLANK'
+      : page.isColor
+        ? '🟦 COLOR'
+        : '⬛ B&W';
+
+    settingsLog(
+      `[ANALYSIS] Page ${page.index}: ${flag} | classification="${page.classification ?? 'none'}" | coverage=${coveragePct} | isBlank=${String(page.isBlank ?? false)} | isColor=${String(page.isColor)}`,
+    );
+
+    // Warn whenever a page looks visually blank but wasn't classified as blank
+    if (
+      !page.isBlank &&
+      typeof page.coverage === 'number' &&
+      page.coverage < 0.05 &&
+      page.classification !== 'blank'
+    ) {
+      settingsLog(
+        `⚠ [ANALYSIS] Page ${page.index}: coverage=${coveragePct} but isBlank=false & classification="${page.classification}" — white-fill rect may still be counted as content. Check document-analysis.ts white-paint guard.`,
+      );
+    }
+  }
+
+  // Full data in a collapsed group for deeper inspection
+  console.groupCollapsed(
+    `%c[PRICING SETTINGS] Full analysis object (${data.pageCount ?? '?'} pages, confidence: ${data.confidence ?? '?'})`,
+    'color:#a78bfa;font-weight:600',
+  );
+  settingsLog('fileType', data.fileType ?? 'unknown');
+  settingsLog('raw pages', pages);
+  console.groupEnd();
+}
+
+/**
+ * Logs what the pricing engine actually resolved for this job — shows the
+ * effective blankPagePolicy outcome, per-page prices, and the final total.
+ */
+function logQuoteBreakdown(quote: PrintQuote): void {
+  const pe = quote.pricingEngine;
+  console.groupCollapsed(
+    `%c[PRICING SETTINGS] Quote resolved — ₱${pe?.finalPayablePeso ?? quote.requiredAmount} payable | mode=${pe?.mode ?? 'legacy'}`,
+    'color:#a78bfa;font-weight:600',
+  );
+  settingsLog('effectiveColorMode', quote.effectiveColorMode);
+  settingsLog('requestedColorMode', quote.requestedColorMode);
+  settingsLog('selectedPages', quote.selectedPages);
+  settingsLog('selectedColorPages', quote.selectedColorPages);
+  settingsLog('selectedBwPages', quote.selectedBwPages);
+  settingsLog('billableColorPages', quote.billableColorPages);
+  settingsLog('billableBwPages', quote.billableBwPages);
+
+  if (pe) {
+    settingsLog('pricingEngine.mode', pe.mode);
+    settingsLog('pricingEngine.subtotalExact', pe.subtotalExact);
+    settingsLog('pricingEngine.discountExact', pe.discountExact);
+    settingsLog('pricingEngine.finalExact', pe.finalExact);
+    settingsLog('pricingEngine.finalPayablePeso', pe.finalPayablePeso);
+
+    const pages = pe.perPageBreakdown ?? [];
+    if (pages.length > 0) {
+      console.groupCollapsed(
+        '%c[PRICING SETTINGS] Per-page pricing breakdown',
+        'color:#a78bfa',
+      );
+      for (const p of pages) {
+        const priceFmt = `₱${p.rawPriceExact.toFixed(4)}`;
+        const coveragePct = `${(p.coverage * 100).toFixed(1)}%`;
+        const flag = p.isBlank
+          ? '⬜ BLANK'
+          : p.classification === 'bw'
+            ? '⬛ B&W'
+            : p.classification === 'full_color'
+              ? '🟦 FULL'
+              : '🟪 PARTIAL';
+        settingsLog(
+          `[ENGINE] Page ${p.index}: ${flag} | classification="${p.classification}" | coverage=${coveragePct} | price=${priceFmt}${p.suggestSavings ? ' | 💡 savings possible' : ''}`,
+        );
+
+        // Always-visible warning when a blank page is charged non-zero
+        if (p.isBlank && p.rawPriceExact > 0) {
+          console.warn(
+            `[PRICING SETTINGS] ⚠ Page ${p.index}: isBlank=true but charged ${priceFmt} — blankPagePolicy in /admin/settings is likely not "charge_zero"`,
+          );
+        }
+        // Always-visible warning when a near-blank page is not classified as blank
+        if (!p.isBlank && p.classification !== 'blank' && p.coverage < 0.05) {
+          console.warn(
+            `[PRICING SETTINGS] ⚠ Page ${p.index}: coverage=${coveragePct} but classified as "${p.classification}" (not blank) — white-fill background may be counted as content`,
+          );
+        }
+      }
+      console.groupEnd();
+    }
+  }
+  console.groupEnd();
+}
+
 async function fetchWithTimeout(
   url: string,
   timeoutMs: number,
@@ -331,10 +543,13 @@ async function loadFullAnalysis(): Promise<void> {
         if (res.ok) {
           const data = await res.json();
           currentAnalysisData = { pages: [{ ...data, index: 1 }] };
+          settingsLog('Copy mode analysis result (page 1)', data);
           updatePageCoverageMeter(1);
+        } else {
+          settingsLog(`Copy analysis fetch failed (HTTP ${res.status})`);
         }
-      } catch {
-        // Best-effort, non-critical feature
+      } catch (err) {
+        settingsLog('Copy analysis fetch threw an error', err);
       }
     }
     return;
@@ -347,10 +562,15 @@ async function loadFullAnalysis(): Promise<void> {
       );
       if (res.ok) {
         currentAnalysisData = await res.json();
+        logAnalysisResult(currentAnalysisData);
         updatePageCoverageMeter(preview.currentPageNumber);
+      } else {
+        settingsLog(
+          `Analysis fetch failed (HTTP ${res.status}) for document ${selectedDocumentId}`,
+        );
       }
-    } catch {
-      // Best-effort, non-critical feature
+    } catch (err) {
+      settingsLog('Analysis fetch threw an error', err);
     }
   }
 }
@@ -1606,9 +1826,11 @@ async function refreshPrintQuote(): Promise<void> {
     if (resolvedQuote) {
       currentPrintQuote = resolvedQuote;
       quoteError = null;
+      logQuoteBreakdown(resolvedQuote);
     } else {
       currentPrintQuote = null;
       quoteError = resolvedError ?? 'Failed to calculate price.';
+      settingsLog('Quote failed to resolve', { error: resolvedError });
     }
   } catch {
     if (requestVersion !== quoteRequestVersion) return;
@@ -1685,8 +1907,8 @@ function renderPricingAnalyzer(): void {
     const selectedPages = currentPrintQuote?.selectedPages ?? 0;
     const totalPages = currentPrintQuote?.totalPages ?? preview.pageCount;
     const copies = currentPrintQuote?.copies ?? getCopies();
-    pricingAnalyzerTriggerMeta.textContent = `${selectedPages}/${totalPages} pages · ${copies} copy${copies === 1 ? '' : 'ies'}`;
-    pricingAnalyzerModalSummary.textContent = `Selected ${selectedPages} of ${totalPages} pages · ${copies} copy${copies === 1 ? '' : 'ies'}`;
+    pricingAnalyzerTriggerMeta.textContent = `${selectedPages}/${totalPages} pages · ${copies} cop${copies === 1 ? 'y' : 'ies'}`;
+    pricingAnalyzerModalSummary.textContent = `Selected ${selectedPages} of ${totalPages} pages · ${copies} cop${copies === 1 ? 'y' : 'ies'}`;
     pricingAnalyzerModalFormula.textContent =
       currentPrintQuote !== null
         ? `Estimated total: ${formatPeso(currentPrintQuote.requiredAmount)}`
@@ -2197,3 +2419,4 @@ continueBtn?.addEventListener('click', () => {
 });
 
 void loadPreview();
+void fetchAndLogPricingSettings();

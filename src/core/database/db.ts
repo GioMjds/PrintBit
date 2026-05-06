@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import { finiteOr } from '@/utils';
+import { ANALYSIS_ALGORITHM_VERSION } from '@/services';
 import {
   clearLowDbImportMarker,
+  clearStalePricingAnalysisCache,
   importLowDbSnapshotIfNeeded,
   initSqliteStorage,
   migrateSchemaSnapshotToRuntimeState,
@@ -1995,7 +1997,6 @@ export async function initDB() {
   try {
     await db.read();
   } catch {
-    // If legacy file is empty/malformed, initialize with defaults.
     db.data = cloneDefaultData();
     await db.write();
     await migrateLegacyDbJsonToSqlite();
@@ -2012,6 +2013,8 @@ export async function initDB() {
   }
   await db.write();
   await migrateLegacyDbJsonToSqlite();
+
+  clearStalePricingAnalysisCache(ANALYSIS_ALGORITHM_VERSION);
 }
 
 // ── Balance mutex ─────────────────────────────────────────────────────────────

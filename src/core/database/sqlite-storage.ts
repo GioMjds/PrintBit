@@ -140,6 +140,22 @@ export interface ConsumableInkSnapshotEntry {
   supplies: ConsumableInkSnapshotSupply[];
 }
 
+export interface WirelessSessionDocumentStorageEntry {
+  documentId: string;
+  sessionId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  filePath: string;
+  analysisJson: string | null;
+  analysisStatus: 'pending' | 'completed' | 'failed';
+  analysisError: string | null;
+  analysisRequestedAt: string | null;
+  /** Version of ANALYSIS_ALGORITHM_VERSION that produced analysisJson. 0 = unknown/pre-versioning. */
+  analysisVersion: number;
+}
+
 type ReportSessionCleanupResult = {
   changed: boolean;
   orphanedAttachments: ReportIssueAttachmentEntry[];
@@ -530,6 +546,7 @@ function ensureSchema(db: DatabaseSync): void {
       'ALTER TABLE wireless_session_documents ADD COLUMN analysis_requested_at TEXT',
     );
   }
+  addAnalysisVersionColumnIfMissing(db, wirelessDocumentColumns);
 
   const receiptColumnRows = db
     .prepare('PRAGMA table_info(receipt_records)')
@@ -627,6 +644,31 @@ function ensureSchema(db: DatabaseSync): void {
     );
     db.exec(
       'CREATE INDEX IF NOT EXISTS idx_consumable_ink_snapshots_printer_name ON consumable_ink_snapshots(printer_name)',
+    );
+  }
+
+  const pricingCacheColumnRows = db
+    .prepare('PRAGMA table_info(pricing_analysis_cache)')
+    .all() as Array<Record<string, unknown>>;
+  const pricingCacheColumns = new Set(
+    pricingCacheColumnRows
+      .map((row) => (typeof row.name === 'string' ? row.name : ''))
+      .filter((name) => name.length > 0),
+  );
+  if (!pricingCacheColumns.has('algorithm_version')) {
+    db.exec(
+      'ALTER TABLE pricing_analysis_cache ADD COLUMN algorithm_version INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+}
+
+function addAnalysisVersionColumnIfMissing(
+  db: DatabaseSync,
+  wirelessDocumentColumns: Set<string>,
+): void {
+  if (!wirelessDocumentColumns.has('analysis_version')) {
+    db.exec(
+      'ALTER TABLE wireless_session_documents ADD COLUMN analysis_version INTEGER NOT NULL DEFAULT 0',
     );
   }
 }
@@ -753,6 +795,7 @@ export interface WirelessSessionDocumentStorageEntry {
   analysisStatus: 'pending' | 'completed' | 'failed';
   analysisError: string | null;
   analysisRequestedAt: string | null;
+  analysisVersion: number;
 }
 
 export interface WirelessSessionSnapshotStorageEntry {
@@ -793,7 +836,8 @@ export class WirelessSessionSqliteStore {
         analysis_json,
         analysis_status,
         analysis_error,
-        analysis_requested_at
+        analysis_requested_at,
+        analysis_version
        FROM wireless_session_documents
        ORDER BY uploaded_at ASC`,
       )
@@ -844,8 +888,9 @@ export class WirelessSessionSqliteStore {
           analysis_json,
           analysis_status,
           analysis_error,
-          analysis_requested_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          analysis_requested_at,
+          analysis_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const doc of snapshot.documents) {
         insertDocument.run(
@@ -860,6 +905,7 @@ export class WirelessSessionSqliteStore {
           doc.analysisStatus,
           doc.analysisError,
           doc.analysisRequestedAt,
+          doc.analysisVersion,
         );
       }
     });
@@ -965,6 +1011,11 @@ export class WirelessSessionSqliteStore {
         typeof row.analysis_requested_at === 'string'
           ? row.analysis_requested_at
           : null,
+      analysisVersion:
+        typeof row.analysis_version === 'number' &&
+        Number.isFinite(row.analysis_version)
+          ? Math.max(0, Math.floor(row.analysis_version))
+          : 0,
     };
   }
 }
@@ -972,6 +1023,7 @@ export class WirelessSessionSqliteStore {
 export interface PricingAnalysisCacheEntry {
   fileHash: string;
   configFingerprint: string;
+  algorithmVersion: number;
   contentType: string;
   pageCount: number;
   analysisJson: string;
@@ -983,22 +1035,26 @@ export class PricingAnalysisCacheSqliteStore {
   getByHash(
     fileHash: string,
     configFingerprint: string,
+    algorithmVersion: number,
   ): PricingAnalysisCacheEntry | null {
     const row = getSqliteDb()
       .prepare(
         `SELECT
           file_hash,
           config_fingerprint,
+          algorithm_version,
           content_type,
           page_count,
           analysis_json,
           created_at,
           updated_at
          FROM pricing_analysis_cache
-         WHERE file_hash = ? AND config_fingerprint = ?
+         WHERE file_hash = ? AND config_fingerprint = ? AND algorithm_version = ?
          LIMIT 1`,
       )
-      .get(fileHash, configFingerprint) as Record<string, unknown> | undefined;
+      .get(fileHash, configFingerprint, algorithmVersion) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) return null;
     return this.toEntry(row);
   }
@@ -1016,6 +1072,7 @@ export class PricingAnalysisCacheSqliteStore {
           updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_hash, config_fingerprint) DO UPDATE SET
+          algorithm_version = excluded.algorithm_version,
           content_type = excluded.content_type,
           page_count = excluded.page_count,
           analysis_json = excluded.analysis_json,
@@ -1024,6 +1081,7 @@ export class PricingAnalysisCacheSqliteStore {
       .run(
         entry.fileHash,
         entry.configFingerprint,
+        entry.algorithmVersion,
         entry.contentType,
         Math.max(0, Math.floor(entry.pageCount)),
         entry.analysisJson,
@@ -1036,6 +1094,11 @@ export class PricingAnalysisCacheSqliteStore {
     return {
       fileHash: String(row.file_hash ?? ''),
       configFingerprint: String(row.config_fingerprint ?? ''),
+      algorithmVersion:
+        typeof row.algorithm_version === 'number' &&
+        Number.isFinite(row.algorithm_version)
+          ? Math.max(0, Math.floor(row.algorithm_version))
+          : 0,
       contentType: String(row.content_type ?? ''),
       pageCount:
         typeof row.page_count === 'number' && Number.isFinite(row.page_count)
@@ -3123,4 +3186,25 @@ export function importLowDbSnapshotIfNeeded(
     inserted,
     skippedOrphans,
   };
+}
+
+export function clearStalePricingAnalysisCache(currentVersion: number): number {
+  const db = getSqliteDb();
+  const columns = db
+    .prepare('PRAGMA table_info(pricing_analysis_cache)')
+    .all() as Array<Record<string, unknown>>;
+  const hasVersion = columns.some(
+    (col) => typeof col.name === 'string' && col.name === 'algorithm_version',
+  );
+  if (!hasVersion) return 0;
+  const result = db
+    .prepare('DELETE FROM pricing_analysis_cache WHERE algorithm_version < ?')
+    .run(currentVersion) as { changes?: unknown };
+  const deleted = Number(result.changes ?? 0);
+  if (deleted > 0) {
+    console.log(
+      `[PRICING CACHE] Invalidated ${deleted} stale cache entries (algorithm_version < ${currentVersion}).`,
+    );
+  }
+  return deleted;
 }

@@ -66,8 +66,8 @@ function applyLogs(logs: LogsResponse['logs']): void {
     const tr = document.createElement('tr');
     tr.dataset.logId = log.id;
     tr.innerHTML = `
-      <td class="logs-td logs-td--ts">${new Date(log.timestamp).toLocaleString()}</td>
-      <td class="logs-td">${escapeHtml(log.message)}</td>
+      <td class="logs-td logs-td--ts" data-label="Timestamp">${new Date(log.timestamp).toLocaleString()}</td>
+      <td class="logs-td logs-td--msg" data-label="Message">${escapeHtml(log.message)}</td>
     `;
     logsBody.appendChild(tr);
   }
