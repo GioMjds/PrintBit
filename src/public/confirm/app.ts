@@ -49,6 +49,8 @@ type SocketLike = {
   emit: (event: string, ...args: unknown[]) => void;
 };
 
+type ReceiptLinkPayload = Record<string, unknown>;
+
 let socket: SocketLike | null = null;
 
 type PageRangeSelection =

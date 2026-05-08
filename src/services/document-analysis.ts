@@ -19,8 +19,9 @@ import {
  * History:
  *   1 — initial operator-list analysis
  *   2 — colour-op / content-op separation; white-paint guard (blank page fix)
+ *   3 — persist content coverage separately from color coverage
  */
-export const ANALYSIS_ALGORITHM_VERSION = 2;
+export const ANALYSIS_ALGORITHM_VERSION = 3;
 
 export type AnalyzedFileType =
   | 'pdf'
@@ -37,6 +38,12 @@ export interface PageAnalysis {
   index: number;
   isColor: boolean;
   coverage?: number;
+  /**
+   * Ratio of all visible non-white content on the page.
+   * `coverage` tracks color coverage for pricing tiers; this field is used
+   * to decide whether a B/W page is genuinely near-blank.
+   */
+  contentCoverage?: number;
   classification?: 'blank' | 'bw' | 'partial' | 'full_color';
   isBlank?: boolean;
   fallbackReasonFlags?: string[];
@@ -216,6 +223,7 @@ async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
     index: 1,
     isColor,
     coverage: metrics.colorCoverage,
+    contentCoverage: metrics.contentCoverage,
     classification: isBlank
       ? 'blank'
       : isColor
@@ -310,6 +318,7 @@ async function analyzePdfFile(
         index: pageNum,
         isColor,
         coverage,
+        contentCoverage: coverage,
         classification,
         isBlank,
         fallbackReasonFlags:
