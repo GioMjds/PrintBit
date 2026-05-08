@@ -12,6 +12,7 @@ import type {
 } from '@/services/session';
 import { generateHtmlPreview, supportsHtmlPreview } from '@/services/preview';
 import { detectPdfColorContent } from '@/services/color-detection';
+import { ANALYSIS_ALGORITHM_VERSION } from '@/services/document-analysis';
 import { analyzeDocument } from '@/services/document-analysis';
 import {
   enqueuePricingAnalysisJob,
@@ -210,7 +211,10 @@ export class WirelessSessionService {
     }
 
     const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
     if (!session) {
       res.status(410).json({
         code: 'SESSION_EXPIRED',
@@ -515,6 +519,48 @@ export class WirelessSessionService {
     }
   };
 
+  getSessionDocumentAnalysis: RequestHandler<{
+    sessionId: string;
+    documentId: string;
+  }> = (req, res) => {
+    const { sessionId, documentId } = req.params;
+    const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
+
+    if (!session) {
+      res.status(404).json({ error: 'Session not found.' });
+      return;
+    }
+
+    if (!this.deps.sessionStore.touchSession(sessionId)) {
+      res.status(410).json({
+        code: 'SESSION_EXPIRED',
+        error: 'Session has expired. Please start a new session.',
+      });
+      return;
+    }
+
+    const allDocs =
+      session.documents && session.documents.length > 0
+        ? session.documents
+        : session.document
+          ? [session.document]
+          : [];
+
+    const target = allDocs.find((doc) => doc.documentId === documentId);
+    if (!target || !target.analysis) {
+      res.status(404).json({
+        error: 'Document analysis not found.',
+      });
+      return;
+    }
+
+    res.json(target.analysis);
+  };
+
   getSessionById: RequestHandler<{ sessionId: string }> = (req, res) => {
     const { sessionId } = req.params;
     const sessionState = this.deps.sessionStore.getSessionState(sessionId);
@@ -675,7 +721,7 @@ export class WirelessSessionService {
             ? 410
             : result.errorCode === 'SESSION_PERSIST_FAILED'
               ? 500
-            : 404;
+              : 404;
 
       await adminService.appendAdminLog(
         'upload_delete_failed',
@@ -694,7 +740,7 @@ export class WirelessSessionService {
               ? 'Session has expired.'
               : result.errorCode === 'SESSION_PERSIST_FAILED'
                 ? 'Failed to persist session changes while deleting document.'
-              : 'Session not found.',
+                : 'Session not found.',
       });
       return;
     }
@@ -770,7 +816,8 @@ export class WirelessSessionService {
         : {};
     const sessionId =
       typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
-    const jobIdRaw = typeof payload.jobId === 'string' ? payload.jobId.trim() : '';
+    const jobIdRaw =
+      typeof payload.jobId === 'string' ? payload.jobId.trim() : '';
     const documentIdRaw =
       typeof payload.documentId === 'string' ? payload.documentId.trim() : '';
     const forceReanalyze = payload.forceReanalyze === true;
@@ -861,12 +908,14 @@ export class WirelessSessionService {
       | 'SESSION_EXPIRED'
       | 'INVALID_TOKEN'
       | 'INVALID_CLIENT_ID'
-      | 'SESSION_OWNED',
+      | 'SESSION_OWNED'
+      | 'SESSION_PERSIST_FAILED',
   ): number {
     if (code === 'SESSION_EXPIRED') return 410;
     if (code === 'SESSION_OWNED') return 409;
     if (code === 'INVALID_TOKEN') return 403;
     if (code === 'INVALID_CLIENT_ID') return 400;
+    if (code === 'SESSION_PERSIST_FAILED') return 500;
     return 404;
   }
 
@@ -887,7 +936,17 @@ export class WirelessSessionService {
     forceReanalyze: boolean,
     req?: Request,
   ): Promise<
-    | { ok: true; jobId: string; status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed' | 'unknown' }
+    | {
+        ok: true;
+        jobId: string;
+        status:
+          | 'waiting'
+          | 'active'
+          | 'completed'
+          | 'failed'
+          | 'delayed'
+          | 'unknown';
+      }
     | { ok: false; status: 404 | 503; error: string }
   > {
     const targetLookup = this.resolveAnalysisTargetDocument(
@@ -977,41 +1036,48 @@ export class WirelessSessionService {
   private async processQueuedAnalysisJob(
     job: PricingAnalysisJobData,
   ): Promise<void> {
-    const analyzed = await this.analyzeAndStoreDocument(
-      job.sessionId,
-      job.documentId,
-      this.buildInternalBaseUrl(),
-      { forceReanalyze: job.forceReanalyze },
-    );
-    if (!('analysis' in analyzed)) {
+    try {
+      const analyzed = await this.analyzeAndStoreDocument(
+        job.sessionId,
+        job.documentId,
+        this.buildInternalBaseUrl(),
+        { forceReanalyze: job.forceReanalyze },
+      );
+      if (!('analysis' in analyzed)) {
+        throw new Error(analyzed.error);
+      }
+
+      this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisCompleted', {
+        documentId: analyzed.documentId,
+        filename: analyzed.fileName,
+        analysis: analyzed.analysis,
+      });
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'Document analysis failed.';
       this.deps.sessionStore.markDocumentAnalysisFailure(
         job.sessionId,
         job.documentId,
-        analyzed.error,
+        reason,
       );
       this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisFailed', {
         documentId: job.documentId,
         filename: job.documentId,
-        error: analyzed.error,
+        error: reason,
       });
-      throw new Error(analyzed.error);
+      throw error instanceof Error ? error : new Error(reason);
     }
-
-    this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisCompleted', {
-      documentId: analyzed.documentId,
-      filename: analyzed.fileName,
-      analysis: analyzed.analysis,
-    });
   }
 
   private resolveAnalysisTargetDocument(
     sessionId: string,
     publicBaseUrl: URL,
     documentId?: string,
-  ):
-    | { target: UploadedDocument }
-    | { error: string; status: 404 } {
-    const session = this.deps.sessionStore.tryGetSession(sessionId, publicBaseUrl);
+  ): { target: UploadedDocument } | { error: string; status: 404 } {
+    const session = this.deps.sessionStore.tryGetSession(
+      sessionId,
+      publicBaseUrl,
+    );
     if (!session) {
       return { error: 'Session not found.', status: 404 };
     }
@@ -1101,11 +1167,17 @@ export class WirelessSessionService {
       }
 
       const coverage =
-        typeof pageValue.coverage === 'number' && Number.isFinite(pageValue.coverage)
+        typeof pageValue.coverage === 'number' &&
+        Number.isFinite(pageValue.coverage)
           ? Math.max(0, Math.min(1, pageValue.coverage))
           : undefined;
       const classificationRaw = pageValue.classification;
-      const classification: 'blank' | 'bw' | 'partial' | 'full_color' | undefined =
+      const classification:
+        | 'blank'
+        | 'bw'
+        | 'partial'
+        | 'full_color'
+        | undefined =
         classificationRaw === 'blank' ||
         classificationRaw === 'bw' ||
         classificationRaw === 'partial' ||
@@ -1179,18 +1251,23 @@ export class WirelessSessionService {
     const fileHash = await this.computeFileHash(absoluteFilePath);
 
     if (!options?.forceReanalyze) {
-      const cached = pricingAnalysisCacheStore.getByHash(fileHash, configFingerprint);
+      const cached = pricingAnalysisCacheStore.getByHash(
+        fileHash,
+        configFingerprint,
+        ANALYSIS_ALGORITHM_VERSION,
+      );
       if (cached) {
         try {
           const cachedAnalysis = this.normalizeAnalysisPayload(
             JSON.parse(cached.analysisJson),
           );
           if (cachedAnalysis) {
-            const persistedFromCache = this.deps.sessionStore.setDocumentAnalysis(
-              sessionId,
-              target.documentId,
-              cachedAnalysis,
-            );
+            const persistedFromCache =
+              this.deps.sessionStore.setDocumentAnalysis(
+                sessionId,
+                target.documentId,
+                cachedAnalysis,
+              );
             if (persistedFromCache) {
               return {
                 status: 200,
@@ -1223,9 +1300,8 @@ export class WirelessSessionService {
       POWERPOINT_EXTENSIONS.has(targetExtension)
     ) {
       try {
-        analysisFilePath = await this.deps.convertToPdfPreview(
-          absoluteFilePath,
-        );
+        analysisFilePath =
+          await this.deps.convertToPdfPreview(absoluteFilePath);
       } catch (error) {
         const reason =
           error instanceof Error ? error.message : 'Unknown conversion error';
@@ -1280,13 +1356,17 @@ export class WirelessSessionService {
         analysisJson: JSON.stringify(analysisForStore),
         createdAt: nowIso,
         updatedAt: nowIso,
+        algorithmVersion: ANALYSIS_ALGORITHM_VERSION,
       });
     } catch (error) {
-      console.error('[pricing-analysis] Failed to persist analysis cache row.', {
-        sessionId,
-        documentId: target.documentId,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      console.error(
+        '[pricing-analysis] Failed to persist analysis cache row.',
+        {
+          sessionId,
+          documentId: target.documentId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
 
     return {

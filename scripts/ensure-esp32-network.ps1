@@ -131,7 +131,7 @@ function Get-WlanInterfaces {
         }
     }
 
-    return $entries.ToArray()
+    return @($entries.ToArray())
 }
 
 function Get-FallbackWifiInterfaceName {
@@ -154,7 +154,7 @@ function Get-ConnectedWifiInterfaceName {
         [string]$Ssid
     )
 
-    $interfaces = Get-WlanInterfaces
+    $interfaces = @(Get-WlanInterfaces)
     if ($interfaces.Count -eq 0) {
         return $null
     }

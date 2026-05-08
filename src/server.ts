@@ -148,7 +148,7 @@ app.use(createCsrfProtectionMiddleware());
 
 // Captive-portal middleware — fallback for direct captive probes on port 3000
 if (CAPTIVE_PORTAL_ENABLED) {
-  app.use(createCaptivePortalMiddleware(sessionStore));
+  app.use(createCaptivePortalMiddleware());
 }
 
 registerAppModules(app, {

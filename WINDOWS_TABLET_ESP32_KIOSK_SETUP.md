@@ -21,7 +21,7 @@ From repo root:
 
 ```powershell
 pnpm install
-pnpm run build:kiosk
+pnpm run build
 pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 

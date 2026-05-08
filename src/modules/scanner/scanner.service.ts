@@ -17,7 +17,7 @@ import {
   listRemovableDrives,
   type RemovableDrive,
 } from '@/services/usb-drives';
-import { detectPdfColorContent } from '@/services/color-detection';
+import { analyzeDocument } from '@/services/document-analysis';
 import { jobStore, type ScanJobSettings } from '@/services/job-store';
 import { adminService } from '@/services/admin';
 import { db } from '@/services/db';
@@ -119,6 +119,8 @@ export interface ColorAnalysisResult {
   hasColor: boolean;
   isGrayscale: boolean;
   sampledPages: number;
+  coverage?: number;
+  classification?: string;
 }
 
 export interface ScanFileReleaseResult {
@@ -146,7 +148,9 @@ export class ScannerService {
   }
 
   getContentType(ext: string): string {
-    return FORMAT_CONTENT_TYPES[ext.toLowerCase()] ?? 'application/octet-stream';
+    return (
+      FORMAT_CONTENT_TYPES[ext.toLowerCase()] ?? 'application/octet-stream'
+    );
   }
 
   private toScanSource(source: ScannerPageSource): 'flatbed' | 'adf' {
@@ -183,7 +187,9 @@ export class ScannerService {
     return token;
   }
 
-  private consumeReleaseToken(releaseToken: string): ScanReleaseTokenRecord | null {
+  private consumeReleaseToken(
+    releaseToken: string,
+  ): ScanReleaseTokenRecord | null {
     this.purgeExpiredReleaseTokens();
     const record = this.releaseTokens.get(releaseToken);
     if (!record) {
@@ -281,7 +287,7 @@ export class ScannerService {
 
     return {
       connected,
-      name: connected ? runtime.deviceName ?? undefined : undefined,
+      name: connected ? (runtime.deviceName ?? undefined) : undefined,
       driver: runtime.driver,
       preferredName: runtime.preferredName,
       sources: capabilities.sources,
@@ -293,7 +299,9 @@ export class ScannerService {
     };
   }
 
-  async interactiveScan(input: InteractiveScanInput): Promise<InteractiveScanResult> {
+  async interactiveScan(
+    input: InteractiveScanInput,
+  ): Promise<InteractiveScanResult> {
     const { source, color, dpi } = input;
 
     const runtime = getScannerStatus();
@@ -354,7 +362,9 @@ export class ScannerService {
     };
   }
 
-  async chargeSoftCopy(input: SoftCopyChargeInput): Promise<SoftCopyChargeResult> {
+  async chargeSoftCopy(
+    input: SoftCopyChargeInput,
+  ): Promise<SoftCopyChargeResult> {
     const { filename, io } = input;
 
     const sourcePath = path.resolve('uploads', 'scans', filename);
@@ -552,7 +562,9 @@ export class ScannerService {
     return link;
   }
 
-  resolveDownload(token: string): { filePath: string; filename: string } | null {
+  resolveDownload(
+    token: string,
+  ): { filePath: string; filename: string } | null {
     const session = resolveScanDownload(token);
     if (!session) return null;
     return { filePath: session.filePath, filename: session.filename };
@@ -676,9 +688,13 @@ export class ScannerService {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(`[SCAN-PREVIEW] ✗ Preview scan failed: ${message}`);
 
-      void adminService.appendAdminLog('scan_preview_failed', 'Preview scan failed.', {
-        error: message,
-      });
+      void adminService.appendAdminLog(
+        'scan_preview_failed',
+        'Preview scan failed.',
+        {
+          error: message,
+        },
+      );
 
       return {
         detected: false,
@@ -694,7 +710,9 @@ export class ScannerService {
     return absPath;
   }
 
-  async releaseScanFileByToken(releaseToken: string): Promise<ScanFileReleaseResult> {
+  async releaseScanFileByToken(
+    releaseToken: string,
+  ): Promise<ScanFileReleaseResult> {
     const token = typeof releaseToken === 'string' ? releaseToken.trim() : '';
     if (!token) {
       throw new Error('Invalid release token.');
@@ -719,13 +737,24 @@ export class ScannerService {
     }
 
     try {
-      const result = await detectPdfColorContent(absPath);
+      const result = await analyzeDocument({
+        filePath: absPath,
+        filename: filename,
+        contentType: this.getContentType(
+          path.basename(filename).slice(1).toLowerCase(),
+        ), // Scans are usually PDFs in this system
+      });
+
+      const firstPage = result.pages[0];
       return {
-        hasColor: result.hasColor,
-        isGrayscale: !result.hasColor,
-        sampledPages: result.sampledPages,
+        hasColor: result.colorPages > 0,
+        isGrayscale: result.colorPages === 0,
+        sampledPages: result.pageCount,
+        coverage: firstPage?.coverage,
+        classification: firstPage?.classification,
       };
-    } catch {
+    } catch (error) {
+      console.error('[scanner-service] Analysis failed:', error);
       return { hasColor: true, isGrayscale: false, sampledPages: 0 };
     }
   }

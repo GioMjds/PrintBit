@@ -21,12 +21,14 @@ export interface DocumentPageAnalysis {
   index: number;
   isColor: boolean;
   coverage?: number;
+  contentCoverage?: number;
   classification?: 'blank' | 'bw' | 'partial' | 'full_color';
   isBlank?: boolean;
   fallbackReasonFlags?: string[];
 }
 
 export interface DocumentAnalysis {
+  analysisVersion?: number;
   fileType:
     | 'pdf'
     | 'docx'
@@ -59,6 +61,7 @@ export interface UploadedDocument {
   analysisStatus?: 'pending' | 'completed' | 'failed';
   analysisError?: string | null;
   analysisRequestedAt?: Date;
+  analysisVersion?: number;
 }
 
 export interface Session {
@@ -157,6 +160,14 @@ const DOCUMENT_ANALYSIS_FILE_TYPES = new Set<DocumentAnalysis['fileType']>([
   'unknown',
 ]);
 
+function isMissingFileError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  return (error as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
 export class SessionStore {
   private readonly sessions = new Map<string, Session>();
 
@@ -171,7 +182,8 @@ export class SessionStore {
   constructor(uploadDir = 'uploads', options?: { expiryEnabled?: boolean }) {
     this.uploadDir = uploadDir;
     fs.mkdirSync(uploadDir, { recursive: true });
-    this.expiryEnabled = options?.expiryEnabled ?? DEFAULT_SESSION_EXPIRY_ENABLED;
+    this.expiryEnabled =
+      options?.expiryEnabled ?? DEFAULT_SESSION_EXPIRY_ENABLED;
     this.restorePersistedSessions();
     if (this.expiryEnabled) {
       this.cleanupTimer = setInterval(
@@ -422,6 +434,7 @@ export class SessionStore {
     };
 
     target.analysis = stamped;
+    target.analysisVersion = stamped.analysisVersion ?? 0;
     target.analysisStatus = 'completed';
     target.analysisError = null;
     if (!target.analysisRequestedAt) {
@@ -429,6 +442,7 @@ export class SessionStore {
     }
     if (session.document?.documentId === documentId) {
       session.document.analysis = stamped;
+      session.document.analysisVersion = stamped.analysisVersion ?? 0;
       session.document.analysisStatus = 'completed';
       session.document.analysisError = null;
       if (!session.document.analysisRequestedAt) {
@@ -712,6 +726,7 @@ export class SessionStore {
       filePath: entry.filePath,
       analysisStatus: entry.analysisStatus,
       analysisError: entry.analysisError,
+      analysisVersion: entry.analysisVersion,
     };
     if (entry.analysisRequestedAt) {
       const parsedRequestedAt = new Date(entry.analysisRequestedAt);
@@ -760,12 +775,15 @@ export class SessionStore {
       throw new Error(
         `Invalid analysis JSON for ${sessionId}/${documentId}: ${
           error instanceof Error ? error.message : String(error)
-        }`, { cause: error },
+        }`,
+        { cause: error },
       );
     }
 
     if (typeof parsed !== 'object' || parsed === null) {
-      throw new Error(`Malformed analysis object for ${sessionId}/${documentId}`);
+      throw new Error(
+        `Malformed analysis object for ${sessionId}/${documentId}`,
+      );
     }
     const candidate = parsed as Record<string, unknown>;
     const analyzedAtRaw = candidate.analyzedAt;
@@ -797,7 +815,11 @@ export class SessionStore {
         `Malformed persisted analysis payload for ${sessionId}/${documentId}`,
       );
     }
-    if (!DOCUMENT_ANALYSIS_FILE_TYPES.has(candidate.fileType as DocumentAnalysis['fileType'])) {
+    if (
+      !DOCUMENT_ANALYSIS_FILE_TYPES.has(
+        candidate.fileType as DocumentAnalysis['fileType'],
+      )
+    ) {
       throw new Error(
         `Invalid fileType in persisted analysis for ${sessionId}/${documentId}`,
       );
@@ -834,7 +856,17 @@ export class SessionStore {
         Number.isFinite(pageCandidate.coverage)
           ? Math.max(0, Math.min(1, pageCandidate.coverage))
           : undefined;
-      const classification: 'blank' | 'bw' | 'partial' | 'full_color' | undefined =
+      const contentCoverage =
+        typeof pageCandidate.contentCoverage === 'number' &&
+        Number.isFinite(pageCandidate.contentCoverage)
+          ? Math.max(0, Math.min(1, pageCandidate.contentCoverage))
+          : undefined;
+      const classification:
+        | 'blank'
+        | 'bw'
+        | 'partial'
+        | 'full_color'
+        | undefined =
         pageCandidate.classification === 'blank' ||
         pageCandidate.classification === 'bw' ||
         pageCandidate.classification === 'partial' ||
@@ -849,6 +881,7 @@ export class SessionStore {
         index: Math.floor(pageCandidate.index),
         isColor: pageCandidate.isColor,
         ...(coverage !== undefined ? { coverage } : {}),
+        ...(contentCoverage !== undefined ? { contentCoverage } : {}),
         ...(classification ? { classification } : {}),
         ...(isBlank !== undefined ? { isBlank } : {}),
         ...(fallbackReasonFlags
@@ -865,6 +898,12 @@ export class SessionStore {
         ? confidenceRaw
         : 'low';
 
+    const analysisVersion =
+      typeof candidate.analysisVersion === 'number' &&
+      Number.isFinite(candidate.analysisVersion)
+        ? Math.max(0, Math.floor(candidate.analysisVersion))
+        : 0;
+
     return {
       fileType: candidate.fileType as DocumentAnalysis['fileType'],
       pageCount: Math.floor(candidate.pageCount),
@@ -874,6 +913,7 @@ export class SessionStore {
       totalPages: Math.floor(candidate.totalPages),
       confidence,
       analyzedAt,
+      analysisVersion,
     };
   }
 
@@ -917,20 +957,55 @@ export class SessionStore {
             ? 'failed'
             : 'pending',
       analysisError:
-        typeof document.analysisError === 'string' && document.analysisError.trim()
+        typeof document.analysisError === 'string' &&
+        document.analysisError.trim()
           ? document.analysisError.trim()
           : null,
       analysisRequestedAt: document.analysisRequestedAt?.toISOString() ?? null,
+      analysisVersion:
+        typeof document.analysisVersion === 'number' &&
+        Number.isFinite(document.analysisVersion)
+          ? Math.max(0, Math.floor(document.analysisVersion))
+          : typeof document.analysis?.analysisVersion === 'number' &&
+              Number.isFinite(document.analysis.analysisVersion)
+            ? Math.max(0, Math.floor(document.analysis.analysisVersion))
+            : 0,
     };
   }
 
   private persistSessionSnapshot(session: Session): void {
     const documents =
       session.documents ?? (session.document ? [session.document] : []);
-    wirelessSessionStore.saveSessionSnapshot({
-      session: this.toStorageSession(session),
-      documents: documents.map((document) => this.toStorageDocument(document)),
-    });
+
+    try {
+      wirelessSessionStore.saveSessionSnapshot({
+        session: this.toStorageSession(session),
+        documents: documents.map((document) =>
+          this.toStorageDocument(document),
+        ),
+      });
+    } catch (error) {
+      const sqliteError = error as { code?: unknown; errno?: unknown };
+      console.error(
+        '[session-store] Failed to persist session snapshot (wireless_session_documents insert/upsert).',
+        {
+          sessionId: session.sessionId,
+          token: session.token,
+          status: session.status,
+          documentCount: documents.length,
+          error: error instanceof Error ? error.message : String(error),
+          code:
+            typeof sqliteError.code === 'string'
+              ? sqliteError.code
+              : (sqliteError.code ?? null),
+          errno:
+            typeof sqliteError.errno === 'number'
+              ? sqliteError.errno
+              : (sqliteError.errno ?? null),
+        },
+      );
+      throw error;
+    }
   }
 
   private withFreshUrl(session: Session, publicBaseUrl: URL): Session {
@@ -1063,9 +1138,7 @@ export class SessionStore {
   }
 
   /** Cancel a session immediately and delete all uploaded files. */
-  async cancelSession(
-    sessionId: string,
-  ): Promise<{
+  async cancelSession(sessionId: string): Promise<{
     success: boolean;
     deletedFileCount: number;
     errorCode?: 'SESSION_NOT_FOUND' | 'SESSION_PERSIST_FAILED';
@@ -1149,6 +1222,10 @@ export class SessionStore {
     }> = [];
     deletionResults.forEach((result, index) => {
       if (result.status === 'rejected') {
+        if (isMissingFileError(result.reason)) {
+          return;
+        }
+
         failedDeletes.push({
           filePath: docs[index]?.filePath,
           reason: result.reason,
@@ -1343,7 +1420,9 @@ function detectEsp32KioskAddress(): string | null {
   for (const interfaceName of Object.keys(interfaces)) {
     for (const iface of interfaces[interfaceName] ?? []) {
       if (iface.family !== 'IPv4' || iface.internal) continue;
-      if (Array.from(prefixes).some((prefix) => iface.address.startsWith(prefix))) {
+      if (
+        Array.from(prefixes).some((prefix) => iface.address.startsWith(prefix))
+      ) {
         return iface.address;
       }
       if (!privateFallback && isPrivateIpv4(iface.address)) {
@@ -1362,7 +1441,9 @@ function deriveEsp32SubnetPrefix(): string | null {
     const octets = hostname.split('.').map(Number);
     if (
       octets.length !== 4 ||
-      octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+      octets.some(
+        (octet) => !Number.isInteger(octet) || octet < 0 || octet > 255,
+      )
     ) {
       return null;
     }

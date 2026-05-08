@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import { finiteOr } from '@/utils';
+import { ANALYSIS_ALGORITHM_VERSION } from '@/services';
 import {
   clearLowDbImportMarker,
+  clearStalePricingAnalysisCache,
   importLowDbSnapshotIfNeeded,
   initSqliteStorage,
   migrateSchemaSnapshotToRuntimeState,
@@ -29,7 +31,11 @@ export type PricingEngineBlankPagePolicy =
   | 'charge_bw'
   | 'charge_color';
 export type PricingEngineRoundingMode = 'whole_peso_total_only';
-export type PricingEnginePageClassification = 'blank' | 'bw' | 'partial' | 'full_color';
+export type PricingEnginePageClassification =
+  | 'blank'
+  | 'bw'
+  | 'partial'
+  | 'full_color';
 
 export interface PricingEnginePaperProfile {
   baseBwPrice: number;
@@ -54,6 +60,19 @@ export interface PricingEngineSettings {
     longBond: PricingEnginePaperProfile;
   };
   thresholds: PricingEngineThresholds;
+  /**
+   * Multipliers for each decile (10% increments).
+   * Index 0 = 1-10%, Index 1 = 11-20%, ..., Index 9 = 91-100%
+   */
+  decileSurcharges?: number[];
+  /**
+   * Proximity threshold for "Smart Suggestions" (0.0 to 1.0).
+   */
+  suggestionThreshold?: number;
+  /**
+   * Pages classified as B/W at or below this coverage are treated as blank for pricing.
+   */
+  nearBlankBwMax?: number;
   colorMultiplier: number;
   blankPagePolicy: PricingEngineBlankPagePolicy;
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];
@@ -577,6 +596,9 @@ const DEFAULT_DATA: Schema = {
         fullColorMin: 0.6,
       },
       colorMultiplier: 15,
+      decileSurcharges: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+      suggestionThreshold: 0.02,
+      nearBlankBwMax: 0.08,
       blankPagePolicy: 'charge_zero',
       bulkDiscountTiers: [
         { minPages: 10, maxPages: 50, discountPerPage: 0.5 },
@@ -776,7 +798,8 @@ function normalizePricingEngineBulkDiscountTiers(
     const minPages = Math.max(1, Math.floor(finiteOr(candidate.minPages, 0)));
     const discountPerPage = Math.max(0, finiteOr(candidate.discountPerPage, 0));
     const maxPages =
-      typeof candidate.maxPages === 'number' && Number.isFinite(candidate.maxPages)
+      typeof candidate.maxPages === 'number' &&
+      Number.isFinite(candidate.maxPages)
         ? Math.max(minPages, Math.floor(candidate.maxPages))
         : undefined;
     normalized.push({
@@ -1436,6 +1459,34 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             bwMax,
             fullColorMin,
           },
+          decileSurcharges: Array.isArray(pricingEngine?.decileSurcharges)
+            ? Array.from({ length: 10 }, (_, i) =>
+                Math.max(
+                  0,
+                  Math.min(
+                    1,
+                    finiteOr(pricingEngine.decileSurcharges?.[i], 1.0),
+                  ),
+                ),
+              )
+            : undefined,
+          suggestionThreshold:
+            pricingEngine?.suggestionThreshold !== undefined
+              ? Math.max(
+                  0,
+                  Math.min(
+                    1,
+                    finiteOr(pricingEngine.suggestionThreshold, 0.02),
+                  ),
+                )
+              : undefined,
+          nearBlankBwMax:
+            pricingEngine?.nearBlankBwMax !== undefined
+              ? Math.max(
+                  0,
+                  Math.min(1, finiteOr(pricingEngine.nearBlankBwMax, 0.08)),
+                )
+              : undefined,
           colorMultiplier: Math.max(
             0,
             finiteOr(
@@ -1652,11 +1703,17 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         printerOverrides: Object.fromEntries(
           Object.entries(consumableEstimation?.printerOverrides ?? {})
             .map(([key, value]) => {
-              const normalizedKey = normalizeConsumableEstimationOverrideKey(key);
-              if (!normalizedKey || typeof value !== 'object' || value === null) {
+              const normalizedKey =
+                normalizeConsumableEstimationOverrideKey(key);
+              if (
+                !normalizedKey ||
+                typeof value !== 'object' ||
+                value === null
+              ) {
                 return null;
               }
-              const candidate = value as Partial<ConsumableEstimationCoefficients>;
+              const candidate =
+                value as Partial<ConsumableEstimationCoefficients>;
               return [
                 normalizedKey,
                 {
@@ -1671,7 +1728,10 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
                   colorMagenta:
                     candidate.colorMagenta === undefined
                       ? undefined
-                      : normalizeEstimatorCoefficient(candidate.colorMagenta, 0),
+                      : normalizeEstimatorCoefficient(
+                          candidate.colorMagenta,
+                          0,
+                        ),
                   colorYellow:
                     candidate.colorYellow === undefined
                       ? undefined
@@ -1949,7 +2009,6 @@ export async function initDB() {
   try {
     await db.read();
   } catch {
-    // If legacy file is empty/malformed, initialize with defaults.
     db.data = cloneDefaultData();
     await db.write();
     await migrateLegacyDbJsonToSqlite();
@@ -1966,6 +2025,8 @@ export async function initDB() {
   }
   await db.write();
   await migrateLegacyDbJsonToSqlite();
+
+  clearStalePricingAnalysisCache(ANALYSIS_ALGORITHM_VERSION);
 }
 
 // ── Balance mutex ─────────────────────────────────────────────────────────────

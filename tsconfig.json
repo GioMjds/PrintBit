@@ -1,11 +1,14 @@
 {
+  "include": ["src", "tests", "jest.config.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "dist",
     "strict": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "types": ["node", "jest"],
     "paths": {
       "@/*": ["./src/*"]
     }

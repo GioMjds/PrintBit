@@ -1,10 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import { isMainThread, workerData, parentPort } from 'node:worker_threads';
 import {
   COLOR_SATURATION_THRESHOLD,
   MAX_PIXELS_TO_SAMPLE,
 } from '@/config/document-analysis.config';
+
+/**
+ * Monotonically-increasing version for the document analysis algorithm.
+ * Bump this whenever the analysis logic changes in a way that could produce
+ * different results for the same file (e.g. blank-page detection fixes,
+ * RGB-spread threshold changes, white-paint guard additions, etc.).
+ *
+ * Consumers (wireless service, pricing cache) compare stored analysisVersion
+ * against this constant and treat stale results as pending re-analysis.
+ *
+ * History:
+ *   1 — initial operator-list analysis
+ *   2 — colour-op / content-op separation; white-paint guard (blank page fix)
+ *   3 — persist content coverage separately from color coverage
+ */
+export const ANALYSIS_ALGORITHM_VERSION = 3;
 
 export type AnalyzedFileType =
   | 'pdf'
@@ -21,6 +38,12 @@ export interface PageAnalysis {
   index: number;
   isColor: boolean;
   coverage?: number;
+  /**
+   * Ratio of all visible non-white content on the page.
+   * `coverage` tracks color coverage for pricing tiers; this field is used
+   * to decide whether a B/W page is genuinely near-blank.
+   */
+  contentCoverage?: number;
   classification?: 'blank' | 'bw' | 'partial' | 'full_color';
   isBlank?: boolean;
   fallbackReasonFlags?: string[];
@@ -36,6 +59,11 @@ export interface DocumentAnalysisResult {
   bwPages: number;
   totalPages: number;
   confidence?: AnalysisConfidence;
+  /**
+   * Version of the analysis algorithm that produced this result.
+   * Compare against ANALYSIS_ALGORITHM_VERSION to detect stale cache entries.
+   */
+  analysisVersion: number;
 }
 
 interface AnalyzeDocumentInput {
@@ -65,6 +93,17 @@ interface PdfOps {
   paintInlineImageXObject?: number;
   paintImageMaskXObject?: number;
   paintJpegXObject?: number;
+  paintFormXObject?: number;
+  // Path drawing operators — these are what actually commit ink to the page
+  fill?: number;
+  eoFill?: number;
+  stroke?: number;
+  closeStroke?: number;
+  fillStroke?: number;
+  eoFillStroke?: number;
+  closeFillStroke?: number;
+  closeEOFillStroke?: number;
+  shadingFill?: number;
 }
 
 function resolveFileType(
@@ -89,7 +128,8 @@ function resolveFileType(
   ) {
     return 'xlsx';
   }
-  if (contentType === 'application/vnd.ms-excel' || ext === '.xls') return 'xls';
+  if (contentType === 'application/vnd.ms-excel' || ext === '.xls')
+    return 'xls';
   if (
     contentType ===
       'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
@@ -121,30 +161,49 @@ function isColorPixel(r: number, g: number, b: number): boolean {
   return saturation > COLOR_SATURATION_THRESHOLD;
 }
 
-function computeFrameCoverage(frame: RgbaFrame): number {
+/**
+ * Checks if a pixel has any content (non-white/non-transparent).
+ */
+function isContentPixel(r: number, g: number, b: number, a: number): boolean {
+  if (a < 8) return false; // Transparent
+  // Check if it's not white (with some tolerance)
+  return r < 250 || g < 250 || b < 250;
+}
+
+interface CoverageMetrics {
+  colorCoverage: number;
+  contentCoverage: number;
+}
+
+function computeFrameMetrics(frame: RgbaFrame): CoverageMetrics {
   const totalPixels = frame.width * frame.height;
-  if (totalPixels === 0) return 0;
+  if (totalPixels === 0) return { colorCoverage: 0, contentCoverage: 0 };
 
   const step = Math.max(1, Math.ceil(totalPixels / MAX_PIXELS_TO_SAMPLE));
   let colorPixels = 0;
+  let contentPixels = 0;
   let sampledPixels = 0;
 
   for (let pixelIndex = 0; pixelIndex < totalPixels; pixelIndex += step) {
     const offset = pixelIndex * 4;
-    const alpha = frame.data[offset + 3];
-    if (alpha < 8) continue;
-
-    sampledPixels += 1;
     const r = frame.data[offset];
     const g = frame.data[offset + 1];
     const b = frame.data[offset + 2];
+    const a = frame.data[offset + 3];
 
-    if (isColorPixel(r, g, b)) {
-      colorPixels += 1;
+    sampledPixels += 1;
+    if (isContentPixel(r, g, b, a)) {
+      contentPixels += 1;
+      if (isColorPixel(r, g, b)) {
+        colorPixels += 1;
+      }
     }
   }
 
-  return sampledPixels === 0 ? 0 : colorPixels / sampledPixels;
+  return {
+    colorCoverage: sampledPixels === 0 ? 0 : colorPixels / sampledPixels,
+    contentCoverage: sampledPixels === 0 ? 0 : contentPixels / sampledPixels,
+  };
 }
 
 async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
@@ -152,15 +211,27 @@ async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const coverage = computeFrameCoverage({ data, width: info.width, height: info.height });
-  const isColor = coverage > 0.05; // Threshold: > 5% color pixels = colored page
+  const metrics = computeFrameMetrics({
+    data,
+    width: info.width,
+    height: info.height,
+  });
+  const isBlank = metrics.contentCoverage < 0.001;
+  const isColor = !isBlank && metrics.colorCoverage > 0.05; // Threshold: > 5% color pixels = colored page
 
   const page: PageAnalysis = {
     index: 1,
     isColor,
-    coverage,
-    classification: isColor ? (coverage > 0.95 ? 'full_color' : 'partial') : 'bw',
-    isBlank: coverage === 0,
+    coverage: metrics.colorCoverage,
+    contentCoverage: metrics.contentCoverage,
+    classification: isBlank
+      ? 'blank'
+      : isColor
+        ? metrics.colorCoverage > 0.95
+          ? 'full_color'
+          : 'partial'
+        : 'bw',
+    isBlank,
   };
 
   return {
@@ -171,6 +242,7 @@ async function analyzeImage(filePath: string): Promise<DocumentAnalysisResult> {
     bwPages: page.isColor ? 0 : 1,
     totalPages: 1,
     confidence: 'high',
+    analysisVersion: ANALYSIS_ALGORITHM_VERSION,
   };
 }
 
@@ -178,9 +250,32 @@ async function analyzePdfFile(
   pdfPath: string,
   fileType: AnalyzedFileType,
 ): Promise<DocumentAnalysisResult> {
-  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs'));
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const ops = (pdfjs.OPS ?? {}) as PdfOps;
   const data = new Uint8Array(await fs.promises.readFile(pdfPath));
+
+  const pdfjsAllOps = (pdfjs.OPS ?? {}) as Record<string, number>;
+  const textRenderOps = new Set<number>(
+    [
+      'showText',
+      'showSpacedText',
+      'nextLineShowText',
+      'nextLineSetSpacingShowText',
+    ]
+      .map((k) => pdfjsAllOps[k])
+      .filter((v): v is number => typeof v === 'number'),
+  );
+
+  const textStructuralOps = new Set<number>(
+    [
+      'beginText', // BT
+      'endText', // ET
+      'nextLine', // T* — cursor move only
+      'moveText', // Td/TD — cursor move only
+    ]
+      .map((k) => pdfjsAllOps[k])
+      .filter((v): v is number => typeof v === 'number'),
+  );
   const doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
 
   const pages: PageAnalysis[] = [];
@@ -193,9 +288,15 @@ async function analyzePdfFile(
       let isColor = false;
       let classification: 'blank' | 'bw' | 'partial' | 'full_color' = 'bw';
       let isBlank = true;
+
       try {
         const opList = (await page.getOperatorList()) as PdfOperatorList;
-        const analysis = analyzePageOperatorList(opList, ops);
+        const analysis = analyzePageOperatorList(
+          opList,
+          ops,
+          textRenderOps,
+          textStructuralOps,
+        );
         coverage = analysis.coverage;
         isColor = analysis.hasColor;
         isBlank = analysis.isBlank;
@@ -217,9 +318,13 @@ async function analyzePdfFile(
         index: pageNum,
         isColor,
         coverage,
+        contentCoverage: coverage,
         classification,
         isBlank,
-        fallbackReasonFlags: fallbackPageCount > 0 ? ['operator_scan_failed_default_color'] : undefined,
+        fallbackReasonFlags:
+          fallbackPageCount > 0
+            ? ['operator_scan_failed_default_color']
+            : undefined,
       });
     }
   } finally {
@@ -243,6 +348,7 @@ async function analyzePdfFile(
     bwPages: totalPages - colorPages,
     totalPages,
     confidence,
+    analysisVersion: ANALYSIS_ALGORITHM_VERSION,
   };
 }
 
@@ -292,6 +398,8 @@ interface PageAnalysisMetrics {
 function analyzePageOperatorList(
   opList: PdfOperatorList,
   ops: PdfOps,
+  textRenderOps: Set<number> = new Set(),
+  textStructuralOps: Set<number> = new Set(),
 ): PageAnalysisMetrics {
   const imagePaintOps = new Set(
     [
@@ -302,52 +410,128 @@ function analyzePageOperatorList(
     ].filter((op): op is number => typeof op === 'number'),
   );
 
+  // Path-drawing ops commit ink to the page. Color-setting ops (setFillRGBColor
+  // etc.) only mutate graphics state and must NOT be treated as content on their
+  // own — a blank page can legitimately contain color-state ops (e.g. setting a
+  // white fill) without rendering anything visible.
+  const pathDrawingOps = new Set(
+    [
+      ops.fill,
+      ops.eoFill,
+      ops.stroke,
+      ops.closeStroke,
+      ops.fillStroke,
+      ops.eoFillStroke,
+      ops.closeFillStroke,
+      ops.closeEOFillStroke,
+      ops.shadingFill,
+    ].filter((op): op is number => typeof op === 'number'),
+  );
+
   let hasColor = false;
   let hasImages = false;
   let hasContent = false;
-  let colorOps = 0;
+
+  // Tracks the most-recently-set color so we can evaluate it when a draw op fires.
+  let pendingRgb: [number, number, number] | null = null;
+  let pendingCmyk: [number, number, number, number] | null = null;
+
+  let contentOpsCount = 0;
+  let totalNonStructuralOps = 0;
 
   for (let i = 0; i < opList.fnArray.length; i += 1) {
     const op = opList.fnArray[i];
-    const args = opList.argsArray[i];
+    if (textStructuralOps.has(op)) continue;
 
-    if (imagePaintOps.has(op)) {
-      hasImages = true;
-      hasContent = true;
-      hasColor = true;
-      colorOps += 1;
-    }
+    totalNonStructuralOps += 1;
 
+    // ── Color-state ops: record color, but do NOT mark page as having content ──
     if (op === ops.setFillRGBColor || op === ops.setStrokeRGBColor) {
-      const rgb = parseRgbArgs(args);
-      if (!rgb) continue;
-      const [r, g, b] = rgb;
-      const spread = Math.max(r, g, b) - Math.min(r, g, b);
-      if (spread > 10) {
-        hasColor = true;
-        colorOps += 1;
+      pendingRgb = parseRgbArgs(opList.argsArray[i]);
+      continue;
+    }
+    if (op === ops.setFillCMYKColor || op === ops.setStrokeCMYKColor) {
+      const args = opList.argsArray[i];
+      if (Array.isArray(args) && args.length >= 4) {
+        pendingCmyk = args as [number, number, number, number];
       }
-      hasContent = true;
+      continue;
     }
 
-    if (op === ops.setFillCMYKColor || op === ops.setStrokeCMYKColor) {
-      if (!Array.isArray(args) || args.length < 4) continue;
-      const [c, m, y] = args as number[];
-      if (c > 0.01 || m > 0.01 || y > 0.01) {
-        hasColor = true;
-        colorOps += 1;
+    // ── Actual drawing ops: images, text renders, and path fills/strokes ──────
+    const isDrawingOp =
+      op === ops.paintImageXObject ||
+      op === ops.paintInlineImageXObject ||
+      op === ops.paintImageMaskXObject ||
+      op === ops.paintJpegXObject ||
+      op === ops.paintFormXObject ||
+      pathDrawingOps.has(op) ||
+      textRenderOps.has(op);
+
+    if (isDrawingOp) {
+      contentOpsCount += 1;
+
+      // ── White-paint guard ────────────────────────────────────────────────
+      // Painting with white on a white page is invisible.  Many PDF generators
+      // emit a white fill rectangle as a page background — this should NOT mark
+      // the page as having content.  Images and text are always counted (they
+      // have their own colour data / are intentional even if "invisible").
+      const isImageOp = imagePaintOps.has(op) || op === ops.paintFormXObject;
+      const isTextOp = textRenderOps.has(op);
+
+      const isWhitePaint =
+        !isImageOp &&
+        !isTextOp &&
+        // RGB white: all channels above 245
+        ((pendingRgb !== null &&
+          pendingRgb[0] > 245 &&
+          pendingRgb[1] > 245 &&
+          pendingRgb[2] > 245) ||
+          // CMYK white: C=M=Y=K=0 (no ink at all)
+          (pendingRgb === null &&
+            pendingCmyk !== null &&
+            pendingCmyk[0] < 0.01 &&
+            pendingCmyk[1] < 0.01 &&
+            pendingCmyk[2] < 0.01 &&
+            pendingCmyk[3] < 0.01));
+
+      // A path drawn with no explicit colour is in the current graphics state
+      // (defaulting to black in PDF).  Count it as real content.
+      const isDefaultColorPaint =
+        !isImageOp && !isTextOp && pendingRgb === null && pendingCmyk === null;
+
+      if (!isWhitePaint) {
+        hasContent = true;
       }
-      hasContent = true;
+
+      // ── Color detection ──────────────────────────────────────────────────
+      if (isImageOp) {
+        hasImages = true;
+        hasColor = true;
+      } else if (!isWhitePaint) {
+        if (pendingRgb && !isDefaultColorPaint) {
+          const [r, g, b] = pendingRgb;
+          if (Math.max(r, g, b) - Math.min(r, g, b) > 15) {
+            hasColor = true;
+          }
+        } else if (pendingCmyk) {
+          const [c, m, y] = pendingCmyk;
+          if (c > 0.05 || m > 0.05 || y > 0.05) {
+            hasColor = true;
+          }
+        }
+      }
+
+      pendingRgb = null;
+      pendingCmyk = null;
     }
   }
 
-  // Estimate coverage: total color operators as a ratio of total ops
-  const estimatedCoverage =
-    hasContent && opList.fnArray.length > 0
-      ? Math.min(1.0, colorOps / opList.fnArray.length)
-      : 0;
-
   const isBlank = !hasContent;
+  const estimatedCoverage =
+    !isBlank && totalNonStructuralOps > 0
+      ? Math.min(1.0, contentOpsCount / totalNonStructuralOps)
+      : 0;
   let classification: 'blank' | 'bw' | 'partial' | 'full_color';
   if (isBlank) {
     classification = 'blank';
@@ -367,20 +551,18 @@ function analyzePageOperatorList(
   };
 }
 
-export async function analyzeDocument(
+/**
+ * Direct implementation of document analysis, used within worker threads or as fallback.
+ */
+async function analyzeDocumentDirect(
   input: AnalyzeDocumentInput,
 ): Promise<DocumentAnalysisResult> {
   const contentType = (input.contentType ?? '').toLowerCase();
   const filename = input.filename ?? path.basename(input.filePath);
   const fileType = resolveFileType(contentType, filename);
 
-  if (fileType === 'image') {
-    return analyzeImage(input.filePath);
-  }
-
-  if (fileType === 'pdf') {
-    return analyzePdfFile(input.filePath, fileType);
-  }
+  if (fileType === 'image') return analyzeImage(input.filePath);
+  if (fileType === 'pdf') return analyzePdfFile(input.filePath, fileType);
 
   if (
     fileType === 'docx' ||
@@ -401,4 +583,30 @@ export async function analyzeDocument(
   }
 
   throw new Error('Unsupported file type for analysis.');
+}
+
+/**
+ * Public entry point for document analysis. Spawns a worker thread for heavy tasks
+ * (PDF/Image) to ensure the main event loop remains responsive.
+ */
+export async function analyzeDocument(
+  input: AnalyzeDocumentInput,
+): Promise<DocumentAnalysisResult> {
+  if (!isMainThread) return analyzeDocumentDirect(input);
+  return analyzeDocumentDirect(input);
+}
+
+// Worker thread entry point
+if (!isMainThread && parentPort) {
+  (async () => {
+    try {
+      const result = await analyzeDocumentDirect(workerData);
+      parentPort!.postMessage({ type: 'success', result });
+    } catch (error) {
+      parentPort!.postMessage({
+        type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
 }

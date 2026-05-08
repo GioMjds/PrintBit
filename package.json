@@ -12,9 +12,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "dev": "ts-node-dev --respawn --ignore-watch uploads --ignore-watch printbit.sqlite --ignore-watch printbit.sqlite-shm --ignore-watch printbit.sqlite-wal -r tsconfig-paths/register src/server.ts",
+    "dev": "tsx watch src/server.ts",
     "build": "node scripts/build-client.js && node scripts/build-server.js",
-    "start": "pnpm run ensure-network && node dist/server.js",
+    "start": "node dist/server.js",
     "db:reset": "node ./scripts/reset-db.js",
     "kiosk": "node ./scripts/launch-kiosk.js",
     "ensure-network": "powershell -ExecutionPolicy Bypass -File .\\scripts\\ensure-esp32-network.ps1",
@@ -86,6 +86,7 @@
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.59.1"
   }
