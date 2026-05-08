@@ -477,8 +477,12 @@ function updatePageCoverageMeter(pageNum: number): void {
   const pricedPage = currentPrintQuote?.pricingEngine?.perPageBreakdown?.find(
     (p) => p.index === pageIndex,
   );
-  const isPricedAsBlank = pricedPage?.classification === 'blank';
-  const displayCoverage = isPricedAsBlank ? 0 : page.coverage;
+  const effectiveClassification =
+    pricedPage?.classification ?? page.classification;
+  const isPricedAsBlank = effectiveClassification === 'blank';
+  const displayCoverage = isPricedAsBlank
+    ? 0
+    : (pricedPage?.coverage ?? page.coverage);
   const percent = Math.round(displayCoverage * 100);
 
   coverageMeter.style.display = 'flex';
@@ -488,9 +492,9 @@ function updatePageCoverageMeter(pageNum: number): void {
   if (tierBadge) {
     if (isPricedAsBlank) {
       tierBadge.textContent = 'Blank (No Charge)';
-    } else if (page.classification === 'bw' || !page.isColor) {
+    } else if (effectiveClassification === 'bw') {
       tierBadge.textContent = 'B&W Rate';
-    } else if (page.classification === 'full_color') {
+    } else if (effectiveClassification === 'full_color') {
       tierBadge.textContent = 'Full Color Rate';
     } else {
       const decile = Math.max(1, Math.ceil(displayCoverage * 10));

@@ -21,6 +21,7 @@ export interface DocumentPageAnalysis {
   index: number;
   isColor: boolean;
   coverage?: number;
+  contentCoverage?: number;
   classification?: 'blank' | 'bw' | 'partial' | 'full_color';
   isBlank?: boolean;
   fallbackReasonFlags?: string[];
@@ -855,6 +856,11 @@ export class SessionStore {
         Number.isFinite(pageCandidate.coverage)
           ? Math.max(0, Math.min(1, pageCandidate.coverage))
           : undefined;
+      const contentCoverage =
+        typeof pageCandidate.contentCoverage === 'number' &&
+        Number.isFinite(pageCandidate.contentCoverage)
+          ? Math.max(0, Math.min(1, pageCandidate.contentCoverage))
+          : undefined;
       const classification:
         | 'blank'
         | 'bw'
@@ -875,6 +881,7 @@ export class SessionStore {
         index: Math.floor(pageCandidate.index),
         isColor: pageCandidate.isColor,
         ...(coverage !== undefined ? { coverage } : {}),
+        ...(contentCoverage !== undefined ? { contentCoverage } : {}),
         ...(classification ? { classification } : {}),
         ...(isBlank !== undefined ? { isBlank } : {}),
         ...(fallbackReasonFlags

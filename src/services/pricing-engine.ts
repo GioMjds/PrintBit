@@ -52,16 +52,42 @@ function normalizeNearBlankClassification(
   classification: PageClassification,
   coverage: number,
   nearBlankBwMax: number,
+  explicitBlank: boolean,
+  contentCoverage?: number,
 ): PageClassification {
-  if (classification === 'bw' && coverage <= nearBlankBwMax) {
+  if (explicitBlank) return 'blank';
+
+  if (classification !== 'bw') return classification;
+
+  // `coverage` is color coverage. For B/W pages this is often exactly 0 even
+  // when black text is clearly present, so do not use color coverage alone to
+  // waive the page. Only apply the near-blank policy when the analyzer provides
+  // an explicit all-content coverage signal, or when the legacy coverage is
+  // non-zero.
+  const bwCoverageForBlankPolicy =
+    typeof contentCoverage === 'number' &&
+    Number.isFinite(contentCoverage) &&
+    contentCoverage > 0
+      ? contentCoverage
+      : coverage > 0
+        ? coverage
+        : undefined;
+
+  if (
+    bwCoverageForBlankPolicy !== undefined &&
+    bwCoverageForBlankPolicy <= nearBlankBwMax
+  ) {
     return 'blank';
   }
+
   return classification;
 }
 
 interface ExtractedPageSignals {
   coverage: number;
   isBlank: boolean;
+  isColor: boolean;
+  contentCoverage?: number;
   classification?: PageClassification;
 }
 
@@ -80,6 +106,7 @@ function extractPageSignals(
     return {
       coverage: 0,
       isBlank: true,
+      isColor: false,
     };
   }
   const page = analysis.pages.find((p) => p.index === pageIndex);
@@ -87,6 +114,7 @@ function extractPageSignals(
     return {
       coverage: 0,
       isBlank: true,
+      isColor: false,
     };
   }
 
@@ -112,9 +140,17 @@ function extractPageSignals(
       ? page.isBlank
       : classification === 'blank';
 
+  const rawContentCoverage = page.contentCoverage;
+  const contentCoverage =
+    typeof rawContentCoverage === 'number' && Number.isFinite(rawContentCoverage)
+      ? Math.max(0, Math.min(1, rawContentCoverage))
+      : undefined;
+
   return {
     coverage,
     isBlank,
+    isColor: Boolean(page.isColor),
+    contentCoverage,
     classification,
   };
 }
@@ -269,11 +305,17 @@ export function computeJobPricing(input: {
   for (const pageIndex of input.selectedPageIndices) {
     const pageSignals = extractPageSignals(input.analysis, pageIndex);
     const coverage = pageSignals.coverage;
+    const thresholdClassification = pageSignals.isBlank
+      ? 'blank'
+      : pageSignals.isColor
+        ? classifyPageCoverage(coverage, false, config.thresholds)
+        : 'bw';
     let classification = normalizeNearBlankClassification(
-      pageSignals.classification ??
-        classifyPageCoverage(coverage, pageSignals.isBlank, config.thresholds),
+      thresholdClassification,
       coverage,
       config.nearBlankBwMax,
+      pageSignals.isBlank,
+      pageSignals.contentCoverage,
     );
 
     // If user requested grayscale, force all non-blank pages to 'bw'

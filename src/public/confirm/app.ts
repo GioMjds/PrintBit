@@ -49,6 +49,8 @@ type SocketLike = {
   emit: (event: string, ...args: unknown[]) => void;
 };
 
+type ReceiptLinkPayload = Record<string, unknown>;
+
 let socket: SocketLike | null = null;
 
 type PageRangeSelection =
@@ -1059,8 +1061,11 @@ thankYouDoneBtn?.addEventListener('click', () => {
 
 const ioFactory = (window as any).io;
 if (typeof ioFactory === 'function') {
-  socket = ioFactory();
-  socket.on('balance', (amount: number) => updateBalanceUI(amount));
+  const connectedSocket = ioFactory() as SocketLike;
+  socket = connectedSocket;
+  connectedSocket.on('balance', (amount: unknown) => {
+    if (typeof amount === 'number') updateBalanceUI(amount);
+  });
 }
 
 async function loadPrinterStatus(): Promise<void> {
