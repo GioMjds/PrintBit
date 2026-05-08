@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <link rel="stylesheet" href="/globals.css" />
     <title>Configure · PrintBit</title>
     <link rel="stylesheet" href="/config/styles.css" />
@@ -14,11 +17,12 @@
       <div class="bg-circle bg-circle--3"></div>
     </div>
 
+    <!-- ── Main shell: preview + settings side-by-side, above sticky footer ── -->
     <div class="page-shell">
       <div class="config-layout" role="main">
         <!-- ── LEFT: full-height document preview ── -->
         <section class="preview-col" aria-label="Document preview">
-          <!-- Slim toolbar: eyebrow + zoom + status -->
+          <!-- Slim eyebrow header -->
           <div class="preview-panel__header">
             <span class="preview-panel__eyebrow">
               <svg
@@ -35,19 +39,23 @@
               </svg>
               Live Preview
             </span>
-
             <span class="preview-status" id="previewHint" aria-live="polite"
               >—</span
             >
           </div>
 
-          <!-- Paper viewport: fills remaining height -->
+          <!-- Paper viewport: fills remaining height, relative for floating overlays -->
           <div class="paper-viewport" id="paperViewport">
             <div class="paper-sheet" id="paperSheet">
               <!-- PDF.js canvas -->
               <canvas id="previewCanvas" class="paper-canvas"></canvas>
+
               <!-- Image (JPG/PNG) -->
-              <div id="previewImgStage" class="paper-img-stage" style="display: none">
+              <div
+                id="previewImgStage"
+                class="paper-img-stage"
+                style="display: none"
+              >
                 <img
                   id="previewImg"
                   class="paper-img"
@@ -55,6 +63,7 @@
                   style="display: none"
                 />
               </div>
+
               <!-- Placeholder / error -->
               <div class="paper-placeholder" id="paperPlaceholder">
                 <div class="paper-placeholder__icon" aria-hidden="true">
@@ -105,10 +114,12 @@
                   Loading…
                 </p>
               </div>
+
               <!-- Spinner overlay -->
               <div class="paper-loading" id="paperLoading">
                 <div class="paper-loading__spinner"></div>
               </div>
+
               <!-- HTML document preview (Word/Excel) -->
               <iframe
                 id="previewFrame"
@@ -118,81 +129,73 @@
                 style="display: none"
               ></iframe>
             </div>
-          </div>
 
-          <!-- Page navigation -->
-          <div
-            class="preview-controls"
-            id="previewControls"
-            style="display: none"
-            role="toolbar"
-            aria-label="Page navigation"
-          >
-            <!-- (existing pager buttons ...) -->
-            <button
-              class="pager-btn"
-              id="pagePrev"
-              aria-label="Previous page"
-              disabled
+            <!-- ── FLOATING: Coverage chip (top-right of viewport) ── -->
+            <div
+              id="coverageMeter"
+              class="coverage-chip"
+              style="display: none"
+              aria-live="polite"
             >
-              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </button>
-            <span class="pager-label" id="pagerLabel" aria-live="polite"
-              >1 / 1</span
-            >
-            <button
-              class="pager-btn"
-              id="pageNext"
-              aria-label="Next page"
-              disabled
-            >
-              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            </button>
-
-            <!-- Smart Pricing Coverage Meter -->
-            <div id="coverageMeter" class="coverage-meter" style="display: none;">
-              <div class="coverage-meter__head">
-                <span class="coverage-meter__label">Color Coverage</span>
-                <span id="coverageValue" class="coverage-meter__value">0%</span>
+              <div class="coverage-chip__row">
+                <span class="coverage-chip__label">Color Coverage</span>
+                <span id="coverageValue" class="coverage-chip__value">0%</span>
               </div>
-              <div class="coverage-meter__bar-bg">
-                <div id="coverageBar" class="coverage-meter__bar"></div>
+              <div class="coverage-chip__bar-bg">
+                <div id="coverageBar" class="coverage-chip__bar"></div>
               </div>
-              <div id="tierBadge" class="coverage-meter__tier">Economy Tier</div>
+              <span id="tierBadge" class="coverage-chip__tier"
+                >Economy Tier</span
+              >
             </div>
 
-            <button
-              type="button"
-              id="openPricingAnalyzerBtn"
-              class="pricing-analyzer-trigger"
-              aria-haspopup="dialog"
-              aria-controls="pricingAnalyzerModal"
+            <!-- ── FLOATING: Pager pill (bottom-center of viewport) ── -->
+            <div
+              class="preview-controls"
+              id="previewControls"
+              style="display: none"
+              role="toolbar"
+              aria-label="Page navigation"
             >
-              <span class="pricing-analyzer-trigger__label">Smart Pricing Analyzer</span>
-              <span class="pricing-analyzer-trigger__meta" id="pricingAnalyzerTriggerMeta"
-                >Tap to inspect per-page pricing</span
+              <button
+                class="pager-btn"
+                id="pagePrev"
+                aria-label="Previous page"
+                disabled
               >
-            </button>
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </button>
+              <span class="pager-label" id="pagerLabel" aria-live="polite"
+                >1 / 1</span
+              >
+              <button
+                class="pager-btn"
+                id="pageNext"
+                aria-label="Next page"
+                disabled
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </button>
+            </div>
 
-            <!-- Zoom Controls -->
+            <!-- ── FLOATING: Zoom controls (bottom-right of viewport) ── -->
             <div
               class="zoom-controls"
               role="toolbar"
               aria-label="Zoom controls"
             >
-              <!-- (existing zoom buttons ...) -->
               <button
                 class="zoom-btn"
                 id="zoomOut"
@@ -241,11 +244,13 @@
               </button>
             </div>
           </div>
+          <!-- /.paper-viewport -->
         </section>
+        <!-- /.preview-col -->
 
         <!-- ── RIGHT: settings panel ── -->
         <section class="settings-col" aria-label="Print settings">
-          <!-- Top: back + title -->
+          <!-- Top: back link -->
           <div class="settings-top">
             <a id="backLink" href="/print" class="back-btn" aria-label="Back">
               <svg
@@ -263,7 +268,7 @@
             </a>
           </div>
 
-          <!-- Middle: scrollable options -->
+          <!-- Scrollable settings options -->
           <div class="settings-scroll">
             <fieldset class="option-group" id="colorModeGroup">
               <legend class="option-label">Color Mode</legend>
@@ -450,7 +455,11 @@
                 >
                   -90°
                 </button>
-                <div id="rotationValue" class="rotation-value" aria-live="polite">
+                <div
+                  id="rotationValue"
+                  class="rotation-value"
+                  aria-live="polite"
+                >
                   0°
                 </div>
                 <button
@@ -547,8 +556,8 @@
 
             <fieldset class="option-group" id="pageRangeGroup">
               <legend class="option-label">Page Range</legend>
-              <div class="option-grid">
-                <label class="option-card">
+              <div class="option-grid option-grid--3">
+                <label class="option-card option-card--compact">
                   <input
                     id="pageModeAll"
                     type="radio"
@@ -560,7 +569,7 @@
                   <span class="option-card__label">All Pages</span>
                   <span class="option-card__radio" aria-hidden="true"></span>
                 </label>
-                <label class="option-card">
+                <label class="option-card option-card--compact">
                   <input
                     id="pageModeCustom"
                     type="radio"
@@ -571,7 +580,7 @@
                   <span class="option-card__label">Custom Range</span>
                   <span class="option-card__radio" aria-hidden="true"></span>
                 </label>
-                <label class="option-card">
+                <label class="option-card option-card--compact">
                   <input
                     id="pageModeSingle"
                     type="radio"
@@ -616,7 +625,6 @@
                       </button>
                     </div>
                   </div>
-
                   <div class="page-range-field">
                     <span class="page-range-field__label">To</span>
                     <div class="copies-control">
@@ -648,7 +656,6 @@
                     </div>
                   </div>
                 </div>
-
                 <p
                   id="customRangeDisplay"
                   class="page-range-selected"
@@ -712,8 +719,7 @@
                   >
                     <path
                       fill-rule="evenodd"
-                      d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0
-                  01-1-1z"
+                      d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
                       clip-rule="evenodd"
                     />
                   </svg>
@@ -740,8 +746,7 @@
                   >
                     <path
                       fill-rule="evenodd"
-                      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1
-                  0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
                       clip-rule="evenodd"
                     />
                   </svg>
@@ -749,48 +754,87 @@
               </div>
             </div>
 
+            <!-- ── Smart Pricing Analyzer (moved into settings panel) ── -->
+            <div class="option-group pricing-analyzer-group">
+              <span class="option-label">Smart Pricing</span>
+              <button
+                type="button"
+                id="openPricingAnalyzerBtn"
+                class="pricing-analyzer-trigger"
+                aria-haspopup="dialog"
+                aria-controls="pricingAnalyzerModal"
+              >
+                <div class="pricing-analyzer-trigger__left">
+                  <svg
+                    class="pricing-analyzer-trigger__icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="M21 21l-4.35-4.35" />
+                    <path d="M11 8v6M8 11h6" />
+                  </svg>
+                  <span class="pricing-analyzer-trigger__label"
+                    >Smart Pricing Analyzer</span
+                  >
+                </div>
+                <span
+                  class="pricing-analyzer-trigger__meta"
+                  id="pricingAnalyzerTriggerMeta"
+                  >Tap to inspect per-page pricing</span
+                >
+              </button>
+            </div>
           </div>
           <!-- /.settings-scroll -->
-
-          <!-- Bottom: summary + continue -->
-          <div class="settings-bottom">
-            <p class="footer-summary" id="footerSummary">
-              Choose your settings.
-            </p>
-            <button
-              id="continueBtn"
-              type="button"
-              class="continue-btn"
-              disabled
-              aria-disabled="true"
-            >
-              <span>Continue</span>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            </button>
-          </div>
         </section>
+        <!-- /.settings-col -->
       </div>
       <!-- /.config-layout -->
     </div>
     <!-- /.page-shell -->
 
+    <!-- ── STICKY FOOTER: summary + Continue button ── -->
+    <footer class="sticky-footer">
+      <p class="footer-summary" id="footerSummary">Choose your settings.</p>
+      <button
+        id="continueBtn"
+        type="button"
+        class="continue-btn"
+        disabled
+        aria-disabled="true"
+      >
+        <span>Continue</span>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+      </button>
+    </footer>
+
+    <!-- ── Smart Pricing Analyzer Modal ── -->
     <div
       id="pricingAnalyzerModal"
       class="pricing-analyzer-modal"
       hidden
       aria-hidden="true"
     >
-      <div class="pricing-analyzer-modal__backdrop" id="pricingAnalyzerBackdrop"></div>
+      <div
+        class="pricing-analyzer-modal__backdrop"
+        id="pricingAnalyzerBackdrop"
+      ></div>
       <section
         class="pricing-analyzer-modal__panel"
         role="dialog"
@@ -808,18 +852,30 @@
             ✕
           </button>
         </header>
-        <p id="pricingAnalyzerModalSummary" class="pricing-analyzer-modal__summary">
+        <p
+          id="pricingAnalyzerModalSummary"
+          class="pricing-analyzer-modal__summary"
+        >
           Waiting for quote breakdown...
         </p>
-        <p id="pricingAnalyzerModalFormula" class="pricing-analyzer-modal__formula">
+        <p
+          id="pricingAnalyzerModalFormula"
+          class="pricing-analyzer-modal__formula"
+        >
           Select pages and color mode to see per-tier pricing impact.
         </p>
-        <div id="pricingAnalyzerModalTotals" class="pricing-analyzer-modal__totals"></div>
-        <div id="pricingAnalyzerModalPages" class="pricing-analyzer-modal__pages"></div>
+        <div
+          id="pricingAnalyzerModalTotals"
+          class="pricing-analyzer-modal__totals"
+        ></div>
+        <div
+          id="pricingAnalyzerModalPages"
+          class="pricing-analyzer-modal__pages"
+        ></div>
       </section>
     </div>
 
-    <!-- Idle Warning Modal -->
+    <!-- ── Idle Warning Modal ── -->
     <div
       id="idleWarningModal"
       class="idle-warning-overlay"

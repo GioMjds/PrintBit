@@ -61,7 +61,9 @@ function normalizeNearBlankClassification(
 
 interface ExtractedPageSignals {
   coverage: number;
+  hasMeasuredCoverage: boolean;
   isBlank: boolean;
+  hasExplicitBlankSignal: boolean;
   classification?: PageClassification;
 }
 
@@ -79,14 +81,18 @@ function extractPageSignals(
   if (!Array.isArray(analysis.pages)) {
     return {
       coverage: 0,
+      hasMeasuredCoverage: false,
       isBlank: true,
+      hasExplicitBlankSignal: false,
     };
   }
   const page = analysis.pages.find((p) => p.index === pageIndex);
   if (!page) {
     return {
       coverage: 0,
+      hasMeasuredCoverage: false,
       isBlank: true,
+      hasExplicitBlankSignal: false,
     };
   }
 
@@ -107,14 +113,16 @@ function extractPageSignals(
       ? page.classification
       : undefined;
 
-  const isBlank =
-    typeof page.isBlank === 'boolean'
-      ? page.isBlank
-      : classification === 'blank';
+  const hasExplicitBlankSignal = typeof page.isBlank === 'boolean';
+  const isBlank = hasExplicitBlankSignal
+    ? page.isBlank === true
+    : classification === 'blank';
 
   return {
     coverage,
+    hasMeasuredCoverage: hasCoverage,
     isBlank,
+    hasExplicitBlankSignal,
     classification,
   };
 }
@@ -269,12 +277,26 @@ export function computeJobPricing(input: {
   for (const pageIndex of input.selectedPageIndices) {
     const pageSignals = extractPageSignals(input.analysis, pageIndex);
     const coverage = pageSignals.coverage;
-    let classification = normalizeNearBlankClassification(
-      pageSignals.classification ??
-        classifyPageCoverage(coverage, pageSignals.isBlank, config.thresholds),
+    const coverageClassification = classifyPageCoverage(
       coverage,
-      config.nearBlankBwMax,
+      pageSignals.isBlank,
+      config.thresholds,
     );
+    const analysisHintClassification = pageSignals.isBlank
+      ? 'blank'
+      : pageSignals.classification === 'blank'
+        ? undefined
+        : pageSignals.classification;
+    const derivedClassification = pageSignals.hasMeasuredCoverage
+      ? coverageClassification
+      : (analysisHintClassification ?? coverageClassification);
+    let classification = pageSignals.hasExplicitBlankSignal
+      ? derivedClassification
+      : normalizeNearBlankClassification(
+          derivedClassification,
+          coverage,
+          config.nearBlankBwMax,
+        );
 
     // If user requested grayscale, force all non-blank pages to 'bw'
     if (input.colorMode === 'grayscale' && classification !== 'blank') {

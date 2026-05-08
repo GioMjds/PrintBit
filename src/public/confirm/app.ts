@@ -84,6 +84,16 @@ type PricingResponse = {
   scanDocument: number;
 };
 
+type ReceiptLinkPayload = {
+  receipt?: {
+    viewUrl?: string | null;
+    url?: string | null;
+    expiresAt?: string | null;
+  };
+  receiptViewUrl?: string | null;
+  receiptExpiresAt?: string | null;
+};
+
 type PrintQuote = {
   requiredAmount: number;
   copies: number;
@@ -181,7 +191,6 @@ const balanceValue = document.getElementById('balanceValue');
 const changeValue = document.getElementById('changeValue');
 const changeRow = document.getElementById('changeRow');
 const statusMessage = document.getElementById('statusMessage');
-const coinEventMessage = document.getElementById('coinToast');
 const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
@@ -533,10 +542,6 @@ function updateBalanceUI(balance: number): void {
   applyConfirmGate();
 }
 
-function setCoinEventMessage(message: string): void {
-  if (coinEventMessage) coinEventMessage.textContent = message;
-}
-
 function setPrintingPhase(
   phase: 'printing' | 'dispensing' | 'failed' | 'done' | 'manual-review',
 ): void {
@@ -719,29 +724,13 @@ const modalConfirmBtn = document.getElementById(
 const modalFile = document.getElementById('modalFile');
 const modalMode = document.getElementById('modalMode');
 const modalColor = document.getElementById('modalColor');
-const modalColorRow = document.getElementById('modalColorRow');
 const modalCopies = document.getElementById('modalCopies');
-const modalCopiesRow = document.getElementById('modalCopiesRow');
 const modalPages = document.getElementById('modalPages');
-const modalPagesRow = document.getElementById('modalPagesRow');
-const modalOrientation = document.getElementById('modalOrientation');
-const modalOrientationRow = document.getElementById('modalOrientationRow');
-const modalRotation = document.getElementById('modalRotation');
-const modalRotationRow = document.getElementById('modalRotationRow');
-const modalPaper = document.getElementById('modalPaper');
-const modalPaperRow = document.getElementById('modalPaperRow');
 const modalPrice = document.getElementById('modalPrice');
 const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
 const thankYouOverlay = document.getElementById('thankYouOverlay');
-const jamRefundOverlay = document.getElementById('jamRefundOverlay');
-const jamRefundTitle = document.getElementById('jamRefundTitle');
-const jamRefundMessage = document.getElementById('jamRefundMessage');
-const jamRefundHint = document.getElementById('jamRefundHint');
-const jamRefundDoneBtn = document.getElementById(
-  'jamRefundDoneBtn',
-) as HTMLButtonElement | null;
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
@@ -757,15 +746,6 @@ const receiptQrCanvas = document.getElementById(
 const receiptQrLink = document.getElementById(
   'receiptQrLink',
 ) as HTMLElement | null;
-const receiptQrExpiry = document.getElementById(
-  'receiptQrExpiry',
-) as HTMLElement | null;
-const remainingFilesHint = document.getElementById(
-  'remainingFilesHint',
-) as HTMLElement | null;
-const printAnotherBtn = document.getElementById(
-  'printAnotherBtn',
-) as HTMLButtonElement | null;
 const thankYouCountdown = document.getElementById(
   'thankYouCountdown',
 ) as HTMLElement | null;
@@ -806,16 +786,10 @@ if (!persistedFingerprintMatchesCurrent) {
   sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
 }
 let latestPrinterStatusLabel = 'Checking...';
-let spoolerTimedOut = false;
+const spoolerTimedOut = false;
 let thankYouAutoRedirectHandle: number | null = null;
 const THANKYOU_AUTO_REDIRECT_SECONDS = 10;
 const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
-const COPY_JOB_POLL_INTERVAL_MS = 1_500;
-const COPY_JOB_POLL_TIMEOUT_MS = 5 * 60 * 1_000;
-const DEFAULT_SPOOLER_MONITOR_WINDOW_MS = 3 * 60 * 1_000;
-const MIN_SPOOLER_FINALIZATION_TIMEOUT_MS = 45_000;
-const MAX_SPOOLER_FINALIZATION_TIMEOUT_MS = 120_000;
-const SPOOLER_FINALIZATION_TIMEOUT_RATIO = 0.5;
 
 let currentTransactionId: string | null = null;
 let currentReceiptUrl: string | null = null;
@@ -835,7 +809,7 @@ function setTransactionReference(id: string | null): void {
 }
 
 function extractReceiptUrl(
-  payload: any,
+  payload: ReceiptLinkPayload,
 ): { url: string; expiresAt: string | null } | null {
   const url =
     payload.receipt?.viewUrl || payload.receiptViewUrl || payload.receipt?.url;
@@ -858,7 +832,7 @@ function renderReceiptCta(): void {
   }).catch(console.error);
 }
 
-function captureReceiptCta(payload: any): void {
+function captureReceiptCta(payload: ReceiptLinkPayload): void {
   const receipt = extractReceiptUrl(payload);
   if (!receipt) return;
   currentReceiptUrl = receipt.url;
@@ -867,10 +841,7 @@ function captureReceiptCta(payload: any): void {
   renderReceiptCta();
 }
 
-function finalizePrintSuccess(
-  transactionId: string | null,
-  printerName: string | null,
-): void {
+function finalizePrintSuccess(transactionId: string | null): void {
   setTransactionReference(transactionId ?? currentTransactionId);
   hideOverlay(printingOverlay);
   showOverlay(thankYouOverlay);
@@ -1039,9 +1010,11 @@ modalConfirmBtn?.addEventListener('click', async () => {
       });
 
       if (!response.ok) throw new Error('Payment failed');
-      const payload = await response.json();
+      const payload = (await response.json()) as ReceiptLinkPayload & {
+        transactionId?: string | null;
+      };
       captureReceiptCta(payload);
-      finalizePrintSuccess(payload.transactionId, null);
+      finalizePrintSuccess(payload.transactionId ?? null);
     }
   } catch {
     hideOverlay(printingOverlay);
@@ -1059,8 +1032,11 @@ thankYouDoneBtn?.addEventListener('click', () => {
 
 const ioFactory = (window as any).io;
 if (typeof ioFactory === 'function') {
-  socket = ioFactory();
-  socket.on('balance', (amount: number) => updateBalanceUI(amount));
+  const connectedSocket = ioFactory() as SocketLike;
+  socket = connectedSocket;
+  connectedSocket.on('balance', (amount: unknown) => {
+    if (typeof amount === 'number') updateBalanceUI(amount);
+  });
 }
 
 async function loadPrinterStatus(): Promise<void> {
