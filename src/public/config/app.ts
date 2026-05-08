@@ -454,35 +454,36 @@ function syncPreviewPageWithRange(): void {
 
 function updatePageCoverageMeter(pageNum: number): void {
   if (!coverageMeter) return;
-  if (!currentAnalysisData?.pages) {
-    coverageMeter.style.display = 'none';
-    return;
-  }
-  const pageIndex = pageNum; // 1-based
-  const page: {
-    index?: number;
-    coverage: number;
-    isColor: boolean;
-    classification: string;
-    suggestSavings?: boolean;
-  } =
-    currentAnalysisData.pages.find(
-      (p: { index?: number }) => p.index === pageIndex,
-    ) ?? currentAnalysisData.pages[pageIndex - 1];
-  if (!page) {
-    coverageMeter.style.display = 'none';
-    return;
-  }
 
+  const pageIndex = pageNum; // 1-based
   const pricedPage = currentPrintQuote?.pricingEngine?.perPageBreakdown?.find(
     (p) => p.index === pageIndex,
   );
-  const effectiveClassification =
-    pricedPage?.classification ?? page.classification;
-  const isPricedAsBlank = effectiveClassification === 'blank';
-  const displayCoverage = isPricedAsBlank
-    ? 0
-    : (pricedPage?.coverage ?? page.coverage);
+  const analysisPages = currentAnalysisData?.pages as
+    | Array<{
+        index?: number;
+        coverage: number;
+        isColor: boolean;
+        classification: 'blank' | 'bw' | 'partial' | 'full_color';
+        suggestSavings?: boolean;
+      }>
+    | undefined;
+  const analysisPage =
+    currentPrintQuote === null
+      ? (analysisPages?.find((p) => p.index === pageIndex) ??
+        analysisPages?.[pageIndex - 1])
+      : undefined;
+
+  const displaySource = pricedPage ?? analysisPage;
+  if (!displaySource) {
+    coverageMeter.style.display = 'none';
+    hideSavingsToast();
+    return;
+  }
+
+  const displayClassification = displaySource.classification;
+  const isDisplayedAsBlank = displayClassification === 'blank';
+  const displayCoverage = isDisplayedAsBlank ? 0 : displaySource.coverage;
   const percent = Math.round(displayCoverage * 100);
 
   coverageMeter.style.display = 'flex';
@@ -490,11 +491,11 @@ function updatePageCoverageMeter(pageNum: number): void {
   if (coverageBar) coverageBar.style.width = `${percent}%`;
 
   if (tierBadge) {
-    if (isPricedAsBlank) {
+    if (isDisplayedAsBlank) {
       tierBadge.textContent = 'Blank (No Charge)';
-    } else if (effectiveClassification === 'bw') {
+    } else if (displayClassification === 'bw') {
       tierBadge.textContent = 'B&W Rate';
-    } else if (effectiveClassification === 'full_color') {
+    } else if (displayClassification === 'full_color') {
       tierBadge.textContent = 'Full Color Rate';
     } else {
       const decile = Math.max(1, Math.ceil(displayCoverage * 10));
@@ -503,7 +504,7 @@ function updatePageCoverageMeter(pageNum: number): void {
   }
 
   // Smart Suggestion Toast
-  if (page.suggestSavings && getRadio('colorMode') === 'colored') {
+  if (displaySource.suggestSavings && getRadio('colorMode') === 'colored') {
     showSavingsToast(pageIndex);
   } else {
     hideSavingsToast();
@@ -1323,8 +1324,6 @@ let quoteRequestVersion = 0;
 let quoteDebounceHandle: number | null = null;
 const QUOTE_409_RETRY_ATTEMPTS = 20;
 const QUOTE_409_RETRY_DELAY_MS = 500;
-const ANALYSIS_UNAVAILABLE_ERROR =
-  'Document analysis is unavailable. Re-upload the file and try again.';
 
 function getPageRangeMaxPages(): number {
   return Math.max(1, preview.pageCount || 1);
@@ -1789,9 +1788,7 @@ async function refreshPrintQuote(): Promise<void> {
         typeof payload.code === 'string' ? payload.code : null;
       const isAnalysisPending = responseCode === 'ANALYSIS_PENDING';
       const isAnalysisFailed = responseCode === 'ANALYSIS_FAILED';
-      const isAnalysisUnavailable =
-        responseCode === 'ANALYSIS_UNAVAILABLE' ||
-        payload.error === ANALYSIS_UNAVAILABLE_ERROR;
+      const isAnalysisUnavailable = responseCode === 'ANALYSIS_UNAVAILABLE';
 
       if (
         response.status === 409 &&
@@ -1845,6 +1842,7 @@ async function refreshPrintQuote(): Promise<void> {
     if (requestVersion === quoteRequestVersion) {
       quoteLoading = false;
       updateSummary();
+      updatePageCoverageMeter(preview.currentPageNumber);
       setPrintContinueState();
     }
   }
