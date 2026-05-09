@@ -30,4 +30,5 @@ export const BLOCKED_STATUSES = new Set([
   'Door Open',
   'User Intervention Required',
   'Paused',
+  'Manual Feed Required',
 ]);
