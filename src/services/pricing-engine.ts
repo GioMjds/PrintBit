@@ -65,9 +65,7 @@ function normalizeNearBlankClassification(
   // an explicit all-content coverage signal, or when the legacy coverage is
   // non-zero.
   const bwCoverageForBlankPolicy =
-    typeof contentCoverage === 'number' &&
-    Number.isFinite(contentCoverage) &&
-    contentCoverage > 0
+    typeof contentCoverage === 'number' && Number.isFinite(contentCoverage)
       ? contentCoverage
       : coverage > 0
         ? coverage
@@ -145,7 +143,8 @@ function extractPageSignals(
 
   const rawContentCoverage = page.contentCoverage;
   const contentCoverage =
-    typeof rawContentCoverage === 'number' && Number.isFinite(rawContentCoverage)
+    typeof rawContentCoverage === 'number' &&
+    Number.isFinite(rawContentCoverage)
       ? Math.max(0, Math.min(1, rawContentCoverage))
       : undefined;
 
@@ -267,8 +266,7 @@ function loadPricingEngineConfig(
       bwMax: thresholds.bwMax,
       fullColorMin: thresholds.fullColorMin,
     },
-    nearBlankBwMax:
-      cfg?.nearBlankBwMax ?? DEFAULT_NEAR_BLANK_BW_COVERAGE_MAX,
+    nearBlankBwMax: cfg?.nearBlankBwMax ?? DEFAULT_NEAR_BLANK_BW_COVERAGE_MAX,
     pricing: {
       baseBwPrice: profile.baseBwPrice,
       baseColorPrice: profile.baseColorPrice,

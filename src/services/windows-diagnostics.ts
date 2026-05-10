@@ -1,5 +1,5 @@
-import { runPowerShell } from '@/utils';
 import edge from 'edge-js';
+import { runPowerShell } from '@/utils';
 
 export type WindowsDiagnosticsProvider = 'auto' | 'edge' | 'powershell';
 
@@ -785,7 +785,23 @@ $svc = Get-Service -Name Spooler -ErrorAction SilentlyContinue
 } | ConvertTo-Json -Depth 8 -Compress
 `.trim();
 
-  const json = await runPowerShell(script, 12_000);
+  let json: string | null;
+  try {
+    json = await runPowerShell(script, 12_000);
+  } catch (error) {
+    return {
+      provider: 'powershell',
+      queriedAt: new Date().toISOString(),
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+      selectedPrinterName: selectedPrinterName ?? null,
+      spooler: { status: null, canStop: null },
+      printers: [],
+      scanners: [],
+      jobs: [],
+      bridgeFailure,
+    };
+  }
   if (!json || json === 'null') {
     return {
       provider: 'powershell',

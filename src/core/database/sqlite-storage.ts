@@ -1600,10 +1600,10 @@ export class PrintErrorSqliteStore {
     note?: string | null;
     resolvedBy?: string | null;
   }): PrintErrorRecord | null {
-    const resolvedAt =
-      input.status === 'resolved' || input.status === 'dismissed'
-        ? toIsoDate(new Date())
-        : null;
+    const isTerminal =
+      input.status === 'resolved' || input.status === 'dismissed';
+    const resolvedAt = isTerminal ? toIsoDate(new Date()) : null;
+    const resolvedBy = isTerminal ? (input.resolvedBy ?? null) : null;
     const result = getSqliteDb()
       .prepare(
         `UPDATE print_errors
@@ -1617,7 +1617,7 @@ export class PrintErrorSqliteStore {
         input.status,
         input.note ?? null,
         resolvedAt,
-        input.resolvedBy ?? null,
+        resolvedBy,
         input.id,
       ) as { changes?: unknown };
 

@@ -48,6 +48,12 @@ export async function persistAndEmitPrintLifecycleState(
     if (typeof payload.timedOut === 'boolean') {
       meta.timedOut = payload.timedOut;
     }
+    if (payload.printError) {
+      meta.printErrorCode = payload.printError.code;
+      meta.printErrorLayer = payload.printError.layer;
+      meta.printErrorSeverity = payload.printError.severity;
+      meta.printErrorMessage = payload.printError.userMessage;
+    }
     if (
       typeof payload.refundDisposition === 'string' &&
       payload.refundDisposition.trim()

@@ -183,7 +183,26 @@ export async function validatePrintPreflight(
   }
   if (inkError) warnings.push(inkError);
 
-  const diagnostics = await getWindowsDiagnosticsSnapshot(input.printerName);
+  let diagnostics: WindowsDiagnosticsSnapshot | null = null;
+  try {
+    diagnostics = await getWindowsDiagnosticsSnapshot(input.printerName);
+  } catch (error) {
+    warnings.push(
+      printErrorClassifier.create('DIAGNOSTICS_BRIDGE_FAILED', {
+        ...baseContext,
+        source: 'windows-diagnostics',
+        raw: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }),
+    );
+    return {
+      blocker: null,
+      warnings,
+      diagnostics: null,
+      estimatedSheets,
+    };
+  }
   if (diagnostics.bridgeFailure) {
     warnings.push(
       printErrorClassifier.create('DIAGNOSTICS_BRIDGE_FAILED', {

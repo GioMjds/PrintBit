@@ -38,12 +38,12 @@ export interface PrintErrorContext {
 }
 
 /**
- * This module defines a set of printer error codes and their associated metadata, 
- * as well as a classifier that can create structured PrintError objects based on various inputs 
- * such as printer telemetry and dispatch results. 
- * 
+ * This module defines a set of printer error codes and their associated metadata,
+ * as well as a classifier that can create structured PrintError objects based on various inputs
+ * such as printer telemetry and dispatch results.
+ *
  * The classifier uses predefined rules to map specific conditions to error codes,
- * which can then be used for consistent error handling, user messaging, 
+ * which can then be used for consistent error handling, user messaging,
  * and administrative logging throughout the application.
  */
 export const PRINT_ERROR_DEFINITIONS: Record<
@@ -275,7 +275,8 @@ export const PRINT_ERROR_DEFINITIONS: Record<
     severity: 'FATAL',
     userMessage:
       'The scanner is currently unavailable. Please wait for staff assistance.',
-    adminMessage: 'Windows scanner telemetry reports the device is missing or disconnected.',
+    adminMessage:
+      'Windows scanner telemetry reports the device is missing or disconnected.',
     refundEligible: false,
     systemAction: 'RESET_SESSION',
     detectionConfidence: 'high',
@@ -687,6 +688,12 @@ export class PrintErrorClassifier {
     context: PrintErrorContext,
   ): PrintError {
     const normalized = status.toLowerCase();
+    if (
+      normalized.includes('manual feed') ||
+      normalized.includes('manualfeed')
+    ) {
+      return this.create('MANUAL_FEED_REQUIRED', context);
+    }
     if (normalized.includes('paperout')) {
       return this.create('PAPER_TRAY_EMPTY', { ...context, raw: context.raw });
     }
@@ -703,7 +710,10 @@ export class PrintErrorClassifier {
       return this.create('SPOOLER_QUEUE_STUCK', context);
     }
     if (normalized.includes('userintervention')) {
-      return this.create('UNKNOWN_PRINTER_FAULT', context);
+      return this.create('MANUAL_FEED_REQUIRED', {
+        ...context,
+        detectionConfidence: 'low',
+      });
     }
     return this.create('SPOOLER_JOB_FAILED', context);
   }
