@@ -293,6 +293,92 @@
   overflow-wrap: break-word;
 }
 
+.error-history {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(125, 211, 252, 0.18);
+}
+
+.error-history__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.error-history__kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(125, 211, 252, 0.9);
+}
+
+.error-history__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.error-history__filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.error-history__filters label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.error-history__filters span {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.error-history__filters select {
+  width: 100%;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--white);
+  padding: 0.45rem 0.55rem;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 0.78rem;
+}
+
+.error-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+  color: rgba(215, 233, 255, 0.72);
+  font-size: 0.72rem;
+}
+
+.error-history__meta span {
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.08);
+  border: 1px solid rgba(125, 211, 252, 0.16);
+}
+
+@media (max-width: 720px) {
+  .error-history__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .error-history__header {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+
 /* ── Admin-wide command deck polish ─────────────────────────── */
 .ri-stat,
 .ri-card,

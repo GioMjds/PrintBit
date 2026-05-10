@@ -71,6 +71,12 @@ import {
 } from '@/services/document-rotation';
 import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
+import { validatePrintPreflight } from '@/services/print-preflight';
+import { printErrorClassifier } from '@/services/print-error-classifier';
+import {
+  printErrorHistoryService,
+  toPublicPrintError,
+} from '@/services/print-error-history';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1565,6 +1571,7 @@ export class FinancialService {
     let spoolerMonitorStarted = false;
     let settlementCompleted = false;
     let spoolerConfirmedBeforeSettlement = false;
+    let printWarningPayloads: Array<ReturnType<typeof toPublicPrintError>> = [];
 
     const runPostSpoolerConfirmedCallbacks = async (): Promise<void> => {
       try {
@@ -1639,52 +1646,39 @@ export class FinancialService {
     };
 
     if (mode === 'print' && serverFilename && printOptions) {
-      if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
-        void adminService.appendAdminLog(
-          'print_preflight_failed',
-          'Print rejected: printer not ready.',
-          {
-            transactionId,
-            printerStatus: telemetry.status,
-            printerConnected: telemetry.connected,
-            sessionId: sessionId ?? null,
-          },
-        );
-        if (idempotencyClaimed) {
-          releaseIdempotencyKey(idempotencyKey, 'POST:/api/confirm-payment');
-        }
-        res.status(409).json({
-          error: `Printer is not ready: ${telemetry.status}. Please notify the operator.`,
-          printerStatus: telemetry.status,
-        });
-        return;
-      }
-
       const inkPreflight = evaluateInkPreflight(telemetry);
-      if (inkPreflight.blocked) {
-        void adminService.appendAdminLog(
-          'print_preflight_failed_ink',
-          'Print rejected: ink preflight policy blocked the job.',
-          {
-            transactionId,
-            printerStatus: telemetry.status,
-            inkCode: inkPreflight.code,
-            inkReason: inkPreflight.reason ?? 'Unknown ink policy reason',
-            telemetryAvailable: inkPreflight.telemetryAvailable,
-            inkDetectionMethod: telemetry.inkDetectionMethod,
-          },
-        );
+      const preflight = await validatePrintPreflight({
+        telemetry,
+        inkPreflight,
+        printOptions,
+        selectedPages: printQuotePages?.selectedPages ?? 1,
+        copies,
+        transactionId,
+        sessionId: sessionId ?? null,
+        documentId: targetDocumentId ?? null,
+        printerName: telemetry.name ?? null,
+      });
+
+      printWarningPayloads = preflight.warnings.map((warning) => {
+        const recorded = printErrorHistoryService.record(warning, {
+          io: this.deps.io,
+        });
+        return toPublicPrintError(recorded);
+      });
+
+      if (preflight.blocker) {
+        const recorded = printErrorHistoryService.record(preflight.blocker, {
+          io: this.deps.io,
+        });
         if (idempotencyClaimed) {
           releaseIdempotencyKey(idempotencyKey, 'POST:/api/confirm-payment');
         }
         res.status(409).json({
-          error:
-            inkPreflight.reason ??
-            'Printer ink state is not ready for printing.',
+          code: recorded.code,
+          error: recorded.userMessage,
+          printError: toPublicPrintError(recorded),
           printerStatus: telemetry.status,
-          inkStatus: inkPreflight.code,
-          inkReason: inkPreflight.reason,
-          telemetryAvailable: inkPreflight.telemetryAvailable,
+          printerConnected: telemetry.connected,
         });
         return;
       }
@@ -1728,6 +1722,21 @@ export class FinancialService {
       } catch (err) {
         const dispatchFailure =
           err instanceof PrintDispatchError ? err.result : null;
+        const classifiedError = printErrorClassifier.classifyDispatchFailure(
+          err,
+          dispatchFailure,
+          {
+            source: 'confirm-payment-dispatch',
+            transactionId,
+            sessionId: sessionId ?? null,
+            jobId: targetDocumentId ?? null,
+            printerName: telemetry.name ?? null,
+          },
+        );
+        const recordedError = printErrorHistoryService.record(classifiedError, {
+          io: this.deps.io,
+        });
+        const publicPrintError = toPublicPrintError(recordedError);
         const unsupportedRequestedOptions =
           dispatchFailure?.failureCode === 'no_capable_engine';
         const dispatchErrorMessage =
@@ -1744,6 +1753,7 @@ export class FinancialService {
             transactionId,
             spoolerCorrelationKey,
             reason: dispatchErrorMessage,
+            printError: publicPrintError,
           },
           {
             requiredAmount,
@@ -1769,6 +1779,10 @@ export class FinancialService {
             sessionId: sessionId ?? null,
             filename: serverFilename,
             error: dispatchErrorMessage,
+            errorId: recordedError.id,
+            errorCode: recordedError.code,
+            layer: recordedError.layer,
+            severity: recordedError.severity,
             failureCode: dispatchFailure?.failureCode ?? null,
             requiredCapabilities:
               dispatchFailure && dispatchFailure.requiredCapabilities.length > 0
@@ -1782,18 +1796,24 @@ export class FinancialService {
         if (unsupportedRequestedOptions) {
           sendResponse(409, {
             code: 'PRINT_OPTIONS_UNSUPPORTED',
-            error: dispatchErrorMessage,
+            error: recordedError.userMessage,
+            printError: publicPrintError,
           });
           return;
         }
         if (rotationConstraintError) {
           sendResponse(409, {
             code: 'ROTATION_UNSUPPORTED',
-            error: dispatchErrorMessage,
+            error: recordedError.userMessage,
+            printError: publicPrintError,
           });
           return;
         }
-        sendResponse(500, { error: 'Print failed. Please try again.' });
+        sendResponse(500, {
+          code: recordedError.code,
+          error: recordedError.userMessage,
+          printError: publicPrintError,
+        });
         return;
       }
     }
@@ -2075,6 +2095,10 @@ export class FinancialService {
               dispatchDurationMs: dispatchResult?.durationMs ?? null,
               monitorWindowMs: PRINT_SPOOLER_MONITOR_WINDOW_MS,
             }
+          : undefined,
+      printWarnings:
+        mode === 'print' && printWarningPayloads.length > 0
+          ? printWarningPayloads
           : undefined,
       receipt: receipt ?? undefined,
     });
@@ -2379,6 +2403,19 @@ export class FinancialService {
 
     const reason =
       'Print spooler monitoring unavailable because printer telemetry name is missing.';
+    const classifiedError = printErrorClassifier.create('SPOOLER_QUERY_FAILED', {
+      source: 'confirm-payment-spooler-monitor',
+      transactionId,
+      sessionId,
+      jobId: documentId,
+      printerName: null,
+      raw: {
+        reason,
+        spoolerCorrelationKey,
+        filename,
+      },
+      detectionConfidence: 'high',
+    });
     await adminService
       .appendAdminLog(
         'print_spooler_monitor_unavailable',
@@ -2422,6 +2459,16 @@ export class FinancialService {
       const refundDisposition = refundOutcome.autoRefunded
         ? 'auto_refunded'
         : 'pending_admin_review';
+      const recordedError = printErrorHistoryService.record(classifiedError, {
+        io: this.deps.io,
+        refundId: refundOutcome.entry.id,
+        refundDisposition,
+        restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
+        pagesPrinted: 0,
+        totalPages: 0,
+        chargedAmount,
+      });
+      const publicPrintError = toPublicPrintError(recordedError);
       this.safeUpdateReceiptTerminalStatus({
         transactionId,
         status:
@@ -2477,6 +2524,7 @@ export class FinancialService {
         restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
         transactionId,
         spoolerCorrelationKey,
+        printError: publicPrintError,
       });
 
       await checkpointRecoverySession({
@@ -2526,6 +2574,14 @@ export class FinancialService {
         error instanceof PendingRefundServiceError &&
         error.code === 'TRUSTED_TIME_UNAVAILABLE'
       ) {
+        const recordedError = printErrorHistoryService.record(classifiedError, {
+          io: this.deps.io,
+          refundDisposition: 'refund_blocked_trusted_time',
+          restoredBalanceAmount: 0,
+          pagesPrinted: 0,
+          totalPages: 0,
+          chargedAmount,
+        });
         await adminService
           .appendAdminLog(
             'trusted_time_unsynced',
@@ -2554,6 +2610,7 @@ export class FinancialService {
           restoredBalanceAmount: 0,
           transactionId,
           spoolerCorrelationKey,
+          printError: toPublicPrintError(recordedError),
         });
         this.safeUpdateReceiptTerminalStatus({
           transactionId,

@@ -1,10 +1,12 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 import {
   getAdapter,
   getScannerStatus,
   type ScannerCapabilities,
+  type ScannerJobResult,
   type ScannerRuntimeStatus,
 } from '@/services/scanner';
 import {
@@ -37,6 +39,12 @@ import {
   prepareScanRotationArtifact,
 } from '@/services/document-rotation';
 import type { Server as SocketIOServer } from 'socket.io';
+import { printErrorClassifier } from '@/services/print-error-classifier';
+import { printErrorHistoryService } from '@/services/print-error-history';
+import {
+  getWindowsDiagnosticsSnapshot,
+  type WindowsDiagnosticsScanner,
+} from '@/services/windows-diagnostics';
 
 const VALID_SOURCES = new Set(['adf', 'flatbed']);
 const VALID_DPI = new Set([150, 300, 600]);
@@ -137,6 +145,101 @@ interface ScanReleaseTokenRecord {
 interface ScanOutputTransformInput {
   orientation?: 'portrait' | 'landscape';
   rotationDeg?: number;
+}
+
+async function estimateScannerStreakScore(filePath: string): Promise<number> {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension !== '.jpg' && extension !== '.jpeg' && extension !== '.png') {
+    return 0;
+  }
+
+  try {
+    const { data, info } = await sharp(filePath)
+      .grayscale()
+      .resize(96, 96, { fit: 'fill' })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (info.width <= 0 || info.height <= 0) return 0;
+
+    const columnMeans: number[] = [];
+    for (let x = 0; x < info.width; x += 1) {
+      let sum = 0;
+      for (let y = 0; y < info.height; y += 1) {
+        sum += data[y * info.width + x] ?? 0;
+      }
+      columnMeans.push(sum / info.height);
+    }
+
+    const globalMean =
+      columnMeans.reduce((sum, value) => sum + value, 0) / columnMeans.length;
+    const variance =
+      columnMeans.reduce(
+        (sum, value) => sum + Math.pow(value - globalMean, 2),
+        0,
+      ) / columnMeans.length;
+    const stdDev = Math.sqrt(variance);
+    if (stdDev < 4) return 0;
+
+    const highContrastColumns = columnMeans.filter(
+      (value, index) => {
+        const left = columnMeans[Math.max(0, index - 1)] ?? value;
+        const right =
+          columnMeans[Math.min(columnMeans.length - 1, index + 1)] ?? value;
+        const neighborMean = (left + right) / 2;
+        return Math.abs(value - neighborMean) > Math.max(18, stdDev * 1.6);
+      },
+    ).length;
+
+    return Math.min(1, highContrastColumns / Math.max(1, info.width * 0.18));
+  } catch {
+    return 0;
+  }
+}
+
+function normalizeDeviceName(value: string | null | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function findDiagnosticsScanner(
+  scanners: WindowsDiagnosticsScanner[],
+  runtime: ScannerRuntimeStatus,
+): WindowsDiagnosticsScanner | null {
+  if (scanners.length === 0) return null;
+  const candidates = [
+    normalizeDeviceName(runtime.deviceName),
+    normalizeDeviceName(runtime.preferredName),
+  ].filter((value) => value.length > 0);
+
+  for (const candidate of candidates) {
+    const exact = scanners.find(
+      (scanner) => normalizeDeviceName(scanner.name) === candidate,
+    );
+    if (exact) return exact;
+    const partial = scanners.find((scanner) => {
+      const name = normalizeDeviceName(scanner.name);
+      return name.includes(candidate) || candidate.includes(name);
+    });
+    if (partial) return partial;
+  }
+
+  const epson = scanners.find((scanner) =>
+    normalizeDeviceName(scanner.name).includes('epson'),
+  );
+  return epson ?? scanners[0] ?? null;
+}
+
+function scannerUnavailableReason(
+  scanner: WindowsDiagnosticsScanner,
+): string | null {
+  if (scanner.present === false) return 'Scanner PnP device is not present.';
+  if (typeof scanner.problem === 'number' && scanner.problem !== 0) {
+    return `Scanner PnP problem code ${scanner.problem}.`;
+  }
+  const status = normalizeDeviceName(scanner.status);
+  if (status && status !== 'ok' && status !== 'unknown') {
+    return `Scanner PnP status is ${scanner.status}.`;
+  }
+  return null;
 }
 
 export class ScannerService {
@@ -247,6 +350,162 @@ export class ScannerService {
     return true;
   }
 
+  private async recordScanQualityWarnings(
+    outputPath: string,
+    source: string,
+  ): Promise<void> {
+    const streakScore = await estimateScannerStreakScore(outputPath);
+    const classified = printErrorClassifier.classifyScanQuality({
+      streakScore,
+      outputPath,
+      source,
+    });
+    if (!classified) return;
+    printErrorHistoryService.record(classified);
+  }
+
+  private async getScannerDiagnostics(source: string): Promise<{
+    provider: string | null;
+    scanner: WindowsDiagnosticsScanner | null;
+    scannerCount: number;
+    bridgeFailure: string | null;
+  }> {
+    const runtime = getScannerStatus();
+    try {
+      const diagnostics = await getWindowsDiagnosticsSnapshot(
+        runtime.deviceName ?? runtime.preferredName,
+      );
+      return {
+        provider: diagnostics.provider,
+        scanner: findDiagnosticsScanner(diagnostics.scanners, runtime),
+        scannerCount: diagnostics.scanners.length,
+        bridgeFailure:
+          diagnostics.bridgeFailure?.message ?? diagnostics.error ?? null,
+      };
+    } catch (error) {
+      return {
+        provider: null,
+        scanner: null,
+        scannerCount: 0,
+        bridgeFailure:
+          error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async ensureScannerSourceReady(
+    settings: { source: 'adf' | 'flatbed' },
+    source: string,
+  ): Promise<void> {
+    const runtime = getScannerStatus();
+    if (runtime.adapter !== 'naps2') return;
+
+    const diagnostics = await this.getScannerDiagnostics(`${source}-preflight`);
+    const scanner = diagnostics.scanner;
+    if (!scanner) return;
+
+    const unavailableReason = scannerUnavailableReason(scanner);
+    if (unavailableReason) {
+      const recorded = printErrorHistoryService.record(
+        printErrorClassifier.create('SCANNER_DISCONNECTED', {
+          source: `${source}-preflight`,
+          raw: {
+            reason: unavailableReason,
+            diagnosticsProvider: diagnostics.provider,
+            scannerCount: diagnostics.scannerCount,
+            scannerName: scanner.name,
+            scannerStatus: scanner.status,
+            scannerPresent: scanner.present,
+            scannerProblem: scanner.problem,
+            bridgeFailure: diagnostics.bridgeFailure,
+          },
+        }),
+      );
+      throw new Error(recorded.userMessage);
+    }
+
+    if (settings.source === 'adf') {
+      if (scanner.hasDocumentFeeder === false) {
+        const recorded = printErrorHistoryService.record(
+          printErrorClassifier.create('SCANNER_NO_DOCUMENT', {
+            source: `${source}-preflight`,
+            adminMessage:
+              'Native scanner diagnostics report no document feeder capability.',
+            raw: {
+              diagnosticsProvider: diagnostics.provider,
+              scannerName: scanner.name,
+              documentHandlingCapabilities:
+                scanner.documentHandlingCapabilities,
+              documentHandlingStatus: scanner.documentHandlingStatus,
+            },
+            detectionConfidence: 'medium',
+          }),
+        );
+        throw new Error(recorded.userMessage);
+      }
+
+      if (scanner.feederLoaded === false) {
+        const recorded = printErrorHistoryService.record(
+          printErrorClassifier.create('SCANNER_NO_DOCUMENT', {
+            source: `${source}-preflight`,
+            raw: {
+              diagnosticsProvider: diagnostics.provider,
+              scannerName: scanner.name,
+              documentHandlingCapabilities:
+                scanner.documentHandlingCapabilities,
+              documentHandlingStatus: scanner.documentHandlingStatus,
+            },
+            detectionConfidence: 'high',
+          }),
+        );
+        throw new Error(recorded.userMessage);
+      }
+    }
+  }
+
+  private async recordScanFailure(error: unknown, source: string): Promise<void> {
+    const diagnostics = await this.getScannerDiagnostics(source);
+    const scanner = diagnostics.scanner;
+    const unavailableReason = scanner
+      ? scannerUnavailableReason(scanner)
+      : null;
+    if (unavailableReason && scanner) {
+      const classified = printErrorClassifier.create('SCANNER_DISCONNECTED', {
+        source,
+        raw: {
+          reason: unavailableReason,
+          diagnosticsProvider: diagnostics.provider,
+          scannerCount: diagnostics.scannerCount,
+          scannerName: scanner.name,
+          scannerStatus: scanner.status,
+          scannerPresent: scanner.present,
+          scannerProblem: scanner.problem,
+          bridgeFailure: diagnostics.bridgeFailure,
+        },
+      });
+      printErrorHistoryService.record(classified);
+      return;
+    }
+
+    const classified = printErrorClassifier.classifyScannerError(error, {
+      source,
+      raw: {
+        adapter: getScannerStatus().adapter,
+        driver: getScannerStatus().driver,
+        deviceName: getScannerStatus().deviceName,
+        diagnosticsProvider: diagnostics.provider,
+        scannerCount: diagnostics.scannerCount,
+        scannerName: scanner?.name ?? null,
+        documentHandlingCapabilities:
+          scanner?.documentHandlingCapabilities ?? null,
+        documentHandlingStatus: scanner?.documentHandlingStatus ?? null,
+        feederLoaded: scanner?.feederLoaded ?? null,
+        bridgeFailure: diagnostics.bridgeFailure,
+      },
+    });
+    printErrorHistoryService.record(classified);
+  }
+
   private mapCapabilitiesForUi(caps: ScannerCapabilities | null): {
     sources: string[];
     colorModes: string[];
@@ -337,7 +596,18 @@ export class ScannerService {
       format: 'jpg' as const,
     };
 
-    const result = await getAdapter().scan(settings, 'uploads/scans');
+    let result: ScannerJobResult;
+    try {
+      await this.ensureScannerSourceReady(settings, 'interactive-scan');
+      result = await getAdapter().scan(settings, 'uploads/scans');
+      await this.recordScanQualityWarnings(
+        result.outputPath,
+        'interactive-scan',
+      );
+    } catch (error) {
+      await this.recordScanFailure(error, 'interactive-scan');
+      throw error;
+    }
     const filename = path.basename(result.outputPath);
     this.clearSoftCopyPaid(filename);
 
@@ -613,13 +883,16 @@ export class ScannerService {
     void (async () => {
       jobStore.updateJobState(job.id, 'running');
       try {
+        await this.ensureScannerSourceReady(settings, 'scan-job');
         const result = await getAdapter().scan(settings, 'uploads/scans');
+        await this.recordScanQualityWarnings(result.outputPath, 'scan-job');
         jobStore.updateJobState(job.id, 'succeeded', {
           resultPath: result.outputPath,
         });
         await adminService.incrementJobStats('scan');
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
+        await this.recordScanFailure(err, 'scan-job');
         jobStore.updateJobState(job.id, 'failed', {
           failure: {
             code: 'SCAN_ERROR',
@@ -667,7 +940,9 @@ export class ScannerService {
     };
 
     try {
+      await this.ensureScannerSourceReady(previewSettings, 'scan-preview');
       const result = await getAdapter().scan(previewSettings, 'uploads/scans');
+      await this.recordScanQualityWarnings(result.outputPath, 'scan-preview');
 
       const absPath = path.resolve(result.outputPath);
       const stat = fs.statSync(absPath);
@@ -687,6 +962,7 @@ export class ScannerService {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error(`[SCAN-PREVIEW] ✗ Preview scan failed: ${message}`);
+      await this.recordScanFailure(err, 'scan-preview');
 
       void adminService.appendAdminLog(
         'scan_preview_failed',

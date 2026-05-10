@@ -17,6 +17,15 @@ import type {
   TrustedTimestampMeta,
 } from './db';
 import { db as runtimeDb } from './db';
+import type {
+  PrintErrorCode,
+  PrintErrorDetectionConfidence,
+  PrintErrorLayer,
+  PrintErrorRecord,
+  PrintErrorResolutionStatus,
+  PrintErrorSeverity,
+  PrintErrorSystemAction,
+} from '@/utils/print-error-types';
 
 const SQLITE_FILE_PATH = path.resolve('printbit.sqlite');
 const LOWDB_IMPORT_META_KEY = 'lowdb_import_v1';
@@ -51,6 +60,14 @@ type ListReportIssueOptions = {
 type ListReceiptOptions = {
   mode?: ReceiptRecordEntry['mode'];
   status?: ReceiptRecordEntry['status'];
+  limit: number;
+  offset: number;
+};
+
+type ListPrintErrorOptions = {
+  layer?: PrintErrorLayer;
+  severity?: PrintErrorSeverity;
+  status?: PrintErrorResolutionStatus;
   limit: number;
   offset: number;
 };
@@ -330,6 +347,41 @@ function ensureSchema(db: DatabaseSync): void {
       ON admin_logs(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_admin_logs_type
       ON admin_logs(type);
+
+    CREATE TABLE IF NOT EXISTS print_errors (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      code TEXT NOT NULL,
+      layer TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      user_message TEXT NOT NULL,
+      admin_message TEXT NOT NULL,
+      refund_eligible INTEGER NOT NULL,
+      system_action TEXT NOT NULL,
+      detection_confidence TEXT NOT NULL,
+      source TEXT NOT NULL,
+      raw_json TEXT,
+      transaction_id TEXT,
+      session_id TEXT,
+      job_id TEXT,
+      printer_name TEXT,
+      resolution_status TEXT NOT NULL,
+      resolution_note TEXT,
+      resolved_at TEXT,
+      resolved_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_print_errors_timestamp
+      ON print_errors(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_print_errors_code
+      ON print_errors(code);
+    CREATE INDEX IF NOT EXISTS idx_print_errors_layer
+      ON print_errors(layer);
+    CREATE INDEX IF NOT EXISTS idx_print_errors_severity
+      ON print_errors(severity);
+    CREATE INDEX IF NOT EXISTS idx_print_errors_resolution_status
+      ON print_errors(resolution_status);
+    CREATE INDEX IF NOT EXISTS idx_print_errors_transaction_id
+      ON print_errors(transaction_id);
 
     CREATE TABLE IF NOT EXISTS feedback_sessions (
       id TEXT PRIMARY KEY,
@@ -1314,6 +1366,294 @@ export class AdminLogSqliteStore {
       type: String(row.type ?? ''),
       message: String(row.message ?? ''),
       meta,
+    };
+  }
+}
+
+function normalizePrintErrorLayer(value: unknown): PrintErrorLayer {
+  switch (value) {
+    case 'paper':
+    case 'ink':
+    case 'connectivity':
+    case 'input':
+    case 'application':
+    case 'infrastructure':
+      return value;
+    default:
+      return 'infrastructure';
+  }
+}
+
+function normalizePrintErrorSeverity(value: unknown): PrintErrorSeverity {
+  switch (value) {
+    case 'WARNING':
+    case 'RECOVERABLE':
+    case 'FATAL':
+      return value;
+    default:
+      return 'WARNING';
+  }
+}
+
+function normalizePrintErrorAction(value: unknown): PrintErrorSystemAction {
+  switch (value) {
+    case 'ABORT_AND_REFUND':
+    case 'ABORT_NO_REFUND':
+    case 'PAUSE_AND_NOTIFY':
+    case 'RETRY':
+    case 'RESET_SESSION':
+      return value;
+    default:
+      return 'PAUSE_AND_NOTIFY';
+  }
+}
+
+function normalizePrintErrorConfidence(
+  value: unknown,
+): PrintErrorDetectionConfidence {
+  switch (value) {
+    case 'high':
+    case 'medium':
+    case 'low':
+      return value;
+    default:
+      return 'low';
+  }
+}
+
+function normalizePrintErrorResolutionStatus(
+  value: unknown,
+): PrintErrorResolutionStatus {
+  switch (value) {
+    case 'open':
+    case 'acknowledged':
+    case 'resolved':
+    case 'dismissed':
+      return value;
+    default:
+      return 'open';
+  }
+}
+
+function normalizePrintErrorRaw(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+export class PrintErrorSqliteStore {
+  create(entry: PrintErrorRecord): PrintErrorRecord {
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO print_errors (
+          id,
+          timestamp,
+          code,
+          layer,
+          severity,
+          user_message,
+          admin_message,
+          refund_eligible,
+          system_action,
+          detection_confidence,
+          source,
+          raw_json,
+          transaction_id,
+          session_id,
+          job_id,
+          printer_name,
+          resolution_status,
+          resolution_note,
+          resolved_at,
+          resolved_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.timestamp,
+        entry.code,
+        entry.layer,
+        entry.severity,
+        entry.userMessage,
+        entry.adminMessage,
+        entry.refundEligible ? 1 : 0,
+        entry.systemAction,
+        entry.detectionConfidence,
+        entry.source,
+        jsonOrNull(entry.raw),
+        entry.transactionId,
+        entry.sessionId,
+        entry.jobId,
+        entry.printerName,
+        entry.resolutionStatus,
+        entry.resolutionNote,
+        entry.resolvedAt,
+        entry.resolvedBy,
+      );
+
+    return entry;
+  }
+
+  list(options: ListPrintErrorOptions): {
+    total: number;
+    items: PrintErrorRecord[];
+  } {
+    const conditions: string[] = [];
+    const args: Array<string | number> = [];
+
+    if (options.layer) {
+      conditions.push('layer = ?');
+      args.push(options.layer);
+    }
+    if (options.severity) {
+      conditions.push('severity = ?');
+      args.push(options.severity);
+    }
+    if (options.status) {
+      conditions.push('resolution_status = ?');
+      args.push(options.status);
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const db = getSqliteDb();
+    const totalRow = db
+      .prepare(`SELECT COUNT(*) AS total FROM print_errors ${whereClause}`)
+      .get(...args) as { total?: unknown };
+
+    const rows = db
+      .prepare(
+        `SELECT
+          id,
+          timestamp,
+          code,
+          layer,
+          severity,
+          user_message,
+          admin_message,
+          refund_eligible,
+          system_action,
+          detection_confidence,
+          source,
+          raw_json,
+          transaction_id,
+          session_id,
+          job_id,
+          printer_name,
+          resolution_status,
+          resolution_note,
+          resolved_at,
+          resolved_by
+         FROM print_errors
+         ${whereClause}
+         ORDER BY timestamp DESC, rowid DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(
+        ...args,
+        Math.max(1, Math.floor(options.limit)),
+        Math.max(0, Math.floor(options.offset)),
+      ) as Array<Record<string, unknown>>;
+
+    return {
+      total: Number(totalRow.total ?? 0),
+      items: rows.map((row) => this.toEntry(row)),
+    };
+  }
+
+  findById(id: string): PrintErrorRecord | null {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          id,
+          timestamp,
+          code,
+          layer,
+          severity,
+          user_message,
+          admin_message,
+          refund_eligible,
+          system_action,
+          detection_confidence,
+          source,
+          raw_json,
+          transaction_id,
+          session_id,
+          job_id,
+          printer_name,
+          resolution_status,
+          resolution_note,
+          resolved_at,
+          resolved_by
+         FROM print_errors
+         WHERE id = ?
+         LIMIT 1`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? this.toEntry(row) : null;
+  }
+
+  updateResolution(input: {
+    id: string;
+    status: PrintErrorResolutionStatus;
+    note?: string | null;
+    resolvedBy?: string | null;
+  }): PrintErrorRecord | null {
+    const resolvedAt =
+      input.status === 'resolved' || input.status === 'dismissed'
+        ? toIsoDate(new Date())
+        : null;
+    const result = getSqliteDb()
+      .prepare(
+        `UPDATE print_errors
+         SET resolution_status = ?,
+             resolution_note = ?,
+             resolved_at = ?,
+             resolved_by = ?
+         WHERE id = ?`,
+      )
+      .run(
+        input.status,
+        input.note ?? null,
+        resolvedAt,
+        input.resolvedBy ?? null,
+        input.id,
+      ) as { changes?: unknown };
+
+    if (Number(result.changes ?? 0) === 0) return null;
+    return this.findById(input.id);
+  }
+
+  private toEntry(row: Record<string, unknown>): PrintErrorRecord {
+    return {
+      id: String(row.id ?? ''),
+      timestamp: String(row.timestamp ?? ''),
+      code: String(row.code ?? 'UNKNOWN_PRINTER_FAULT') as PrintErrorCode,
+      layer: normalizePrintErrorLayer(row.layer),
+      severity: normalizePrintErrorSeverity(row.severity),
+      userMessage: String(row.user_message ?? ''),
+      adminMessage: String(row.admin_message ?? ''),
+      refundEligible: row.refund_eligible === 1 || row.refund_eligible === true,
+      systemAction: normalizePrintErrorAction(row.system_action),
+      detectionConfidence: normalizePrintErrorConfidence(
+        row.detection_confidence,
+      ),
+      source: String(row.source ?? ''),
+      raw: normalizePrintErrorRaw(parseJsonValue<unknown>(row.raw_json)),
+      transactionId:
+        typeof row.transaction_id === 'string' ? row.transaction_id : null,
+      sessionId: typeof row.session_id === 'string' ? row.session_id : null,
+      jobId: typeof row.job_id === 'string' ? row.job_id : null,
+      printerName:
+        typeof row.printer_name === 'string' ? row.printer_name : null,
+      resolutionStatus: normalizePrintErrorResolutionStatus(
+        row.resolution_status,
+      ),
+      resolutionNote:
+        typeof row.resolution_note === 'string' ? row.resolution_note : null,
+      resolvedAt: typeof row.resolved_at === 'string' ? row.resolved_at : null,
+      resolvedBy: typeof row.resolved_by === 'string' ? row.resolved_by : null,
     };
   }
 }
@@ -2837,6 +3177,7 @@ export class ConsumablesSqliteStore {
 }
 
 export const adminLogStore = new AdminLogSqliteStore();
+export const printErrorStore = new PrintErrorSqliteStore();
 export const feedbackStore = new FeedbackSqliteStore();
 export const reportIssueStore = new ReportIssueSqliteStore();
 export const receiptStore = new ReceiptSqliteStore();

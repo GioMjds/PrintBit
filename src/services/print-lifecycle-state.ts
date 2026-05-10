@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 import type { LogMeta, SpoolerLifecycleState } from './db';
 import { recordSpoolerLifecycleTransition } from './recovery';
+import type { PublicPrintError } from '../utils/print-error-types';
 
 export interface PrintLifecycleStatePayload {
   mode: 'print' | 'copy';
@@ -16,6 +17,7 @@ export interface PrintLifecycleStatePayload {
   jobDispatchedAt?: string;
   timedOut?: boolean;
   refundDisposition?: string;
+  printError?: PublicPrintError;
   receipt?: any;
 }
 

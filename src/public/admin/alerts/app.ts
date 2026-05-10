@@ -30,6 +30,36 @@ interface AnomalyListResponse {
   items: AnomalyIncident[];
 }
 
+interface PrintErrorRecord {
+  id: string;
+  timestamp: string;
+  code: string;
+  layer:
+    | 'paper'
+    | 'ink'
+    | 'connectivity'
+    | 'input'
+    | 'application'
+    | 'infrastructure';
+  severity: 'WARNING' | 'RECOVERABLE' | 'FATAL';
+  userMessage: string;
+  adminMessage: string;
+  refundEligible: boolean;
+  systemAction: string;
+  detectionConfidence: 'high' | 'medium' | 'low';
+  source: string;
+  transactionId: string | null;
+  sessionId: string | null;
+  jobId: string | null;
+  printerName: string | null;
+  resolutionStatus: 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+}
+
+interface PrintErrorListResponse {
+  total: number;
+  items: PrintErrorRecord[];
+}
+
 const incidentList = document.getElementById('incidentList') as HTMLElement;
 const filterBar = document.getElementById('filterBar') as HTMLElement;
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
@@ -44,6 +74,19 @@ const openAlertBadge = document.getElementById('openAlertBadge') as HTMLElement;
 const openAlertBadgeMob = document.getElementById(
   'openAlertBadgeMob',
 ) as HTMLElement | null;
+const printErrorList = document.getElementById('printErrorList') as HTMLElement;
+const refreshErrorsBtn = document.getElementById(
+  'refreshErrorsBtn',
+) as HTMLButtonElement;
+const errorLayerFilter = document.getElementById(
+  'errorLayerFilter',
+) as HTMLSelectElement;
+const errorSeverityFilter = document.getElementById(
+  'errorSeverityFilter',
+) as HTMLSelectElement;
+const errorStatusFilter = document.getElementById(
+  'errorStatusFilter',
+) as HTMLSelectElement;
 
 const detailOverlay = document.getElementById('detailOverlay') as HTMLElement;
 const detailTitle = document.getElementById('detailTitle') as HTMLElement;
@@ -133,6 +176,55 @@ function renderIncidents(items: AnomalyIncident[]): void {
     });
 }
 
+function renderPrintErrors(items: PrintErrorRecord[]): void {
+  printErrorList.innerHTML = '';
+  if (items.length === 0) {
+    printErrorList.innerHTML =
+      '<div class="ri-empty"><div class="ri-empty__icon">!</div><p>No print errors found.</p></div>';
+    return;
+  }
+
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = `ri-card ri-card--${item.severity === 'FATAL' ? 'critical' : 'warning'}`;
+    card.innerHTML = `
+      <div class="ri-card__accent"></div>
+      <div class="ri-card__body">
+        <div class="ri-card__meta">
+          <span class="ri-card__time">${new Date(item.timestamp).toLocaleString()}</span>
+          <span class="ri-badge ri-badge--${escHtml(item.resolutionStatus)}">${escHtml(item.resolutionStatus)}</span>
+          <span class="ri-badge ri-badge--${item.severity === 'FATAL' ? 'critical' : 'warning'}">${escHtml(item.severity)}</span>
+          <span class="ri-badge ri-badge--cat">${escHtml(item.layer)}</span>
+          <span class="ri-badge ri-badge--cat">${escHtml(item.detectionConfidence)}</span>
+        </div>
+        <p class="ri-card__title">${escHtml(item.code)}</p>
+        <p class="ri-card__desc">${escHtml(item.adminMessage)}</p>
+        <div class="error-history__meta">
+          <span>${escHtml(item.printerName ?? 'Unknown printer')}</span>
+          <span>${escHtml(item.transactionId ?? 'No transaction')}</span>
+          <span>${item.refundEligible ? 'Refund eligible' : 'No refund needed'}</span>
+        </div>
+        <div class="ri-card__actions">
+          <button class="ri-action-btn ri-action-btn--ack" data-error-action="acknowledged" data-id="${escHtml(item.id)}">Acknowledge</button>
+          <button class="ri-action-btn ri-action-btn--resolve" data-error-action="resolved" data-id="${escHtml(item.id)}">Resolve</button>
+        </div>
+      </div>
+    `;
+    printErrorList.appendChild(card);
+  }
+
+  printErrorList
+    .querySelectorAll<HTMLButtonElement>('[data-error-action]')
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        const status = button.dataset.errorAction as
+          | 'acknowledged'
+          | 'resolved';
+        void updatePrintErrorResolution(button.dataset.id!, status);
+      });
+    });
+}
+
 async function loadData(): Promise<void> {
   const offset = (currentPage - 1) * PAGE_SIZE;
   const statusParam = activeFilter !== 'all' ? `&status=${activeFilter}` : '';
@@ -153,6 +245,41 @@ async function loadData(): Promise<void> {
   renderIncidents(data.items);
   updateStats(data);
   updatePagination();
+}
+
+async function loadPrintErrors(): Promise<void> {
+  const params = new URLSearchParams({
+    limit: '25',
+    offset: '0',
+  });
+  if (errorLayerFilter.value) params.set('layer', errorLayerFilter.value);
+  if (errorSeverityFilter.value) {
+    params.set('severity', errorSeverityFilter.value);
+  }
+  if (errorStatusFilter.value) params.set('status', errorStatusFilter.value);
+
+  const response = await apiFetch(`/api/admin/print-errors?${params}`);
+  if (!response.ok) {
+    throw new Error('Failed to load print error history.');
+  }
+  const data = (await response.json()) as PrintErrorListResponse;
+  renderPrintErrors(data.items);
+}
+
+async function updatePrintErrorResolution(
+  id: string,
+  status: 'acknowledged' | 'resolved',
+): Promise<void> {
+  const response = await apiFetch(`/api/admin/print-errors/${id}/resolution`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+  if (!response.ok) {
+    setMessage('Failed to update print error.');
+    return;
+  }
+  await loadPrintErrors();
+  setMessage('Print error updated.');
 }
 
 async function openDetail(id: string): Promise<void> {
@@ -220,12 +347,29 @@ function closeDetailModal(): void {
 
 refreshBtn.addEventListener('click', () => {
   setMessage('Refreshing...');
-  void loadData()
+  void Promise.all([loadData(), loadPrintErrors()])
     .then(() => setMessage('Alerts refreshed.'))
     .catch((error: unknown) =>
       setMessage(error instanceof Error ? error.message : 'Refresh failed.'),
     );
 });
+
+refreshErrorsBtn.addEventListener('click', () => {
+  setMessage('Refreshing print errors...');
+  void loadPrintErrors()
+    .then(() => setMessage('Print errors refreshed.'))
+    .catch((error: unknown) =>
+      setMessage(error instanceof Error ? error.message : 'Refresh failed.'),
+    );
+});
+
+for (const select of [
+  errorLayerFilter,
+  errorSeverityFilter,
+  errorStatusFilter,
+]) {
+  select.addEventListener('change', () => void loadPrintErrors());
+}
 
 filterBar
   .querySelectorAll<HTMLButtonElement>('.filter-btn')
@@ -281,6 +425,10 @@ const handleSocketIncident = (): void => {
   void loadData();
 };
 
+const handleSocketPrintError = (): void => {
+  void loadPrintErrors();
+};
+
 const handleSocketCount = (payload: unknown): void => {
   const openCount =
     payload &&
@@ -298,6 +446,7 @@ function disconnectSocket(target: AdminAlertsSocket | null): void {
   if (!target) return;
   target.off?.('adminAnomalyIncident', handleSocketIncident);
   target.off?.('adminAnomalyCount', handleSocketCount);
+  target.off?.('printErrorRaised', handleSocketPrintError);
   target.disconnect();
 }
 
@@ -321,14 +470,18 @@ function connectSocket(): void {
   const nextSocket = io({ auth: { pin }, reconnectionDelay: 2000 });
   nextSocket.on('adminAnomalyIncident', handleSocketIncident);
   nextSocket.on('adminAnomalyCount', handleSocketCount);
+  nextSocket.on('printErrorRaised', handleSocketPrintError);
   socket = nextSocket;
 }
 
 initAuth(async () => {
   cleanupLiveUpdates();
-  await loadData();
+  await Promise.all([loadData(), loadPrintErrors()]);
   connectSocket();
-  poller = window.setInterval(() => void loadData(), 10_000);
+  poller = window.setInterval(() => {
+    void loadData();
+    void loadPrintErrors();
+  }, 10_000);
 });
 
 document

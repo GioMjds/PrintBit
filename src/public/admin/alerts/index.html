@@ -332,6 +332,54 @@
             </div>
 
             <div id="incidentList" class="ri-list"></div>
+
+            <section class="error-history" aria-labelledby="errorHistoryTitle">
+              <div class="error-history__header">
+                <div>
+                  <p class="error-history__kicker">Print Pipeline</p>
+                  <h3 id="errorHistoryTitle" class="error-history__title">
+                    Error History
+                  </h3>
+                </div>
+                <button id="refreshErrorsBtn" class="page-btn" type="button">
+                  Refresh errors
+                </button>
+              </div>
+              <div class="error-history__filters">
+                <label>
+                  <span>Layer</span>
+                  <select id="errorLayerFilter">
+                    <option value="">All layers</option>
+                    <option value="paper">Paper</option>
+                    <option value="ink">Ink</option>
+                    <option value="connectivity">Connectivity</option>
+                    <option value="input">Input</option>
+                    <option value="application">Application</option>
+                    <option value="infrastructure">Infrastructure</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Severity</span>
+                  <select id="errorSeverityFilter">
+                    <option value="">All severities</option>
+                    <option value="WARNING">Warning</option>
+                    <option value="RECOVERABLE">Recoverable</option>
+                    <option value="FATAL">Fatal</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select id="errorStatusFilter">
+                    <option value="">All statuses</option>
+                    <option value="open">Open</option>
+                    <option value="acknowledged">Acknowledged</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="dismissed">Dismissed</option>
+                  </select>
+                </label>
+              </div>
+              <div id="printErrorList" class="ri-list"></div>
+            </section>
           </section>
         </div>
       </div>

@@ -60,6 +60,12 @@ import type { AlertSettings } from './admin.schema';
 import { ConsumablesService } from './consumables.service';
 import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
 import { getSqliteDb } from '@/core/database/sqlite-storage';
+import { printErrorStore } from '@/core/database/sqlite-storage';
+import type {
+  PrintErrorLayer,
+  PrintErrorResolutionStatus,
+  PrintErrorSeverity,
+} from '@/utils/print-error-types';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -138,6 +144,32 @@ function isAnomalyCategory(
     value === 'hopper' ||
     value === 'network' ||
     value === 'security'
+  );
+}
+
+function isPrintErrorLayer(value: unknown): value is PrintErrorLayer {
+  return (
+    value === 'paper' ||
+    value === 'ink' ||
+    value === 'connectivity' ||
+    value === 'input' ||
+    value === 'application' ||
+    value === 'infrastructure'
+  );
+}
+
+function isPrintErrorSeverity(value: unknown): value is PrintErrorSeverity {
+  return value === 'WARNING' || value === 'RECOVERABLE' || value === 'FATAL';
+}
+
+function isPrintErrorResolutionStatus(
+  value: unknown,
+): value is PrintErrorResolutionStatus {
+  return (
+    value === 'open' ||
+    value === 'acknowledged' ||
+    value === 'resolved' ||
+    value === 'dismissed'
   );
 }
 
@@ -550,6 +582,18 @@ export class AdminController {
       requireAdminLocalAccess,
       requireAdminPin,
       this.handleUpdateAnomalyIncidentStatus,
+    );
+    this.router.get(
+      '/print-errors',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetPrintErrors,
+    );
+    this.router.patch(
+      '/print-errors/:id/resolution',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleUpdatePrintErrorResolution,
     );
 
     // ── Logs routes ────────────────────────────────────────────────────────────
@@ -1720,12 +1764,14 @@ export class AdminController {
       if (incoming.decileSurcharges !== undefined) {
         if (!Array.isArray(incoming.decileSurcharges)) {
           return res.status(400).json({
-            error: 'pricingEngine.decileSurcharges must be an array of 10 numbers.',
+            error:
+              'pricingEngine.decileSurcharges must be an array of 10 numbers.',
           });
         }
         if (incoming.decileSurcharges.length !== 10) {
           return res.status(400).json({
-            error: 'pricingEngine.decileSurcharges must contain exactly 10 values.',
+            error:
+              'pricingEngine.decileSurcharges must contain exactly 10 values.',
           });
         }
 
@@ -1749,8 +1795,7 @@ export class AdminController {
           incoming.suggestionThreshold > 1
         ) {
           return res.status(400).json({
-            error:
-              'pricingEngine.suggestionThreshold must be between 0 and 1.',
+            error: 'pricingEngine.suggestionThreshold must be between 0 and 1.',
           });
         }
         next.suggestionThreshold = incoming.suggestionThreshold;
@@ -2097,6 +2142,97 @@ export class AdminController {
     }
 
     res.json({ ok: true, incident });
+  };
+
+  // ── Print error history handlers ──────────────────────────────────────────
+
+  private handleGetPrintErrors = (req: Request, res: Response) => {
+    const layer =
+      req.query.layer !== undefined && req.query.layer !== ''
+        ? req.query.layer
+        : undefined;
+    const severity =
+      req.query.severity !== undefined && req.query.severity !== ''
+        ? req.query.severity
+        : undefined;
+    const status =
+      req.query.status !== undefined && req.query.status !== ''
+        ? req.query.status
+        : undefined;
+
+    if (layer !== undefined && !isPrintErrorLayer(layer)) {
+      return res.status(400).json({
+        error:
+          'layer must be one of: paper, ink, connectivity, input, application, infrastructure.',
+      });
+    }
+    if (severity !== undefined && !isPrintErrorSeverity(severity)) {
+      return res.status(400).json({
+        error: 'severity must be one of: WARNING, RECOVERABLE, FATAL.',
+      });
+    }
+    if (status !== undefined && !isPrintErrorResolutionStatus(status)) {
+      return res.status(400).json({
+        error:
+          'status must be one of: open, acknowledged, resolved, dismissed.',
+      });
+    }
+
+    const limit = this.parseLogLimit(req.query.limit, 50);
+    const offsetRaw = Number(req.query.offset ?? 0);
+    const offset = Number.isFinite(offsetRaw)
+      ? Math.max(0, Math.floor(offsetRaw))
+      : 0;
+
+    res.json(
+      printErrorStore.list({
+        layer,
+        severity,
+        status,
+        limit,
+        offset,
+      }),
+    );
+  };
+
+  private handleUpdatePrintErrorResolution = async (
+    req: Request,
+    res: Response,
+  ) => {
+    const status = req.body?.status;
+    if (!isPrintErrorResolutionStatus(status)) {
+      return res.status(400).json({
+        error:
+          'status must be one of: open, acknowledged, resolved, dismissed.',
+      });
+    }
+
+    const note =
+      typeof req.body?.note === 'string' && req.body.note.trim().length > 0
+        ? req.body.note.trim().slice(0, 1000)
+        : null;
+    const updated = printErrorStore.updateResolution({
+      id: String(req.params.id ?? ''),
+      status,
+      note,
+      resolvedBy: 'admin',
+    });
+    if (!updated) {
+      return res.status(404).json({ error: 'Print error not found.' });
+    }
+
+    await this.adminService.appendAdminLog(
+      'print_error_resolution_updated',
+      `Print error ${updated.code} marked ${updated.resolutionStatus}.`,
+      {
+        errorId: updated.id,
+        errorCode: updated.code,
+        resolutionStatus: updated.resolutionStatus,
+        note,
+      },
+    );
+
+    res.json({ ok: true, printError: updated });
   };
 
   // ── Logs handlers ──────────────────────────────────────────────────────────

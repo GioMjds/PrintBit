@@ -11,6 +11,12 @@ import {
 import { adminService } from './admin';
 import { anomalyService, buildAnomalyFingerprint } from './anomaly';
 import { BLOCKED_STATUSES } from '@/utils';
+import { printErrorClassifier } from './print-error-classifier';
+import {
+  printErrorHistoryService,
+  toPublicPrintError,
+} from './print-error-history';
+import type { PublicPrintError } from '../utils/print-error-types';
 
 // ── Blocked printer statuses ─────────────────────────────────────────────────
 
@@ -19,6 +25,7 @@ export interface PrinterMalfunctionEvent {
   statusFlags: string[];
   printerName: string | null;
   timestamp: string;
+  printError?: PublicPrintError;
 }
 
 export interface PrinterStatusChangedEvent {
@@ -442,11 +449,33 @@ class PrinterMonitorService {
     telemetry: PrinterTelemetry,
     timestamp: string,
   ): void {
+    const classifiedError = printErrorClassifier.classifyPrinterTelemetry(
+      telemetry,
+      {
+        source: 'printer-monitor',
+        printerName: telemetry.name ?? null,
+        raw: {
+          status: telemetry.status,
+          statusFlags: telemetry.statusFlags.join(','),
+          connected: telemetry.connected,
+          driverName: telemetry.driverName,
+          portName: telemetry.portName,
+        },
+      },
+    );
+    const printError = classifiedError
+      ? toPublicPrintError(
+          printErrorHistoryService.record(classifiedError, {
+            io: this.io,
+          }),
+        )
+      : undefined;
     const payload: PrinterMalfunctionEvent = {
       status: telemetry.status,
       statusFlags: telemetry.statusFlags,
       printerName: telemetry.name,
       timestamp,
+      printError,
     };
     this.io?.emit('printerMalfunction', payload);
   }
@@ -584,11 +613,42 @@ export async function watchJobForMalfunction(
       // printerName is omitted here — the fast status query skips it to stay
       // under 1 s. The 30 s monitor will emit a full printerStatusChanged with
       // name on its next cycle.
+      const classifiedError = printErrorClassifier.classifyPrinterTelemetry(
+        {
+          connected,
+          name: null,
+          driverName: null,
+          portName: null,
+          connectionType: 'unknown',
+          status,
+          statusFlags,
+          ink: [],
+          inkDetectionMethod: 'none',
+          lastCheckedAt: timestamp,
+          lastError: null,
+        },
+        {
+          source: 'printer-watchdog',
+          sessionId: opts.sessionId ?? null,
+          jobId: opts.jobId,
+          raw: {
+            status,
+            statusFlags: statusFlags.join(','),
+            connected,
+          },
+        },
+      );
+      const printError = classifiedError
+        ? toPublicPrintError(
+            printErrorHistoryService.record(classifiedError, { io }),
+          )
+        : undefined;
       const payload: PrinterMalfunctionEvent = {
         status,
         statusFlags,
         printerName: null,
         timestamp,
+        printError,
       };
       io.emit('printerMalfunction', payload);
 

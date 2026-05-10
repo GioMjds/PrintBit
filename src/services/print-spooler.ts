@@ -10,6 +10,11 @@ import { checkpointRecoverySession } from './recovery';
 import { persistAndEmitPrintLifecycleState } from './print-lifecycle-state';
 import { setPrinterFaultLock } from './printer-fault-lock';
 import { anomalyService, buildAnomalyFingerprint } from './anomaly';
+import { printErrorClassifier } from './print-error-classifier';
+import {
+  printErrorHistoryService,
+  toPublicPrintError,
+} from './print-error-history';
 import {
   PRINT_SPOOLER_LOOKBACK_MINUTES,
   PRINT_SPOOLER_MONITOR_WINDOW_MS,
@@ -424,6 +429,13 @@ export async function monitorSpoolerJob(
     };
   };
 
+  const basePrintErrorContext = {
+    transactionId,
+    sessionId,
+    jobId: documentId,
+    printerName: normalizedPrinterName,
+  };
+
   console.log('[SPOOLER-MONITOR] Starting spooler monitor.', {
     printerName: normalizedPrinterName,
     chargedAmount,
@@ -455,6 +467,25 @@ export async function monitorSpoolerJob(
 
   if (!normalizedPrinterName) {
     const reason = 'Spooler monitoring unavailable: printer name is missing.';
+    const recordedError = printErrorHistoryService.record(
+      printErrorClassifier.create('SPOOLER_QUERY_FAILED', {
+        ...basePrintErrorContext,
+        source: 'print-spooler',
+        printerName: null,
+        raw: {
+          reason,
+          spoolerCorrelationKey: correlationKey,
+          chargedAmount,
+        },
+      }),
+      {
+        io,
+        chargedAmount,
+        pagesPrinted: 0,
+        totalPages: 0,
+      },
+    );
+    const publicPrintError = toPublicPrintError(recordedError);
     await persistAndEmitPrintLifecycleState(
       io,
       {
@@ -468,6 +499,7 @@ export async function monitorSpoolerJob(
         totalPages: 0,
         reason,
         timedOut: true,
+        printError: publicPrintError,
         receipt,
       },
       {
@@ -493,6 +525,7 @@ export async function monitorSpoolerJob(
       monitorWindowMs: MONITOR_WINDOW_MS,
       queryFailureCount,
       reason,
+      printError: publicPrintError,
       receipt,
     });
     try {
@@ -581,6 +614,88 @@ export async function monitorSpoolerJob(
       lastQueryErrorCode,
       lastQueryErrorDetail,
     });
+    const classifiedError =
+      marker === 'query_failure_threshold'
+        ? printErrorClassifier.create('SPOOLER_QUERY_FAILED', {
+            ...basePrintErrorContext,
+            jobId: trackedJobId ?? documentId,
+            source: 'print-spooler',
+            raw: {
+              reason,
+              marker,
+              spoolerCorrelationKey: correlationKey,
+              lastQueryErrorCode,
+              lastQueryErrorDetail,
+              queryFailureCount,
+              consecutiveQueryFailures,
+            },
+          })
+        : printErrorClassifier.create('SPOOLER_QUEUE_STUCK', {
+            ...basePrintErrorContext,
+            jobId: trackedJobId ?? documentId,
+            source: 'print-spooler',
+            raw: {
+              reason,
+              marker,
+              spoolerCorrelationKey: correlationKey,
+              lastStatus,
+              lastPagesPrinted,
+              lastTotalPages,
+              pollCount,
+            },
+          });
+    const autoRefund = trackedJobId !== null && lastPagesPrinted === 0;
+    let refundId: string | null = null;
+    let refundDisposition:
+      | 'auto_refunded'
+      | 'pending_admin_review'
+      | 'refund_blocked_trusted_time'
+      | null = null;
+    let restoredBalanceAmount = 0;
+    try {
+      const refundOutcome = await upsertSpoolerFailureRefund({
+        chargedAmount,
+        reason,
+        autoRefund,
+        jobContext: {
+          ...jobContext,
+          spoolerJobId: trackedJobId,
+          spoolerStatus: lastStatus,
+          pagesPrinted: lastPagesPrinted,
+          totalPages: lastTotalPages,
+          jobDispatchedAt,
+          printerName: normalizedPrinterName,
+          spoolerCorrelationKey: correlationKey,
+        },
+      });
+      refundId = refundOutcome.entry.id;
+      refundDisposition = refundOutcome.autoRefunded
+        ? 'auto_refunded'
+        : 'pending_admin_review';
+      restoredBalanceAmount = refundOutcome.restoredBalanceAmount;
+      if (refundOutcome.autoRefunded && restoredBalanceAmount > 0) {
+        io.emit('balance', db.data!.balance);
+      }
+    } catch (error) {
+      if (
+        error instanceof PendingRefundServiceError &&
+        error.code === 'TRUSTED_TIME_UNAVAILABLE'
+      ) {
+        refundDisposition = 'refund_blocked_trusted_time';
+      } else {
+        throw error;
+      }
+    }
+    const recordedError = printErrorHistoryService.record(classifiedError, {
+      io,
+      refundId,
+      refundDisposition,
+      restoredBalanceAmount,
+      pagesPrinted: lastPagesPrinted,
+      totalPages: lastTotalPages,
+      chargedAmount,
+    });
+    const publicPrintError = toPublicPrintError(recordedError);
     await persistAndEmitPrintLifecycleState(
       io,
       {
@@ -595,6 +710,8 @@ export async function monitorSpoolerJob(
         totalPages: lastTotalPages,
         reason,
         timedOut: true,
+        refundDisposition: refundDisposition ?? undefined,
+        printError: publicPrintError,
         receipt,
       },
       {
@@ -623,6 +740,32 @@ export async function monitorSpoolerJob(
       lastQueryErrorCode,
       lastQueryErrorDetail,
       reason,
+      refundId,
+      refundDisposition,
+      restoredBalanceAmount,
+      printError: publicPrintError,
+      receipt,
+    });
+    io.emit('printerSpoolerFailure', {
+      jobStatus: lastStatus ?? marker,
+      chargedAmount,
+      refundId,
+      pagesPrinted: lastPagesPrinted,
+      totalPages: lastTotalPages,
+      printerName: normalizedPrinterName,
+      spoolerJobId: trackedJobId,
+      reason,
+      refundDisposition,
+      restoredBalanceAmount,
+      transactionId,
+      spoolerCorrelationKey: correlationKey,
+      jobDispatchedAt,
+      monitorStartedAt: startedAtIso,
+      monitorElapsedMs,
+      handoffLatencyMs,
+      pollCount,
+      queryFailureCount,
+      printError: publicPrintError,
       receipt,
     });
     try {
@@ -639,6 +782,11 @@ export async function monitorSpoolerJob(
           queryFailureCount,
           lastQueryErrorCode,
           lastQueryErrorDetail,
+          refundId,
+          refundDisposition,
+          restoredBalanceAmount,
+          errorId: recordedError.id,
+          errorCode: recordedError.code,
         },
       );
     } catch (error) {
@@ -672,6 +820,8 @@ export async function monitorSpoolerJob(
             queryFailureCount,
             lastQueryErrorCode,
             lastQueryErrorDetail,
+            refundDisposition,
+            refundId,
             reason,
           },
           lastError: reason,
@@ -685,7 +835,11 @@ export async function monitorSpoolerJob(
     }
     await safeUpdateReceiptTerminalStatus({
       transactionId,
-      status: 'failed',
+      status:
+        refundDisposition === 'auto_refunded' ||
+        refundDisposition === 'pending_admin_review'
+          ? receiptStatusFromRefundDisposition(refundDisposition)
+          : 'failed',
       phase: marker,
       spoolerCorrelationKey: correlationKey,
       spoolerJobId: trackedJobId,
@@ -1546,6 +1700,29 @@ export async function monitorSpoolerJob(
             error instanceof PendingRefundServiceError &&
             error.code === 'TRUSTED_TIME_UNAVAILABLE'
           ) {
+            const recordedError = printErrorHistoryService.record(
+              printErrorClassifier.classifySpoolerStatus(job.status, {
+                ...basePrintErrorContext,
+                jobId: job.id,
+                source: 'print-spooler',
+                raw: {
+                  spoolerStatus: job.status,
+                  pagesPrinted: job.pagesPrinted,
+                  totalPages: job.totalPages,
+                  spoolerCorrelationKey: correlationKey,
+                  refundDisposition: 'refund_blocked_trusted_time',
+                },
+              }),
+              {
+                io,
+                refundDisposition: 'refund_blocked_trusted_time',
+                restoredBalanceAmount: 0,
+                pagesPrinted: job.pagesPrinted,
+                totalPages: job.totalPages,
+                chargedAmount,
+              },
+            );
+            const publicPrintError = toPublicPrintError(recordedError);
             const trustedDetail =
               typeof error.context?.trustedTime === 'object' &&
               error.context.trustedTime !== null
@@ -1587,6 +1764,7 @@ export async function monitorSpoolerJob(
                 totalPages: job.totalPages,
                 reason,
                 refundDisposition: 'refund_blocked_trusted_time',
+                printError: publicPrintError,
               },
               {
                 requiredAmount: chargedAmount,
@@ -1616,6 +1794,7 @@ export async function monitorSpoolerJob(
               handoffLatencyMs,
               pollCount,
               queryFailureCount,
+              printError: publicPrintError,
             });
             if (transactionId) {
               try {
@@ -1638,6 +1817,8 @@ export async function monitorSpoolerJob(
                     pagesPrinted: job.pagesPrinted,
                     totalPages: job.totalPages,
                     refundDisposition: 'refund_blocked_trusted_time',
+                    printErrorId: recordedError.id,
+                    printErrorCode: recordedError.code,
                     monitorElapsedMs: Date.now() - startedAtMs,
                     handoffLatencyMs,
                     pollCount,
@@ -1684,6 +1865,29 @@ export async function monitorSpoolerJob(
         const refundDisposition = refundOutcome.autoRefunded
           ? 'auto_refunded'
           : 'pending_admin_review';
+        const recordedError = printErrorHistoryService.record(
+          printErrorClassifier.classifySpoolerStatus(job.status, {
+            ...basePrintErrorContext,
+            jobId: job.id,
+            source: 'print-spooler',
+            raw: {
+              spoolerStatus: job.status,
+              pagesPrinted: job.pagesPrinted,
+              totalPages: job.totalPages,
+              spoolerCorrelationKey: correlationKey,
+            },
+          }),
+          {
+            io,
+            refundId: refundOutcome.entry.id,
+            refundDisposition,
+            restoredBalanceAmount: refundOutcome.restoredBalanceAmount,
+            pagesPrinted: job.pagesPrinted,
+            totalPages: job.totalPages,
+            chargedAmount,
+          },
+        );
+        const publicPrintError = toPublicPrintError(recordedError);
         const logType = refundOutcome.autoRefunded
           ? 'print_spooler_auto_refund'
           : 'print_spooler_job_failed';
@@ -1708,6 +1912,10 @@ export async function monitorSpoolerJob(
             handoffLatencyMs,
             pollCount,
             queryFailureCount,
+            errorId: recordedError.id,
+            errorCode: recordedError.code,
+            layer: recordedError.layer,
+            severity: recordedError.severity,
           });
         } catch (error) {
           console.error('[SPOOLER-MONITOR] Failed to append admin log', error);
@@ -1727,6 +1935,7 @@ export async function monitorSpoolerJob(
             totalPages: job.totalPages,
             reason,
             refundDisposition,
+            printError: publicPrintError,
           },
           {
             requiredAmount: chargedAmount,
@@ -1756,6 +1965,7 @@ export async function monitorSpoolerJob(
           handoffLatencyMs,
           pollCount,
           queryFailureCount,
+          printError: publicPrintError,
         });
 
         await anomalyService.report({
@@ -1817,6 +2027,8 @@ export async function monitorSpoolerJob(
                 totalPages: job.totalPages,
                 refundDisposition,
                 refundId: refundOutcome.entry.id,
+                printErrorId: recordedError.id,
+                printErrorCode: recordedError.code,
                 monitorElapsedMs: Date.now() - startedAtMs,
                 handoffLatencyMs,
                 pollCount,

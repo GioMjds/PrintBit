@@ -94,6 +94,32 @@ type ReceiptLinkPayload = {
   receiptExpiresAt?: string | null;
 };
 
+type PublicPrintError = {
+  id?: string;
+  code: string;
+  severity: 'WARNING' | 'RECOVERABLE' | 'FATAL';
+  userMessage: string;
+  adminMessage?: string;
+  refundEligible?: boolean;
+  refundDisposition?: string | null;
+  transactionId?: string | null;
+  sessionId?: string | null;
+  jobId?: string | null;
+  printerName?: string | null;
+};
+
+type PrintErrorPayload = {
+  printError?: PublicPrintError | null;
+  refundId?: string | null;
+  refundDisposition?: string | null;
+  restoredBalanceAmount?: number | null;
+  chargedAmount?: number | null;
+  pagesPrinted?: number | null;
+  totalPages?: number | null;
+  transactionId?: string | null;
+  spoolerCorrelationKey?: string | null;
+};
+
 type PrintQuote = {
   requiredAmount: number;
   copies: number;
@@ -193,6 +219,7 @@ const changeRow = document.getElementById('changeRow');
 const statusMessage = document.getElementById('statusMessage');
 const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
+const coinToast = document.getElementById('coinToast');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
 
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
@@ -734,6 +761,13 @@ const thankYouOverlay = document.getElementById('thankYouOverlay');
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
+const jamRefundOverlay = document.getElementById('jamRefundOverlay');
+const jamRefundTitle = document.getElementById('jamRefundTitle');
+const jamRefundMessage = document.getElementById('jamRefundMessage');
+const jamRefundHint = document.getElementById('jamRefundHint');
+const jamRefundDoneBtn = document.getElementById(
+  'jamRefundDoneBtn',
+) as HTMLButtonElement | null;
 const transactionReference = document.getElementById(
   'transactionReference',
 ) as HTMLElement | null;
@@ -895,6 +929,126 @@ async function fetchWithTimeout(
   }
 }
 
+function extractPrintError(payload: unknown): PublicPrintError | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const candidate = (payload as { printError?: unknown }).printError;
+  if (!candidate || typeof candidate !== 'object') return null;
+  const record = candidate as Partial<PublicPrintError>;
+  if (
+    typeof record.code !== 'string' ||
+    typeof record.userMessage !== 'string' ||
+    (record.severity !== 'WARNING' &&
+      record.severity !== 'RECOVERABLE' &&
+      record.severity !== 'FATAL')
+  ) {
+    return null;
+  }
+  return record as PublicPrintError;
+}
+
+function showPrintWarningToast(error: PublicPrintError): void {
+  if (!coinToast) return;
+  coinToast.textContent = error.userMessage;
+  window.setTimeout(() => {
+    if (coinToast.textContent === error.userMessage) {
+      coinToast.textContent = '';
+    }
+  }, 6000);
+}
+
+function formatRefundHint(payload?: PrintErrorPayload): string {
+  const disposition =
+    payload?.refundDisposition ?? payload?.printError?.refundDisposition ?? null;
+  const restored =
+    typeof payload?.restoredBalanceAmount === 'number'
+      ? payload.restoredBalanceAmount
+      : null;
+  const charged =
+    typeof payload?.chargedAmount === 'number' ? payload.chargedAmount : null;
+
+  if (disposition === 'auto_refunded') {
+    const amount = restored ?? charged;
+    return typeof amount === 'number' && amount > 0
+      ? `Your ₱${amount} has been returned to your kiosk balance.`
+      : 'Your payment has been returned to your kiosk balance.';
+  }
+  if (disposition === 'pending_admin_review') {
+    return 'A refund review has been created for staff. Please keep your reference ID.';
+  }
+  if (disposition === 'refund_blocked_trusted_time') {
+    return 'Staff must review this refund because kiosk time is not synchronized.';
+  }
+  return 'Please contact staff if you need assistance.';
+}
+
+function showPrintErrorModal(
+  error: PublicPrintError,
+  payload?: PrintErrorPayload,
+): void {
+  if (error.severity === 'WARNING') {
+    showPrintWarningToast(error);
+    return;
+  }
+
+  hideOverlay(printingOverlay);
+  hideOverlay(thankYouOverlay);
+  if (jamRefundTitle) {
+    jamRefundTitle.textContent =
+      error.severity === 'FATAL'
+        ? 'Printing Stopped'
+        : 'Printer Needs Attention';
+  }
+  if (jamRefundMessage) jamRefundMessage.textContent = error.userMessage;
+  if (jamRefundHint) jamRefundHint.textContent = formatRefundHint(payload);
+  showOverlay(jamRefundOverlay);
+  jamRefundDoneBtn?.focus();
+}
+
+function printEventMatchesCurrentJob(payload: PrintErrorPayload): boolean {
+  const eventCorrelation =
+    typeof payload.spoolerCorrelationKey === 'string'
+      ? payload.spoolerCorrelationKey
+      : null;
+  const eventTransaction =
+    typeof payload.transactionId === 'string'
+      ? payload.transactionId
+      : (payload.printError?.transactionId ?? null);
+  const eventSession = payload.printError?.sessionId ?? null;
+
+  if (
+    activeSpoolerCorrelationKey &&
+    eventCorrelation &&
+    eventCorrelation === activeSpoolerCorrelationKey
+  ) {
+    return true;
+  }
+  if (
+    currentTransactionId &&
+    eventTransaction &&
+    eventTransaction === currentTransactionId
+  ) {
+    return true;
+  }
+  return Boolean(config.sessionId && eventSession === config.sessionId);
+}
+
+function handlePrintErrorPayload(payload: unknown): void {
+  const error = extractPrintError(payload);
+  if (!error) return;
+  const printPayload =
+    payload && typeof payload === 'object' ? (payload as PrintErrorPayload) : {};
+  if (!printEventMatchesCurrentJob(printPayload) && error.severity !== 'WARNING') {
+    return;
+  }
+  showPrintErrorModal(error, printPayload);
+  if (error.severity !== 'WARNING') {
+    isProcessingPayment = false;
+    clearPendingPaymentSessionState();
+    activeSpoolerCorrelationKey = null;
+    applyConfirmGate(error.userMessage);
+  }
+}
+
 function showModal(): void {
   if (!confirmModal) return;
   if (modalFile)
@@ -1009,16 +1163,49 @@ modalConfirmBtn?.addEventListener('click', async () => {
         }),
       });
 
-      if (!response.ok) throw new Error('Payment failed');
-      const payload = (await response.json()) as ReceiptLinkPayload & {
+      const payload = (await response.json().catch(() => ({}))) as
+        ReceiptLinkPayload &
+          PrintErrorPayload & {
+            transactionId?: string | null;
+            printWarnings?: PublicPrintError[];
+          };
+      if (!response.ok) {
+        const printError = extractPrintError(payload);
+        if (printError) {
+          showPrintErrorModal(printError, payload);
+          isProcessingPayment = false;
+          modalConfirmBtn.disabled = false;
+          applyConfirmGate(printError.userMessage);
+          return;
+        }
+        throw new Error('Payment failed');
+      }
+      if (Array.isArray(payload.printWarnings)) {
+        payload.printWarnings.forEach((warning) =>
+          showPrintWarningToast(warning),
+        );
+      }
+      const successPayload = payload as ReceiptLinkPayload & {
         transactionId?: string | null;
       };
-      captureReceiptCta(payload);
-      finalizePrintSuccess(payload.transactionId ?? null);
+      captureReceiptCta(successPayload);
+      if (config.mode === 'print') {
+        activeSpoolerCorrelationKey = spoolerCorrelationKey;
+        lastSpoolerCorrelationKey = spoolerCorrelationKey;
+        setTransactionReference(successPayload.transactionId ?? null);
+        if (statusMessage) {
+          statusMessage.textContent =
+            'Payment accepted. Waiting for printer confirmation...';
+        }
+        setPrintingPhase('printing');
+        return;
+      }
+      finalizePrintSuccess(successPayload.transactionId ?? null);
     }
   } catch {
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
+    modalConfirmBtn.disabled = false;
     applyConfirmGate('Error processing payment.');
   }
 });
@@ -1030,12 +1217,47 @@ thankYouDoneBtn?.addEventListener('click', () => {
   window.location.href = '/';
 });
 
+jamRefundDoneBtn?.addEventListener('click', () => {
+  hideOverlay(jamRefundOverlay);
+  clearConfirmSessionStorage();
+  window.location.href = '/';
+});
+
 const ioFactory = (window as any).io;
 if (typeof ioFactory === 'function') {
   const connectedSocket = ioFactory() as SocketLike;
   socket = connectedSocket;
   connectedSocket.on('balance', (amount: unknown) => {
     if (typeof amount === 'number') updateBalanceUI(amount);
+  });
+  connectedSocket.on('printErrorRaised', handlePrintErrorPayload);
+  connectedSocket.on('printerMalfunction', handlePrintErrorPayload);
+  connectedSocket.on('printerSpoolerFailure', handlePrintErrorPayload);
+  connectedSocket.on('printerSpoolerTimeout', handlePrintErrorPayload);
+  connectedSocket.on('printLifecycleState', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const lifecycle = payload as PrintErrorPayload & {
+      state?: string;
+      receipt?: ReceiptLinkPayload['receipt'];
+    };
+    if (!printEventMatchesCurrentJob(lifecycle)) return;
+    if (lifecycle.printError) {
+      handlePrintErrorPayload(lifecycle);
+      return;
+    }
+    if (lifecycle.state === 'printed') {
+      if (lifecycle.receipt) captureReceiptCta({ receipt: lifecycle.receipt });
+      finalizePrintSuccess(lifecycle.transactionId ?? currentTransactionId);
+    }
+  });
+  connectedSocket.on('printerSpoolerConfirmed', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const event = payload as PrintErrorPayload & {
+      receipt?: ReceiptLinkPayload['receipt'];
+    };
+    if (!printEventMatchesCurrentJob(event)) return;
+    if (event.receipt) captureReceiptCta({ receipt: event.receipt });
+    finalizePrintSuccess(event.transactionId ?? currentTransactionId);
   });
 }
 

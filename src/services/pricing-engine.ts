@@ -85,6 +85,7 @@ function normalizeNearBlankClassification(
 
 interface ExtractedPageSignals {
   coverage: number;
+  contentCoverage?: number;
   hasMeasuredCoverage: boolean;
   isBlank: boolean;
   hasExplicitBlankSignal: boolean;
@@ -150,6 +151,7 @@ function extractPageSignals(
 
   return {
     coverage,
+    contentCoverage,
     hasMeasuredCoverage: hasCoverage,
     isBlank,
     hasExplicitBlankSignal,
@@ -326,6 +328,8 @@ export function computeJobPricing(input: {
           derivedClassification,
           coverage,
           config.nearBlankBwMax,
+          false,
+          pageSignals.contentCoverage,
         );
 
     // If user requested grayscale, force all non-blank pages to 'bw'
