@@ -285,6 +285,89 @@ body {
   color: var(--lavender);
 }
 
+.print-error-panel {
+  width: min(100%, 360px);
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(167, 170, 225, 0.08);
+  border: 1.5px solid rgba(167, 170, 225, 0.18);
+  text-align: left;
+}
+
+.print-error-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.print-error-panel__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lavender);
+}
+
+.print-error-panel__message {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--white);
+  line-height: 1.5;
+}
+
+.print-error-panel__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+
+.print-error-panel__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(245, 211, 196, 0.4);
+  background: rgba(245, 211, 196, 0.12);
+  color: var(--peach);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.print-error-panel__dismiss:active {
+  transform: scale(0.97);
+}
+
+.print-error-panel[data-severity='WARNING'] {
+  background: rgba(245, 211, 196, 0.12);
+  border-color: rgba(245, 211, 196, 0.35);
+}
+
+.print-error-panel[data-severity='WARNING'] .print-error-panel__title {
+  color: var(--peach);
+}
+
+.print-error-panel[data-severity='RECOVERABLE'] {
+  background: rgba(105, 111, 199, 0.15);
+  border-color: rgba(105, 111, 199, 0.35);
+}
+
+.print-error-panel[data-severity='FATAL'] {
+  background: rgba(242, 110, 107, 0.12);
+  border-color: rgba(242, 110, 107, 0.3);
+}
+
+.print-error-panel[data-severity='FATAL'] .print-error-panel__title,
+.print-error-panel[data-severity='FATAL'] .print-error-panel__message {
+  color: #f9aaaa;
+}
+
 /* Ready state */
 .status-badge[data-state='ready'] {
   background: rgba(106, 196, 122, 0.12);

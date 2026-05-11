@@ -239,6 +239,35 @@
               >
             </div>
 
+            <div
+              class="print-error-panel"
+              id="printErrorPanel"
+              hidden
+              role="status"
+              aria-live="polite"
+            >
+              <div class="print-error-panel__head">
+                <span
+                  class="print-error-panel__title"
+                  id="printErrorTitle"
+                ></span>
+                <button
+                  id="printErrorDismissBtn"
+                  type="button"
+                  class="print-error-panel__dismiss"
+                  hidden
+                >
+                  <span>Got it</span>
+                </button>
+              </div>
+              <p class="print-error-panel__message" id="printErrorMessage"></p>
+              <p
+                class="print-error-panel__hint"
+                id="printErrorHint"
+                hidden
+              ></p>
+            </div>
+
             <!-- Change-ready badge: shown when balance >= price -->
             <div
               class="change-ready-badge"

@@ -128,6 +128,51 @@
               >
             </div>
 
+            <div
+              class="printer-error-overlay"
+              id="printerErrorOverlay"
+              hidden
+              role="alert"
+              aria-live="assertive"
+            >
+              <div class="printer-error-card" id="printerErrorCard">
+                <div class="printer-error-icon" aria-hidden="true">
+                  <svg viewBox="0 0 48 48" fill="none">
+                    <circle
+                      cx="24"
+                      cy="24"
+                      r="20"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      opacity=".4"
+                    />
+                    <path
+                      d="M24 14v12"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                    />
+                    <circle cx="24" cy="33" r="2.4" fill="currentColor" />
+                  </svg>
+                </div>
+                <h3 class="printer-error-title" id="printerErrorTitle"></h3>
+                <p class="printer-error-message" id="printerErrorMessage"></p>
+                <p
+                  class="printer-error-hint"
+                  id="printerErrorHint"
+                  hidden
+                ></p>
+                <button
+                  id="printerErrorDismissBtn"
+                  type="button"
+                  class="printer-error-dismiss"
+                  hidden
+                >
+                  <span>Got it</span>
+                </button>
+              </div>
+            </div>
+
             <!-- Placeholder — visible before any scan -->
             <div class="preview-placeholder" id="previewPlaceholder">
               <div class="scan-bed" aria-hidden="true">
@@ -529,6 +574,7 @@
       </div>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/copy/app.js"></script>
   </body>
 </html>

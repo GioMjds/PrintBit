@@ -3,10 +3,22 @@ import {
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import {
+  extractPrintError,
+  getPrintErrorHintKey,
+  getPrintErrorMessageKey,
+  getPrintErrorTitleKey,
+  type PrintErrorPayload,
+  type PublicPrintError,
+} from '../shared/print-error-ui';
 
 export {};
 
 void initKioskLocalization();
+
+type SocketLike = {
+  on: (event: string, cb: (...args: unknown[]) => void) => void;
+};
 
 // ── Idle Timeout with Warning Modal (Copy Page) ───────────────────────────────────────────────
 
@@ -92,6 +104,24 @@ const coverageBar = document.getElementById(
   'coverageBar',
 ) as HTMLElement | null;
 const tierBadge = document.getElementById('tierBadge') as HTMLElement | null;
+const printerErrorOverlay = document.getElementById(
+  'printerErrorOverlay',
+) as HTMLElement | null;
+const printerErrorCard = document.getElementById(
+  'printerErrorCard',
+) as HTMLElement | null;
+const printerErrorTitle = document.getElementById(
+  'printerErrorTitle',
+) as HTMLElement | null;
+const printerErrorMessage = document.getElementById(
+  'printerErrorMessage',
+) as HTMLElement | null;
+const printerErrorHint = document.getElementById(
+  'printerErrorHint',
+) as HTMLElement | null;
+const printerErrorDismissBtn = document.getElementById(
+  'printerErrorDismissBtn',
+) as HTMLButtonElement | null;
 
 async function updateCoverageAnalysis(filename: string): Promise<void> {
   if (!coverageMeter) return;
@@ -248,6 +278,100 @@ const COPY_FAILURE_GUIDES: Record<
     ],
   },
 };
+
+const SOCKET_DISCONNECTED_ERROR: PublicPrintError = {
+  code: 'SOCKET_DISCONNECTED',
+  severity: 'RECOVERABLE',
+  userMessage: 'print.error.socket_disconnected',
+};
+
+let activePrinterError: PublicPrintError | null = null;
+let connectionLost = false;
+let lockedActionState: {
+  checkDocDisabled: boolean;
+  retryDisabled: boolean;
+  continueDisabled: boolean;
+} | null = null;
+
+function setAriaDisabled(
+  el: HTMLButtonElement | null,
+  disabled: boolean,
+): void {
+  if (!el) return;
+  el.disabled = disabled;
+  el.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+}
+
+function lockCopyActions(): void {
+  if (lockedActionState) return;
+  lockedActionState = {
+    checkDocDisabled: checkDocBtn?.disabled ?? false,
+    retryDisabled: retryBtn?.disabled ?? false,
+    continueDisabled: continueBtn?.disabled ?? false,
+  };
+  setAriaDisabled(checkDocBtn, true);
+  setAriaDisabled(retryBtn, true);
+  setAriaDisabled(continueBtn, true);
+}
+
+function unlockCopyActions(): void {
+  if (!lockedActionState) return;
+  setAriaDisabled(checkDocBtn, lockedActionState.checkDocDisabled);
+  setAriaDisabled(retryBtn, lockedActionState.retryDisabled);
+  setAriaDisabled(continueBtn, lockedActionState.continueDisabled);
+  lockedActionState = null;
+}
+
+function resolvePrinterOverlayError(): PublicPrintError | null {
+  if (connectionLost) return SOCKET_DISCONNECTED_ERROR;
+  return activePrinterError;
+}
+
+function renderPrinterErrorOverlay(): void {
+  if (!printerErrorOverlay || !printerErrorCard) return;
+  const error = resolvePrinterOverlayError();
+  if (!error) {
+    printerErrorOverlay.hidden = true;
+    printerErrorCard.removeAttribute('data-severity');
+    unlockCopyActions();
+    return;
+  }
+
+  const titleKey = getPrintErrorTitleKey(error.severity);
+  const messageKey = getPrintErrorMessageKey(error);
+  const hintKey = getPrintErrorHintKey(error);
+
+  if (printerErrorTitle) printerErrorTitle.textContent = titleKey;
+  if (printerErrorMessage) printerErrorMessage.textContent = messageKey;
+  if (printerErrorHint) {
+    if (hintKey) {
+      printerErrorHint.textContent = hintKey;
+      printerErrorHint.removeAttribute('hidden');
+    } else {
+      printerErrorHint.textContent = '';
+      printerErrorHint.setAttribute('hidden', '');
+    }
+  }
+
+  printerErrorOverlay.hidden = false;
+  printerErrorCard.setAttribute('data-severity', error.severity);
+  lockCopyActions();
+
+  if (printerErrorDismissBtn) {
+    if (error.severity === 'WARNING' && !connectionLost) {
+      printerErrorDismissBtn.removeAttribute('hidden');
+    } else {
+      printerErrorDismissBtn.setAttribute('hidden', '');
+    }
+  }
+}
+
+function handlePrintErrorPayload(payload: unknown): void {
+  const error = extractPrintError(payload as PrintErrorPayload);
+  if (!error) return;
+  activePrinterError = error;
+  renderPrinterErrorOverlay();
+}
 
 function sanitizeUserFacingError(rawMessage: string): string {
   const fallback = 'Could not complete scanner check. Please try again.';
@@ -662,6 +786,32 @@ continueBtn?.addEventListener('click', () => {
 
 window.addEventListener('beforeunload', clearPreviewImageUrl);
 
+printerErrorDismissBtn?.addEventListener('click', () => {
+  activePrinterError = null;
+  renderPrinterErrorOverlay();
+});
+
+function setupSocketEvents(): void {
+  const ioFactory = (window as any).io;
+  if (typeof ioFactory !== 'function') return;
+  const connectedSocket = ioFactory() as SocketLike;
+
+  connectedSocket.on('connect', () => {
+    connectionLost = false;
+    renderPrinterErrorOverlay();
+  });
+
+  connectedSocket.on('disconnect', () => {
+    connectionLost = true;
+    renderPrinterErrorOverlay();
+  });
+
+  connectedSocket.on('printErrorRaised', handlePrintErrorPayload);
+  connectedSocket.on('printerMalfunction', handlePrintErrorPayload);
+  connectedSocket.on('printerSpoolerFailure', handlePrintErrorPayload);
+  connectedSocket.on('printerSpoolerTimeout', handlePrintErrorPayload);
+}
+
 async function initializeCopyPage(): Promise<void> {
   previewPath = sessionStorage.getItem('printbit.copyPreviewPath');
   previewReleaseToken = sessionStorage.getItem(
@@ -675,3 +825,4 @@ async function initializeCopyPage(): Promise<void> {
 }
 
 void initializeCopyPage();
+setupSocketEvents();

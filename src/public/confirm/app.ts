@@ -4,6 +4,14 @@ import {
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import {
+  extractPrintError,
+  getPrintErrorHintKey,
+  getPrintErrorMessageKey,
+  getPrintErrorTitleKey,
+  type PrintErrorPayload,
+  type PublicPrintError,
+} from '../shared/print-error-ui';
 
 export {};
 
@@ -92,32 +100,6 @@ type ReceiptLinkPayload = {
   };
   receiptViewUrl?: string | null;
   receiptExpiresAt?: string | null;
-};
-
-type PublicPrintError = {
-  id?: string;
-  code: string;
-  severity: 'WARNING' | 'RECOVERABLE' | 'FATAL';
-  userMessage: string;
-  adminMessage?: string;
-  refundEligible?: boolean;
-  refundDisposition?: string | null;
-  transactionId?: string | null;
-  sessionId?: string | null;
-  jobId?: string | null;
-  printerName?: string | null;
-};
-
-type PrintErrorPayload = {
-  printError?: PublicPrintError | null;
-  refundId?: string | null;
-  refundDisposition?: string | null;
-  restoredBalanceAmount?: number | null;
-  chargedAmount?: number | null;
-  pagesPrinted?: number | null;
-  totalPages?: number | null;
-  transactionId?: string | null;
-  spoolerCorrelationKey?: string | null;
 };
 
 type PrintQuote = {
@@ -217,6 +199,13 @@ const balanceValue = document.getElementById('balanceValue');
 const changeValue = document.getElementById('changeValue');
 const changeRow = document.getElementById('changeRow');
 const statusMessage = document.getElementById('statusMessage');
+const printErrorPanel = document.getElementById('printErrorPanel');
+const printErrorTitle = document.getElementById('printErrorTitle');
+const printErrorMessage = document.getElementById('printErrorMessage');
+const printErrorHint = document.getElementById('printErrorHint');
+const printErrorDismissBtn = document.getElementById(
+  'printErrorDismissBtn',
+) as HTMLButtonElement | null;
 const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const coinToast = document.getElementById('coinToast');
@@ -260,6 +249,8 @@ let currentBalance = 0;
 let currentPrintQuote: PrintQuote | null = null;
 let coinSlotIsLocked: boolean = false;
 let printerReady = false;
+let activeWarningMessage: string | null = null;
+let activeBlockingError: PublicPrintError | null = null;
 
 if (!rawConfig) {
   const storedSessionId = sessionStorage.getItem('printbit.sessionId');
@@ -527,6 +518,13 @@ function applyConfirmGate(statusOverride?: string): void {
   if (isProcessingPayment) {
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
+    return;
+  }
+
+  if (activeWarningMessage) {
+    confirmBtn.disabled = true;
+    confirmBtn.setAttribute('aria-disabled', 'true');
+    statusMessage.textContent = activeWarningMessage;
     return;
   }
 
@@ -881,6 +879,7 @@ function finalizePrintSuccess(transactionId: string | null): void {
   showOverlay(thankYouOverlay);
   clearPendingPaymentSessionState();
   activeSpoolerCorrelationKey = null;
+  clearPrintErrorPanel();
   if (statusMessage)
     statusMessage.textContent = 'Printing complete. Thank you!';
   renderReceiptCta();
@@ -929,21 +928,60 @@ async function fetchWithTimeout(
   }
 }
 
-function extractPrintError(payload: unknown): PublicPrintError | null {
-  if (!payload || typeof payload !== 'object') return null;
-  const candidate = (payload as { printError?: unknown }).printError;
-  if (!candidate || typeof candidate !== 'object') return null;
-  const record = candidate as Partial<PublicPrintError>;
-  if (
-    typeof record.code !== 'string' ||
-    typeof record.userMessage !== 'string' ||
-    (record.severity !== 'WARNING' &&
-      record.severity !== 'RECOVERABLE' &&
-      record.severity !== 'FATAL')
-  ) {
-    return null;
+function clearPrintErrorPanel(): void {
+  if (printErrorPanel) {
+    printErrorPanel.hidden = true;
+    printErrorPanel.removeAttribute('data-severity');
   }
-  return record as PublicPrintError;
+  if (printErrorTitle) printErrorTitle.textContent = '';
+  if (printErrorMessage) printErrorMessage.textContent = '';
+  if (printErrorHint) {
+    printErrorHint.textContent = '';
+    printErrorHint.setAttribute('hidden', '');
+  }
+  if (printErrorDismissBtn) printErrorDismissBtn.setAttribute('hidden', '');
+  activeWarningMessage = null;
+  activeBlockingError = null;
+}
+
+function showPrintErrorPanel(error: PublicPrintError): void {
+  if (activeBlockingError && error.severity === 'WARNING') {
+    return;
+  }
+  const titleKey = getPrintErrorTitleKey(error.severity);
+  const message = getPrintErrorMessageKey(error);
+  const hintKey = getPrintErrorHintKey(error);
+
+  if (printErrorTitle) printErrorTitle.textContent = titleKey;
+  if (printErrorMessage) printErrorMessage.textContent = message;
+  if (printErrorHint) {
+    if (hintKey) {
+      printErrorHint.textContent = hintKey;
+      printErrorHint.removeAttribute('hidden');
+    } else {
+      printErrorHint.textContent = '';
+      printErrorHint.setAttribute('hidden', '');
+    }
+  }
+  if (printErrorPanel) {
+    printErrorPanel.hidden = false;
+    printErrorPanel.setAttribute('data-severity', error.severity);
+  }
+  if (printErrorDismissBtn) {
+    if (error.severity === 'WARNING') {
+      printErrorDismissBtn.removeAttribute('hidden');
+    } else {
+      printErrorDismissBtn.setAttribute('hidden', '');
+    }
+  }
+
+  if (error.severity === 'WARNING') {
+    activeWarningMessage = message;
+    return;
+  }
+
+  activeWarningMessage = null;
+  activeBlockingError = error;
 }
 
 function showPrintWarningToast(error: PublicPrintError): void {
@@ -1040,13 +1078,18 @@ function handlePrintErrorPayload(payload: unknown): void {
   if (!printEventMatchesCurrentJob(printPayload) && error.severity !== 'WARNING') {
     return;
   }
+  const errorMessage = getPrintErrorMessageKey(error);
+  showPrintErrorPanel(error);
   showPrintErrorModal(error, printPayload);
-  if (error.severity !== 'WARNING') {
-    isProcessingPayment = false;
-    clearPendingPaymentSessionState();
-    activeSpoolerCorrelationKey = null;
-    applyConfirmGate(error.userMessage);
+  if (error.severity === 'WARNING') {
+    applyConfirmGate(errorMessage);
+    return;
   }
+
+  isProcessingPayment = false;
+  clearPendingPaymentSessionState();
+  activeSpoolerCorrelationKey = null;
+  applyConfirmGate(errorMessage);
 }
 
 function showModal(): void {
@@ -1089,6 +1132,7 @@ function hideOverlay(el: HTMLElement | null): void {
 function clearConfirmSessionStorage(): void {
   setTransactionReference(null);
   clearPendingPaymentSessionState();
+  clearPrintErrorPanel();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
   sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
@@ -1127,6 +1171,10 @@ async function checkRemainingFilesAndPrompt(): Promise<void> {
 
 confirmBtn?.addEventListener('click', () => showModal());
 modalCancelBtn?.addEventListener('click', () => hideModal());
+printErrorDismissBtn?.addEventListener('click', () => {
+  clearPrintErrorPanel();
+  applyConfirmGate();
+});
 
 modalConfirmBtn?.addEventListener('click', async () => {
   modalConfirmBtn.disabled = true;
@@ -1184,6 +1232,12 @@ modalConfirmBtn?.addEventListener('click', async () => {
         payload.printWarnings.forEach((warning) =>
           showPrintWarningToast(warning),
         );
+        const latestWarning =
+          payload.printWarnings[payload.printWarnings.length - 1];
+        if (latestWarning) {
+          showPrintErrorPanel(latestWarning);
+          applyConfirmGate(getPrintErrorMessageKey(latestWarning));
+        }
       }
       const successPayload = payload as ReceiptLinkPayload & {
         transactionId?: string | null;
