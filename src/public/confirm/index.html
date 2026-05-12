@@ -239,6 +239,47 @@
               >
             </div>
 
+            <!-- Printer Error Block (Issue 124) -->
+            <div
+              class="printer-error-block"
+              id="printerErrorBlock"
+              hidden
+              role="alert"
+            >
+              <div class="printer-error-block__content">
+                <div class="printer-error-block__icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />
+                  </svg>
+                </div>
+                <div class="printer-error-block__text">
+                  <p class="printer-error-block__title" id="errorTitle">Printer Error</p>
+                  <p class="printer-error-block__message" id="errorMessage">Please check the printer.</p>
+                  <p class="printer-error-block__hint" id="errorHint"></p>
+                </div>
+                <button
+                  type="button"
+                  class="printer-error-block__close"
+                  id="errorCloseBtn"
+                  aria-label="Dismiss"
+                  hidden
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <!-- Special action area for pause/resume -->
+              <div class="printer-error-block__actions" id="errorActions" hidden>
+                <button id="errorPauseBtn" class="error-action-btn error-action-btn--pause">
+                  <span>Pause</span>
+                </button>
+                <button id="errorResumeBtn" class="error-action-btn error-action-btn--resume">
+                  <span>Resume</span>
+                </button>
+              </div>
+            </div>
+
             <!-- Change-ready badge: shown when balance >= price -->
             <div
               class="change-ready-badge"

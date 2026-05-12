@@ -323,6 +323,146 @@ body {
   }
 }
 
+/* ── Printer Error Block (Issue 124) ──────────────────────── */
+.printer-error-block {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(242, 110, 107, 0.08);
+  border: 1.5px solid rgba(242, 110, 107, 0.25);
+  border-radius: 20px;
+  overflow: hidden;
+  animation: slide-up 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.printer-error-block__content {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  position: relative;
+}
+
+.printer-error-block__icon {
+  width: 32px;
+  height: 32px;
+  color: #f26e6b;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.printer-error-block__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.printer-error-block__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.printer-error-block__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f9aaaa;
+  margin: 0 0 4px;
+}
+
+.printer-error-block__message {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--white);
+  margin: 0 0 6px;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+.printer-error-block__hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lavender);
+  margin: 0;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.printer-error-block__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: var(--white);
+  cursor: pointer;
+  transition: background 150ms;
+}
+.printer-error-block__close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.printer-error-block__close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.printer-error-block__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: rgba(242, 110, 107, 0.15);
+  border-top: 1px solid rgba(242, 110, 107, 0.2);
+}
+
+.error-action-btn {
+  background: transparent;
+  border: none;
+  padding: 12px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--white);
+  cursor: pointer;
+  transition: background 150ms;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.error-action-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.error-action-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.error-action-btn--resume {
+  color: #a3e6ac;
+}
+.error-action-btn--resume:hover {
+  background: rgba(106, 196, 122, 0.1);
+}
+
+.error-action-btn--pause {
+  color: #f9aaaa;
+}
+.error-action-btn--pause:hover {
+  background: rgba(242, 110, 107, 0.1);
+}
+
 /* ── Coin toast ───────────────────────────────────────────── */
 .coin-toast {
   font-size: 13px;

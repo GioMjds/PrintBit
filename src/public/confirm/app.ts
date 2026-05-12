@@ -127,6 +127,32 @@ type PrintQuote = {
   };
 };
 
+type PrintErrorSeverity = 'warning' | 'recoverable' | 'fatal';
+
+type PrintError = {
+  code: string;
+  severity: PrintErrorSeverity;
+  userMessage: string;
+  hint?: string;
+  timestamp?: string;
+  canRetry?: boolean;
+  canDismiss?: boolean;
+};
+
+type PrintLifecycleStatePayload = {
+  mode: 'print' | 'copy' | 'scan';
+  state: 'queued' | 'processing' | 'printed' | 'failed';
+  printerName?: string | null;
+  transactionId?: string | null;
+  spoolerCorrelationKey?: string | null;
+  spoolerJobId?: number | null;
+  jobStatus?: string | null;
+  pagesPrinted?: number;
+  totalPages?: number;
+  reason?: string | null;
+  printError?: PrintError | null;
+};
+
 function normalizeRotationDeg(value: unknown): RotationDeg {
   if (value === 90 || value === 180 || value === 270) {
     return value;
@@ -196,12 +222,66 @@ const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
 
+// Printer Error Elements (Issue 124)
+const printerErrorBlock = document.getElementById('printerErrorBlock');
+const errorTitle = document.getElementById('errorTitle');
+const errorMessage = document.getElementById('errorMessage');
+const errorHint = document.getElementById('errorHint');
+const errorCloseBtn = document.getElementById('errorCloseBtn') as HTMLButtonElement;
+const errorActions = document.getElementById('errorActions');
+const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElement;
+const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
+
+let currentPrinterError: PrintError | null = null;
+
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
   'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
 const COIN_INSERT_GUIDANCE_MESSAGE =
   coinInsertNote?.textContent?.trim() ||
   footerNote?.textContent?.trim() ||
   DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE;
+
+function renderPrinterError(err: PrintError): void {
+  currentPrinterError = err;
+  if (!printerErrorBlock) return;
+
+  if (errorTitle) errorTitle.textContent = 'Printer Error';
+  if (errorMessage) errorMessage.textContent = err.userMessage;
+  if (errorHint) {
+    errorHint.textContent = err.hint || '';
+    if (err.hint) errorHint.removeAttribute('hidden');
+    else errorHint.setAttribute('hidden', '');
+  }
+
+  // Severity-based styling or behavior
+  printerErrorBlock.dataset.severity = err.severity;
+  
+  if (err.severity === 'warning') {
+    if (errorCloseBtn) errorCloseBtn.removeAttribute('hidden');
+  } else {
+    if (errorCloseBtn) errorCloseBtn.setAttribute('hidden', '');
+  }
+
+  // Special case: Not enough paper (PAPER_INSUFFICIENT_PRE_DISPATCH)
+  // or other states that might benefit from pause/resume
+  const showActions = err.code === 'PAPER_INSUFFICIENT_PRE_DISPATCH' || 
+                      err.code === 'PAPER_TRAY_EMPTY' ||
+                      err.code === 'PAPER_JAM_PRINT';
+  
+  if (errorActions) {
+    if (showActions) errorActions.removeAttribute('hidden');
+    else errorActions.setAttribute('hidden', '');
+  }
+
+  printerErrorBlock.removeAttribute('hidden');
+  applyConfirmGate();
+}
+
+function clearPrinterError(): void {
+  currentPrinterError = null;
+  if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
+  applyConfirmGate();
+}
 
 function syncCoinInsertGuidanceMessage(): void {
   if (coinInsertNote) coinInsertNote.textContent = COIN_INSERT_GUIDANCE_MESSAGE;
@@ -512,6 +592,18 @@ function applyConfirmGate(statusOverride?: string): void {
   if (isProcessingPayment) {
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
+    return;
+  }
+
+  if (
+    currentPrinterError &&
+    (currentPrinterError.severity === 'fatal' ||
+      currentPrinterError.severity === 'recoverable')
+  ) {
+    confirmBtn.disabled = true;
+    confirmBtn.setAttribute('aria-disabled', 'true');
+    statusMessage.textContent =
+      statusOverride ?? currentPrinterError.userMessage;
     return;
   }
 
@@ -872,7 +964,7 @@ function finalizePrintSuccess(transactionId: string | null): void {
 }
 
 function syncPendingPaymentSessionState(): void {
-  if (config.mode !== 'print') return;
+  if (config.mode !== 'print' && config.mode !== 'copy') return;
   if (paymentIdempotencyKey)
     sessionStorage.setItem(
       PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
@@ -1018,9 +1110,64 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
   try {
     if (config.mode === 'scan') {
-      // Scan implementation...
+      // Scan Soft Copy fee payment
+      const response = await fetchWithTimeout('/api/scanner/soft-copy/charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: config.scanFilename,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Scan payment failed');
+      }
+
+      const payload = (await response.json()) as ReceiptLinkPayload & {
+        transactionId?: string | null;
+      };
+      captureReceiptCta(payload);
+      finalizePrintSuccess(payload.transactionId ?? null);
     } else if (config.mode === 'copy') {
-      // Copy implementation...
+      // Copy (Scan to Print) job creation
+      const spoolerCorrelationKey =
+        paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
+      paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+      syncPendingPaymentSessionState();
+
+      const response = await fetchWithTimeout('/api/copy/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: totalPrice,
+          copies: config.copies,
+          colorMode: getDisplayColorMode(),
+          orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
+          paperSize: config.paperSize,
+          previewPath: config.copyPreviewPath,
+          spoolerCorrelationKey,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (errData.printError) {
+          renderPrinterError(errData.printError);
+          throw new Error(errData.printError.userMessage);
+        }
+        throw new Error(errData.error || 'Copy job failed');
+      }
+
+      const payload = (await response.json()) as ReceiptLinkPayload & {
+        id?: string;
+        transactionId?: string | null;
+      };
+      // For copy jobs, the ID is often in 'id' field of the job object
+      const transactionId = payload.transactionId ?? payload.id ?? null;
+      captureReceiptCta(payload);
+      finalizePrintSuccess(transactionId);
     } else {
       // Print implementation...
       const spoolerCorrelationKey =
@@ -1047,17 +1194,26 @@ modalConfirmBtn?.addEventListener('click', async () => {
         }),
       });
 
-      if (!response.ok) throw new Error('Payment failed');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (errData.printError) {
+          renderPrinterError(errData.printError);
+          throw new Error(errData.printError.userMessage);
+        }
+        throw new Error(errData.error || 'Payment failed');
+      }
+      
       const payload = (await response.json()) as ReceiptLinkPayload & {
         transactionId?: string | null;
       };
       captureReceiptCta(payload);
       finalizePrintSuccess(payload.transactionId ?? null);
     }
-  } catch {
+  } catch (error) {
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
-    applyConfirmGate('Error processing payment.');
+    const message = error instanceof Error ? error.message : 'Error processing payment.';
+    applyConfirmGate(message);
   }
 });
 
@@ -1075,7 +1231,79 @@ if (typeof ioFactory === 'function') {
   connectedSocket.on('balance', (amount: unknown) => {
     if (typeof amount === 'number') updateBalanceUI(amount);
   });
+
+  connectedSocket.on('printErrorRaised', (payload: any) => {
+    const err = payload as PrintError;
+    if (!err) return;
+
+    // Filter by correlation key if present, except for warnings
+    if (err.severity !== 'warning') {
+      const payloadKey = (payload as any).spoolerCorrelationKey;
+      if (
+        payloadKey &&
+        paymentSpoolerCorrelationKey &&
+        payloadKey !== paymentSpoolerCorrelationKey
+      ) {
+        return;
+      }
+    }
+
+    renderPrinterError(err);
+  });
+
+  connectedSocket.on('printLifecycleState', (payload: any) => {
+    const lifecycle = payload as PrintLifecycleStatePayload;
+    if (lifecycle.printError) {
+      renderPrinterError(lifecycle.printError);
+    } else if (lifecycle.state === 'printed' || lifecycle.state === 'failed') {
+      // If we move to a terminal state without an error, clear any existing error
+      clearPrinterError();
+    }
+  });
+
+  // Re-sync on printer malfunction or spooler failure
+  connectedSocket.on('printerMalfunction', (payload: any) => {
+    if (payload?.printError) renderPrinterError(payload.printError);
+  });
+  connectedSocket.on('printerSpoolerFailure', (payload: any) => {
+    if (payload?.printError) renderPrinterError(payload.printError);
+  });
 }
+
+// Error action button handlers
+errorCloseBtn?.addEventListener('click', () => {
+  clearPrinterError();
+});
+
+errorPauseBtn?.addEventListener('click', async () => {
+  if (!paymentSpoolerCorrelationKey) return;
+  try {
+    await fetch('/api/printer/pause', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spoolerCorrelationKey: paymentSpoolerCorrelationKey }),
+    });
+  } catch (err) {
+    console.error('Failed to pause printer:', err);
+  }
+});
+
+errorResumeBtn?.addEventListener('click', async () => {
+  if (!paymentSpoolerCorrelationKey) return;
+  try {
+    await fetch('/api/printer/resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spoolerCorrelationKey: paymentSpoolerCorrelationKey }),
+    });
+    // Optimistically clear error if it was a pause/resume scenario
+    if (currentPrinterError?.code === 'PAPER_INSUFFICIENT_PRE_DISPATCH') {
+        clearPrinterError();
+    }
+  } catch (err) {
+    console.error('Failed to resume printer:', err);
+  }
+});
 
 async function loadPrinterStatus(): Promise<void> {
   try {
