@@ -184,6 +184,7 @@ function updateSmartPricingBreakdown(quote: any): void {
 }
 
 const orientationRow = document.getElementById('orientationRow');
+const orientationValue = document.getElementById('orientationValue');
 const rotationValue = document.getElementById('rotationValue');
 const paperSizeValue = document.getElementById('paperSizeValue');
 const priceValue = document.getElementById('priceValue');
@@ -429,7 +430,18 @@ if (fileValue)
 if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
-if (orientationRow) orientationRow.setAttribute('hidden', '');
+
+// Show orientation for print/copy; hide for scan
+if (config.mode === 'scan') {
+  orientationRow?.setAttribute('hidden', '');
+} else {
+  orientationRow?.removeAttribute('hidden');
+  if (orientationValue) {
+    orientationValue.textContent =
+      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+}
+
 if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
 if (paperSizeValue)
   paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
@@ -726,7 +738,10 @@ const modalMode = document.getElementById('modalMode');
 const modalColor = document.getElementById('modalColor');
 const modalCopies = document.getElementById('modalCopies');
 const modalPages = document.getElementById('modalPages');
+const modalOrientation = document.getElementById('modalOrientation');
 const modalPrice = document.getElementById('modalPrice');
+const modalChangeRow = document.getElementById('modalChangeRow');
+const modalChange = document.getElementById('modalChange');
 const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
@@ -908,7 +923,26 @@ function showModal(): void {
   if (modalColor) modalColor.textContent = getColorModeSummaryLabel();
   if (modalCopies) modalCopies.textContent = String(config.copies);
   if (modalPages) modalPages.textContent = pageRangeLabel(config.pageRange);
+  if (modalOrientation) {
+    modalOrientation.textContent =
+      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
+
+  // Show coin change in modal when overpaid
+  const modalChangeAmount = Math.max(0, currentBalance - totalPrice);
+  if (modalChangeRow) {
+    if (pricingLoaded && modalChangeAmount > 0) {
+      modalChangeRow.removeAttribute('hidden');
+    } else {
+      modalChangeRow.setAttribute('hidden', '');
+    }
+  }
+  if (modalChange) {
+    modalChange.textContent =
+      modalChangeAmount > 0 ? `₱ ${modalChangeAmount}` : '—';
+  }
+
   confirmModal.classList.add('is-visible');
   confirmModal.setAttribute('aria-hidden', 'false');
   modalCancelBtn?.focus();
@@ -1004,6 +1038,10 @@ modalConfirmBtn?.addEventListener('click', async () => {
           documentId: config.documentId,
           copies: config.copies,
           colorMode: getDisplayColorMode(),
+          orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
+          duplex: config.duplex === true,
+          paperSize: config.paperSize,
           pageRange: config.pageRange,
           spoolerCorrelationKey,
         }),
