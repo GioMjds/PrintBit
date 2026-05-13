@@ -141,6 +141,7 @@ export class ScannerController {
       const result = await this.scannerService.chargeSoftCopy({
         filename: safeFilename,
         io: this.deps.io,
+        publicBaseUrl: this.deps.resolvePublicBaseUrl(req).toString(),
       });
       res.json(result);
     } catch (error) {

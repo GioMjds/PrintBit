@@ -49,6 +49,149 @@ const TERMINAL_FAILURE_TOKENS = new Set([
   'UserIntervention',
 ]);
 
+/**
+ * Converts a Windows spooler job status string into a structured PrintError
+ * payload that the frontend error-block can render.
+ */
+function classifySpoolerJobError(
+  jobStatus: string,
+  spoolerCorrelationKey?: string | null,
+): {
+  code: string;
+  severity: 'warning' | 'recoverable' | 'fatal';
+  userMessage: string;
+  hint?: string;
+  timestamp: string;
+  canRetry?: boolean;
+  spoolerCorrelationKey?: string | null;
+} {
+  const now = new Date().toISOString();
+  const normalised = jobStatus.toLowerCase();
+
+  if (normalised.includes('paperout')) {
+    return {
+      code: 'PAPER_TRAY_EMPTY',
+      severity: 'recoverable',
+      userMessage: 'The printer ran out of paper during printing.',
+      hint: 'Please load paper into the rear tray, then press Resume.',
+      timestamp: now,
+      canRetry: true,
+      spoolerCorrelationKey,
+    };
+  }
+  if (normalised.includes('blockeddevq') || normalised.includes('userintervention')) {
+    return {
+      code: 'PAPER_JAM_PRINT',
+      severity: 'recoverable',
+      userMessage: 'The printer requires attention — possible paper jam.',
+      hint: 'Please check the printer for jammed paper or obstructions.',
+      timestamp: now,
+      canRetry: true,
+      spoolerCorrelationKey,
+    };
+  }
+  if (normalised.includes('offline')) {
+    return {
+      code: 'PRINTER_OFFLINE',
+      severity: 'fatal',
+      userMessage: 'Printer went offline during the print job.',
+      hint: 'Please check the printer power and connection.',
+      timestamp: now,
+      spoolerCorrelationKey,
+    };
+  }
+  // Generic error fallback
+  return {
+    code: 'SPOOLER_JOB_FAILED',
+    severity: 'fatal',
+    userMessage: `Print job failed with status: ${jobStatus}`,
+    hint: 'Please contact the kiosk attendant.',
+    timestamp: now,
+    spoolerCorrelationKey,
+  };
+}
+
+/**
+ * Checks whether the printer is in a paper-out or error state that would
+ * indicate a partial print (e.g. 2 copies requested but only 1 sheet loaded).
+ *
+ * Returns a structured error when the printer reports a blocking condition,
+ * or null when the printer appears healthy.
+ *
+ * This is called on every "success" path in the spooler monitor so the kiosk
+ * never shows "Thank You" when pages are still pending.
+ */
+async function partialPrintGuard(
+  printerName: string,
+  pagesPrinted: number,
+  totalPages: number,
+  spoolerCorrelationKey: string | null,
+): Promise<ReturnType<typeof classifySpoolerJobError> | null> {
+  // 1) If the spooler itself reports fewer pages printed than total, something
+  //    went wrong even if the job status token says "Printed".
+  if (
+    totalPages > 0 &&
+    pagesPrinted >= 0 &&
+    pagesPrinted < totalPages
+  ) {
+    return {
+      code: 'PAPER_INSUFFICIENT_MID_JOB',
+      severity: 'recoverable',
+      userMessage: `Only ${pagesPrinted} of ${totalPages} page(s) were printed. The printer may be out of paper.`,
+      hint: 'Please load more paper into the rear tray, then press Resume.',
+      timestamp: new Date().toISOString(),
+      canRetry: true,
+      spoolerCorrelationKey,
+    };
+  }
+
+  // 2) Query the live printer queue status via System.Printing to catch
+  //    paper-out / jam flags that the spooler job status might not capture.
+  try {
+    const { getPrinterStatusViaEdge } = await import('./windows-printer-edge');
+    const status = await getPrinterStatusViaEdge(printerName);
+    if ('error' in status) return null; // query failed — don't block
+
+    if (status.isOutOfPaper || status.isPaperProblem) {
+      return {
+        code: 'PAPER_TRAY_EMPTY',
+        severity: 'recoverable',
+        userMessage: 'The printer is out of paper.',
+        hint: 'Please load paper into the rear tray, then press Resume.',
+        timestamp: new Date().toISOString(),
+        canRetry: true,
+        spoolerCorrelationKey,
+      };
+    }
+    if (status.isPaperJam) {
+      return {
+        code: 'PAPER_JAM_PRINT',
+        severity: 'recoverable',
+        userMessage: 'Paper jam detected in the printer.',
+        hint: 'Please clear the jammed paper and close all covers.',
+        timestamp: new Date().toISOString(),
+        canRetry: true,
+        spoolerCorrelationKey,
+      };
+    }
+    if (status.isDoorOpened) {
+      return {
+        code: 'PRINTER_DOOR_OPEN',
+        severity: 'recoverable',
+        userMessage: 'Printer door or cover is open.',
+        hint: 'Please close all printer covers.',
+        timestamp: new Date().toISOString(),
+        canRetry: true,
+        spoolerCorrelationKey,
+      };
+    }
+  } catch {
+    // System.Printing query failed — don't block
+  }
+
+  return null;
+}
+
 export interface SpoolerMonitorOptions {
   printerName: string;
   chargedAmount: number;
@@ -923,6 +1066,20 @@ export async function monitorSpoolerJob(
             !lastStatusWasFailure &&
             correlationKey
           ) {
+            const partialErr = await partialPrintGuard(
+              normalizedPrinterName,
+              lastPagesPrinted,
+              lastTotalPages,
+              correlationKey,
+            );
+            if (partialErr) {
+              console.warn(`[SPOOLER-MONITOR] ✗ Partial print detected on purged job #${trackedJobId}, surfacing error: ${partialErr.code}`);
+              io.emit('printErrorRaised', partialErr);
+              await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+              pollCount += 1;
+              continue;
+            }
+
             const inferredStatus = 'TRACKED_JOB_PURGED_INFERRED_SUCCESS';
             console.log(
               `[SPOOLER-MONITOR] ✓ Tracked job #${trackedJobId} disappeared from spooler; inferring success (last status: ${lastStatus ?? 'none'}).`,
@@ -1128,6 +1285,20 @@ export async function monitorSpoolerJob(
           !lastStatusWasFailure &&
           correlationKey
         ) {
+          const partialErr = await partialPrintGuard(
+            normalizedPrinterName,
+            lastPagesPrinted,
+            lastTotalPages,
+            correlationKey,
+          );
+          if (partialErr) {
+            console.warn(`[SPOOLER-MONITOR] ✗ Partial print detected on purged job #${trackedJobId}, surfacing error: ${partialErr.code}`);
+            io.emit('printErrorRaised', partialErr);
+            await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+            pollCount += 1;
+            continue;
+          }
+
           const inferredStatus = 'TRACKED_JOB_PURGED_INFERRED_SUCCESS';
           console.log(
             `[SPOOLER-MONITOR] ✓ Tracked job #${trackedJobId} disappeared from spooler; inferring success (last status: ${lastStatus ?? 'none'}).`,
@@ -1336,6 +1507,20 @@ export async function monitorSpoolerJob(
       );
 
       if (matchesStatusSet(job.status, TERMINAL_SUCCESS_TOKENS)) {
+        const partialErr = await partialPrintGuard(
+          normalizedPrinterName,
+          job.pagesPrinted,
+          job.totalPages,
+          correlationKey,
+        );
+        if (partialErr) {
+          console.warn(`[SPOOLER-MONITOR] ✗ Partial print detected (status="${job.status}"), surfacing error: ${partialErr.code}`);
+          io.emit('printErrorRaised', partialErr);
+          await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+          pollCount += 1;
+          continue;
+        }
+
         console.log(
           `[SPOOLER-MONITOR] ✓ Job #${job.id} completed successfully`,
         );
@@ -1597,6 +1782,8 @@ export async function monitorSpoolerJob(
                 }),
               },
             );
+            const printError1 = classifySpoolerJobError(job.status, correlationKey);
+            io.emit('printErrorRaised', printError1);
             io.emit('printerSpoolerFailure', {
               jobStatus: job.status,
               chargedAmount,
@@ -1616,6 +1803,7 @@ export async function monitorSpoolerJob(
               handoffLatencyMs,
               pollCount,
               queryFailureCount,
+              printError: printError1,
             });
             if (transactionId) {
               try {
@@ -1737,6 +1925,8 @@ export async function monitorSpoolerJob(
             }),
           },
         );
+        const printError2 = classifySpoolerJobError(job.status, correlationKey);
+        io.emit('printErrorRaised', printError2);
         io.emit('printerSpoolerFailure', {
           jobStatus: job.status,
           chargedAmount,
@@ -1756,6 +1946,7 @@ export async function monitorSpoolerJob(
           handoffLatencyMs,
           pollCount,
           queryFailureCount,
+          printError: printError2,
         });
 
         await anomalyService.report({

@@ -188,6 +188,7 @@ export type SettingsResponse = {
   pricingEngine: {
     enabledMode: 'legacy' | 'shadow' | 'live';
     paperProfiles: {
+      a4: { baseBwPrice: number; baseColorPrice: number };
       shortBond: { baseBwPrice: number; baseColorPrice: number };
       longBond: { baseBwPrice: number; baseColorPrice: number };
     };

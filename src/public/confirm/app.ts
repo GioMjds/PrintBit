@@ -71,7 +71,7 @@ type ConfirmConfig = {
   copies: number;
   orientation: 'portrait' | 'landscape';
   rotationDeg?: number;
-  paperSize: 'A4' | 'Legal';
+  paperSize: 'A4' | 'Letter' | 'Legal';
   pageRange?: PageRangeSelection;
   totalPages?: number;
   quote?: PrintQuote;
@@ -437,6 +437,7 @@ function formatPaperSizeForPricing(
 ): string {
   switch (paperSize) {
     case 'A4':
+      return 'A4 Bond Paper';
     case 'Letter':
       return 'Short Bond Paper';
     case 'Legal':
@@ -841,6 +842,9 @@ const thankYouOverlay = document.getElementById('thankYouOverlay');
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
+const printAnotherBtn = document.getElementById(
+  'printAnotherBtn',
+) as HTMLButtonElement | null;
 const transactionReference = document.getElementById(
   'transactionReference',
 ) as HTMLElement | null;
@@ -853,12 +857,7 @@ const receiptQrCanvas = document.getElementById(
 const receiptQrLink = document.getElementById(
   'receiptQrLink',
 ) as HTMLElement | null;
-const thankYouCountdown = document.getElementById(
-  'thankYouCountdown',
-) as HTMLElement | null;
-const thankYouCountdownSeconds = document.getElementById(
-  'thankYouCountdownSeconds',
-) as HTMLElement | null;
+
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
@@ -894,8 +893,7 @@ if (!persistedFingerprintMatchesCurrent) {
 }
 let latestPrinterStatusLabel = 'Checking...';
 const spoolerTimedOut = false;
-let thankYouAutoRedirectHandle: number | null = null;
-const THANKYOU_AUTO_REDIRECT_SECONDS = 10;
+
 const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
 
 let currentTransactionId: string | null = null;
@@ -925,6 +923,28 @@ function extractReceiptUrl(
     url,
     expiresAt: payload.receipt?.expiresAt || payload.receiptExpiresAt || null,
   };
+}
+
+/** For copy mode: poll the copy job endpoint to get receipt data after async settlement. */
+async function pollCopyJobReceipt(jobId: string): Promise<void> {
+  const maxAttempts = 15;
+  const intervalMs = 2000;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
+      if (!res.ok) break;
+      const job = await res.json() as { receipt?: { viewUrl?: string; expiresAt?: string }; transactionId?: string; id?: string };
+      if (job.receipt?.viewUrl) {
+        captureReceiptCta({ receipt: { viewUrl: job.receipt.viewUrl, expiresAt: job.receipt.expiresAt ?? null } });
+        const txId = job.transactionId ?? job.id ?? null;
+        if (txId) setTransactionReference(txId);
+        return;
+      }
+    } catch {
+      // Ignore fetch errors, retry
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
+  }
 }
 
 function renderReceiptCta(): void {
@@ -959,6 +979,21 @@ function finalizePrintSuccess(transactionId: string | null): void {
   renderReceiptCta();
   lastSpoolerCorrelationKey = null;
   isProcessingPayment = false;
+
+  if (printAnotherBtn) {
+    printAnotherBtn.removeAttribute('hidden');
+    const btnSpan = printAnotherBtn.querySelector('span');
+    if (btnSpan) {
+      if (config.mode === 'copy') {
+        btnSpan.textContent = 'Copy Another Document';
+      } else if (config.mode === 'scan') {
+        btnSpan.textContent = 'Scan Another Document';
+      } else {
+        btnSpan.textContent = 'Print Another File';
+      }
+    }
+  }
+
   applyConfirmGate();
   void checkRemainingFilesAndPrompt();
 }
@@ -1070,31 +1105,12 @@ function clearConfirmSessionStorage(): void {
   sessionStorage.removeItem('printbit.sessionToken');
 }
 
-function startThankYouAutoRedirect(): void {
-  let remaining = THANKYOU_AUTO_REDIRECT_SECONDS;
-  if (thankYouCountdownSeconds)
-    thankYouCountdownSeconds.textContent = String(remaining);
-  thankYouCountdown?.removeAttribute('hidden');
-  thankYouAutoRedirectHandle = window.setInterval(() => {
-    remaining -= 1;
-    if (thankYouCountdownSeconds)
-      thankYouCountdownSeconds.textContent = String(Math.max(0, remaining));
-    if (remaining <= 0) {
-      window.clearInterval(thankYouAutoRedirectHandle!);
-      clearConfirmSessionStorage();
-      window.location.href = '/';
-    }
-  }, 1000);
-}
-
 async function checkRemainingFilesAndPrompt(): Promise<void> {
   if (config.mode !== 'print' || !config.sessionId) {
-    clearConfirmSessionStorage();
-    startThankYouAutoRedirect();
+    // No auto-redirect: user taps Done when ready
     return;
   }
-  // Simplified for brevity
-  startThankYouAutoRedirect();
+  // Simplified for brevity — no auto-redirect
 }
 
 confirmBtn?.addEventListener('click', () => showModal());
@@ -1129,6 +1145,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
       };
       captureReceiptCta(payload);
       finalizePrintSuccess(payload.transactionId ?? null);
+      // For scan mode: the receipt data comes in the same response (no async job)
+      // captureReceiptCta above should have set it if available
     } else if (config.mode === 'copy') {
       // Copy (Scan to Print) job creation
       const spoolerCorrelationKey =
@@ -1168,6 +1186,10 @@ modalConfirmBtn?.addEventListener('click', async () => {
       const transactionId = payload.transactionId ?? payload.id ?? null;
       captureReceiptCta(payload);
       finalizePrintSuccess(transactionId);
+      // Copy job receipt is generated asynchronously — poll for it
+      if (transactionId) {
+        void pollCopyJobReceipt(transactionId);
+      }
     } else {
       // Print implementation...
       const spoolerCorrelationKey =
@@ -1218,10 +1240,33 @@ modalConfirmBtn?.addEventListener('click', async () => {
 });
 
 thankYouDoneBtn?.addEventListener('click', () => {
-  if (thankYouAutoRedirectHandle)
-    window.clearInterval(thankYouAutoRedirectHandle);
   clearConfirmSessionStorage();
   window.location.href = '/';
+});
+
+printAnotherBtn?.addEventListener('click', () => {
+  setTransactionReference(null);
+  clearPendingPaymentSessionState();
+  sessionStorage.removeItem('printbit.config');
+  sessionStorage.removeItem('printbit.copyPreviewPath');
+  sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
+  
+  if (config.mode === 'print') {
+    // Keep sessionId, sessionToken, uploadedFile, etc. for remaining files
+    window.location.href = '/print';
+  } else if (config.mode === 'copy') {
+    sessionStorage.removeItem('printbit.uploadedFile');
+    sessionStorage.removeItem('printbit.uploadedDocumentId');
+    sessionStorage.removeItem('printbit.sessionId');
+    sessionStorage.removeItem('printbit.sessionToken');
+    window.location.href = '/copy';
+  } else if (config.mode === 'scan') {
+    sessionStorage.removeItem('printbit.uploadedFile');
+    sessionStorage.removeItem('printbit.uploadedDocumentId');
+    sessionStorage.removeItem('printbit.sessionId');
+    sessionStorage.removeItem('printbit.sessionToken');
+    window.location.href = '/scan';
+  }
 });
 
 const ioFactory = (window as any).io;

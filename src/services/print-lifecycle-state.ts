@@ -17,6 +17,15 @@ export interface PrintLifecycleStatePayload {
   timedOut?: boolean;
   refundDisposition?: string;
   receipt?: any;
+  printError?: {
+    code: string;
+    severity: 'warning' | 'recoverable' | 'fatal';
+    userMessage: string;
+    hint?: string;
+    timestamp: string;
+    canRetry?: boolean;
+    canDismiss?: boolean;
+  } | null;
 }
 
 export interface PersistPrintLifecycleStateOptions {

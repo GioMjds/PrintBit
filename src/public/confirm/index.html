@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <link rel="stylesheet" href="/globals.css" />
     <title>Confirm & Pay · PrintBit</title>
     <link rel="stylesheet" href="/confirm/styles.css" />
@@ -177,8 +180,8 @@
               Insert coins into the kiosk slot to pay
             </p>
             <p class="coin-panel__note" id="coinInsertNote">
-              Tip: Insert one coin at a time. Rapid insertion may not be detected
-              by the kiosk.
+              Tip: Insert one coin at a time. Rapid insertion may not be
+              detected by the kiosk.
             </p>
 
             <!-- Balance ring -->
@@ -248,13 +251,24 @@
             >
               <div class="printer-error-block__content">
                 <div class="printer-error-block__icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"
+                    />
                   </svg>
                 </div>
                 <div class="printer-error-block__text">
-                  <p class="printer-error-block__title" id="errorTitle">Printer Error</p>
-                  <p class="printer-error-block__message" id="errorMessage">Please check the printer.</p>
+                  <p class="printer-error-block__title" id="errorTitle">
+                    Printer Error
+                  </p>
+                  <p class="printer-error-block__message" id="errorMessage">
+                    Please check the printer.
+                  </p>
                   <p class="printer-error-block__hint" id="errorHint"></p>
                 </div>
                 <button
@@ -264,17 +278,32 @@
                   aria-label="Dismiss"
                   hidden
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                  >
                     <path d="M18 6L6 18M6 6l12 12" />
                   </svg>
                 </button>
               </div>
               <!-- Special action area for pause/resume -->
-              <div class="printer-error-block__actions" id="errorActions" hidden>
-                <button id="errorPauseBtn" class="error-action-btn error-action-btn--pause">
+              <div
+                class="printer-error-block__actions"
+                id="errorActions"
+                hidden
+              >
+                <button
+                  id="errorPauseBtn"
+                  class="error-action-btn error-action-btn--pause"
+                >
                   <span>Pause</span>
                 </button>
-                <button id="errorResumeBtn" class="error-action-btn error-action-btn--resume">
+                <button
+                  id="errorResumeBtn"
+                  class="error-action-btn error-action-btn--resume"
+                >
                   <span>Resume</span>
                 </button>
               </div>
@@ -398,7 +427,11 @@
               </div>
 
               <!-- Smart Pricing Breakdown -->
-              <div id="smartPricingBreakdown" class="smart-pricing-breakdown" style="display: none;">
+              <div
+                id="smartPricingBreakdown"
+                class="smart-pricing-breakdown"
+                style="display: none"
+              >
                 <p class="breakdown-title">Pricing Breakdown</p>
                 <ul id="breakdownList" class="breakdown-list">
                   <!-- Breakdown items will be added here -->
@@ -802,15 +835,6 @@
             <span>Done</span>
           </button>
         </div>
-
-        <!-- Auto-redirect countdown -->
-        <p
-          class="modal-subtitle modal-subtitle--countdown"
-          id="thankYouCountdown"
-          hidden
-        >
-          Redirecting to home in <span id="thankYouCountdownSeconds">10</span>s…
-        </p>
       </div>
     </div>
 

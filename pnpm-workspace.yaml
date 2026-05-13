@@ -4,6 +4,7 @@ onlyBuiltDependencies:
   - '@swc/core'
   - argon2
   - canvas
+  - edge-js
   - esbuild
   - msgpackr-extract
   - sharp

@@ -38,7 +38,7 @@ void initializePageIdleTimeout({
 });
 type ColorMode = 'colored' | 'grayscale';
 type Orientation = 'portrait' | 'landscape';
-type PaperSize = 'A4' | 'Legal';
+type PaperSize = 'A4' | 'Letter' | 'Legal';
 type RotationDeg = 0 | 90 | 180 | 270;
 type WorkflowMode = 'print' | 'copy' | 'scan';
 
@@ -160,8 +160,9 @@ interface PDFViewport {
 }
 
 const PAPER_MM: Record<PaperSize, [number, number]> = {
-  A4: [210, 297], // Short (A4/LTR)
-  Legal: [216, 356], // Long (Legal)
+  A4: [210, 297],       // A4 Bond Paper
+  Letter: [216, 279],   // Short Bond Paper (8.5" × 11")
+  Legal: [216, 356],    // Long Bond Paper (8.5" × 13")
 };
 
 /** Return [widthPx, heightPx] of the paper sheet at 96 dpi,
@@ -2047,7 +2048,8 @@ function updateSummary(): void {
   } else if (currentPrintQuote) {
     footerSummary.classList.add('ready');
     const isLongBond = cfg.paperSize === 'Legal';
-    const paperLabel = isLongBond ? 'Long Bond' : 'Short Bond';
+    const isShortBond = cfg.paperSize === 'Letter';
+    const paperLabel = isLongBond ? 'Long Bond' : isShortBond ? 'Short Bond' : 'A4 Bond';
 
     if (currentPrintQuote.pricingEngine) {
       const pe = currentPrintQuote.pricingEngine;

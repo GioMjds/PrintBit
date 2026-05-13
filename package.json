@@ -30,8 +30,7 @@
     "updates:apply": "powershell -ExecutionPolicy Bypass -File .\\scripts\\apply-controlled-updates.ps1",
     "updates:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-controlled-updates.ps1",
     "updates:revert": "powershell -ExecutionPolicy Bypass -File .\\scripts\\revert-controlled-updates.ps1",
-    "driver:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-printer-driver-version.ps1",
-    "prepare": "husky"
+    "driver:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-printer-driver-version.ps1"
   },
   "keywords": [],
   "author": "GioMjds",
@@ -44,6 +43,7 @@
     "canvas": "^3.2.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
+    "edge-js": "^26.0.0",
     "express": "^5.2.1",
     "file-type": "^21.3.2",
     "flatpickr": "^4.6.13",

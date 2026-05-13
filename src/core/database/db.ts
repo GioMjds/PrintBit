@@ -56,6 +56,7 @@ export interface PricingEngineBulkDiscountTier {
 export interface PricingEngineSettings {
   enabledMode: PricingEngineMode;
   paperProfiles: {
+    a4: PricingEnginePaperProfile;
     shortBond: PricingEnginePaperProfile;
     longBond: PricingEnginePaperProfile;
   };
@@ -582,6 +583,10 @@ const DEFAULT_DATA: Schema = {
     pricingEngine: {
       enabledMode: 'legacy',
       paperProfiles: {
+        a4: {
+          baseBwPrice: 3,
+          baseColorPrice: 18,
+        },
         shortBond: {
           baseBwPrice: 3,
           baseColorPrice: 18,
@@ -1407,6 +1412,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       },
       pricingEngine: (() => {
         const defaultPricingEngine = DEFAULT_DATA.settings.pricingEngine;
+        const a4 = pricingEngine?.paperProfiles?.a4;
         const shortBond = pricingEngine?.paperProfiles?.shortBond;
         const longBond = pricingEngine?.paperProfiles?.longBond;
         const bwMax = normalizePricingEngineThreshold(
@@ -1422,6 +1428,22 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
         return {
           enabledMode: normalizePricingEngineMode(pricingEngine?.enabledMode),
           paperProfiles: {
+            a4: {
+              baseBwPrice: Math.max(
+                0,
+                finiteOr(
+                  a4?.baseBwPrice,
+                  defaultPricingEngine.paperProfiles.a4.baseBwPrice,
+                ),
+              ),
+              baseColorPrice: Math.max(
+                0,
+                finiteOr(
+                  a4?.baseColorPrice,
+                  defaultPricingEngine.paperProfiles.a4.baseColorPrice,
+                ),
+              ),
+            },
             shortBond: {
               baseBwPrice: Math.max(
                 0,

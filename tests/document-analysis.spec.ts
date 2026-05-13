@@ -1,5 +1,6 @@
 import {
   ANALYSIS_ALGORITHM_VERSION,
+  analyzeDocument,
 } from '../src/services/document-analysis';
 import * as sharp from 'sharp';
 import analysisScenarios from './mock_data/analysis_scenarios.json';

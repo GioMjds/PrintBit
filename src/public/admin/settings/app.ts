@@ -30,6 +30,12 @@ const settingPaperCurrentSheets = document.getElementById(
 ) as HTMLInputElement | null;
 
 // ── Pricing Engine settings ──────────────────
+const settingA4BwPrice = document.getElementById(
+  'settingA4BwPrice',
+) as HTMLInputElement | null;
+const settingA4ColorPrice = document.getElementById(
+  'settingA4ColorPrice',
+) as HTMLInputElement | null;
 const settingShortBondBwPrice = document.getElementById(
   'settingShortBondBwPrice',
 ) as HTMLInputElement | null;
@@ -188,6 +194,16 @@ function applySettings(settings: SettingsResponse): void {
     );
 
   // Pricing Configuration
+  if (settingA4BwPrice) {
+    settingA4BwPrice.value = String(
+      settings.pricingEngine.paperProfiles.a4.baseBwPrice,
+    );
+  }
+  if (settingA4ColorPrice) {
+    settingA4ColorPrice.value = String(
+      settings.pricingEngine.paperProfiles.a4.baseColorPrice,
+    );
+  }
   if (settingShortBondBwPrice) {
     settingShortBondBwPrice.value = String(
       settings.pricingEngine.paperProfiles.shortBond.baseBwPrice,
@@ -383,6 +399,8 @@ settingsForm.addEventListener('submit', (e) => {
   }
 
   // Pricing configuration values
+  const a4BwPrice = Number(settingA4BwPrice?.value ?? 0);
+  const a4ColorPrice = Number(settingA4ColorPrice?.value ?? 0);
   const shortBondBwPrice = Number(settingShortBondBwPrice?.value ?? 0);
   const shortBondColorPrice = Number(settingShortBondColorPrice?.value ?? 0);
   const longBondBwPrice = Number(settingLongBondBwPrice?.value ?? 0);
@@ -437,6 +455,10 @@ settingsForm.addEventListener('submit', (e) => {
     pricingEngine: {
       enabledMode: 'live',
       paperProfiles: {
+        a4: {
+          baseBwPrice: a4BwPrice,
+          baseColorPrice: a4ColorPrice,
+        },
         shortBond: {
           baseBwPrice: shortBondBwPrice,
           baseColorPrice: shortBondColorPrice,

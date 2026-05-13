@@ -19,6 +19,7 @@ import {
 } from '@/services/usb-drives';
 import { analyzeDocument } from '@/services/document-analysis';
 import { jobStore, type ScanJobSettings } from '@/services/job-store';
+import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { adminService } from '@/services/admin';
 import { db } from '@/services/db';
 import { settlementService } from '@/services';
@@ -85,6 +86,7 @@ export interface InteractiveScanResult {
 export interface SoftCopyChargeInput {
   filename: string;
   io: SocketIOServer;
+  publicBaseUrl: string;
 }
 
 export interface SoftCopyChargeResult {
@@ -94,10 +96,15 @@ export interface SoftCopyChargeResult {
   requiredAmount: number;
   amount: number;
   balance: number;
+  transactionId?: string;
   change?: {
     state: string;
     requested: number;
     dispensed: number;
+  };
+  receipt?: {
+    viewUrl: string;
+    expiresAt: string;
   };
 }
 
@@ -142,6 +149,7 @@ interface ScanOutputTransformInput {
 export class ScannerService {
   private readonly chargedScanFiles = new Map<string, number>();
   private readonly releaseTokens = new Map<string, ScanReleaseTokenRecord>();
+  private readonly receiptService = new ReceiptService();
 
   toSafeScanFilename(raw: unknown): string | null {
     return toSafeTransientScanFileName(raw);
@@ -365,7 +373,7 @@ export class ScannerService {
   async chargeSoftCopy(
     input: SoftCopyChargeInput,
   ): Promise<SoftCopyChargeResult> {
-    const { filename, io } = input;
+    const { filename, io, publicBaseUrl } = input;
 
     const sourcePath = path.resolve('uploads', 'scans', filename);
     if (!fs.existsSync(sourcePath)) {
@@ -497,6 +505,53 @@ export class ScannerService {
         .catch(() => {});
     }
 
+    // Generate receipt snapshot and mint token for scan charge
+    const transactionId = `scan-${filename}-${randomUUID().slice(0, 8)}`;
+    let receipt: { viewUrl: string; expiresAt: string } | undefined;
+    try {
+      this.receiptService.upsertReceiptSnapshot({
+        transactionId,
+        mode: 'print', // receipts use 'print' or 'copy'; scan uses 'print' as the closest mode
+        chargedAmount: settlement.chargedAmount,
+        status: 'printed',
+        change: {
+          requested: settlement.change.requested,
+          dispensed: settlement.change.dispensed,
+          state:
+            settlement.change.state === 'dispensed' ||
+            settlement.change.state === 'failed'
+              ? settlement.change.state
+              : 'none',
+          attempts: settlement.change.attempts ?? 0,
+          owedChangeId: settlement.change.owedChangeId ?? null,
+          message: settlement.change.message ?? null,
+        },
+        settledAt: new Date().toISOString(),
+        terminalAt: new Date().toISOString(),
+      });
+      const tokenData = this.receiptService.mintToken(transactionId, {
+        revokeExisting: true,
+      });
+      if (tokenData) {
+        const encodedToken = encodeURIComponent(tokenData.token);
+        receipt = {
+          viewUrl: new URL(
+            `/receipt/t/${encodedToken}`,
+            publicBaseUrl,
+          ).toString(),
+          expiresAt: tokenData.expiresAt,
+        };
+      }
+    } catch (receiptError) {
+      console.error('[SCAN] Failed to generate receipt for scan charge.', {
+        error:
+          receiptError instanceof Error
+            ? receiptError.message
+            : String(receiptError),
+        filename,
+      });
+    }
+
     return {
       ok: true,
       charged: true,
@@ -504,7 +559,9 @@ export class ScannerService {
       requiredAmount,
       amount: settlement.chargedAmount,
       balance: settlement.remainingBalance,
+      transactionId,
       change: settlement.change,
+      receipt,
     };
   }
 
