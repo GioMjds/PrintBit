@@ -2,7 +2,7 @@
 applyTo: '**/*.ino,**/esp32*'
 ---
 
-# PrintBit — ESP32 firmware conventions
+# PrintBit - ESP32 firmware conventions
 
 ## Context
 
@@ -17,18 +17,21 @@ It handles:
 
 ## Hard rules for firmware changes
 
-1. **Never remove idempotency** — every coin event must carry a unique `x-coin-event-id`.
+Apply these in order:
+
+1. **Never remove idempotency** - every coin event must carry a unique `x-coin-event-id`.
    Duplicate events must be suppressed client-side (ESP32) and server-side (kiosk).
-2. **Never remove auth headers** — `x-coin-source` and `x-coin-api-key` are required on every `/coin` request.
-3. **Never switch back to AP-only mode** — the current architecture is STA mode via WiFiManager.
+2. **Never remove auth headers** - `x-coin-source` and `x-coin-api-key` are required on every `/coin` request.
+3. **Never switch back to AP-only mode** - the current architecture is STA mode via WiFiManager.
    AP mode caused phantom coin events during reconnection; do not regress.
-4. **Never block the main loop** — use non-blocking patterns (`millis()` timers, async HTTP).
-5. **Coin events during reconnection must be suppressed** — check WiFi connection state before forwarding.
+4. **Coin events during reconnection must be suppressed** - check WiFi connection state before forwarding.
+5. **Never block the main loop** - use non-blocking patterns (`millis()` timers, async HTTP).
 
 ## WiFiManager integration pattern
 
 - Config portal SSID: `PrintBit-Setup`, password: `printbit123` (firmware defaults)
 - On successful connection, resolve kiosk IP via `KIOSK_IP` serial command
+- If kiosk IP cannot be resolved, keep the last valid `kioskIp` from `Preferences`, retry resolution on a timer, and do not forward coin events until resolution succeeds
 - Store kiosk IP in `Preferences` (NVS) for reboot persistence
 - Static DHCP reservation on router is recommended but not required
 

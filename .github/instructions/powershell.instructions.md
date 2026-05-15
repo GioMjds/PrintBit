@@ -9,6 +9,28 @@ applyTo: 'scripts/**/*.ps1,**/*.ps1'
 - All scripts run on **Windows PowerShell 5.1** (not PowerShell Core 7+) in the kiosk environment.
 - Do not use PowerShell 7+ syntax or cmdlets unless the script is explicitly marked PS7+.
 
+### How to mark PS7+ scripts
+
+- Scripts that require PowerShell 7+ must include a top-of-file marker comment exactly as follows:
+
+  # Requires: PowerShell 7+
+
+  This marker makes the requirement explicit for reviewers and automation. Scripts without this exact marker must remain compatible with PowerShell 5.1.
+
+### Cross-version compatibility
+
+- When a script must support both PowerShell 5.1 and 7+, prefer writing version-gated code paths. Example pattern:
+
+```powershell
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+	# PS7+ implementation
+} else {
+	# PS5.1-compatible implementation
+}
+```
+
+- Where possible, isolate PS7+-only functionality into separate scripts marked with the `# Requires: PowerShell 7+` header and call them conditionally.
+
 ## Encoding
 
 - Always save scripts as **UTF-8 with BOM** (`UTF8BOM` encoding) to avoid PowerShell 5.1 character issues.
@@ -31,6 +53,23 @@ applyTo: 'scripts/**/*.ps1,**/*.ps1'
 - Use `$ErrorActionPreference = 'Stop'` at the top of critical scripts.
 - Wrap destructive operations in `try/catch` with meaningful error messages.
 - Log to `%TEMP%\printbit-*.log` for diagnosability.
+
+- If logging to `%TEMP%` fails (for example, due to permissions or full disk), fall back to an alternative directory such as `C:\Logs\PrintBit`:
+
+```powershell
+$logPath = "$env:TEMP\printbit-$((Get-Date).ToString('yyyyMMdd-HHmmss')).log"
+try {
+	New-Item -Path (Split-Path $logPath) -ItemType Directory -Force | Out-Null
+	"Starting script" | Out-File -FilePath $logPath -Encoding utf8
+} catch {
+	$fallbackDir = 'C:\Logs\PrintBit'
+	New-Item -Path $fallbackDir -ItemType Directory -Force | Out-Null
+	$logPath = Join-Path $fallbackDir "printbit-$((Get-Date).ToString('yyyyMMdd-HHmmss')).log"
+	"Starting script (fallback)" | Out-File -FilePath $logPath -Encoding utf8
+}
+```
+
+- Ensure fallback directories are writable by the `PrintBitKiosk` account and rotate or prune logs to avoid disk growth.
 
 ## Kiosk lockdown
 
