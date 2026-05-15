@@ -79,7 +79,7 @@ type ConfirmConfig = {
   copies: number;
   orientation: 'portrait' | 'landscape';
   rotationDeg?: number;
-  paperSize: 'A4' | 'Legal';
+  paperSize: 'A4' | 'Letter' | 'Legal';
   pageRange?: PageRangeSelection;
   totalPages?: number;
   quote?: PrintQuote;
@@ -133,6 +133,32 @@ type PrintQuote = {
       isBlank: boolean;
     }>;
   };
+};
+
+type PrintErrorSeverity = 'warning' | 'recoverable' | 'fatal';
+
+type PrintError = {
+  code: string;
+  severity: PrintErrorSeverity;
+  userMessage: string;
+  hint?: string;
+  timestamp?: string;
+  canRetry?: boolean;
+  canDismiss?: boolean;
+};
+
+type PrintLifecycleStatePayload = {
+  mode: 'print' | 'copy' | 'scan';
+  state: 'queued' | 'processing' | 'printed' | 'failed';
+  printerName?: string | null;
+  transactionId?: string | null;
+  spoolerCorrelationKey?: string | null;
+  spoolerJobId?: number | null;
+  jobStatus?: string | null;
+  pagesPrinted?: number;
+  totalPages?: number;
+  reason?: string | null;
+  printError?: PrintError | null;
 };
 
 function normalizeRotationDeg(value: unknown): RotationDeg {
@@ -192,6 +218,7 @@ function updateSmartPricingBreakdown(quote: any): void {
 }
 
 const orientationRow = document.getElementById('orientationRow');
+const orientationValue = document.getElementById('orientationValue');
 const rotationValue = document.getElementById('rotationValue');
 const paperSizeValue = document.getElementById('paperSizeValue');
 const priceValue = document.getElementById('priceValue');
@@ -211,12 +238,66 @@ const footerNote = document.getElementById('footerNote');
 const coinToast = document.getElementById('coinToast');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
 
+// Printer Error Elements (Issue 124)
+const printerErrorBlock = document.getElementById('printerErrorBlock');
+const errorTitle = document.getElementById('errorTitle');
+const errorMessage = document.getElementById('errorMessage');
+const errorHint = document.getElementById('errorHint');
+const errorCloseBtn = document.getElementById('errorCloseBtn') as HTMLButtonElement;
+const errorActions = document.getElementById('errorActions');
+const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElement;
+const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
+
+let currentPrinterError: PrintError | null = null;
+
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
   'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
 const COIN_INSERT_GUIDANCE_MESSAGE =
   coinInsertNote?.textContent?.trim() ||
   footerNote?.textContent?.trim() ||
   DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE;
+
+function renderPrinterError(err: PrintError): void {
+  currentPrinterError = err;
+  if (!printerErrorBlock) return;
+
+  if (errorTitle) errorTitle.textContent = 'Printer Error';
+  if (errorMessage) errorMessage.textContent = err.userMessage;
+  if (errorHint) {
+    errorHint.textContent = err.hint || '';
+    if (err.hint) errorHint.removeAttribute('hidden');
+    else errorHint.setAttribute('hidden', '');
+  }
+
+  // Severity-based styling or behavior
+  printerErrorBlock.dataset.severity = err.severity;
+  
+  if (err.severity === 'warning') {
+    if (errorCloseBtn) errorCloseBtn.removeAttribute('hidden');
+  } else {
+    if (errorCloseBtn) errorCloseBtn.setAttribute('hidden', '');
+  }
+
+  // Special case: Not enough paper (PAPER_INSUFFICIENT_PRE_DISPATCH)
+  // or other states that might benefit from pause/resume
+  const showActions = err.code === 'PAPER_INSUFFICIENT_PRE_DISPATCH' || 
+                      err.code === 'PAPER_TRAY_EMPTY' ||
+                      err.code === 'PAPER_JAM_PRINT';
+  
+  if (errorActions) {
+    if (showActions) errorActions.removeAttribute('hidden');
+    else errorActions.setAttribute('hidden', '');
+  }
+
+  printerErrorBlock.removeAttribute('hidden');
+  applyConfirmGate();
+}
+
+function clearPrinterError(): void {
+  currentPrinterError = null;
+  if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
+  applyConfirmGate();
+}
 
 function syncCoinInsertGuidanceMessage(): void {
   if (coinInsertNote) coinInsertNote.textContent = COIN_INSERT_GUIDANCE_MESSAGE;
@@ -374,6 +455,7 @@ function formatPaperSizeForPricing(
 ): string {
   switch (paperSize) {
     case 'A4':
+      return 'A4 Bond Paper';
     case 'Letter':
       return 'Short Bond Paper';
     case 'Legal':
@@ -447,7 +529,18 @@ if (fileValue)
 if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
 if (copiesValue) copiesValue.textContent = String(config.copies);
 if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
-if (orientationRow) orientationRow.setAttribute('hidden', '');
+
+// Show orientation for print/copy; hide for scan
+if (config.mode === 'scan') {
+  orientationRow?.setAttribute('hidden', '');
+} else {
+  orientationRow?.removeAttribute('hidden');
+  if (orientationValue) {
+    orientationValue.textContent =
+      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+}
+
 if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
 if (paperSizeValue)
   paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
@@ -751,7 +844,10 @@ const modalMode = document.getElementById('modalMode');
 const modalColor = document.getElementById('modalColor');
 const modalCopies = document.getElementById('modalCopies');
 const modalPages = document.getElementById('modalPages');
+const modalOrientation = document.getElementById('modalOrientation');
 const modalPrice = document.getElementById('modalPrice');
+const modalChangeRow = document.getElementById('modalChangeRow');
+const modalChange = document.getElementById('modalChange');
 const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
@@ -778,12 +874,7 @@ const receiptQrCanvas = document.getElementById(
 const receiptQrLink = document.getElementById(
   'receiptQrLink',
 ) as HTMLElement | null;
-const thankYouCountdown = document.getElementById(
-  'thankYouCountdown',
-) as HTMLElement | null;
-const thankYouCountdownSeconds = document.getElementById(
-  'thankYouCountdownSeconds',
-) as HTMLElement | null;
+
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
 const persistedSpoolerCorrelationKeyRaw = sessionStorage.getItem(
@@ -819,8 +910,7 @@ if (!persistedFingerprintMatchesCurrent) {
 }
 let latestPrinterStatusLabel = 'Checking...';
 const spoolerTimedOut = false;
-let thankYouAutoRedirectHandle: number | null = null;
-const THANKYOU_AUTO_REDIRECT_SECONDS = 10;
+
 const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
 
 let currentTransactionId: string | null = null;
@@ -850,6 +940,28 @@ function extractReceiptUrl(
     url,
     expiresAt: payload.receipt?.expiresAt || payload.receiptExpiresAt || null,
   };
+}
+
+/** For copy mode: poll the copy job endpoint to get receipt data after async settlement. */
+async function pollCopyJobReceipt(jobId: string): Promise<void> {
+  const maxAttempts = 15;
+  const intervalMs = 2000;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
+      if (!res.ok) break;
+      const job = await res.json() as { receipt?: { viewUrl?: string; expiresAt?: string }; transactionId?: string; id?: string };
+      if (job.receipt?.viewUrl) {
+        captureReceiptCta({ receipt: { viewUrl: job.receipt.viewUrl, expiresAt: job.receipt.expiresAt ?? null } });
+        const txId = job.transactionId ?? job.id ?? null;
+        if (txId) setTransactionReference(txId);
+        return;
+      }
+    } catch {
+      // Ignore fetch errors, retry
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
+  }
 }
 
 function renderReceiptCta(): void {
@@ -885,12 +997,27 @@ function finalizePrintSuccess(transactionId: string | null): void {
   renderReceiptCta();
   lastSpoolerCorrelationKey = null;
   isProcessingPayment = false;
+
+  if (printAnotherBtn) {
+    printAnotherBtn.removeAttribute('hidden');
+    const btnSpan = printAnotherBtn.querySelector('span');
+    if (btnSpan) {
+      if (config.mode === 'copy') {
+        btnSpan.textContent = 'Copy Another Document';
+      } else if (config.mode === 'scan') {
+        btnSpan.textContent = 'Scan Another Document';
+      } else {
+        btnSpan.textContent = 'Print Another File';
+      }
+    }
+  }
+
   applyConfirmGate();
   void checkRemainingFilesAndPrompt();
 }
 
 function syncPendingPaymentSessionState(): void {
-  if (config.mode !== 'print') return;
+  if (config.mode !== 'print' && config.mode !== 'copy') return;
   if (paymentIdempotencyKey)
     sessionStorage.setItem(
       PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY,
@@ -1105,7 +1232,26 @@ function showModal(): void {
   if (modalColor) modalColor.textContent = getColorModeSummaryLabel();
   if (modalCopies) modalCopies.textContent = String(config.copies);
   if (modalPages) modalPages.textContent = pageRangeLabel(config.pageRange);
+  if (modalOrientation) {
+    modalOrientation.textContent =
+      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
+
+  // Show coin change in modal when overpaid
+  const modalChangeAmount = Math.max(0, currentBalance - totalPrice);
+  if (modalChangeRow) {
+    if (pricingLoaded && modalChangeAmount > 0) {
+      modalChangeRow.removeAttribute('hidden');
+    } else {
+      modalChangeRow.setAttribute('hidden', '');
+    }
+  }
+  if (modalChange) {
+    modalChange.textContent =
+      modalChangeAmount > 0 ? `₱ ${modalChangeAmount}` : '—';
+  }
+
   confirmModal.classList.add('is-visible');
   confirmModal.setAttribute('aria-hidden', 'false');
   modalCancelBtn?.focus();
@@ -1142,31 +1288,12 @@ function clearConfirmSessionStorage(): void {
   sessionStorage.removeItem('printbit.sessionToken');
 }
 
-function startThankYouAutoRedirect(): void {
-  let remaining = THANKYOU_AUTO_REDIRECT_SECONDS;
-  if (thankYouCountdownSeconds)
-    thankYouCountdownSeconds.textContent = String(remaining);
-  thankYouCountdown?.removeAttribute('hidden');
-  thankYouAutoRedirectHandle = window.setInterval(() => {
-    remaining -= 1;
-    if (thankYouCountdownSeconds)
-      thankYouCountdownSeconds.textContent = String(Math.max(0, remaining));
-    if (remaining <= 0) {
-      window.clearInterval(thankYouAutoRedirectHandle!);
-      clearConfirmSessionStorage();
-      window.location.href = '/';
-    }
-  }, 1000);
-}
-
 async function checkRemainingFilesAndPrompt(): Promise<void> {
   if (config.mode !== 'print' || !config.sessionId) {
-    clearConfirmSessionStorage();
-    startThankYouAutoRedirect();
+    // No auto-redirect: user taps Done when ready
     return;
   }
-  // Simplified for brevity
-  startThankYouAutoRedirect();
+  // Simplified for brevity — no auto-redirect
 }
 
 confirmBtn?.addEventListener('click', () => showModal());
@@ -1186,9 +1313,70 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
   try {
     if (config.mode === 'scan') {
-      // Scan implementation...
+      // Scan Soft Copy fee payment
+      const response = await fetchWithTimeout('/api/scanner/soft-copy/charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: config.scanFilename,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Scan payment failed');
+      }
+
+      const payload = (await response.json()) as ReceiptLinkPayload & {
+        transactionId?: string | null;
+      };
+      captureReceiptCta(payload);
+      finalizePrintSuccess(payload.transactionId ?? null);
+      // For scan mode: the receipt data comes in the same response (no async job)
+      // captureReceiptCta above should have set it if available
     } else if (config.mode === 'copy') {
-      // Copy implementation...
+      // Copy (Scan to Print) job creation
+      const spoolerCorrelationKey =
+        paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
+      paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+      syncPendingPaymentSessionState();
+
+      const response = await fetchWithTimeout('/api/copy/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: totalPrice,
+          copies: config.copies,
+          colorMode: getDisplayColorMode(),
+          orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
+          paperSize: config.paperSize,
+          previewPath: config.copyPreviewPath,
+          spoolerCorrelationKey,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        if (errData.printError) {
+          renderPrinterError(errData.printError);
+          throw new Error(errData.printError.userMessage);
+        }
+        throw new Error(errData.error || 'Copy job failed');
+      }
+
+      const payload = (await response.json()) as ReceiptLinkPayload & {
+        id?: string;
+        transactionId?: string | null;
+      };
+      // For copy jobs, the ID is often in 'id' field of the job object
+      const transactionId = payload.transactionId ?? payload.id ?? null;
+      captureReceiptCta(payload);
+      finalizePrintSuccess(transactionId);
+      // Copy job receipt is generated asynchronously — poll for it
+      if (transactionId) {
+        void pollCopyJobReceipt(transactionId);
+      }
     } else {
       // Print implementation...
       const spoolerCorrelationKey =
@@ -1206,6 +1394,10 @@ modalConfirmBtn?.addEventListener('click', async () => {
           documentId: config.documentId,
           copies: config.copies,
           colorMode: getDisplayColorMode(),
+          orientation: config.orientation,
+          rotationDeg: config.rotationDeg,
+          duplex: config.duplex === true,
+          paperSize: config.paperSize,
           pageRange: config.pageRange,
           spoolerCorrelationKey,
         }),
@@ -1256,7 +1448,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
       }
       finalizePrintSuccess(successPayload.transactionId ?? null);
     }
-  } catch {
+  } catch (error) {
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
     modalConfirmBtn.disabled = false;
@@ -1265,8 +1457,6 @@ modalConfirmBtn?.addEventListener('click', async () => {
 });
 
 thankYouDoneBtn?.addEventListener('click', () => {
-  if (thankYouAutoRedirectHandle)
-    window.clearInterval(thankYouAutoRedirectHandle);
   clearConfirmSessionStorage();
   window.location.href = '/';
 });
@@ -1314,6 +1504,41 @@ if (typeof ioFactory === 'function') {
     finalizePrintSuccess(event.transactionId ?? currentTransactionId);
   });
 }
+
+// Error action button handlers
+errorCloseBtn?.addEventListener('click', () => {
+  clearPrinterError();
+});
+
+errorPauseBtn?.addEventListener('click', async () => {
+  if (!paymentSpoolerCorrelationKey) return;
+  try {
+    await fetch('/api/printer/pause', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spoolerCorrelationKey: paymentSpoolerCorrelationKey }),
+    });
+  } catch (err) {
+    console.error('Failed to pause printer:', err);
+  }
+});
+
+errorResumeBtn?.addEventListener('click', async () => {
+  if (!paymentSpoolerCorrelationKey) return;
+  try {
+    await fetch('/api/printer/resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spoolerCorrelationKey: paymentSpoolerCorrelationKey }),
+    });
+    // Optimistically clear error if it was a pause/resume scenario
+    if (currentPrinterError?.code === 'PAPER_INSUFFICIENT_PRE_DISPATCH') {
+        clearPrinterError();
+    }
+  } catch (err) {
+    console.error('Failed to resume printer:', err);
+  }
+});
 
 async function loadPrinterStatus(): Promise<void> {
   try {

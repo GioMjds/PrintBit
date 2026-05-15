@@ -30,8 +30,7 @@
     "updates:apply": "powershell -ExecutionPolicy Bypass -File .\\scripts\\apply-controlled-updates.ps1",
     "updates:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-controlled-updates.ps1",
     "updates:revert": "powershell -ExecutionPolicy Bypass -File .\\scripts\\revert-controlled-updates.ps1",
-    "driver:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-printer-driver-version.ps1",
-    "prepare": "husky"
+    "driver:verify": "powershell -ExecutionPolicy Bypass -File .\\scripts\\verify-printer-driver-version.ps1"
   },
   "keywords": [],
   "author": "GioMjds",

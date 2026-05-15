@@ -1208,6 +1208,7 @@ export class AdminController {
       pricingEngine?: {
         enabledMode?: 'legacy' | 'shadow' | 'live';
         paperProfiles?: {
+          a4?: { baseBwPrice?: number; baseColorPrice?: number };
           shortBond?: { baseBwPrice?: number; baseColorPrice?: number };
           longBond?: { baseBwPrice?: number; baseColorPrice?: number };
         };
@@ -1289,6 +1290,9 @@ export class AdminController {
       pricingEngine: {
         enabledMode: originalSettings.pricingEngine.enabledMode,
         paperProfiles: {
+          a4: {
+            ...originalSettings.pricingEngine.paperProfiles.a4,
+          },
           shortBond: {
             ...originalSettings.pricingEngine.paperProfiles.shortBond,
           },
@@ -1646,6 +1650,9 @@ export class AdminController {
       const next = {
         enabledMode: originalSettings.pricingEngine.enabledMode,
         paperProfiles: {
+          a4: {
+            ...originalSettings.pricingEngine.paperProfiles.a4,
+          },
           shortBond: {
             ...originalSettings.pricingEngine.paperProfiles.shortBond,
           },
@@ -1675,6 +1682,31 @@ export class AdminController {
           });
         }
         next.enabledMode = incoming.enabledMode;
+      }
+
+      if (incoming.paperProfiles?.a4) {
+        if (
+          !isFiniteNumber(incoming.paperProfiles.a4.baseBwPrice) ||
+          incoming.paperProfiles.a4.baseBwPrice < 0
+        ) {
+          return res.status(400).json({
+            error:
+              'pricingEngine.paperProfiles.a4.baseBwPrice must be >= 0.',
+          });
+        }
+        if (
+          !isFiniteNumber(incoming.paperProfiles.a4.baseColorPrice) ||
+          incoming.paperProfiles.a4.baseColorPrice < 0
+        ) {
+          return res.status(400).json({
+            error:
+              'pricingEngine.paperProfiles.a4.baseColorPrice must be >= 0.',
+          });
+        }
+        next.paperProfiles.a4.baseBwPrice =
+          incoming.paperProfiles.a4.baseBwPrice;
+        next.paperProfiles.a4.baseColorPrice =
+          incoming.paperProfiles.a4.baseColorPrice;
       }
 
       if (incoming.paperProfiles?.shortBond) {

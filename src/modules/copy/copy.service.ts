@@ -40,6 +40,8 @@ import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 import { analyzeDocument } from '@/services/document-analysis';
 import { buildEnhancedPrintQuote } from '@/services/print-quote';
+import { monitorSpoolerJob } from '@/services/print-spooler';
+import { PRINT_SPOOLER_MONITOR_WINDOW_MS } from '@/config';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -53,6 +55,7 @@ export interface CreateCopyJobInput {
   paperSize?: string;
   amount?: number;
   previewPath?: string;
+  spoolerCorrelationKey?: string;
 }
 
 export interface GetCopyQuoteInput {
@@ -105,6 +108,7 @@ interface NormalizedCopyJobInput {
   paperSize: 'A4' | 'Legal';
   amount?: number;
   previewPath: string;
+  spoolerCorrelationKey: string | null;
 }
 
 export interface CopyServiceDeps {
@@ -454,6 +458,11 @@ export class CopyService {
       paperSize: safePaperSize,
       amount: input.amount,
       previewPath: safePreviewPath,
+      spoolerCorrelationKey:
+        typeof input.spoolerCorrelationKey === 'string' &&
+        input.spoolerCorrelationKey.trim().length > 0
+          ? input.spoolerCorrelationKey.trim()
+          : null,
     };
   }
 
@@ -595,11 +604,38 @@ export class CopyService {
             previewFilename,
           },
         });
+        const jobDispatchedAt = getTrustedTimestamp().timestamp;
         await printFile(relPath, printOptions, {
           transactionId: jobId,
           mode: 'copy',
           source: 'copy-service',
+          spoolerCorrelationKey: normalized.spoolerCorrelationKey,
         });
+
+        if (telemetry.name) {
+          void monitorSpoolerJob({
+            printerName: telemetry.name,
+            chargedAmount: requiredAmount,
+            jobDispatchedAt,
+            spoolerCorrelationKey: normalized.spoolerCorrelationKey,
+            io: this.deps.io,
+            jobContext: {
+              transactionId: jobId,
+              mode: 'copy',
+              copies: normalized.copies,
+              colorMode: normalized.colorMode,
+              rotationDeg: normalized.rotationDeg,
+              spoolerCorrelationKey: normalized.spoolerCorrelationKey,
+              filename: previewFilename,
+              monitorStartPhase: 'post_dispatch',
+            },
+            onConfirmed: async () => {
+              // Any post-print cleanup or finalization if needed
+            },
+          }).catch((err) => {
+            console.error('[COPY-SPOOLER-MONITOR] monitorSpoolerJob failed:', err);
+          });
+        }
 
         void watchJobForMalfunction(this.deps.io, {
           jobId,

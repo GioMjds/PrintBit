@@ -46,6 +46,7 @@ export interface PricingEngineBulkDiscountTier {
 export interface PricingEngineSettings {
   enabledMode: PricingEngineMode;
   paperProfiles: {
+    a4: PricingEnginePaperProfile;
     shortBond: PricingEnginePaperProfile;
     longBond: PricingEnginePaperProfile;
   };

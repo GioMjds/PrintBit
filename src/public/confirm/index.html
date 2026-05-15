@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <link rel="stylesheet" href="/globals.css" />
     <title>Confirm & Pay · PrintBit</title>
     <link rel="stylesheet" href="/confirm/styles.css" />
@@ -177,8 +180,8 @@
               Insert coins into the kiosk slot to pay
             </p>
             <p class="coin-panel__note" id="coinInsertNote">
-              Tip: Insert one coin at a time. Rapid insertion may not be detected
-              by the kiosk.
+              Tip: Insert one coin at a time. Rapid insertion may not be
+              detected by the kiosk.
             </p>
 
             <!-- Balance ring -->
@@ -303,7 +306,7 @@
             <h2 class="summary-panel__title">Job Summary</h2>
 
             <dl class="summary-list">
-              <div class="summary-row" id="orientationRow">
+              <div class="summary-row" id="modeRow">
                 <dt class="summary-row__label">
                   <svg
                     viewBox="0 0 16 16"
@@ -386,14 +389,18 @@
               </div>
 
               <!-- Smart Pricing Breakdown -->
-              <div id="smartPricingBreakdown" class="smart-pricing-breakdown" style="display: none;">
+              <div
+                id="smartPricingBreakdown"
+                class="smart-pricing-breakdown"
+                style="display: none"
+              >
                 <p class="breakdown-title">Pricing Breakdown</p>
                 <ul id="breakdownList" class="breakdown-list">
                   <!-- Breakdown items will be added here -->
                 </ul>
               </div>
 
-              <div class="summary-row">
+              <div class="summary-row" id="orientationRow">
                 <dt class="summary-row__label">
                   <svg
                     viewBox="0 0 16 16"
@@ -790,15 +797,6 @@
             <span>Done</span>
           </button>
         </div>
-
-        <!-- Auto-redirect countdown -->
-        <p
-          class="modal-subtitle modal-subtitle--countdown"
-          id="thankYouCountdown"
-          hidden
-        >
-          Redirecting to home in <span id="thankYouCountdownSeconds">10</span>s…
-        </p>
       </div>
     </div>
 

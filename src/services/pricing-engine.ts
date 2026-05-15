@@ -88,6 +88,7 @@ interface ExtractedPageSignals {
   isBlank: boolean;
   hasExplicitBlankSignal: boolean;
   classification?: PageClassification;
+  contentCoverage?: number;
 }
 
 /**
@@ -155,6 +156,7 @@ function extractPageSignals(
     isBlank,
     hasExplicitBlankSignal,
     classification,
+    contentCoverage,
   };
 }
 
@@ -253,11 +255,12 @@ function loadPricingEngineConfig(
 
   const thresholds = cfg?.thresholds ?? { bwMax: 0.1, fullColorMin: 0.5 };
 
-  // Determine which profile to use. Legal = longBond; A4/Letter = shortBond.
-  const profileKey = paperSize === 'Legal' ? 'longBond' : 'shortBond';
+  // Determine which profile to use. A4 = a4; Letter = shortBond; Legal = longBond.
+  const profileKey =
+    paperSize === 'Legal' ? 'longBond' : paperSize === 'Letter' ? 'shortBond' : 'a4';
   const profile = cfg?.paperProfiles?.[profileKey] ?? {
-    baseBwPrice: profileKey === 'longBond' ? 7 : 5,
-    baseColorPrice: profileKey === 'longBond' ? 20 : 15,
+    baseBwPrice: profileKey === 'longBond' ? 4 : 3,
+    baseColorPrice: profileKey === 'longBond' ? 20 : 18,
   };
 
   return {

@@ -475,7 +475,7 @@
 
             <fieldset class="option-group" id="paperSizeGroup">
               <legend class="option-label">Paper Size</legend>
-              <div class="option-grid">
+              <div class="option-grid option-grid--3">
                 <label class="option-card">
                   <input
                     type="radio"
@@ -507,11 +507,48 @@
                         fill="currentColor"
                         opacity=".65"
                       >
+                        A4
+                      </text>
+                    </svg>
+                  </div>
+                  <span class="option-card__label">A4 Bond</span>
+                  <span class="option-card__radio" aria-hidden="true"></span>
+                </label>
+                <label class="option-card">
+                  <input
+                    type="radio"
+                    name="paperSize"
+                    value="Letter"
+                    class="sr-only"
+                  />
+                  <div class="option-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 36 36" fill="none">
+                      <rect
+                        x="10"
+                        y="4"
+                        width="16"
+                        height="28"
+                        rx="2"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        fill="currentColor"
+                        opacity=".1"
+                      />
+                      <text
+                        x="18"
+                        y="24"
+                        text-anchor="middle"
+                        font-size="9"
+                        font-weight="800"
+                        font-family="Plus Jakarta Sans,sans-serif"
+                        fill="currentColor"
+                        opacity=".65"
+                      >
                         S
                       </text>
                     </svg>
                   </div>
-                  <span class="option-card__label">Short (A4/LTR)</span>
+                  <span class="option-card__label">Short Bond</span>
                   <span class="option-card__radio" aria-hidden="true"></span>
                 </label>
                 <label class="option-card">
@@ -548,7 +585,7 @@
                       </text>
                     </svg>
                   </div>
-                  <span class="option-card__label">Long (Legal)</span>
+                  <span class="option-card__label">Long Bond</span>
                   <span class="option-card__radio" aria-hidden="true"></span>
                 </label>
               </div>

@@ -34,10 +34,11 @@ class AdminService {
     }
 
     // Pricing Engine logic is now mandatory
-    const profileKey = paperSize === 'Legal' ? 'longBond' : 'shortBond';
+    const profileKey =
+      paperSize === 'Legal' ? 'longBond' : paperSize === 'Letter' ? 'shortBond' : 'a4';
     const profile = engineCfg?.paperProfiles?.[profileKey] ?? {
-      baseBwPrice: profileKey === 'longBond' ? 7 : 5,
-      baseColorPrice: profileKey === 'longBond' ? 20 : 15,
+      baseBwPrice: profileKey === 'longBond' ? 4 : 3,
+      baseColorPrice: profileKey === 'longBond' ? 20 : 18,
     };
 
     const { colorPages, bwPages } =
