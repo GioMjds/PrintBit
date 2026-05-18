@@ -186,21 +186,11 @@ export type SettingsResponse = {
     colorSurcharge: number;
   };
   pricingEngine: {
-    enabledMode: 'legacy' | 'shadow' | 'live';
     paperProfiles: {
       a4: { baseBwPrice: number; baseColorPrice: number };
       shortBond: { baseBwPrice: number; baseColorPrice: number };
       longBond: { baseBwPrice: number; baseColorPrice: number };
     };
-    thresholds: {
-      bwMax: number;
-      fullColorMin: number;
-    };
-    decileSurcharges?: number[];
-    suggestionThreshold?: number;
-    nearBlankBwMax?: number;
-    colorMultiplier: number;
-    blankPagePolicy: 'charge_zero' | 'charge_bw' | 'charge_color';
     bulkDiscountTiers: Array<{
       minPages: number;
       maxPages?: number;

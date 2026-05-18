@@ -46,7 +46,7 @@ import {
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
-import { buildPrintQuote, buildEnhancedPrintQuote } from '@/services/print-quote';
+import { buildPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
 import {
   checkpointRecoverySession,
@@ -637,17 +637,11 @@ export class FinancialService {
   getPricingConfig = (_req: Request, res: Response): void => {
     const config = db.data?.settings?.pricingEngine;
     res.json({
-      enabledMode: config?.enabledMode ?? 'legacy',
       paperProfiles: config?.paperProfiles ?? {
-        shortBond: { baseBwPrice: 5, baseColorPrice: 15 },
-        longBond: { baseBwPrice: 7, baseColorPrice: 20 },
+        a4: { baseBwPrice: 3, baseColorPrice: 18 },
+        shortBond: { baseBwPrice: 3, baseColorPrice: 18 },
+        longBond: { baseBwPrice: 4, baseColorPrice: 20 },
       },
-      thresholds: config?.thresholds ?? {
-        bwMax: 0.1,
-        fullColorMin: 0.5,
-      },
-      colorMultiplier: config?.colorMultiplier ?? 20,
-      blankPagePolicy: config?.blankPagePolicy ?? 'charge_zero',
       bulkDiscountTiers: config?.bulkDiscountTiers ?? [],
       rounding: config?.rounding ?? 'whole_peso_total_only',
     });
@@ -893,18 +887,20 @@ export class FinancialService {
         ? req.body.colorMode
         : 'grayscale';
     const duplex = req.body?.duplex === true;
-    const requestedPaperSize: 'A4' | 'Legal' =
-      req.body?.paperSize === 'Legal' ? 'Legal' : 'A4';
+    const requestedPaperSize: 'A4' | 'Letter' | 'Legal' =
+      req.body?.paperSize === 'Legal'
+        ? 'Legal'
+        : req.body?.paperSize === 'Letter'
+          ? 'Letter'
+          : 'A4';
 
-    // Pricing Engine is now mandatory
-    const quoteComputation = buildEnhancedPrintQuote({
+    const quoteComputation = buildPrintQuote({
       analysis: target.analysis,
       copies: safeCopies,
       colorMode: requestedColorMode,
       paperSize: requestedPaperSize,
       pageRange: req.body?.pageRange,
       duplex,
-      includePricingEngineBreakdown: true,
     });
     if (!quoteComputation.ok) {
       return res.status(400).json({ error: quoteComputation.error });
@@ -916,7 +912,6 @@ export class FinancialService {
       documentId: target.documentId,
       filename: target.filename,
       quote: quoteComputation.quote,
-      pricingMode: 'live',
     });
   };
 
@@ -1331,8 +1326,12 @@ export class FinancialService {
       return;
     }
     const rotationDeg = normalizeRotationDeg(req.body?.rotationDeg, 0);
-    const paperSize: 'A4' | 'Legal' =
-      req.body?.paperSize === 'Legal' ? 'Legal' : 'A4';
+    const paperSize: 'A4' | 'Letter' | 'Legal' =
+      req.body?.paperSize === 'Legal'
+        ? 'Legal'
+        : req.body?.paperSize === 'Letter'
+          ? 'Letter'
+          : 'A4';
     const duplex = req.body?.duplex === true;
     let requiredAmount =
       mode === 'copy'
@@ -1451,22 +1450,13 @@ export class FinancialService {
         return;
       }
 
-      // Use mode-aware quote builder: pricing engine in shadow/live modes, legacy otherwise
-      const pricingMode = db.data?.settings?.pricingEngine?.enabledMode ?? 'legacy';
-      const includePricingEngine = pricingMode === 'shadow' || pricingMode === 'live';
-      
-      const quoteBuilder = includePricingEngine
-        ? buildEnhancedPrintQuote
-        : buildPrintQuote;
-
-      const quoteComputation = quoteBuilder({
+      const quoteComputation = buildPrintQuote({
         analysis: target.analysis,
         copies,
         colorMode,
         paperSize,
         pageRange: req.body?.pageRange,
         duplex,
-        includePricingEngineBreakdown: includePricingEngine,
       });
       if (!quoteComputation.ok) {
         void adminService.appendAdminLog(

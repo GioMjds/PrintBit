@@ -1162,21 +1162,17 @@ export class AdminController {
         >;
       };
       pricingEngine?: {
-        enabledMode?: 'legacy' | 'shadow' | 'live';
         paperProfiles?: {
           a4?: { baseBwPrice?: number; baseColorPrice?: number };
           shortBond?: { baseBwPrice?: number; baseColorPrice?: number };
           longBond?: { baseBwPrice?: number; baseColorPrice?: number };
         };
-        thresholds?: {
-          bwMax?: number;
-          fullColorMin?: number;
-        };
-        decileSurcharges?: number[];
-        suggestionThreshold?: number;
-        nearBlankBwMax?: number;
-        colorMultiplier?: number;
-        blankPagePolicy?: 'charge_zero' | 'charge_bw' | 'charge_color';
+        bulkDiscountTiers?: Array<{
+          minPages?: number;
+          maxPages?: number;
+          discountPerPage?: number;
+        }>;
+        rounding?: 'whole_peso_total_only';
       };
     };
 
@@ -1244,7 +1240,6 @@ export class AdminController {
       inkMonitoring: { ...originalSettings.inkMonitoring },
       consumablesForecasting: { ...originalSettings.consumablesForecasting },
       pricingEngine: {
-        enabledMode: originalSettings.pricingEngine.enabledMode,
         paperProfiles: {
           a4: {
             ...originalSettings.pricingEngine.paperProfiles.a4,
@@ -1256,13 +1251,10 @@ export class AdminController {
             ...originalSettings.pricingEngine.paperProfiles.longBond,
           },
         },
-        thresholds: { ...originalSettings.pricingEngine.thresholds },
-        decileSurcharges: originalSettings.pricingEngine.decileSurcharges,
-        suggestionThreshold: originalSettings.pricingEngine.suggestionThreshold,
-        nearBlankBwMax: originalSettings.pricingEngine.nearBlankBwMax,
-        colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
-        blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
-        bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
+        bulkDiscountTiers:
+          originalSettings.pricingEngine.bulkDiscountTiers.map((entry) => ({
+            ...entry,
+          })),
         rounding: originalSettings.pricingEngine.rounding,
       },
       consumableEstimation: {
@@ -1604,7 +1596,6 @@ export class AdminController {
     if (body.pricingEngine) {
       const incoming = body.pricingEngine;
       const next = {
-        enabledMode: originalSettings.pricingEngine.enabledMode,
         paperProfiles: {
           a4: {
             ...originalSettings.pricingEngine.paperProfiles.a4,
@@ -1616,28 +1607,28 @@ export class AdminController {
             ...originalSettings.pricingEngine.paperProfiles.longBond,
           },
         },
-        thresholds: { ...originalSettings.pricingEngine.thresholds },
-        decileSurcharges: originalSettings.pricingEngine.decileSurcharges,
-        suggestionThreshold: originalSettings.pricingEngine.suggestionThreshold,
-        nearBlankBwMax: originalSettings.pricingEngine.nearBlankBwMax,
-        colorMultiplier: originalSettings.pricingEngine.colorMultiplier,
-        blankPagePolicy: originalSettings.pricingEngine.blankPagePolicy,
-        bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers,
+        bulkDiscountTiers:
+          originalSettings.pricingEngine.bulkDiscountTiers.map((entry) => ({
+            ...entry,
+          })),
         rounding: originalSettings.pricingEngine.rounding,
       };
 
-      if (incoming.enabledMode !== undefined) {
-        if (
-          incoming.enabledMode !== 'legacy' &&
-          incoming.enabledMode !== 'shadow' &&
-          incoming.enabledMode !== 'live'
-        ) {
+      const removedPricingEngineFields = [
+        'enabledMode',
+        'thresholds',
+        'decileSurcharges',
+        'suggestionThreshold',
+        'nearBlankBwMax',
+        'colorMultiplier',
+        'blankPagePolicy',
+      ] as const;
+      for (const fieldName of removedPricingEngineFields) {
+        if (Object.prototype.hasOwnProperty.call(incoming, fieldName)) {
           return res.status(400).json({
-            error:
-              'pricingEngine.enabledMode must be "legacy", "shadow", or "live".',
+            error: `pricingEngine.${fieldName} is no longer supported.`,
           });
         }
-        next.enabledMode = incoming.enabledMode;
       }
 
       if (incoming.paperProfiles?.a4) {
@@ -1715,115 +1706,72 @@ export class AdminController {
           incoming.paperProfiles.longBond.baseColorPrice;
       }
 
-      if (incoming.thresholds) {
-        if (incoming.thresholds.bwMax !== undefined) {
-          if (
-            !isFiniteNumber(incoming.thresholds.bwMax) ||
-            incoming.thresholds.bwMax < 0 ||
-            incoming.thresholds.bwMax > 1
-          ) {
+      if (incoming.bulkDiscountTiers !== undefined) {
+        if (!Array.isArray(incoming.bulkDiscountTiers)) {
+          return res.status(400).json({
+            error: 'pricingEngine.bulkDiscountTiers must be an array.',
+          });
+        }
+        const parsedTiers: Array<{
+          minPages: number;
+          maxPages?: number;
+          discountPerPage: number;
+        }> = [];
+        for (let i = 0; i < incoming.bulkDiscountTiers.length; i += 1) {
+          const candidate = incoming.bulkDiscountTiers[i];
+          if (typeof candidate !== 'object' || candidate === null) {
             return res.status(400).json({
-              error: 'pricingEngine.thresholds.bwMax must be between 0 and 1.',
+              error: `pricingEngine.bulkDiscountTiers[${i}] must be an object.`,
             });
           }
-          next.thresholds.bwMax = incoming.thresholds.bwMax;
-        }
-        if (incoming.thresholds.fullColorMin !== undefined) {
+          const minPages = candidate.minPages;
+          const maxPages = candidate.maxPages;
+          const discountPerPage = candidate.discountPerPage;
           if (
-            !isFiniteNumber(incoming.thresholds.fullColorMin) ||
-            incoming.thresholds.fullColorMin < 0 ||
-            incoming.thresholds.fullColorMin > 1
+            !isFiniteNumber(minPages) ||
+            !Number.isInteger(minPages) ||
+            minPages < 1
           ) {
             return res.status(400).json({
               error:
-                'pricingEngine.thresholds.fullColorMin must be between 0 and 1.',
+                `pricingEngine.bulkDiscountTiers[${i}].minPages must be a whole number >= 1.`,
             });
           }
-          next.thresholds.fullColorMin = incoming.thresholds.fullColorMin;
-        }
-      }
-
-      if (next.thresholds.bwMax >= next.thresholds.fullColorMin) {
-        return res.status(400).json({
-          error: 'pricingEngine.thresholds.bwMax must be < fullColorMin.',
-        });
-      }
-
-      if (incoming.decileSurcharges !== undefined) {
-        if (!Array.isArray(incoming.decileSurcharges)) {
-          return res.status(400).json({
-            error: 'pricingEngine.decileSurcharges must be an array of 10 numbers.',
-          });
-        }
-        if (incoming.decileSurcharges.length !== 10) {
-          return res.status(400).json({
-            error: 'pricingEngine.decileSurcharges must contain exactly 10 values.',
-          });
-        }
-
-        const parsed: number[] = [];
-        for (let i = 0; i < incoming.decileSurcharges.length; i += 1) {
-          const value = incoming.decileSurcharges[i];
-          if (!isFiniteNumber(value) || value < 0 || value > 1) {
+          if (
+            maxPages !== undefined &&
+            (!isFiniteNumber(maxPages) ||
+              !Number.isInteger(maxPages) ||
+              maxPages < minPages)
+          ) {
             return res.status(400).json({
-              error: `pricingEngine.decileSurcharges[${i}] must be between 0 and 1.`,
+              error:
+                `pricingEngine.bulkDiscountTiers[${i}].maxPages must be a whole number >= minPages.`,
             });
           }
-          parsed.push(value);
+          if (!isFiniteNumber(discountPerPage) || discountPerPage < 0) {
+            return res.status(400).json({
+              error:
+                `pricingEngine.bulkDiscountTiers[${i}].discountPerPage must be >= 0.`,
+            });
+          }
+          parsedTiers.push({
+            minPages,
+            ...(maxPages !== undefined ? { maxPages } : {}),
+            discountPerPage,
+          });
         }
-        next.decileSurcharges = parsed;
+        parsedTiers.sort((a, b) => a.minPages - b.minPages);
+        next.bulkDiscountTiers = parsedTiers;
       }
 
-      if (incoming.suggestionThreshold !== undefined) {
-        if (
-          !isFiniteNumber(incoming.suggestionThreshold) ||
-          incoming.suggestionThreshold < 0 ||
-          incoming.suggestionThreshold > 1
-        ) {
-          return res.status(400).json({
-            error:
-              'pricingEngine.suggestionThreshold must be between 0 and 1.',
-          });
-        }
-        next.suggestionThreshold = incoming.suggestionThreshold;
-      }
-      if (incoming.nearBlankBwMax !== undefined) {
-        if (
-          !isFiniteNumber(incoming.nearBlankBwMax) ||
-          incoming.nearBlankBwMax < 0 ||
-          incoming.nearBlankBwMax > 1
-        ) {
-          return res.status(400).json({
-            error: 'pricingEngine.nearBlankBwMax must be between 0 and 1.',
-          });
-        }
-        next.nearBlankBwMax = incoming.nearBlankBwMax;
-      }
-
-      if (incoming.colorMultiplier !== undefined) {
-        if (
-          !isFiniteNumber(incoming.colorMultiplier) ||
-          incoming.colorMultiplier < 1
-        ) {
-          return res.status(400).json({
-            error: 'pricingEngine.colorMultiplier must be >= 1.',
-          });
-        }
-        next.colorMultiplier = incoming.colorMultiplier;
-      }
-
-      if (incoming.blankPagePolicy !== undefined) {
-        if (
-          incoming.blankPagePolicy !== 'charge_zero' &&
-          incoming.blankPagePolicy !== 'charge_bw' &&
-          incoming.blankPagePolicy !== 'charge_color'
-        ) {
-          return res.status(400).json({
-            error:
-              'pricingEngine.blankPagePolicy must be "charge_zero", "charge_bw", or "charge_color".',
-          });
-        }
-        next.blankPagePolicy = incoming.blankPagePolicy;
+      if (
+        incoming.rounding !== undefined &&
+        incoming.rounding !== 'whole_peso_total_only'
+      ) {
+        return res.status(400).json({
+          error:
+            'pricingEngine.rounding must be "whole_peso_total_only".',
+        });
       }
 
       nextSettings.pricingEngine = next;

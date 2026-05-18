@@ -39,7 +39,10 @@ import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.s
 import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 import { analyzeDocument } from '@/services/document-analysis';
-import { buildEnhancedPrintQuote } from '@/services/print-quote';
+import {
+  buildPrintQuote,
+  type PrintQuoteResult,
+} from '@/services/print-quote';
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { PRINT_SPOOLER_MONITOR_WINDOW_MS } from '@/config';
 
@@ -53,6 +56,8 @@ export interface CreateCopyJobInput {
   orientation?: string;
   rotationDeg?: number;
   paperSize?: string;
+  pageRange?: unknown;
+  duplex?: boolean;
   amount?: number;
   previewPath?: string;
   spoolerCorrelationKey?: string;
@@ -62,12 +67,8 @@ export interface GetCopyQuoteInput {
   copyPreviewPath?: string;
   copies?: number;
   colorMode?: 'colored' | 'grayscale';
-  paperSize?: 'A4' | 'Legal';
-  pageRange?: {
-    type: string;
-    start?: number;
-    end?: number;
-  };
+  paperSize?: 'A4' | 'Letter' | 'Legal';
+  pageRange?: unknown;
   duplex?: boolean;
 }
 
@@ -105,7 +106,9 @@ interface NormalizedCopyJobInput {
   colorMode: 'colored' | 'grayscale';
   orientation: 'portrait' | 'landscape';
   rotationDeg: RotationDeg;
-  paperSize: 'A4' | 'Legal';
+  paperSize: 'A4' | 'Letter' | 'Legal';
+  pageRange?: unknown;
+  duplex: boolean;
   amount?: number;
   previewPath: string;
   spoolerCorrelationKey: string | null;
@@ -152,6 +155,43 @@ export class CopyService {
   releaseIdempotencyKey(idempotencyKey: string): void {
     if (!idempotencyKey) return;
     releaseIdempotencyKey(idempotencyKey, IDEMPOTENCY_SCOPE);
+  }
+
+  private async buildCopyQuote(input: {
+    previewAbsPath: string;
+    previewFilename: string;
+    copies: number;
+    colorMode: 'colored' | 'grayscale';
+    paperSize: 'A4' | 'Letter' | 'Legal';
+    pageRange?: unknown;
+    duplex: boolean;
+  }): Promise<
+    | { ok: true; quote: PrintQuoteResult }
+    | { ok: false; error: string }
+  > {
+    try {
+      const analysis = await analyzeDocument({
+        filePath: input.previewAbsPath,
+        filename: input.previewFilename,
+        contentType: 'application/pdf',
+      });
+
+      return buildPrintQuote({
+        analysis: {
+          ...analysis,
+          analyzedAt: new Date(),
+          confidence: 'high',
+        },
+        copies: input.copies,
+        colorMode: input.colorMode,
+        paperSize: input.paperSize,
+        pageRange: input.pageRange ?? { type: 'all' },
+        duplex: input.duplex,
+      });
+    } catch (error) {
+      console.error('[COPY] Quote calculation failed:', error);
+      return { ok: false, error: 'Failed to calculate price.' };
+    }
   }
 
   async createCopyJob(
@@ -209,11 +249,28 @@ export class CopyService {
       };
     }
 
-    const requiredAmount = adminService.calculateJobAmount(
-      'copy',
-      normalized.colorMode,
-      normalized.copies,
-    );
+    const quoteComputation = await this.buildCopyQuote({
+      previewAbsPath,
+      previewFilename,
+      copies: normalized.copies,
+      colorMode: normalized.colorMode,
+      paperSize: normalized.paperSize,
+      pageRange: normalized.pageRange,
+      duplex: normalized.duplex,
+    });
+    if (!quoteComputation.ok) {
+      if (idempotencyKeyClaimed) {
+        this.releaseIdempotencyKey(idempotencyKey);
+      }
+      return {
+        statusCode: 400,
+        body: { error: quoteComputation.error },
+        cacheIdempotencyResponse: false,
+      };
+    }
+
+    const quote = quoteComputation.quote;
+    const requiredAmount = quote.requiredAmount;
 
     if ((db.data?.balance ?? 0) < requiredAmount) {
       const errorBody = {
@@ -297,8 +354,8 @@ export class CopyService {
     }
 
     const settings = {
-      copies: normalized.copies,
-      colorMode: normalized.colorMode,
+      copies: quote.copies,
+      colorMode: quote.effectiveColorMode,
       orientation: normalized.orientation,
       rotationDeg: normalized.rotationDeg,
       paperSize: normalized.paperSize,
@@ -307,11 +364,16 @@ export class CopyService {
     const job = jobStore.createCopyJob(settings, null);
     void adminService.appendAdminLog('copy_job_created', 'Copy job created.', {
       jobId: job.id,
-      copies: normalized.copies,
-      colorMode: normalized.colorMode,
+      copies: quote.copies,
+      colorMode: quote.effectiveColorMode,
+      requestedColorMode: normalized.colorMode,
       orientation: normalized.orientation,
       rotationDeg: normalized.rotationDeg,
       paperSize: normalized.paperSize,
+      selectedPages: quote.selectedPages,
+      billableColorPages: quote.billableColorPages,
+      billableBwPages: quote.billableBwPages,
+      requiredAmount,
     });
     await persistAndEmitPrintLifecycleState(
       this.deps.io,
@@ -330,6 +392,7 @@ export class CopyService {
       job.id,
       normalized,
       previewFilename,
+      quote,
       requiredAmount,
       this.deps.resolvePublicBaseUrl(req).toString(),
     );
@@ -397,38 +460,29 @@ export class CopyService {
       };
     }
 
-    try {
-      const analysis = await analyzeDocument({
-        filePath: previewAbsPath,
-        filename: previewFilename,
-        contentType: 'application/pdf', // Scans are usually PDFs
-      });
-
-      const quote = buildEnhancedPrintQuote({
-        analysis: {
-          ...analysis,
-          analyzedAt: new Date(),
-          confidence: 'high',
-        },
-        copies: input.copies || 1,
-        colorMode: input.colorMode || 'grayscale',
-        paperSize: input.paperSize || 'A4',
-        pageRange: input.pageRange || { type: 'all' },
-        duplex: input.duplex || false,
-        includePricingEngineBreakdown: true,
-      });
-
+    const quoteComputation = await this.buildCopyQuote({
+      previewAbsPath,
+      previewFilename,
+      copies: input.copies ?? 1,
+      colorMode: input.colorMode ?? 'grayscale',
+      paperSize: input.paperSize ?? 'A4',
+      pageRange: input.pageRange ?? { type: 'all' },
+      duplex: input.duplex === true,
+    });
+    if (!quoteComputation.ok) {
       return {
-        statusCode: 200,
-        body: quote,
-      };
-    } catch (error) {
-      console.error('[COPY] Quote calculation failed:', error);
-      return {
-        statusCode: 500,
-        body: { error: 'Failed to calculate price.' },
+        statusCode: 400,
+        body: { error: quoteComputation.error },
       };
     }
+
+    return {
+      statusCode: 200,
+      body: {
+        ok: true,
+        quote: quoteComputation.quote,
+      },
+    };
   }
 
   private normalizeInput(input: CreateCopyJobInput): NormalizedCopyJobInput {
@@ -444,8 +498,12 @@ export class CopyService {
       input.orientation && VALID_ORIENTATIONS.has(input.orientation)
         ? (input.orientation as 'portrait' | 'landscape')
         : 'portrait';
-    const safePaperSize: 'A4' | 'Legal' =
-      input.paperSize === 'Legal' ? 'Legal' : 'A4';
+    const safePaperSize: 'A4' | 'Letter' | 'Legal' =
+      input.paperSize === 'Legal'
+        ? 'Legal'
+        : input.paperSize === 'Letter'
+          ? 'Letter'
+          : 'A4';
     const safeRotationDeg = normalizeRotationDeg(input.rotationDeg, 0);
     const safePreviewPath =
       typeof input.previewPath === 'string' ? input.previewPath.trim() : '';
@@ -456,6 +514,8 @@ export class CopyService {
       orientation: safeOrientation,
       rotationDeg: safeRotationDeg,
       paperSize: safePaperSize,
+      pageRange: input.pageRange,
+      duplex: input.duplex === true,
       amount: input.amount,
       previewPath: safePreviewPath,
       spoolerCorrelationKey:
@@ -470,6 +530,7 @@ export class CopyService {
     jobId: string,
     normalized: NormalizedCopyJobInput,
     previewFilename: string,
+    quote: PrintQuoteResult,
     requiredAmount: number,
     publicBaseUrl: string,
   ): void {
@@ -584,11 +645,13 @@ export class CopyService {
         }
 
         const printOptions: PrintJobOptions = {
-          copies: normalized.copies,
-          colorMode: normalized.colorMode,
+          copies: quote.copies,
+          colorMode: quote.effectiveColorMode,
           orientation: normalized.orientation,
           rotationDeg: normalized.rotationDeg,
           paperSize: normalized.paperSize,
+          pageRange: quote.pageRange ?? undefined,
+          duplex: quote.duplex,
           printerName: telemetry.name ?? undefined,
         };
         const relPath = path.join('scans', previewFilename);
@@ -598,10 +661,14 @@ export class CopyService {
           referenceId: jobId,
           meta: {
             mode: 'copy',
-            copies: normalized.copies,
-            colorMode: normalized.colorMode,
+            copies: quote.copies,
+            colorMode: quote.effectiveColorMode,
+            requestedColorMode: normalized.colorMode,
             rotationDeg: normalized.rotationDeg,
             previewFilename,
+            selectedPages: quote.selectedPages,
+            billableColorPages: quote.billableColorPages,
+            billableBwPages: quote.billableBwPages,
           },
         });
         const jobDispatchedAt = getTrustedTimestamp().timestamp;
@@ -622,8 +689,8 @@ export class CopyService {
             jobContext: {
               transactionId: jobId,
               mode: 'copy',
-              copies: normalized.copies,
-              colorMode: normalized.colorMode,
+              copies: quote.copies,
+              colorMode: quote.effectiveColorMode,
               rotationDeg: normalized.rotationDeg,
               spoolerCorrelationKey: normalized.spoolerCorrelationKey,
               filename: previewFilename,
@@ -694,8 +761,8 @@ export class CopyService {
           jobContext: {
             mode: 'copy',
             jobId,
-            copies: normalized.copies,
-            colorMode: normalized.colorMode,
+            copies: quote.copies,
+            colorMode: quote.effectiveColorMode,
             rotationDeg: normalized.rotationDeg,
           },
         });
@@ -705,9 +772,8 @@ export class CopyService {
           this.safeUpsertSettledReceiptSnapshot({
             transactionId: jobId,
             chargedAmount: settlement.chargedAmount,
-            colorPages:
-              normalized.colorMode === 'colored' ? normalized.copies : 0,
-            bwPages: normalized.colorMode === 'colored' ? 0 : normalized.copies,
+            colorPages: quote.billableColorPages * quote.copies,
+            bwPages: quote.billableBwPages * quote.copies,
             change: {
               requested: settlement.change.requested,
               dispensed: settlement.change.dispensed,
@@ -792,21 +858,21 @@ export class CopyService {
               timestamp: getTrustedTimestamp().timestamp,
               transactionId: jobId,
               mode: 'copy',
-              copies: normalized.copies,
-              duplex: false,
-              selectedPages: 1,
-              billableColorPages: normalized.colorMode === 'colored' ? 1 : 0,
-              billableBwPages: normalized.colorMode === 'colored' ? 0 : 1,
-              estimatedSheetsUsed: Math.max(1, normalized.copies),
+              copies: quote.copies,
+              duplex: quote.duplex,
+              selectedPages: quote.selectedPages,
+              billableColorPages: quote.billableColorPages,
+              billableBwPages: quote.billableBwPages,
+              estimatedSheetsUsed: Math.max(1, quote.selectedPages * quote.copies),
               estimatedInkUnits: estimateInkUsageByJob({
-                selectedColorPages: normalized.colorMode === 'colored' ? 1 : 0,
-                selectedBwPages: normalized.colorMode === 'colored' ? 0 : 1,
-                copies: normalized.copies,
+                selectedColorPages: quote.billableColorPages,
+                selectedBwPages: quote.billableBwPages,
+                copies: quote.copies,
                 printerName: telemetry.name ?? null,
               }),
               source: 'copy-service',
-              billingPageDetection: 'fallback-assumptions',
-              analysisConfidence: 'unknown',
+              billingPageDetection: quote.billingPageDetection,
+              analysisConfidence: quote.analysisConfidence,
             });
             await evaluateConsumablesForecastAlerts();
           } catch (error) {

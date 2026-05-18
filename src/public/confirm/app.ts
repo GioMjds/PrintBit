@@ -78,9 +78,6 @@ type ConfirmConfig = {
 };
 
 type PricingResponse = {
-  printPerPage: number;
-  copyPerPage: number;
-  colorSurcharge: number;
   scanDocument: number;
 };
 
@@ -111,20 +108,11 @@ type PrintQuote = {
     printPerPage: number;
     colorSurcharge: number;
   };
-  pricingEngine?: {
-    mode: 'legacy' | 'shadow' | 'live';
-    subtotalExact: number;
-    discountExact: number;
-    finalExact: number;
-    finalPayablePeso: number;
-    pages: Array<{
-      index: number;
-      coverage: number;
-      classification: string;
-      rawPriceExact: number;
-      isBlank: boolean;
-    }>;
-  };
+  analysisConfidence: 'high' | 'medium' | 'low';
+  billingPageDetection:
+    | 'high-confidence-page-detection'
+    | 'fallback-assumptions';
+  analysisFallbackReasonFlags: string[];
 };
 
 type PrintErrorSeverity = 'warning' | 'recoverable' | 'fatal';
@@ -166,48 +154,6 @@ const colorValue = document.getElementById('colorValue');
 const copiesValue = document.getElementById('copiesValue');
 const pagesValue = document.getElementById('pagesValue');
 const pagesRow = document.getElementById('pagesRow');
-const smartPricingBreakdown = document.getElementById('smartPricingBreakdown');
-const breakdownList = document.getElementById('breakdownList');
-
-function updateSmartPricingBreakdown(quote: any): void {
-  if (!smartPricingBreakdown || !breakdownList) return;
-
-  if (!quote || !quote.pricingEngine || !quote.pricingEngine.pages) {
-    smartPricingBreakdown.style.display = 'none';
-    return;
-  }
-
-  const pe = quote.pricingEngine;
-  if (pe.pages.length === 0) {
-    smartPricingBreakdown.style.display = 'none';
-    return;
-  }
-
-  smartPricingBreakdown.style.display = 'block';
-  breakdownList.innerHTML = '';
-
-  const tiers: Record<string, number> = {};
-  pe.pages.forEach((page: any) => {
-    let label = 'B&W Rate';
-    if (page.classification === 'full_color') label = 'Full Color Rate';
-    else if (page.classification === 'partial') {
-      const decile = Math.max(1, Math.ceil(page.coverage * 10));
-      label = `Economy Tier ${decile}`;
-    } else if (page.classification === 'blank') label = 'Blank (No Charge)';
-
-    tiers[label] = (tiers[label] || 0) + 1;
-  });
-
-  Object.entries(tiers).forEach(([label, count]) => {
-    const li = document.createElement('li');
-    li.className = 'breakdown-item';
-    li.innerHTML = `
-      <span class="breakdown-item__tier">${label}</span>
-      <span class="breakdown-item__count">${count} page${count > 1 ? 's' : ''}</span>
-    `;
-    breakdownList.appendChild(li);
-  });
-}
 
 const orientationRow = document.getElementById('orientationRow');
 const orientationValue = document.getElementById('orientationValue');
@@ -296,9 +242,6 @@ const uploadedDocumentId = sessionStorage.getItem(
   'printbit.uploadedDocumentId',
 );
 const DEFAULT_PRICING: PricingResponse = {
-  printPerPage: 5,
-  copyPerPage: 3,
-  colorSurcharge: 2,
   scanDocument: 5,
 };
 const PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY =
@@ -336,11 +279,8 @@ if (
 ) {
   config.detectedColorMode = null;
 }
-currentPrintQuote = config.mode === 'print' ? (config.quote ?? null) : null;
-
-if (currentPrintQuote) {
-  updateSmartPricingBreakdown(currentPrintQuote);
-}
+currentPrintQuote =
+  config.mode === 'scan' ? null : ((config.quote as PrintQuote | undefined) ?? null);
 
 const currentPaymentFingerprint = JSON.stringify({
   mode: config.mode,
@@ -422,7 +362,7 @@ async function releaseTransientFilesForCurrentMode(
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
-  if (config.mode === 'print' && currentPrintQuote) {
+  if ((config.mode === 'print' || config.mode === 'copy') && currentPrintQuote) {
     return currentPrintQuote.effectiveColorMode;
   }
   return config.colorMode;
@@ -459,18 +399,6 @@ function getColorModeSummaryLabel(): string {
   return formatColorMode(getDisplayColorMode());
 }
 
-function calculateLegacyTotalPrice(pricing: PricingResponse): number {
-  if (config.mode === 'scan') {
-    return pricing.scanDocument ?? DEFAULT_PRICING.scanDocument;
-  }
-  const base =
-    config.mode === 'copy' ? pricing.copyPerPage : pricing.printPerPage;
-  const color = config.colorMode === 'colored' ? pricing.colorSurcharge : 0;
-  const pages =
-    config.mode === 'print' ? Math.max(1, config.totalPages ?? 1) : 1;
-  return (base + color) * pages * Math.max(1, config.copies);
-}
-
 if (confirmBtn) {
   confirmBtn.textContent =
     config.mode === 'print'
@@ -490,7 +418,7 @@ if (modalConfirmBtnSpan) {
         : 'Yes, Download';
 }
 
-if (config.mode === 'copy' || config.mode === 'scan') {
+if (config.mode === 'scan') {
   pagesRow?.setAttribute('hidden', '');
 }
 
@@ -743,16 +671,21 @@ async function fetchInitialBalance(): Promise<void> {
 }
 
 async function loadPricing(): Promise<void> {
-  if (config.mode === 'print') {
+  if (config.mode === 'print' || config.mode === 'copy') {
     try {
-      if (!config.sessionId) throw new Error('Print session is required.');
+      if (config.mode === 'print' && !config.sessionId) {
+        throw new Error('Print session is required.');
+      }
+      if (config.mode === 'copy' && !config.copyPreviewPath) {
+        throw new Error('Copy preview is required.');
+      }
 
-      const response = await fetch('/api/print/quote', {
+      const endpoint =
+        config.mode === 'print' ? '/api/print/quote' : '/api/copy/quote';
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: config.sessionId,
-          documentId: config.documentId ?? uploadedDocumentId ?? undefined,
           copies: config.copies,
           colorMode: config.colorMode,
           orientation: config.orientation,
@@ -760,6 +693,14 @@ async function loadPricing(): Promise<void> {
           paperSize: config.paperSize,
           pageRange: config.pageRange,
           duplex: config.duplex === true,
+          ...(config.mode === 'print'
+            ? {
+                sessionId: config.sessionId,
+                documentId: config.documentId ?? uploadedDocumentId ?? undefined,
+              }
+            : {
+                copyPreviewPath: config.copyPreviewPath,
+              }),
         }),
       });
 
@@ -768,25 +709,33 @@ async function loadPricing(): Promise<void> {
         quote?: PrintQuote;
       };
       if (!response.ok || !payload.quote) {
-        throw new Error(payload.error ?? 'Failed to load print quote.');
+        throw new Error(
+          payload.error ??
+            `Failed to load ${config.mode === 'print' ? 'print' : 'copy'} quote.`,
+        );
       }
 
       currentPrintQuote = payload.quote;
-      updateSmartPricingBreakdown(currentPrintQuote);
       totalPrice = payload.quote.requiredAmount;
       pricingLoaded = true;
       pricingError = null;
       if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
       if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
       if (pagesValue) {
-        pagesValue.textContent = `${pageRangeLabel(config.pageRange)} (${payload.quote.selectedPages} of ${payload.quote.totalPages})`;
+        pagesValue.textContent =
+          `${pageRangeLabel(config.pageRange)} · ` +
+          `Selected ${payload.quote.selectedPages} of ${payload.quote.totalPages} · ` +
+          `B/W ${payload.quote.billableBwPages} · ` +
+          `Color ${payload.quote.billableColorPages}`;
       }
       updateChangeDisplay(currentBalance);
       syncCoinSlotLockState();
       applyConfirmGate();
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to load print quote.';
+        error instanceof Error
+          ? error.message
+          : `Failed to load ${config.mode === 'print' ? 'print' : 'copy'} quote.`;
       currentPrintQuote = null;
       totalPrice = 0;
       pricingLoaded = false;
@@ -804,13 +753,10 @@ async function loadPricing(): Promise<void> {
 
   const payload = (await response.json()) as Partial<PricingResponse>;
   const safePricing = {
-    printPerPage: payload.printPerPage ?? DEFAULT_PRICING.printPerPage,
-    copyPerPage: payload.copyPerPage ?? DEFAULT_PRICING.copyPerPage,
-    colorSurcharge: payload.colorSurcharge ?? DEFAULT_PRICING.colorSurcharge,
     scanDocument: payload.scanDocument ?? DEFAULT_PRICING.scanDocument,
   };
 
-  totalPrice = calculateLegacyTotalPrice(safePricing);
+  totalPrice = safePricing.scanDocument;
   pricingLoaded = true;
   pricingError = null;
   if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
@@ -1164,6 +1110,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
           orientation: config.orientation,
           rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
+          pageRange: config.pageRange,
+          duplex: config.duplex === true,
           previewPath: config.copyPreviewPath,
           spoolerCorrelationKey,
         }),

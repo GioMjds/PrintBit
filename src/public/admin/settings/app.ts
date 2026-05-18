@@ -48,32 +48,9 @@ const settingLongBondBwPrice = document.getElementById(
 const settingLongBondColorPrice = document.getElementById(
   'settingLongBondColorPrice',
 ) as HTMLInputElement | null;
-const settingColorMultiplier = document.getElementById(
-  'settingColorMultiplier',
-) as HTMLInputElement | null;
-const settingBwMaxCoverage = document.getElementById(
-  'settingBwMaxCoverage',
-) as HTMLInputElement | null;
-const settingFullColorMinCoverage = document.getElementById(
-  'settingFullColorMinCoverage',
-) as HTMLInputElement | null;
-const settingBlankPagePolicy = document.getElementById(
-  'settingBlankPagePolicy',
-) as HTMLSelectElement | null;
 const settingScanDocument = document.getElementById(
   'settingScanDocument',
 ) as HTMLInputElement | null;
-const settingCopyPerPage = document.getElementById(
-  'settingCopyPerPage',
-) as HTMLInputElement | null;
-
-const settingSuggestionThreshold = document.getElementById('settingSuggestionThreshold') as HTMLInputElement | null;
-const settingNearBlankBwMax = document.getElementById('settingNearBlankBwMax') as HTMLInputElement | null;
-const decileInputs: HTMLInputElement[] = [];
-for (let i = 0; i < 10; i++) {
-  const el = document.getElementById(`decile${i}`) as HTMLInputElement | null;
-  if (el) decileInputs.push(el);
-}
 
 // ── Optional sections (may be commented out in HTML) ─────────────────────────
 const settingIdleTimeout = document.getElementById(
@@ -224,42 +201,8 @@ function applySettings(settings: SettingsResponse): void {
       settings.pricingEngine.paperProfiles.longBond.baseColorPrice,
     );
   }
-  if (settingColorMultiplier) {
-    settingColorMultiplier.value = String(
-      settings.pricingEngine.colorMultiplier,
-    );
-  }
-  if (settingBwMaxCoverage) {
-    settingBwMaxCoverage.value = String(
-      settings.pricingEngine.thresholds.bwMax,
-    );
-  }
-  if (settingFullColorMinCoverage) {
-    settingFullColorMinCoverage.value = String(
-      settings.pricingEngine.thresholds.fullColorMin,
-    );
-  }
-  
-  if (settingSuggestionThreshold) {
-    settingSuggestionThreshold.value = String(settings.pricingEngine.suggestionThreshold ?? 0.02);
-  }
-  if (settingNearBlankBwMax) {
-    settingNearBlankBwMax.value = String(settings.pricingEngine.nearBlankBwMax ?? 0.08);
-  }
-
-  const surcharges = settings.pricingEngine.decileSurcharges ?? [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-  decileInputs.forEach((input, i) => {
-    input.value = String(surcharges[i] ?? (i + 1) / 10);
-  });
-
-  if (settingBlankPagePolicy) {
-    settingBlankPagePolicy.value = settings.pricingEngine.blankPagePolicy;
-  }
   if (settingScanDocument) {
     settingScanDocument.value = String(settings.pricing.scanDocument);
-  }
-  if (settingCopyPerPage) {
-    settingCopyPerPage.value = String(settings.pricing.copyPerPage);
   }
 
   // Admin Alerts (optional)
@@ -405,55 +348,15 @@ settingsForm.addEventListener('submit', (e) => {
   const shortBondColorPrice = Number(settingShortBondColorPrice?.value ?? 0);
   const longBondBwPrice = Number(settingLongBondBwPrice?.value ?? 0);
   const longBondColorPrice = Number(settingLongBondColorPrice?.value ?? 0);
-  const colorMultiplier = Number(settingColorMultiplier?.value ?? 1);
-  const bwMaxCoverage = Number(settingBwMaxCoverage?.value ?? 0.5);
-  const fullColorMinCoverage = Number(
-    settingFullColorMinCoverage?.value ?? 0.8,
-  );
   const scanDocumentPrice = Number(settingScanDocument?.value ?? 0);
-  const copyPerPagePrice = Number(settingCopyPerPage?.value ?? 0);
-
-  const decileSurcharges = decileInputs.map(input => Number(input.value));
-  const suggestionThreshold = Number(settingSuggestionThreshold?.value ?? 0.02);
-  const nearBlankBwMax = Number(settingNearBlankBwMax?.value ?? 0.08);
-
-  if (
-    decileInputs.length > 0 &&
-    (decileSurcharges.length !== 10 ||
-      decileSurcharges.some(
-        (value) => !Number.isFinite(value) || value < 0 || value > 1,
-      ))
-  ) {
-    setMessage('Smart Pricing decile tiers must have 10 values between 0 and 1.');
-    return;
-  }
-
-  if (
-    settingSuggestionThreshold &&
-    (!Number.isFinite(suggestionThreshold) ||
-      suggestionThreshold < 0 ||
-      suggestionThreshold > 1)
-  ) {
-    setMessage('Suggestion threshold must be a value between 0 and 1.');
-    return;
-  }
-  if (
-    settingNearBlankBwMax &&
-    (!Number.isFinite(nearBlankBwMax) || nearBlankBwMax < 0 || nearBlankBwMax > 1)
-  ) {
-    setMessage('Near-blank B&W threshold must be a value between 0 and 1.');
-    return;
-  }
 
   const payload: Record<string, unknown> = {
     pricing: {
       printPerPage: shortBondBwPrice,
-      copyPerPage: copyPerPagePrice,
       scanDocument: scanDocumentPrice,
       colorSurcharge: shortBondColorPrice - shortBondBwPrice,
     },
     pricingEngine: {
-      enabledMode: 'live',
       paperProfiles: {
         a4: {
           baseBwPrice: a4BwPrice,
@@ -468,16 +371,6 @@ settingsForm.addEventListener('submit', (e) => {
           baseColorPrice: longBondColorPrice,
         },
       },
-      thresholds: {
-        bwMax: bwMaxCoverage,
-        fullColorMin: fullColorMinCoverage,
-      },
-      ...(decileInputs.length > 0 ? { decileSurcharges } : {}),
-      ...(settingSuggestionThreshold ? { suggestionThreshold } : {}),
-      ...(settingNearBlankBwMax ? { nearBlankBwMax } : {}),
-      colorMultiplier,
-      blankPagePolicy: (settingBlankPagePolicy?.value ??
-        'charge_zero') as SettingsResponse['pricingEngine']['blankPagePolicy'],
     },
     adminLocalOnly: settingAdminLocalOnly
       ? settingAdminLocalOnly.checked

@@ -15,6 +15,67 @@ import { adminLogStore } from '@/core/database/sqlite-storage';
 class AdminService {
   private readonly MAX_LOGS = 3000;
 
+  private resolveBulkDiscountPerPage(
+    totalBillablePages: number,
+  ): number {
+    const tiers = db.data?.settings?.pricingEngine?.bulkDiscountTiers;
+    if (!Array.isArray(tiers) || tiers.length === 0 || totalBillablePages < 1) {
+      return 0;
+    }
+
+    let bestMatch:
+      | {
+          minPages: number;
+          maxPages?: number;
+          discountPerPage: number;
+        }
+      | null = null;
+
+    for (const entry of tiers) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const candidate = entry as {
+        minPages?: unknown;
+        maxPages?: unknown;
+        discountPerPage?: unknown;
+      };
+      const minPages = Number(candidate.minPages);
+      const discountPerPage = Number(candidate.discountPerPage);
+      if (
+        !Number.isFinite(minPages) ||
+        !Number.isFinite(discountPerPage) ||
+        minPages < 1 ||
+        discountPerPage < 0
+      ) {
+        continue;
+      }
+
+      const normalizedMinPages = Math.floor(minPages);
+      const normalizedMaxPages =
+        typeof candidate.maxPages === 'number' &&
+        Number.isFinite(candidate.maxPages)
+          ? Math.floor(candidate.maxPages)
+          : undefined;
+      const withinMax =
+        normalizedMaxPages === undefined ||
+        totalBillablePages <= normalizedMaxPages;
+      const withinRange =
+        totalBillablePages >= normalizedMinPages && withinMax;
+      if (!withinRange) continue;
+
+      if (!bestMatch || normalizedMinPages > bestMatch.minPages) {
+        bestMatch = {
+          minPages: normalizedMinPages,
+          ...(normalizedMaxPages !== undefined
+            ? { maxPages: Math.max(normalizedMinPages, normalizedMaxPages) }
+            : {}),
+          discountPerPage,
+        };
+      }
+    }
+
+    return bestMatch?.discountPerPage ?? 0;
+  }
+
   getPricingSettings(): PricingSettings {
     return db.data!.settings.pricing;
   }
@@ -48,11 +109,17 @@ class AdminService {
             bwPages: colorOrPageCounts === 'colored' ? 0 : 1,
           }
         : colorOrPageCounts;
-
-    return (
-      (colorPages * profile.baseColorPrice + bwPages * profile.baseBwPrice) *
-      safeCopies
-    );
+    const safeColorPages = Math.max(0, Math.floor(colorPages));
+    const safeBwPages = Math.max(0, Math.floor(bwPages));
+    const subtotalExact =
+      (safeColorPages * profile.baseColorPrice +
+        safeBwPages * profile.baseBwPrice) *
+      safeCopies;
+    const totalBillablePages = (safeColorPages + safeBwPages) * safeCopies;
+    const discountPerPage = this.resolveBulkDiscountPerPage(totalBillablePages);
+    const discountExact = discountPerPage * totalBillablePages;
+    const finalExact = Math.max(0, subtotalExact - discountExact);
+    return Math.ceil(finalExact);
   }
 
   calculateDocumentAmount(

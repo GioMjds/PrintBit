@@ -26,12 +26,6 @@ export interface PricingSettings {
   colorSurcharge: number;
 }
 
-export type PricingEngineMode = 'legacy' | 'shadow' | 'live';
-export type PricingEngineBlankPagePolicy =
-  | 'charge_zero'
-  | 'charge_bw'
-  | 'charge_color';
-
 export interface PricingEnginePaperProfile {
   baseBwPrice: number;
   baseColorPrice: number;
@@ -44,30 +38,11 @@ export interface PricingEngineBulkDiscountTier {
 }
 
 export interface PricingEngineSettings {
-  enabledMode: PricingEngineMode;
   paperProfiles: {
     a4: PricingEnginePaperProfile;
     shortBond: PricingEnginePaperProfile;
     longBond: PricingEnginePaperProfile;
   };
-  thresholds: {
-    bwMax: number;
-    fullColorMin: number;
-  };
-  /**
-   * Multipliers for each decile (10% increments).
-   * Index 0 = 1-10%, Index 1 = 11-20%, ..., Index 9 = 91-100%
-   * Values are typically between 0.0 and 1.0, where 1.0 means full color price.
-   */
-  decileSurcharges?: number[];
-  /**
-   * Proximity threshold for "Smart Suggestions" (0.0 to 1.0).
-   * If a page is within this range of the next (lower) tier, suggest optimization.
-   */
-  suggestionThreshold?: number;
-  nearBlackBwMax?: number;
-  colorMultiplier: number;
-  blankPagePolicy: PricingEngineBlankPagePolicy;
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];
   rounding: 'whole_peso_total_only';
 }

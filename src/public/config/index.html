@@ -130,25 +130,6 @@
               ></iframe>
             </div>
 
-            <!-- ── FLOATING: Coverage chip (top-right of viewport) ── -->
-            <div
-              id="coverageMeter"
-              class="coverage-chip"
-              style="display: none"
-              aria-live="polite"
-            >
-              <div class="coverage-chip__row">
-                <span class="coverage-chip__label">Color Coverage</span>
-                <span id="coverageValue" class="coverage-chip__value">0%</span>
-              </div>
-              <div class="coverage-chip__bar-bg">
-                <div id="coverageBar" class="coverage-chip__bar"></div>
-              </div>
-              <span id="tierBadge" class="coverage-chip__tier"
-                >Economy Tier</span
-              >
-            </div>
-
             <!-- ── FLOATING: Pager pill (bottom-center of viewport) ── -->
             <div
               class="preview-controls"
@@ -791,42 +772,6 @@
               </div>
             </div>
 
-            <!-- ── Smart Pricing Analyzer (moved into settings panel) ── -->
-            <div class="option-group pricing-analyzer-group">
-              <span class="option-label">Smart Pricing</span>
-              <button
-                type="button"
-                id="openPricingAnalyzerBtn"
-                class="pricing-analyzer-trigger"
-                aria-haspopup="dialog"
-                aria-controls="pricingAnalyzerModal"
-              >
-                <div class="pricing-analyzer-trigger__left">
-                  <svg
-                    class="pricing-analyzer-trigger__icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="M21 21l-4.35-4.35" />
-                    <path d="M11 8v6M8 11h6" />
-                  </svg>
-                  <span class="pricing-analyzer-trigger__label"
-                    >Smart Pricing Analyzer</span
-                  >
-                </div>
-                <span
-                  class="pricing-analyzer-trigger__meta"
-                  id="pricingAnalyzerTriggerMeta"
-                  >Tap to inspect per-page pricing</span
-                >
-              </button>
-            </div>
           </div>
           <!-- /.settings-scroll -->
         </section>
@@ -860,57 +805,6 @@
         </svg>
       </button>
     </footer>
-
-    <!-- ── Smart Pricing Analyzer Modal ── -->
-    <div
-      id="pricingAnalyzerModal"
-      class="pricing-analyzer-modal"
-      hidden
-      aria-hidden="true"
-    >
-      <div
-        class="pricing-analyzer-modal__backdrop"
-        id="pricingAnalyzerBackdrop"
-      ></div>
-      <section
-        class="pricing-analyzer-modal__panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pricingAnalyzerModalTitle"
-      >
-        <header class="pricing-analyzer-modal__head">
-          <h2 id="pricingAnalyzerModalTitle">Smart Pricing Analyzer</h2>
-          <button
-            type="button"
-            id="closePricingAnalyzerBtn"
-            class="pricing-analyzer-modal__close"
-            aria-label="Close smart pricing analyzer"
-          >
-            ✕
-          </button>
-        </header>
-        <p
-          id="pricingAnalyzerModalSummary"
-          class="pricing-analyzer-modal__summary"
-        >
-          Waiting for quote breakdown...
-        </p>
-        <p
-          id="pricingAnalyzerModalFormula"
-          class="pricing-analyzer-modal__formula"
-        >
-          Select pages and color mode to see per-tier pricing impact.
-        </p>
-        <div
-          id="pricingAnalyzerModalTotals"
-          class="pricing-analyzer-modal__totals"
-        ></div>
-        <div
-          id="pricingAnalyzerModalPages"
-          class="pricing-analyzer-modal__pages"
-        ></div>
-      </section>
-    </div>
 
     <!-- ── Idle Warning Modal ── -->
     <div

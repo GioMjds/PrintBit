@@ -85,22 +85,11 @@ interface PrintQuote {
     printPerPage: number;
     colorSurcharge: number;
   };
-  pricingEngine?: {
-    mode: 'legacy' | 'shadow' | 'live';
-    perPageBreakdown?: Array<{
-      index: number;
-      coverage: number;
-      classification: 'blank' | 'bw' | 'partial' | 'full_color';
-      rawPriceExact: number;
-      isBlank: boolean;
-      suggestSavings?: boolean;
-    }>;
-    subtotalExact: number;
-    discountExact: number;
-    finalExact: number;
-    finalPayablePeso: number;
-  };
-  isSessionCapped?: boolean;
+  analysisConfidence: 'high' | 'medium' | 'low';
+  billingPageDetection:
+    | 'high-confidence-page-detection'
+    | 'fallback-assumptions';
+  analysisFallbackReasonFlags: string[];
 }
 
 interface PreviewConfig {
@@ -200,8 +189,7 @@ function previewLog(message: string, meta?: unknown): void {
 }
 
 // ── Settings / Pricing Debug Logger ─────────────────────────────────────────
-// Logs admin settings and per-job pricing decisions to help diagnose issues
-// like blank-page misclassification or blankPagePolicy not taking effect.
+// Logs per-job pricing decisions for local debugging.
 
 function settingsLog(message: string, meta?: unknown): void {
   if (meta !== undefined) {
@@ -218,135 +206,9 @@ function settingsLog(message: string, meta?: unknown): void {
   );
 }
 
-/**
- * Fetches the active pricing engine settings from the admin API and logs
- * them so it's easy to see at a glance what blankPagePolicy, thresholds,
- * paper profiles, etc. are currently configured.
- */
-async function fetchAndLogPricingSettings(): Promise<void> {
-  const isDev =
-    typeof window !== 'undefined' &&
-    ['localhost', '127.0.0.1'].includes(window.location.hostname);
-
-  if (!isDev) return;
-
-  try {
-    const res = await fetch('/api/admin/settings', { cache: 'no-store' });
-
-    if (!res.ok) {
-      settingsLog(
-        `Admin settings fetch failed (HTTP ${res.status}) — cannot verify active config`,
-      );
-      return;
-    }
-
-    const data = (await res.json()) as Record<string, unknown>;
-
-    // ✅ Extract ONLY pricingEngine (safe subset)
-    const pe = ((data as { pricingEngine?: unknown }).pricingEngine ??
-      (data as { settings?: { pricingEngine?: unknown } }).settings
-        ?.pricingEngine ??
-      null) as Record<string, unknown> | null;
-
-    if (!pe) {
-      settingsLog('pricingEngine not found in response');
-      return;
-    }
-
-    console.groupCollapsed(
-      '%c[PRICING SETTINGS] Active pricingEngine (sanitized)',
-      'color:#a78bfa;font-weight:600',
-    );
-
-    // ✅ Only log safe fields
-    settingsLog('pricingMode', pe.pricingMode);
-    settingsLog('blankPagePolicy', pe.blankPagePolicy);
-    settingsLog('thresholds', pe.thresholds);
-    settingsLog('paperProfiles', pe.paperProfiles);
-    settingsLog('colorMultiplier', pe.colorMultiplier);
-    settingsLog('decileSurcharges', pe.decileSurcharges);
-    settingsLog('bulkDiscountTiers', pe.bulkDiscountTiers);
-    settingsLog('suggestionThreshold', pe.suggestionThreshold);
-
-    // ❌ REMOVED: settingsLog('raw full response', data);
-
-    console.groupEnd();
-  } catch (err) {
-    settingsLog('Could not reach /api/admin/settings — settings unknown', err);
-  }
-}
-
-/**
- * Logs the per-page analysis result so you can see exactly what coverage
- * and classification the server assigned to each page (including blank pages).
- */
-function logAnalysisResult(analysisData: unknown): void {
-  if (!analysisData || typeof analysisData !== 'object') {
-    settingsLog('Analysis data is null/empty — no per-page data to inspect');
-    return;
-  }
-  const data = analysisData as {
-    fileType?: string;
-    pageCount?: number;
-    confidence?: string;
-    pages?: Array<{
-      index: number;
-      isColor: boolean;
-      isBlank?: boolean;
-      coverage?: number;
-      classification?: string;
-    }>;
-  };
-
-  const pages = data.pages ?? [];
-
-  // ── Always-visible per-page summary (never hidden in a group) ──────────
-  for (const page of pages) {
-    const coveragePct =
-      typeof page.coverage === 'number'
-        ? `${(page.coverage * 100).toFixed(1)}%`
-        : 'n/a';
-    const flag = page.isBlank
-      ? '⬜ BLANK'
-      : page.isColor
-        ? '🟦 COLOR'
-        : '⬛ B&W';
-
-    settingsLog(
-      `[ANALYSIS] Page ${page.index}: ${flag} | classification="${page.classification ?? 'none'}" | coverage=${coveragePct} | isBlank=${String(page.isBlank ?? false)} | isColor=${String(page.isColor)}`,
-    );
-
-    // Warn whenever a page looks visually blank but wasn't classified as blank
-    if (
-      !page.isBlank &&
-      typeof page.coverage === 'number' &&
-      page.coverage < 0.05 &&
-      page.classification !== 'blank'
-    ) {
-      settingsLog(
-        `⚠ [ANALYSIS] Page ${page.index}: coverage=${coveragePct} but isBlank=false & classification="${page.classification}" — white-fill rect may still be counted as content. Check document-analysis.ts white-paint guard.`,
-      );
-    }
-  }
-
-  // Full data in a collapsed group for deeper inspection
-  console.groupCollapsed(
-    `%c[PRICING SETTINGS] Full analysis object (${data.pageCount ?? '?'} pages, confidence: ${data.confidence ?? '?'})`,
-    'color:#a78bfa;font-weight:600',
-  );
-  settingsLog('fileType', data.fileType ?? 'unknown');
-  settingsLog('raw pages', pages);
-  console.groupEnd();
-}
-
-/**
- * Logs what the pricing engine actually resolved for this job — shows the
- * effective blankPagePolicy outcome, per-page prices, and the final total.
- */
 function logQuoteBreakdown(quote: PrintQuote): void {
-  const pe = quote.pricingEngine;
   console.groupCollapsed(
-    `%c[PRICING SETTINGS] Quote resolved — ₱${pe?.finalPayablePeso ?? quote.requiredAmount} payable | mode=${pe?.mode ?? 'legacy'}`,
+    `%c[PRICING SETTINGS] Quote resolved — ₱${quote.requiredAmount} payable`,
     'color:#a78bfa;font-weight:600',
   );
   settingsLog('effectiveColorMode', quote.effectiveColorMode);
@@ -356,50 +218,9 @@ function logQuoteBreakdown(quote: PrintQuote): void {
   settingsLog('selectedBwPages', quote.selectedBwPages);
   settingsLog('billableColorPages', quote.billableColorPages);
   settingsLog('billableBwPages', quote.billableBwPages);
-
-  if (pe) {
-    settingsLog('pricingEngine.mode', pe.mode);
-    settingsLog('pricingEngine.subtotalExact', pe.subtotalExact);
-    settingsLog('pricingEngine.discountExact', pe.discountExact);
-    settingsLog('pricingEngine.finalExact', pe.finalExact);
-    settingsLog('pricingEngine.finalPayablePeso', pe.finalPayablePeso);
-
-    const pages = pe.perPageBreakdown ?? [];
-    if (pages.length > 0) {
-      console.groupCollapsed(
-        '%c[PRICING SETTINGS] Per-page pricing breakdown',
-        'color:#a78bfa',
-      );
-      for (const p of pages) {
-        const priceFmt = `₱${p.rawPriceExact.toFixed(4)}`;
-        const coveragePct = `${(p.coverage * 100).toFixed(1)}%`;
-        const flag = p.isBlank
-          ? '⬜ BLANK'
-          : p.classification === 'bw'
-            ? '⬛ B&W'
-            : p.classification === 'full_color'
-              ? '🟦 FULL'
-              : '🟪 PARTIAL';
-        settingsLog(
-          `[ENGINE] Page ${p.index}: ${flag} | classification="${p.classification}" | coverage=${coveragePct} | price=${priceFmt}${p.suggestSavings ? ' | 💡 savings possible' : ''}`,
-        );
-
-        // Always-visible warning when a blank page is charged non-zero
-        if (p.isBlank && p.rawPriceExact > 0) {
-          console.warn(
-            `[PRICING SETTINGS] ⚠ Page ${p.index}: isBlank=true but charged ${priceFmt} — blankPagePolicy in /admin/settings is likely not "charge_zero"`,
-          );
-        }
-        // Always-visible warning when a near-blank page is not classified as blank
-        if (!p.isBlank && p.classification !== 'blank' && p.coverage < 0.05) {
-          console.warn(
-            `[PRICING SETTINGS] ⚠ Page ${p.index}: coverage=${coveragePct} but classified as "${p.classification}" (not blank) — white-fill background may be counted as content`,
-          );
-        }
-      }
-      console.groupEnd();
-    }
-  }
+  settingsLog('analysisConfidence', quote.analysisConfidence);
+  settingsLog('billingPageDetection', quote.billingPageDetection);
+  settingsLog('analysisFallbackReasonFlags', quote.analysisFallbackReasonFlags);
   console.groupEnd();
 }
 
@@ -416,20 +237,6 @@ async function fetchWithTimeout(
   }
 }
 
-// ── Smart Pricing ────────────────────────────────────────────────────────────
-const coverageMeter = document.getElementById(
-  'coverageMeter',
-) as HTMLElement | null;
-const coverageValue = document.getElementById(
-  'coverageValue',
-) as HTMLElement | null;
-const coverageBar = document.getElementById(
-  'coverageBar',
-) as HTMLElement | null;
-const tierBadge = document.getElementById('tierBadge') as HTMLElement | null;
-
-let currentAnalysisData: any = null;
-
 // Update Page Range when Preview navigates
 function onPreviewPageChange(pageNum: number): void {
   if (pageModeSingle?.checked) {
@@ -440,7 +247,6 @@ function onPreviewPageChange(pageNum: number): void {
       schedulePrintQuoteRefresh();
     }
   }
-  updatePageCoverageMeter(pageNum);
 }
 
 // Sync Preview when Range Mode changes
@@ -449,135 +255,6 @@ function syncPreviewPageWithRange(): void {
     const page = parseInt(singlePageInput.value, 10);
     if (!isNaN(page)) {
       void preview.goToPage(page);
-    }
-  }
-}
-
-function updatePageCoverageMeter(pageNum: number): void {
-  if (!coverageMeter) return;
-
-  const pageIndex = pageNum; // 1-based
-  const pricedPage = currentPrintQuote?.pricingEngine?.perPageBreakdown?.find(
-    (p) => p.index === pageIndex,
-  );
-  const analysisPages = currentAnalysisData?.pages as
-    | Array<{
-        index?: number;
-        coverage: number;
-        isColor: boolean;
-        classification: 'blank' | 'bw' | 'partial' | 'full_color';
-        suggestSavings?: boolean;
-      }>
-    | undefined;
-  const analysisPage =
-    currentPrintQuote === null
-      ? (analysisPages?.find((p) => p.index === pageIndex) ??
-        analysisPages?.[pageIndex - 1])
-      : undefined;
-
-  const displaySource = pricedPage ?? analysisPage;
-  if (!displaySource) {
-    coverageMeter.style.display = 'none';
-    hideSavingsToast();
-    return;
-  }
-
-  const displayClassification = displaySource.classification;
-  const isDisplayedAsBlank = displayClassification === 'blank';
-  const displayCoverage = isDisplayedAsBlank ? 0 : displaySource.coverage;
-  const percent = Math.round(displayCoverage * 100);
-
-  coverageMeter.style.display = 'flex';
-  if (coverageValue) coverageValue.textContent = `${percent}%`;
-  if (coverageBar) coverageBar.style.width = `${percent}%`;
-
-  if (tierBadge) {
-    if (isDisplayedAsBlank) {
-      tierBadge.textContent = 'Blank (No Charge)';
-    } else if (displayClassification === 'bw') {
-      tierBadge.textContent = 'B&W Rate';
-    } else if (displayClassification === 'full_color') {
-      tierBadge.textContent = 'Full Color Rate';
-    } else {
-      const decile = Math.max(1, Math.ceil(displayCoverage * 10));
-      tierBadge.textContent = `Economy Tier ${decile}`;
-    }
-  }
-
-  // Smart Suggestion Toast
-  if (displaySource.suggestSavings && getRadio('colorMode') === 'colored') {
-    showSavingsToast(pageIndex);
-  } else {
-    hideSavingsToast();
-  }
-}
-
-function showSavingsToast(pageIndex: number): void {
-  let toast = document.getElementById('savingsToast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'savingsToast';
-    toast.className = 'savings-toast';
-    toast.innerHTML = `
-      <span class="savings-toast__icon">💡</span>
-      <span class="savings-toast__text">Page ${pageIndex} is near a lower price tier.</span>
-      <button class="savings-toast__btn" id="makeGrayscaleBtn">Go Grayscale</button>
-    `;
-    document.body.appendChild(toast);
-
-    document
-      .getElementById('makeGrayscaleBtn')
-      ?.addEventListener('click', () => {
-        alert('Tip: Setting this page to grayscale could save you money!');
-        hideSavingsToast();
-      });
-  }
-
-  toast.classList.add('is-visible');
-}
-
-function hideSavingsToast(): void {
-  document.getElementById('savingsToast')?.classList.remove('is-visible');
-}
-
-async function loadFullAnalysis(): Promise<void> {
-  if (mode === 'copy') {
-    if (copyPreviewPath) {
-      try {
-        const res = await fetch(
-          `/api/scan/color-analysis/${encodeURIComponent(copyPreviewPath)}`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          currentAnalysisData = { pages: [{ ...data, index: 1 }] };
-          settingsLog('Copy mode analysis result (page 1)', data);
-          updatePageCoverageMeter(1);
-        } else {
-          settingsLog(`Copy analysis fetch failed (HTTP ${res.status})`);
-        }
-      } catch (err) {
-        settingsLog('Copy analysis fetch threw an error', err);
-      }
-    }
-    return;
-  }
-
-  if (sessionId && selectedDocumentId) {
-    try {
-      const res = await fetch(
-        `/api/wireless/sessions/${encodeURIComponent(sessionId)}/analysis/${encodeURIComponent(selectedDocumentId)}`,
-      );
-      if (res.ok) {
-        currentAnalysisData = await res.json();
-        logAnalysisResult(currentAnalysisData);
-        updatePageCoverageMeter(preview.currentPageNumber);
-      } else {
-        settingsLog(
-          `Analysis fetch failed (HTTP ${res.status}) for document ${selectedDocumentId}`,
-        );
-      }
-    } catch (err) {
-      settingsLog('Analysis fetch threw an error', err);
     }
   }
 }
@@ -712,8 +389,6 @@ class PrintPreview {
       this.sheet.removeAttribute('data-gray');
     }
 
-    // Update coverage meter if config changes (e.g. color mode)
-    updatePageCoverageMeter(this.currentPage);
   }
 
   async load(sessionId: string, filename?: string): Promise<void> {
@@ -798,8 +473,6 @@ class PrintPreview {
       this.showError('Unsupported preview format.');
     }
 
-    // Load analysis data in parallel
-    void loadFullAnalysis();
   }
 
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
@@ -872,8 +545,6 @@ class PrintPreview {
         this.showLoading(false);
         this.setHint(`Page ${pageNum} of ${this.totalPages}`);
 
-        // Update coverage meter for the new page
-        updatePageCoverageMeter(pageNum);
       } catch (e) {
         console.error('Render error:', e);
         previewLog('renderPage() failed', e);
@@ -917,7 +588,6 @@ class PrintPreview {
         // Revoke blob URL after image loads to free memory
         if (isBlobUrl) URL.revokeObjectURL(url);
 
-        updatePageCoverageMeter(1);
         resolve();
       };
       this.img.onerror = () => {
@@ -985,7 +655,6 @@ class PrintPreview {
     this.currentPage = 1;
     this.iframe.contentWindow?.scrollTo(0, 0);
     this.updatePager();
-    updatePageCoverageMeter(1);
   }
 
   private showFrame(on: boolean): void {
@@ -1087,8 +756,6 @@ class PrintPreview {
     } else {
       this.showError('Unsupported preview format.');
     }
-
-    void loadFullAnalysis();
   }
 }
 
@@ -1148,33 +815,6 @@ const filePillLabel = document.getElementById(
 ) as HTMLElement | null;
 const footerSummary = document.getElementById(
   'footerSummary',
-) as HTMLElement | null;
-const openPricingAnalyzerBtn = document.getElementById(
-  'openPricingAnalyzerBtn',
-) as HTMLButtonElement | null;
-const pricingAnalyzerTriggerMeta = document.getElementById(
-  'pricingAnalyzerTriggerMeta',
-) as HTMLElement | null;
-const pricingAnalyzerModal = document.getElementById(
-  'pricingAnalyzerModal',
-) as HTMLElement | null;
-const pricingAnalyzerBackdrop = document.getElementById(
-  'pricingAnalyzerBackdrop',
-) as HTMLElement | null;
-const closePricingAnalyzerBtn = document.getElementById(
-  'closePricingAnalyzerBtn',
-) as HTMLButtonElement | null;
-const pricingAnalyzerModalSummary = document.getElementById(
-  'pricingAnalyzerModalSummary',
-) as HTMLElement | null;
-const pricingAnalyzerModalFormula = document.getElementById(
-  'pricingAnalyzerModalFormula',
-) as HTMLElement | null;
-const pricingAnalyzerModalTotals = document.getElementById(
-  'pricingAnalyzerModalTotals',
-) as HTMLElement | null;
-const pricingAnalyzerModalPages = document.getElementById(
-  'pricingAnalyzerModalPages',
 ) as HTMLElement | null;
 const copiesInput = document.getElementById(
   'copies',
@@ -1843,7 +1483,6 @@ async function refreshPrintQuote(): Promise<void> {
     if (requestVersion === quoteRequestVersion) {
       quoteLoading = false;
       updateSummary();
-      updatePageCoverageMeter(preview.currentPageNumber);
       setPrintContinueState();
     }
   }
@@ -1865,166 +1504,6 @@ function formatPeso(amount: number): string {
   return `₱${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}`;
 }
 
-function setPricingAnalyzerModalOpen(open: boolean): void {
-  if (!pricingAnalyzerModal) return;
-  pricingAnalyzerModal.hidden = !open;
-  pricingAnalyzerModal.setAttribute('aria-hidden', open ? 'false' : 'true');
-}
-
-function renderPricingAnalyzer(): void {
-  if (
-    !openPricingAnalyzerBtn ||
-    !pricingAnalyzerTriggerMeta ||
-    !pricingAnalyzerModalSummary ||
-    !pricingAnalyzerModalFormula ||
-    !pricingAnalyzerModalTotals ||
-    !pricingAnalyzerModalPages
-  ) {
-    return;
-  }
-
-  if (mode === 'scan') {
-    openPricingAnalyzerBtn.hidden = true;
-    pricingAnalyzerTriggerMeta.textContent = 'Unavailable in scan mode';
-    pricingAnalyzerModalSummary.textContent =
-      'Smart pricing analyzer is available for print and copy jobs.';
-    pricingAnalyzerModalFormula.textContent =
-      'No page-tier billing applies in scan mode.';
-    pricingAnalyzerModalTotals.innerHTML = '';
-    pricingAnalyzerModalPages.innerHTML = '';
-    setPricingAnalyzerModalOpen(false);
-    return;
-  }
-  openPricingAnalyzerBtn.hidden = false;
-
-  if (quoteLoading) {
-    pricingAnalyzerTriggerMeta.textContent = 'Recomputing smart pricing...';
-    pricingAnalyzerModalSummary.textContent = 'Recomputing smart pricing...';
-    pricingAnalyzerModalFormula.textContent =
-      'Please wait while we analyze pages.';
-    pricingAnalyzerModalTotals.innerHTML = '';
-    pricingAnalyzerModalPages.innerHTML = '';
-    return;
-  }
-
-  if (!currentPrintQuote?.pricingEngine) {
-    const selectedPages = currentPrintQuote?.selectedPages ?? 0;
-    const totalPages = currentPrintQuote?.totalPages ?? preview.pageCount;
-    const copies = currentPrintQuote?.copies ?? getCopies();
-    pricingAnalyzerTriggerMeta.textContent = `${selectedPages}/${totalPages} pages · ${copies} cop${copies === 1 ? 'y' : 'ies'}`;
-    pricingAnalyzerModalSummary.textContent = `Selected ${selectedPages} of ${totalPages} pages · ${copies} cop${copies === 1 ? 'y' : 'ies'}`;
-    pricingAnalyzerModalFormula.textContent =
-      currentPrintQuote !== null
-        ? `Estimated total: ${formatPeso(currentPrintQuote.requiredAmount)}`
-        : 'No pricing breakdown available yet.';
-    pricingAnalyzerModalTotals.innerHTML = '';
-    pricingAnalyzerModalPages.innerHTML =
-      '<p class="pricing-analyzer-modal__summary">Per-page details will appear after quote breakdown is available.</p>';
-    return;
-  }
-
-  const quote = currentPrintQuote;
-  const pe = quote.pricingEngine!;
-  const pages = Array.isArray(pe.perPageBreakdown) ? pe.perPageBreakdown : [];
-  const copies = quote.copies;
-
-  const buckets = {
-    blank: { count: 0, total: 0 },
-    bw: { count: 0, total: 0 },
-    partial: { count: 0, total: 0 },
-    full_color: { count: 0, total: 0 },
-  };
-
-  let lowCoverageColorPages = 0;
-  for (const page of pages) {
-    const bucket = buckets[page.classification];
-    bucket.count += 1;
-    bucket.total += page.rawPriceExact * copies;
-    if (
-      (page.classification === 'partial' ||
-        page.classification === 'full_color') &&
-      page.coverage <= 0.03
-    ) {
-      lowCoverageColorPages += 1;
-    }
-  }
-
-  pricingAnalyzerTriggerMeta.textContent = `${quote.selectedPages} pages · ${formatPeso(pe.finalPayablePeso)} payable`;
-
-  pricingAnalyzerModalSummary.textContent = `Selected ${quote.selectedPages} of ${quote.totalPages} pages · ${copies} cop${copies === 1 ? 'y' : 'ies'} · ${quote.effectiveColorMode === 'colored' ? 'Colored mode' : 'Grayscale mode'}`;
-
-  pricingAnalyzerModalTotals.innerHTML = `
-    <article class="pricing-chip pricing-chip--bw">
-      <span class="pricing-chip__label">B/W pages</span>
-      <span class="pricing-chip__value">${buckets.bw.count}</span>
-      <span class="pricing-chip__sub">${formatPeso(buckets.bw.total)}</span>
-    </article>
-    <article class="pricing-chip pricing-chip--partial">
-      <span class="pricing-chip__label">Smart tier pages</span>
-      <span class="pricing-chip__value">${buckets.partial.count}</span>
-      <span class="pricing-chip__sub">${formatPeso(buckets.partial.total)}</span>
-    </article>
-    <article class="pricing-chip pricing-chip--color">
-      <span class="pricing-chip__label">Full-color pages</span>
-      <span class="pricing-chip__value">${buckets.full_color.count}</span>
-      <span class="pricing-chip__sub">${formatPeso(buckets.full_color.total)}</span>
-    </article>
-    <article class="pricing-chip pricing-chip--blank">
-      <span class="pricing-chip__label">Blank pages</span>
-      <span class="pricing-chip__value">${buckets.blank.count}</span>
-      <span class="pricing-chip__sub">${formatPeso(buckets.blank.total)}</span>
-    </article>
-  `;
-
-  pricingAnalyzerModalFormula.textContent = `${formatPeso(pe.subtotalExact)}${pe.discountExact > 0 ? ` − ${formatPeso(pe.discountExact)} bulk discount` : ''} = ${formatPeso(pe.finalPayablePeso)} payable`;
-
-  const classificationLabel: Record<
-    'blank' | 'bw' | 'partial' | 'full_color',
-    string
-  > = {
-    blank: 'Blank',
-    bw: 'B/W',
-    partial: 'Smart Tier',
-    full_color: 'Full Color',
-  };
-
-  const classificationClass: Record<
-    'blank' | 'bw' | 'partial' | 'full_color',
-    string
-  > = {
-    blank: 'is-blank',
-    bw: 'is-bw',
-    partial: 'is-partial',
-    full_color: 'is-color',
-  };
-
-  const rows = pages
-    .slice()
-    .sort((a, b) => a.index - b.index)
-    .map((page) => {
-      const pageClass = classificationClass[page.classification];
-      const coveragePercent = `${(
-        (page.classification === 'blank' ? 0 : page.coverage) * 100
-      ).toFixed(1)}%`;
-      const rowPrice = formatPeso(page.rawPriceExact * copies);
-      return `<div class="pricing-analyzer-page-row ${pageClass}">
-        <span class="pricing-analyzer-page-row__page">Page ${page.index}</span>
-        <span class="pricing-analyzer-page-row__class">${classificationLabel[page.classification]}</span>
-        <span class="pricing-analyzer-page-row__coverage">${coveragePercent} coverage</span>
-        <span class="pricing-analyzer-page-row__price">${rowPrice}</span>
-      </div>`;
-    })
-    .join('');
-
-  pricingAnalyzerModalPages.innerHTML = rows;
-
-  if (quote.isSessionCapped) {
-    pricingAnalyzerModalSummary.textContent += ` · Session cap active: only ${quote.selectedPages} pages are billed per job.`;
-  } else if (lowCoverageColorPages > 0) {
-    pricingAnalyzerModalSummary.textContent += ` · ${lowCoverageColorPages} page(s) were detected as color with low coverage. These often come from embedded color objects/logos in grayscale-looking PDFs.`;
-  }
-}
-
 function updateSummary(): void {
   if (!footerSummary) return;
   if (mode === 'scan') {
@@ -2033,51 +1512,47 @@ function updateSummary(): void {
     footerSummary.textContent =
       `Scan mode · ${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
       `Rotate ${cfg.rotationDeg}°`;
-    renderPricingAnalyzer();
     return;
   }
 
   const cfg = currentPreviewConfig();
   const n = getCopies();
-  const pages = pageRangeLabel(getPageRange());
-  let suffix = '';
 
   if (quoteLoading) {
-    suffix = ' · Calculating price...';
+    footerSummary.textContent = 'Calculating price...';
     footerSummary.classList.remove('ready');
-  } else if (currentPrintQuote) {
-    footerSummary.classList.add('ready');
-    const isLongBond = cfg.paperSize === 'Legal';
-    const isShortBond = cfg.paperSize === 'Letter';
-    const paperLabel = isLongBond ? 'Long Bond' : isShortBond ? 'Short Bond' : 'A4 Bond';
+    return;
+  }
 
-    if (currentPrintQuote.pricingEngine) {
-      const pe = currentPrintQuote.pricingEngine;
-      suffix = ` · ${paperLabel} · ₱${pe.finalPayablePeso}`;
-      if (pe.discountExact > 0) {
-        suffix += ` (Incl. ₱${pe.discountExact.toFixed(2)} discount)`;
-      }
-    } else {
-      suffix = ` · ${paperLabel} · ₱${currentPrintQuote.requiredAmount}`;
-    }
-  } else if (quoteError) {
-    suffix = ` · ${quoteError}`;
+  if (currentPrintQuote) {
+    footerSummary.classList.add('ready');
+    footerSummary.textContent =
+      `Selected ${currentPrintQuote.selectedPages} · ` +
+      `Copies ${n} · Total ₱${currentPrintQuote.requiredAmount}`;
+    return;
+  }
+
+  if (quoteError) {
+    footerSummary.textContent = quoteError;
     footerSummary.classList.remove('ready');
-  } else if (mode === 'copy') {
+    return;
+  }
+
+  if (mode === 'copy') {
     const hasCopyPreview = Boolean(copyPreviewPath);
     if (hasCopyPreview) {
-      suffix = ' · Ready to calculate';
+      footerSummary.textContent = 'Ready to calculate.';
     } else {
-      suffix = ' · No document';
+      footerSummary.textContent = 'No document detected.';
     }
+    return;
   }
 
   footerSummary.textContent =
-    `${n} cop${n === 1 ? 'y' : 'ies'} · ${pages} · ${cfg.paperSize} · ` +
+    `${n} cop${n === 1 ? 'y' : 'ies'} · ${pageRangeLabel(getPageRange())} · ${cfg.paperSize} · ` +
     `${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
     `Rotate ${cfg.rotationDeg}° · ` +
-    `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}${suffix}`;
-  renderPricingAnalyzer();
+    `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}`;
 }
 
 const preview = new PrintPreview();
@@ -2158,27 +1633,6 @@ copiesInput?.addEventListener('change', () => {
     copiesInput.value = String(getCopies());
     updateSummary();
     schedulePrintQuoteRefresh();
-  }
-});
-
-openPricingAnalyzerBtn?.addEventListener('click', () => {
-  setPricingAnalyzerModalOpen(true);
-});
-
-const closePricingAnalyzerModal = (): void => {
-  setPricingAnalyzerModalOpen(false);
-};
-
-closePricingAnalyzerBtn?.addEventListener('click', closePricingAnalyzerModal);
-pricingAnalyzerBackdrop?.addEventListener('click', closePricingAnalyzerModal);
-
-window.addEventListener('keydown', (event) => {
-  if (
-    event.key === 'Escape' &&
-    pricingAnalyzerModal &&
-    !pricingAnalyzerModal.hidden
-  ) {
-    closePricingAnalyzerModal();
   }
 });
 
@@ -2405,7 +1859,7 @@ continueBtn?.addEventListener('click', () => {
     paperSize: cfg.paperSize,
     pageRange: mode === 'scan' ? { type: 'all' } : getPageRange(),
     totalPages: preview.pageCount,
-    quote: mode === 'print' ? (currentPrintQuote ?? undefined) : undefined,
+    quote: mode === 'scan' ? undefined : (currentPrintQuote ?? undefined),
   };
 
   sessionStorage.setItem('printbit.mode', mode);
@@ -2426,4 +1880,3 @@ continueBtn?.addEventListener('click', () => {
 });
 
 void loadPreview();
-void fetchAndLogPricingSettings();
