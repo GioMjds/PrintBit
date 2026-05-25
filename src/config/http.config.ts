@@ -10,6 +10,24 @@ export const PORT =
     ? parsedPort
     : DEFAULT_PORT;
 export const UPLOAD_DIR = 'uploads/';
+const rawWorkerQueueDir = process.env.PRINTBIT_WORKER_QUEUE_DIR?.trim();
+export const WORKER_QUEUE_DIR =
+  rawWorkerQueueDir && rawWorkerQueueDir.length > 0
+    ? rawWorkerQueueDir
+    : undefined;
+export const WORKER_PIPE_NAME =
+  process.env.PRINTBIT_WORKER_PIPE_NAME?.trim() || 'printbit-node-errors';
+const rawWorkerPrechecks = process.env.PRINTBIT_WORKER_PRECHECKS_ENABLED
+  ?.trim()
+  .toLowerCase();
+const WORKER_PRECHECKS_DISABLED_TOKENS = new Set(['0', 'false', 'no', 'off']);
+export const WORKER_PRECHECKS_ENABLED =
+  rawWorkerPrechecks === undefined
+    ? true
+    : !WORKER_PRECHECKS_DISABLED_TOKENS.has(rawWorkerPrechecks);
+export const WORKER_RETURN_PIPE_NAME =
+  process.env.PRINTBIT_WORKER_RETURN_PIPE_NAME?.trim() ||
+  'printbit-worker-events';
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PORTAL_DIR = path.resolve('src/public/upload');
 export const PUBLIC_DIR = path.resolve('src/public');
@@ -135,6 +153,12 @@ function readPositiveIntEnv(
   const normalized = Math.floor(parsed);
   return normalized >= minimum ? normalized : fallback;
 }
+
+export const WORKER_RETURN_MAX_BYTES = readPositiveIntEnv(
+  process.env.PRINTBIT_WORKER_RETURN_MAX_BYTES?.trim(),
+  8_192,
+  256,
+);
 
 const rawPrintDispatchMode = (
   process.env.PRINTBIT_PRINT_DISPATCH_MODE ??

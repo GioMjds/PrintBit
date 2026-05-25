@@ -11,6 +11,8 @@ import {
   SESSION_EXPIRY_ENABLED,
   REDIS_HOST,
   REDIS_PORT,
+  WORKER_RETURN_PIPE_NAME,
+  WORKER_RETURN_MAX_BYTES,
 } from '@/config';
 import { Queue } from 'bullmq';
 import {
@@ -55,11 +57,24 @@ import {
   getRecoveryStatusSnapshot,
 } from '@/services';
 import { buildAnomalyFingerprint } from '@/services/anomaly';
+import {
+  startWorkerReturnPipeServer,
+  mapWorkerEventToSocket,
+} from '@/services/worker-return-pipe';
 import { getLocalIPv4 } from '@/utils/network';
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+startWorkerReturnPipeServer({
+  pipeName: WORKER_RETURN_PIPE_NAME,
+  maxBytes: WORKER_RETURN_MAX_BYTES,
+  onEvent: (evt) => {
+    const mapped = mapWorkerEventToSocket(evt);
+    io.emit(mapped.event, mapped.payload);
+  },
+});
 
 // Configure BullMQ connection to WSL Redis
 const redisConnection = {
