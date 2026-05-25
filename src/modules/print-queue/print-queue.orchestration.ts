@@ -19,9 +19,23 @@
  * - @/services/print-dispatcher: PrintDispatchError, print dispatch types
  */
 
+import path from 'node:path';
+import fs from 'node:fs/promises';
 import type { Job } from 'bullmq';
 import type { Server } from 'socket.io';
 import type { PrintJobEnqueuePayload } from './print-job.schema';
+import { PrinterService } from '@/modules/printer/printer.service';
+import {
+  UPLOAD_DIR,
+  WORKER_PIPE_NAME,
+  WORKER_PRECHECKS_ENABLED,
+  WORKER_QUEUE_DIR,
+} from '@/config';
+import { handoffToWorker, WorkerHandoffError } from '@/services/worker-handoff';
+import {
+  buildWorkerErrorPayload,
+  sendWorkerError,
+} from '@/services/worker-error-pipe';
 
 /**
  * Result of orchestration execution
@@ -161,6 +175,8 @@ export async function orchestratePrintJob(
   const ctx = buildPrintJobContext(job);
   let currentStage = 'initialization';
   const chargedAmount = job.data.financial.chargedAmount ?? 0;
+  const printerService = new PrinterService();
+  const uploadPath = path.resolve(UPLOAD_DIR, job.data.request.serverFilename);
 
   try {
     // =========================================================================
@@ -168,65 +184,70 @@ export async function orchestratePrintJob(
     // =========================================================================
     currentStage = 'preflight';
 
-    // TODO: Implement preflight validation
-    // - getPrinterTelemetry(ctx.printerName)
-    // - evaluateInkPreflight() for ink policy
-    // - Document validation
-    // - Balance verification
-    // - Emit printQueueJobStarted
+    if (WORKER_PRECHECKS_ENABLED) {
+      const preflightError = await printerService.preDispatchCheck(
+        ctx.printerName,
+      );
+      if (preflightError) {
+        throw new WorkerOrchestrationError(
+          preflightError.code,
+          preflightError.severity !== 'fatal',
+          'preflight',
+          preflightError.userMessage,
+          { hint: preflightError.hint ?? null },
+        );
+      }
+    }
+
+    try {
+      await fs.access(uploadPath);
+    } catch (error) {
+      throw new WorkerOrchestrationError(
+        'FILE_NOT_FOUND',
+        false,
+        'preflight',
+        'Print file not found',
+        { path: uploadPath },
+      );
+    }
+
+    io.emit('printQueueJobStarted', {
+      jobId: job.id,
+      transactionId: ctx.transactionId,
+      stage: 'preflight',
+      startedAt: new Date().toISOString(),
+    });
 
     // =========================================================================
-    // STAGE 2: DISPATCH
+    // STAGE 2: HANDOFF TO C# WORKER
     // =========================================================================
-    currentStage = 'dispatch';
+    currentStage = 'handoff';
 
-    // TODO: Implement dispatch to printer
-    // - Call printFile() with job.data.request options
-    // - Handle PrintDispatchError (retryable vs non-retryable)
-    // - Capture dispatchResult with engine, duration
-    // - Call checkpointRecoverySession(phase: 'job_dispatched')
-    // - Emit printQueueJobDispatched
+    const handoffResult = await handoffToWorker({
+      sourcePath: uploadPath,
+      queueDir: WORKER_QUEUE_DIR ?? '',
+      transactionId: ctx.transactionId,
+      spoolerCorrelationKey: ctx.spoolerCorrelationKey,
+    });
 
-    // =========================================================================
-    // STAGE 3: SETTLEMENT
-    // =========================================================================
-    currentStage = 'settlement';
+    job.data.dispatch.jobDispatchedAt = new Date().toISOString();
+    job.data.dispatch.dispatchEngine = 'csharp-worker';
+    job.data.dispatch.dispatchMode = 'queue-handoff';
+    job.data.dispatch.dispatchMimeType = 'application/pdf';
 
-    // TODO: Implement settlement processing
-    // - Call settlementService.settle(requiredAmount)
-    // - Verify settlement.ok === true
-    // - Extract chargedAmount from settlement result
-    // - Handle insufficient balance (non-retryable)
-    // - Call checkpointRecoverySession(phase: 'settled')
-    // - Emit transactionSettled
-
-    // =========================================================================
-    // STAGE 4: SPOOLER MONITORING
-    // =========================================================================
-    currentStage = 'spooler';
-
-    // TODO: Implement spooler monitoring
-    // - Call monitorSpoolerJob(spoolerCorrelationKey)
-    // - Poll until terminal state or timeout (120s)
-    // - Classify timeout as retryable
-    // - Call checkpointRecoverySession(phase: 'print_confirmed')
-    // - Emit printQueueJobPrinted
-
-    // =========================================================================
-    // STAGE 5: RECONCILIATION
-    // =========================================================================
-    currentStage = 'reconciliation';
-
-    // TODO: Implement reconciliation
-    // - Call receiptService to generate receipt snapshot
-    // - Emit printQueueJobCompleted
-    // - Emit transactionReceiptStatusChanged
+    io.emit('printQueueJobDispatched', {
+      jobId: job.id,
+      transactionId: ctx.transactionId,
+      stage: 'handoff',
+      fileName: handoffResult.fileName,
+      dispatchedAt: job.data.dispatch.jobDispatchedAt,
+    });
 
     return {
       success: true,
       transactionId: ctx.transactionId,
       spoolerCorrelationKey: ctx.spoolerCorrelationKey,
-      stage: 'reconciliation',
+      stage: 'handoff',
       durationMs: Date.now() - startTime,
       chargedAmount,
     };
@@ -237,7 +258,11 @@ export async function orchestratePrintJob(
     let isRetryable: boolean;
     let failureReason: string;
 
-    if (err instanceof WorkerOrchestrationError) {
+    if (err instanceof WorkerHandoffError) {
+      failureClass = err.code;
+      isRetryable = false;
+      failureReason = err.message;
+    } else if (err instanceof WorkerOrchestrationError) {
       failureClass = err.failureClass;
       isRetryable = err.isRetryable;
       failureReason = err.message;
@@ -246,6 +271,18 @@ export async function orchestratePrintJob(
       isRetryable = false;
       failureReason = err instanceof Error ? err.message : String(err);
     }
+
+    await sendWorkerError(
+      buildWorkerErrorPayload({
+        message: `Print job failed at ${currentStage}: ${failureReason}`,
+        code: failureClass,
+        source: 'print-queue-worker',
+        transactionId: ctx.transactionId,
+        spoolerCorrelationKey: ctx.spoolerCorrelationKey,
+        stack: err instanceof Error ? err.stack : undefined,
+      }),
+      WORKER_PIPE_NAME,
+    );
 
     recordJobAttempt(
       job,
