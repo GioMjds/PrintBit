@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { handoffToWorker, WorkerHandoffError } from '@/services/worker-handoff';
+import { handoffToWorker } from '@/services/worker-handoff';
 
 describe('worker-handoff', () => {
 	it('copies a PDF into the worker queue dir', async () => {

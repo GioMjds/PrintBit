@@ -50,7 +50,7 @@ export async function handoffToWorker(input: {
     );
   }
 
-  const ext = path.extname(input.sourcePath).toLowerCase() || '.pdf';
+  const ext = path.extname(input.sourcePath).toLowerCase();
   if (ext !== '.pdf') {
     throw new WorkerHandoffError(
       'WORKER_HANDOFF_FAILED',
@@ -59,7 +59,8 @@ export async function handoffToWorker(input: {
     );
   }
 
-  const fileName = `${input.transactionId}_${input.spoolerCorrelationKey}_${Date.now()}${ext}`;
+  const safeSegment = (value: string) => value.replace(/[^a-zA-Z0-9-_]/g, '_');
+  const fileName = `${safeSegment(input.transactionId)}_${safeSegment(input.spoolerCorrelationKey)}_${Date.now()}${ext}`;
   const targetPath = path.join(input.queueDir, fileName);
   const tempPath = `${targetPath}.tmp`;
 
@@ -67,7 +68,7 @@ export async function handoffToWorker(input: {
     await fs.copyFile(input.sourcePath, tempPath);
     await fs.rename(tempPath, targetPath);
     return { targetPath, fileName };
-  } catch (error) {
+  } catch {
     try {
       await fs.unlink(tempPath);
     } catch {
