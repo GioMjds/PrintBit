@@ -1,0 +1,381 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import type { Server } from 'socket.io';
+import type { SessionStore } from '@/services/session';
+import { adminService } from '@/services/admin';
+import { ReceiptService } from '@/modules/receipt/receipt.service';
+import {
+  checkpointRecoverySession,
+  getRecoverySession,
+  persistAndEmitPrintLifecycleState,
+} from '@/services';
+import {
+  PendingRefundServiceError,
+  upsertSpoolerFailureRefund,
+} from '@/services/pending-refund';
+import { deleteTransientScanFile } from '@/services/transient-scan-file';
+import type { WorkerPrintEvent } from './worker-return-pipe';
+import { jobStore } from './job-store';
+
+const receiptService = new ReceiptService();
+
+async function deleteUploadByStoredFilename(
+  storedFilename: string,
+): Promise<{ deleted: boolean; alreadyMissing: boolean }> {
+  const uploadsDir = path.resolve('uploads');
+  const normalized = storedFilename.trim();
+  if (!normalized) {
+    return { deleted: false, alreadyMissing: false };
+  }
+
+  const filePath = path.resolve(uploadsDir, normalized);
+  const relativePath = path.relative(uploadsDir, filePath);
+  if (
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    return { deleted: false, alreadyMissing: false };
+  }
+
+  try {
+    await fs.promises.unlink(filePath);
+    return { deleted: true, alreadyMissing: false };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      return { deleted: true, alreadyMissing: true };
+    }
+    throw error;
+  }
+}
+
+async function cleanupSuccessfulPrint(input: {
+  transactionId: string;
+  sessionStore: SessionStore;
+  recoveryContext: Record<string, string | number | boolean | null>;
+}): Promise<void> {
+  const { transactionId, sessionStore, recoveryContext } = input;
+  const filename =
+    typeof recoveryContext.filename === 'string' ? recoveryContext.filename : null;
+  const sessionId =
+    typeof recoveryContext.sessionId === 'string'
+      ? recoveryContext.sessionId
+      : null;
+  const documentId =
+    typeof recoveryContext.documentId === 'string'
+      ? recoveryContext.documentId
+      : null;
+
+  if (!filename) return;
+
+  if (sessionId && documentId) {
+    const removed = await sessionStore.removeDocument(sessionId, documentId);
+    if (removed.success && removed.deletedFile) {
+      return;
+    }
+  }
+
+  await deleteUploadByStoredFilename(filename);
+  await adminService.appendAdminLog(
+    'upload_deleted_after_print',
+    'Uploaded file deleted after worker-confirmed print completion.',
+    {
+      transactionId,
+      sessionId,
+      documentId,
+      filename,
+      source: 'worker-return-pipe',
+    },
+  );
+}
+
+async function cleanupSuccessfulCopy(input: {
+  transactionId: string;
+  recoveryContext: Record<string, string | number | boolean | null>;
+}): Promise<void> {
+  const previewFilename =
+    typeof input.recoveryContext.previewFilename === 'string'
+      ? input.recoveryContext.previewFilename
+      : null;
+  if (!previewFilename) return;
+
+  await deleteTransientScanFile(previewFilename);
+  await adminService.appendAdminLog(
+    'copy_preview_released',
+    'Transient copy preview released after worker-confirmed print completion.',
+    {
+      transactionId: input.transactionId,
+      filename: previewFilename,
+      source: 'worker-return-pipe',
+    },
+  );
+}
+
+async function createRefundReview(input: {
+  transactionId: string;
+  evt: WorkerPrintEvent;
+  requiredAmount: number;
+  mode: 'print' | 'copy';
+}): Promise<void> {
+  try {
+    await upsertSpoolerFailureRefund({
+      chargedAmount: input.requiredAmount,
+      reason: input.evt.message ?? 'Worker reported terminal print failure.',
+      autoRefund: false,
+      jobContext: {
+        transactionId: input.transactionId,
+        mode: input.mode,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey,
+        workerFailureStage: input.evt.failureStage ?? null,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof PendingRefundServiceError &&
+      error.code === 'TRUSTED_TIME_UNAVAILABLE'
+    ) {
+      await adminService.appendAdminLog(
+        'trusted_time_unsynced',
+        'Worker print failure refund review could not be created because trusted time is unavailable.',
+        {
+          transactionId: input.transactionId,
+          spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+          mode: input.mode,
+        },
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function handleWorkerReturnPrintEvent(input: {
+  evt: WorkerPrintEvent;
+  io: Server;
+  sessionStore: SessionStore;
+}): Promise<void> {
+  const transactionId =
+    typeof input.evt.transactionId === 'string' &&
+    input.evt.transactionId.trim().length > 0
+      ? input.evt.transactionId.trim()
+      : null;
+  if (!transactionId) return;
+
+  const recovery = getRecoverySession(transactionId);
+  const mode = recovery?.mode ?? 'print';
+  const requiredAmount = recovery?.requiredAmount ?? 0;
+  const recoveryContext = recovery?.context ?? {};
+
+  if (input.evt.type === 'PrintStarted') {
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'processing',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        printerName: input.evt.printerName ?? null,
+        reason: input.evt.message ?? null,
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+      },
+    );
+    return;
+  }
+
+  if (input.evt.type === 'PrintSucceeded') {
+    if (mode === 'copy') {
+      jobStore.updateJobState(transactionId, 'printed');
+    }
+
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'printed',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        printerName: input.evt.printerName ?? null,
+        reason: input.evt.message ?? null,
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+      },
+    );
+
+    receiptService.updateTerminalStatus({
+      transactionId,
+      status: 'printed',
+      terminalAt: input.evt.timestampUtc,
+    });
+
+    await checkpointRecoverySession({
+      transactionId,
+      mode,
+      phase: 'reconciled',
+      requiredAmount,
+      chargedAmount: recovery?.chargedAmount ?? requiredAmount,
+      sessionId: recovery?.sessionId ?? null,
+      documentId: recovery?.documentId ?? null,
+      spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+      reconciledAt: input.evt.timestampUtc,
+      spoolerTerminalAt: input.evt.timestampUtc,
+      reconciliationAction: 'none',
+      reconciliationReason: 'Worker confirmed successful print completion.',
+    });
+
+    if (mode === 'copy') {
+      await cleanupSuccessfulCopy({
+        transactionId,
+        recoveryContext,
+      });
+    } else {
+      await cleanupSuccessfulPrint({
+        transactionId,
+        sessionStore: input.sessionStore,
+        recoveryContext,
+      });
+    }
+
+    return;
+  }
+
+  if (mode === 'copy') {
+    jobStore.updateJobState(transactionId, 'failed', {
+      failure: {
+        code: input.evt.failureStage ?? 'WORKER_PRINT_FAILED',
+        message: input.evt.message ?? 'Worker print failed.',
+        retryable: false,
+        stage: 'postprocess',
+      },
+    });
+  }
+
+  await persistAndEmitPrintLifecycleState(
+    input.io,
+    {
+      mode,
+      state: 'failed',
+      transactionId,
+      spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+      printerName: input.evt.printerName ?? null,
+      reason: input.evt.message ?? 'Worker print failed.',
+    },
+    {
+      requiredAmount,
+      sessionId: recovery?.sessionId ?? null,
+      documentId: recovery?.documentId ?? null,
+      meta: {
+        workerFailureStage: input.evt.failureStage ?? null,
+      },
+    },
+  );
+
+  await createRefundReview({
+    transactionId,
+    evt: input.evt,
+    requiredAmount,
+    mode,
+  });
+
+  receiptService.updateTerminalStatus({
+    transactionId,
+    status: 'refunded_pending_review',
+    terminalAt: input.evt.timestampUtc,
+  });
+
+  await checkpointRecoverySession({
+    transactionId,
+    mode,
+    phase: 'reconciled',
+    requiredAmount,
+    chargedAmount: recovery?.chargedAmount ?? requiredAmount,
+    sessionId: recovery?.sessionId ?? null,
+    documentId: recovery?.documentId ?? null,
+    spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+    reconciledAt: input.evt.timestampUtc,
+    spoolerTerminalAt: input.evt.timestampUtc,
+    reconciliationAction: 'pending_admin_review',
+    reconciliationReason: input.evt.message ?? 'Worker reported terminal print failure.',
+  });
+}
+
+export async function handleQueueWorkerTerminalFailure(input: {
+  transactionId: string;
+  spoolerCorrelationKey: string | null;
+  failureReason: string;
+  failureClass: string;
+  io: Server;
+}): Promise<void> {
+  const recovery = getRecoverySession(input.transactionId);
+  const mode = recovery?.mode ?? 'print';
+  const requiredAmount = recovery?.requiredAmount ?? 0;
+
+  if (mode === 'copy') {
+    jobStore.updateJobState(input.transactionId, 'failed', {
+      failure: {
+        code: input.failureClass,
+        message: input.failureReason,
+        retryable: false,
+        stage: 'postprocess',
+      },
+    });
+  }
+
+  await persistAndEmitPrintLifecycleState(
+    input.io,
+    {
+      mode,
+      state: 'failed',
+      transactionId: input.transactionId,
+      spoolerCorrelationKey: input.spoolerCorrelationKey,
+      reason: input.failureReason,
+    },
+    {
+      requiredAmount,
+      sessionId: recovery?.sessionId ?? null,
+      documentId: recovery?.documentId ?? null,
+      meta: {
+        queueFailureClass: input.failureClass,
+      },
+    },
+  );
+
+  await upsertSpoolerFailureRefund({
+    chargedAmount: recovery?.chargedAmount ?? requiredAmount,
+    reason: input.failureReason,
+    autoRefund: true,
+    jobContext: {
+      transactionId: input.transactionId,
+      spoolerCorrelationKey: input.spoolerCorrelationKey,
+      queueFailureClass: input.failureClass,
+      mode,
+    },
+  });
+
+  receiptService.updateTerminalStatus({
+    transactionId: input.transactionId,
+    status: 'refunded',
+    terminalAt: new Date().toISOString(),
+  });
+
+  await checkpointRecoverySession({
+    transactionId: input.transactionId,
+    mode,
+    phase: 'reconciled',
+    requiredAmount,
+    chargedAmount: recovery?.chargedAmount ?? requiredAmount,
+    sessionId: recovery?.sessionId ?? null,
+    documentId: recovery?.documentId ?? null,
+    spoolerCorrelationKey: input.spoolerCorrelationKey,
+    reconciledAt: new Date().toISOString(),
+    reconciliationAction: 'auto_refund',
+    reconciliationReason: input.failureReason,
+  });
+}

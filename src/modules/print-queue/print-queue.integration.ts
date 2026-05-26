@@ -34,9 +34,14 @@ export function buildPrintJobEnqueuePayload(context: {
   billedColorPages: number;
   billedBwPages: number;
   printerName: string | null;
+  spoolerCorrelationKey?: string | null;
 }): PrintJobEnqueuePayload {
   // Generate new spooler correlation key for this enqueue
-  const spoolerCorrelationKey = randomUUID();
+  const spoolerCorrelationKey =
+    typeof context.spoolerCorrelationKey === 'string' &&
+    context.spoolerCorrelationKey.trim().length > 0
+      ? context.spoolerCorrelationKey.trim()
+      : randomUUID();
 
   const payload: PrintJobEnqueuePayload = {
     schemaVersion: PRINT_JOB_PAYLOAD_VERSION,

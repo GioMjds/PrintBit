@@ -944,6 +944,39 @@ function finalizePrintSuccess(transactionId: string | null): void {
   void checkRemainingFilesAndPrompt();
 }
 
+function enterWorkerPendingState(transactionId: string | null): void {
+  setTransactionReference(transactionId);
+  activeSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
+  if (statusMessage) {
+    statusMessage.textContent =
+      config.mode === 'copy'
+        ? 'Payment confirmed. Waiting for the worker to start copying.'
+        : 'Payment confirmed. Waiting for the worker to start printing.';
+  }
+}
+
+function matchesPendingWorkerEvent(payload: {
+  transactionId?: string | null;
+  spoolerCorrelationKey?: string | null;
+}): boolean {
+  const payloadTransactionId =
+    typeof payload.transactionId === 'string' ? payload.transactionId : null;
+  const payloadSpoolerKey =
+    typeof payload.spoolerCorrelationKey === 'string'
+      ? payload.spoolerCorrelationKey
+      : null;
+
+  if (currentTransactionId && payloadTransactionId === currentTransactionId) {
+    return true;
+  }
+
+  return Boolean(
+    paymentSpoolerCorrelationKey &&
+      payloadSpoolerKey &&
+      payloadSpoolerKey === paymentSpoolerCorrelationKey,
+  );
+}
+
 function syncPendingPaymentSessionState(): void {
   if (config.mode !== 'print' && config.mode !== 'copy') return;
   if (paymentIdempotencyKey)
@@ -1098,11 +1131,16 @@ modalConfirmBtn?.addEventListener('click', async () => {
       const spoolerCorrelationKey =
         paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
       paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+      paymentIdempotencyKey =
+        paymentIdempotencyKey ?? createPaymentIdempotencyKey();
       syncPendingPaymentSessionState();
 
       const response = await fetchWithTimeout('/api/copy/jobs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': paymentIdempotencyKey,
+        },
         body: JSON.stringify({
           amount: totalPrice,
           copies: config.copies,
@@ -1133,21 +1171,22 @@ modalConfirmBtn?.addEventListener('click', async () => {
       // For copy jobs, the ID is often in 'id' field of the job object
       const transactionId = payload.transactionId ?? payload.id ?? null;
       captureReceiptCta(payload);
-      finalizePrintSuccess(transactionId);
-      // Copy job receipt is generated asynchronously — poll for it
-      if (transactionId) {
-        void pollCopyJobReceipt(transactionId);
-      }
+      enterWorkerPendingState(transactionId);
     } else {
       // Print implementation...
       const spoolerCorrelationKey =
         paymentSpoolerCorrelationKey ?? createSpoolerCorrelationKey();
       paymentSpoolerCorrelationKey = spoolerCorrelationKey;
+      paymentIdempotencyKey =
+        paymentIdempotencyKey ?? createPaymentIdempotencyKey();
       syncPendingPaymentSessionState();
 
       const response = await fetchWithTimeout('/api/confirm-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': paymentIdempotencyKey,
+        },
         body: JSON.stringify({
           amount: totalPrice,
           mode: config.mode,
@@ -1177,7 +1216,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         transactionId?: string | null;
       };
       captureReceiptCta(payload);
-      finalizePrintSuccess(payload.transactionId ?? null);
+      enterWorkerPendingState(payload.transactionId ?? null);
     }
   } catch (error) {
     hideOverlay(printingOverlay);
@@ -1246,6 +1285,21 @@ if (typeof ioFactory === 'function') {
 
   connectedSocket.on('printLifecycleState', (payload: any) => {
     const lifecycle = payload as PrintLifecycleStatePayload;
+    if (
+      lifecycle.state === 'failed' &&
+      matchesPendingWorkerEvent({
+        transactionId: lifecycle.transactionId ?? null,
+        spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
+      })
+    ) {
+      hideOverlay(printingOverlay);
+      isProcessingPayment = false;
+      activeSpoolerCorrelationKey = null;
+      clearPendingPaymentSessionState();
+      applyConfirmGate(
+        lifecycle.reason ?? 'The worker could not complete this print job.',
+      );
+    }
     if (lifecycle.printError) {
       renderPrinterError(lifecycle.printError);
     } else if (lifecycle.state === 'printed' || lifecycle.state === 'failed') {
@@ -1260,6 +1314,33 @@ if (typeof ioFactory === 'function') {
   });
   connectedSocket.on('printerSpoolerFailure', (payload: any) => {
     if (payload?.printError) renderPrinterError(payload.printError);
+  });
+
+  connectedSocket.on('workerPrintStarted', (payload: any) => {
+    if (!matchesPendingWorkerEvent(payload)) return;
+    setPrintingPhase('printing');
+    if (statusMessage) {
+      statusMessage.textContent =
+        config.mode === 'copy'
+          ? 'Copy job started by the worker.'
+          : 'Print job started by the worker.';
+    }
+  });
+
+  connectedSocket.on('workerPrintSucceeded', (payload: any) => {
+    if (!matchesPendingWorkerEvent(payload)) return;
+    finalizePrintSuccess(payload?.transactionId ?? null);
+  });
+
+  connectedSocket.on('workerPrintFailed', (payload: any) => {
+    if (!matchesPendingWorkerEvent(payload)) return;
+    hideOverlay(printingOverlay);
+    isProcessingPayment = false;
+    activeSpoolerCorrelationKey = null;
+    clearPendingPaymentSessionState();
+    applyConfirmGate(
+      payload?.message ?? 'The worker reported a terminal print failure.',
+    );
   });
 }
 

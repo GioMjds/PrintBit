@@ -45,6 +45,12 @@ import {
 } from '@/services/print-quote';
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { PRINT_SPOOLER_MONITOR_WINDOW_MS } from '@/config';
+import {
+  buildPrintJobEnqueuePayload,
+  getPrintQueueService,
+} from '@/modules/print-queue';
+import { checkpointRecoverySession } from '@/services/recovery';
+import { upsertSpoolerFailureRefund } from '@/services/pending-refund';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -388,16 +394,176 @@ export class CopyService {
         requiredAmount,
       },
     );
-    this.runCopyJob(
-      job.id,
-      normalized,
-      previewFilename,
-      quote,
-      requiredAmount,
-      this.deps.resolvePublicBaseUrl(req).toString(),
-    );
 
-    const responseBody = JSON.parse(JSON.stringify(job)) as typeof job;
+    const telemetry = await refreshPrinterTelemetry();
+    if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
+      return {
+        statusCode: 409,
+        body: {
+          error: `Printer is not ready: ${telemetry.status}. Please notify the operator.`,
+        },
+        cacheIdempotencyResponse: idempotencyKeyClaimed,
+      };
+    }
+
+    const inkPreflight = evaluateInkPreflight(telemetry);
+    if (inkPreflight.blocked) {
+      return {
+        statusCode: 409,
+        body: {
+          error:
+            inkPreflight.reason ??
+            'Printer ink state is not ready for printing.',
+        },
+        cacheIdempotencyResponse: idempotencyKeyClaimed,
+      };
+    }
+
+    const settlement = await settlementService.settle({
+      requiredAmount,
+      io: this.deps.io,
+      jobContext: {
+        mode: 'copy',
+        jobId: job.id,
+        copies: quote.copies,
+        colorMode: quote.effectiveColorMode,
+        rotationDeg: normalized.rotationDeg,
+      },
+    });
+
+    if (!settlement.ok) {
+      return {
+        statusCode: 409,
+        body: {
+          error:
+            settlement.error ??
+            'Balance drained before charge could complete.',
+        },
+        cacheIdempotencyResponse: false,
+      };
+    }
+
+    const settledAt = getTrustedTimestamp().timestamp;
+    this.safeUpsertSettledReceiptSnapshot({
+      transactionId: job.id,
+      chargedAmount: settlement.chargedAmount,
+      colorPages: quote.billableColorPages * quote.copies,
+      bwPages: quote.billableBwPages * quote.copies,
+      change: {
+        requested: settlement.change.requested,
+        dispensed: settlement.change.dispensed,
+        state:
+          settlement.change.state === 'dispensed' ||
+          settlement.change.state === 'failed'
+            ? settlement.change.state
+            : 'none',
+        attempts: settlement.change.attempts ?? 0,
+        owedChangeId: settlement.change.owedChangeId ?? null,
+        message: settlement.change.message ?? null,
+      },
+      settledAt,
+    });
+
+    const receiptToken = this.receiptService.mintToken(job.id, {
+      revokeExisting: true,
+    });
+    if (receiptToken) {
+      const viewUrl = new URL(
+        `/receipt/t/${encodeURIComponent(receiptToken.token)}`,
+        this.deps.resolvePublicBaseUrl(req),
+      ).toString();
+      jobStore.updateJobState(job.id, 'queued', {
+        receipt: {
+          token: receiptToken.token,
+          viewUrl,
+          expiresAt: receiptToken.expiresAt,
+        },
+      });
+    }
+
+    const correlationKey =
+      normalized.spoolerCorrelationKey ?? randomUUID();
+    const enqueueIdempotencyKey =
+      idempotencyKey.trim().length > 0 ? idempotencyKey.trim() : randomUUID();
+
+    await checkpointRecoverySession({
+      transactionId: job.id,
+      mode: 'copy',
+      phase: 'settled',
+      requiredAmount,
+      chargedAmount: settlement.chargedAmount,
+      spoolerCorrelationKey: correlationKey,
+      settledAt,
+      context: {
+        previewFilename,
+        filename: path.join('scans', previewFilename),
+      },
+    });
+
+    try {
+      const payload = buildPrintJobEnqueuePayload({
+        transactionId: job.id,
+        idempotencyKey: enqueueIdempotencyKey,
+        mode: 'copy',
+        sessionId: null,
+        documentId: null,
+        serverFilename: path.join('scans', previewFilename),
+        printOptions: {
+          copies: quote.copies,
+          colorMode: quote.effectiveColorMode,
+          orientation: normalized.orientation,
+          rotationDeg: normalized.rotationDeg,
+          paperSize: normalized.paperSize,
+          pageRange: quote.pageRange ?? undefined,
+          duplex: quote.duplex,
+          printerName: telemetry.name ?? undefined,
+        },
+        requiredAmount,
+        billedColorPages: quote.billableColorPages,
+        billedBwPages: quote.billableBwPages,
+        printerName: telemetry.name ?? null,
+        spoolerCorrelationKey: correlationKey,
+      });
+
+      await getPrintQueueService().enqueuePrintJob(payload);
+    } catch (error) {
+      await upsertSpoolerFailureRefund({
+        chargedAmount: settlement.chargedAmount,
+        reason: 'Failed to enqueue copy job for worker handoff.',
+        autoRefund: true,
+        jobContext: {
+          transactionId: job.id,
+          spoolerCorrelationKey: correlationKey,
+          previewFilename,
+          source: 'copy-service-enqueue',
+        },
+      });
+      this.safeUpdateReceiptTerminalStatus({
+        transactionId: job.id,
+        status: 'refunded',
+        phase: 'copy_enqueue_failed',
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        statusCode: 503,
+        body: {
+          error: 'Copy job could not be queued for printing.',
+        },
+        cacheIdempotencyResponse: false,
+      };
+    }
+
+    const completedJob = jobStore.getJob(job.id);
+    if (completedJob && completedJob.type === 'copy') {
+      completedJob.payment = {
+        chargedAmount: settlement.chargedAmount,
+        remainingBalance: settlement.remainingBalance,
+      };
+    }
+
+    const responseBody = JSON.parse(
+      JSON.stringify(jobStore.getJob(job.id) ?? job),
+    ) as typeof job;
     return {
       statusCode: 201,
       body: responseBody,

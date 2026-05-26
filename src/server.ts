@@ -9,17 +9,18 @@ import {
   UPLOAD_DIR,
   CAPTIVE_PORTAL_ENABLED,
   SESSION_EXPIRY_ENABLED,
-  REDIS_HOST,
-  REDIS_PORT,
   WORKER_RETURN_PIPE_NAME,
   WORKER_RETURN_MAX_BYTES,
 } from '@/config';
-import { Queue } from 'bullmq';
 import {
   createCaptivePortalMiddleware,
   createCsrfProtectionMiddleware,
 } from '@/middleware';
 import { registerAppModules } from '@/app.module';
+import {
+  createPrintJobWorker,
+  getPrintQueueService,
+} from '@/modules/print-queue';
 import {
   initDB,
   assertPrintDispatcherReady,
@@ -61,32 +62,12 @@ import {
   startWorkerReturnPipeServer,
   mapWorkerEventToSocket,
 } from '@/services/worker-return-pipe';
+import { handleWorkerReturnPrintEvent } from '@/services/worker-print-lifecycle';
 import { getLocalIPv4 } from '@/utils/network';
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-
-startWorkerReturnPipeServer({
-  pipeName: WORKER_RETURN_PIPE_NAME,
-  maxBytes: WORKER_RETURN_MAX_BYTES,
-  onEvent: (evt) => {
-    const mapped = mapWorkerEventToSocket(evt);
-    io.emit(mapped.event, mapped.payload);
-  },
-});
-
-// Configure BullMQ connection to WSL Redis
-const redisConnection = {
-  host: REDIS_HOST, // WSL2 automatically forwards localhost
-  port: REDIS_PORT,
-  maxRetriesPerRequest: null, // BullMQ requires this for IORedis
-};
-
-// Example queue initialization
-export const printQueue = new Queue('print-jobs', {
-  connection: redisConnection,
-});
 
 type StartupPhase = 'booting' | 'ready' | 'failed';
 
@@ -156,6 +137,26 @@ app.use(cookieParser());
 
 const sessionStore = new SessionStore(UPLOAD_DIR, {
   expiryEnabled: SESSION_EXPIRY_ENABLED,
+});
+
+startWorkerReturnPipeServer({
+  pipeName: WORKER_RETURN_PIPE_NAME,
+  maxBytes: WORKER_RETURN_MAX_BYTES,
+  onEvent: (evt) => {
+    const mapped = mapWorkerEventToSocket(evt);
+    io.emit(mapped.event, mapped.payload);
+    void handleWorkerReturnPrintEvent({
+      evt,
+      io,
+      sessionStore,
+    }).catch((error) => {
+      console.error('[WORKER_RETURN_PIPE] Failed to process worker event.', {
+        error: error instanceof Error ? error.message : String(error),
+        eventType: evt.type,
+        transactionId: evt.transactionId ?? null,
+      });
+    });
+  },
 });
 
 app.use(express.json());
@@ -373,6 +374,8 @@ async function start() {
     await detectDefaultPrinter();
     await assertPrintDispatcherReady();
     await warmPrintDispatcherProfile();
+    await getPrintQueueService().initialize();
+    createPrintJobWorker(io);
     await detectScanner();
     await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
       console.error(
