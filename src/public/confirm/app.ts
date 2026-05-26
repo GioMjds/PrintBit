@@ -813,7 +813,7 @@ const persistedPaymentFingerprintRaw = sessionStorage.getItem(
   PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY,
 );
 const persistedFingerprintMatchesCurrent =
-  config.mode === 'print' &&
+  (config.mode === 'print' || config.mode === 'copy') &&
   persistedPaymentFingerprintRaw === currentPaymentFingerprint;
 const persistedSpoolerCorrelationKey =
   persistedFingerprintMatchesCurrent &&
@@ -953,6 +953,9 @@ function enterWorkerPendingState(transactionId: string | null): void {
         ? 'Payment confirmed. Waiting for the worker to start copying.'
         : 'Payment confirmed. Waiting for the worker to start printing.';
   }
+  // Show the printing overlay in a worker-pending state
+  showOverlay(printingOverlay);
+  setPrintingPhase('printing');
 }
 
 function matchesPendingWorkerEvent(payload: {
@@ -999,7 +1002,9 @@ function syncPendingPaymentSessionState(): void {
 function clearPendingPaymentSessionState(): void {
   paymentIdempotencyKey = null;
   paymentSpoolerCorrelationKey = null;
-  syncPendingPaymentSessionState();
+  sessionStorage.removeItem(PENDING_PAYMENT_IDEMPOTENCY_STORAGE_KEY);
+  sessionStorage.removeItem(PENDING_PAYMENT_SPOOLER_STORAGE_KEY);
+  sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
 }
 
 async function fetchWithTimeout(

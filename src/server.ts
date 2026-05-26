@@ -139,26 +139,6 @@ const sessionStore = new SessionStore(UPLOAD_DIR, {
   expiryEnabled: SESSION_EXPIRY_ENABLED,
 });
 
-startWorkerReturnPipeServer({
-  pipeName: WORKER_RETURN_PIPE_NAME,
-  maxBytes: WORKER_RETURN_MAX_BYTES,
-  onEvent: (evt) => {
-    const mapped = mapWorkerEventToSocket(evt);
-    io.emit(mapped.event, mapped.payload);
-    void handleWorkerReturnPrintEvent({
-      evt,
-      io,
-      sessionStore,
-    }).catch((error) => {
-      console.error('[WORKER_RETURN_PIPE] Failed to process worker event.', {
-        error: error instanceof Error ? error.message : String(error),
-        eventType: evt.type,
-        transactionId: evt.transactionId ?? null,
-      });
-    });
-  },
-});
-
 app.use(express.json());
 app.use(createCsrfProtectionMiddleware());
 
@@ -242,6 +222,27 @@ async function start() {
 
   try {
     await initDB();
+
+    startWorkerReturnPipeServer({
+      pipeName: WORKER_RETURN_PIPE_NAME,
+      maxBytes: WORKER_RETURN_MAX_BYTES,
+      onEvent: (evt) => {
+        const mapped = mapWorkerEventToSocket(evt);
+        io.emit(mapped.event, mapped.payload);
+        void handleWorkerReturnPrintEvent({
+          evt,
+          io,
+          sessionStore,
+        }).catch((error) => {
+          console.error('[WORKER_RETURN_PIPE] Failed to process worker event.', {
+            error: error instanceof Error ? error.message : String(error),
+            eventType: evt.type,
+            transactionId: evt.transactionId ?? null,
+          });
+        });
+      },
+    });
+
     const startupMarker = await markRecoveryStartup('server_start');
     const startupTrustedTime = await verifyTrustedClockSync();
     const recoverySummary = await reconcileRecoverySessionsOnStartup();

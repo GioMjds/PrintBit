@@ -276,34 +276,48 @@ export async function preparePrintPdf(
   const normalizedRotation = normalizeRotationDeg(input.rotationDeg);
   const normalizedPageRange = parsePageRange(input.pageRange);
 
-  const pdfSource = await ensurePdfSource(input.sourcePath, input.colorMode);
-  cleanupPaths.push(...pdfSource.cleanupPaths);
+  try {
+    const pdfSource = await ensurePdfSource(input.sourcePath, input.colorMode);
+    cleanupPaths.push(...pdfSource.cleanupPaths);
 
-  const transformed = await applyTransforms({
-    sourcePdfPath: pdfSource.pdfPath,
-    orientation: input.orientation,
-    rotationDeg: normalizedRotation,
-    pageRange: normalizedPageRange,
-    duplex: input.duplex === true,
-  });
-  cleanupPaths.push(...transformed.cleanupPaths);
+    const transformed = await applyTransforms({
+      sourcePdfPath: pdfSource.pdfPath,
+      orientation: input.orientation,
+      rotationDeg: normalizedRotation,
+      pageRange: normalizedPageRange,
+      duplex: input.duplex === true,
+    });
+    cleanupPaths.push(...transformed.cleanupPaths);
 
-  if (input.colorMode !== 'grayscale') {
+    if (input.colorMode !== 'grayscale') {
+      return {
+        pdfPath: transformed.pdfPath,
+        cleanupPaths,
+        pageCount: transformed.pageCount,
+      };
+    }
+
+    const grayscale = await applyGrayscalePdf({
+      sourcePdfPath: transformed.pdfPath,
+    });
+    cleanupPaths.push(...grayscale.cleanupPaths);
+
     return {
-      pdfPath: transformed.pdfPath,
+      pdfPath: grayscale.pdfPath,
       cleanupPaths,
       pageCount: transformed.pageCount,
     };
+  } catch (error) {
+    for (const filePath of cleanupPaths) {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch (unlinkError) {
+        console.error('[PREPARE_PRINT_PDF] Failed to clean up intermediate file:', {
+          filePath,
+          error: unlinkError instanceof Error ? unlinkError.message : String(unlinkError),
+        });
+      }
+    }
+    throw error;
   }
-
-  const grayscale = await applyGrayscalePdf({
-    sourcePdfPath: transformed.pdfPath,
-  });
-  cleanupPaths.push(...grayscale.cleanupPaths);
-
-  return {
-    pdfPath: grayscale.pdfPath,
-    cleanupPaths,
-    pageCount: transformed.pageCount,
-  };
 }

@@ -1970,22 +1970,7 @@ export class FinancialService {
       try {
         await getPrintQueueService().enqueuePrintJob(payload);
         queuedAt = getTrustedTimestamp().timestamp;
-        await checkpointRecoverySession({
-          transactionId,
-          mode,
-          phase: 'settled',
-          requiredAmount,
-          chargedAmount: settlement.chargedAmount,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          spoolerCorrelationKey,
-          settledAt,
-          context: {
-            filename: serverFilename,
-            queuedAt,
-          },
-        });
-      } catch (error) {
+      } catch (enqueueError) {
         await upsertSpoolerFailureRefund({
           chargedAmount: settlement.chargedAmount,
           reason: 'Failed to enqueue worker print job after payment settlement.',
@@ -2005,12 +1990,46 @@ export class FinancialService {
           phase: 'worker_enqueue_failed',
           spoolerCorrelationKey,
           terminalAt: new Date().toISOString(),
-          reason: error instanceof Error ? error.message : String(error),
+          reason: enqueueError instanceof Error ? enqueueError.message : String(enqueueError),
         });
         sendResponse(503, {
           error: 'Print job could not be queued for the worker.',
         });
         return;
+      }
+
+      try {
+        await checkpointRecoverySession({
+          transactionId,
+          mode,
+          phase: 'settled',
+          requiredAmount,
+          chargedAmount: settlement.chargedAmount,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          spoolerCorrelationKey,
+          settledAt,
+          context: {
+            filename: serverFilename,
+            queuedAt,
+          },
+        });
+      } catch (checkpointError) {
+        console.error('[CONFIRM-PAYMENT] checkpointRecoverySession failed after enqueue:', {
+          error: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+          transactionId,
+          correlationKey: spoolerCorrelationKey,
+          settledAt,
+          queuedAt,
+          filename: serverFilename,
+        });
+        this.safeUpdateReceiptTerminalStatus({
+          transactionId,
+          status: 'settled_pending_terminal',
+          phase: 'worker_checkpoint_failed',
+          spoolerCorrelationKey,
+          reason: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+        });
       }
     }
 

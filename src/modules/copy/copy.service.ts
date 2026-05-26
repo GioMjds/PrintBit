@@ -397,6 +397,27 @@ export class CopyService {
 
     const telemetry = await refreshPrinterTelemetry();
     if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
+      await persistAndEmitPrintLifecycleState(
+        this.deps.io,
+        {
+          mode: 'copy',
+          state: 'failed',
+          transactionId: job.id,
+          spoolerCorrelationKey: null,
+          printerName: telemetry.name ?? null,
+          reason: `Printer is not ready: ${telemetry.status}`,
+        },
+        {
+          requiredAmount,
+          meta: { stage: 'preflight' },
+        },
+      );
+      this.safeUpdateReceiptTerminalStatus({
+        transactionId: job.id,
+        status: 'failed',
+        phase: 'copy_printer_not_ready',
+        reason: `Printer is not ready: ${telemetry.status}`,
+      });
       return {
         statusCode: 409,
         body: {
@@ -408,6 +429,27 @@ export class CopyService {
 
     const inkPreflight = evaluateInkPreflight(telemetry);
     if (inkPreflight.blocked) {
+      await persistAndEmitPrintLifecycleState(
+        this.deps.io,
+        {
+          mode: 'copy',
+          state: 'failed',
+          transactionId: job.id,
+          spoolerCorrelationKey: null,
+          printerName: telemetry.name ?? null,
+          reason: inkPreflight.reason ?? 'Printer ink state is not ready for printing.',
+        },
+        {
+          requiredAmount,
+          meta: { stage: 'preflight' },
+        },
+      );
+      this.safeUpdateReceiptTerminalStatus({
+        transactionId: job.id,
+        status: 'failed',
+        phase: 'copy_ink_not_ready',
+        reason: inkPreflight.reason ?? 'Printer ink state is not ready for printing.',
+      });
       return {
         statusCode: 409,
         body: {
@@ -486,19 +528,29 @@ export class CopyService {
     const enqueueIdempotencyKey =
       idempotencyKey.trim().length > 0 ? idempotencyKey.trim() : randomUUID();
 
-    await checkpointRecoverySession({
-      transactionId: job.id,
-      mode: 'copy',
-      phase: 'settled',
-      requiredAmount,
-      chargedAmount: settlement.chargedAmount,
-      spoolerCorrelationKey: correlationKey,
-      settledAt,
-      context: {
+    try {
+      await checkpointRecoverySession({
+        transactionId: job.id,
+        mode: 'copy',
+        phase: 'settled',
+        requiredAmount,
+        chargedAmount: settlement.chargedAmount,
+        spoolerCorrelationKey: correlationKey,
+        settledAt,
+        context: {
+          previewFilename,
+          filename: path.join('scans', previewFilename),
+        },
+      });
+    } catch (checkpointError) {
+      console.error('[COPY] checkpointRecoverySession failed after settlement:', {
+        error: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+        jobId: job.id,
+        correlationKey,
+        settledAt,
         previewFilename,
-        filename: path.join('scans', previewFilename),
-      },
-    });
+      });
+    }
 
     try {
       const payload = buildPrintJobEnqueuePayload({
