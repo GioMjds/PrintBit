@@ -71,6 +71,10 @@ import {
 } from '@/services/document-rotation';
 import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
+import {
+  buildPrintJobEnqueuePayload,
+  getPrintQueueService,
+} from '@/modules/print-queue';
 
 export interface FinancialServiceDeps {
   io: Server;
@@ -1603,13 +1607,13 @@ export class FinancialService {
           documentId: targetDocumentId ?? null,
           filename: serverFilename ?? null,
           pageRange: printOptions?.pageRange ?? null,
-          dispatchEngine: dispatchResult?.selectedEngine ?? null,
-          dispatchMode: dispatchResult?.mode ?? null,
-          dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
-          dispatchDurationMs: dispatchResult?.durationMs ?? null,
-          dispatchMimeType: dispatchResult?.mimeType ?? null,
-          dispatchExtension: dispatchResult?.fileExtension ?? null,
-          dispatchAttempts: dispatchResult?.attempts.length ?? null,
+          dispatchEngine: null,
+          dispatchMode: null,
+          dispatchRequestedMode: null,
+          dispatchDurationMs: null,
+          dispatchMimeType: null,
+          dispatchExtension: null,
+          dispatchAttempts: null,
           monitorStartPhase,
         },
         onConfirmed: async () => {
@@ -1679,113 +1683,8 @@ export class FinancialService {
         return;
       }
 
-      try {
-        jobDispatchedAt = getTrustedTimestamp().timestamp;
-        const dispatchOptions: PrintJobOptions = {
-          ...printOptions,
-          printerName: telemetry.name ?? undefined,
-        };
-        dispatchResult = await printFile(serverFilename, dispatchOptions, {
-          transactionId,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          spoolerCorrelationKey,
-          mode: 'print',
-          source: 'confirm-payment',
-        });
-        await checkpointRecoverySession({
-          transactionId,
-          mode,
-          phase: 'job_dispatched',
-          requiredAmount,
-          chargedAmount: 0,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          spoolerCorrelationKey,
-          jobDispatchedAt,
-          context: {
-            filename: serverFilename,
-            spoolerDispatched: true,
-            dispatchEngine: dispatchResult.selectedEngine ?? null,
-            dispatchMode: dispatchResult.mode,
-            dispatchRequestedMode: dispatchResult.requestedMode,
-            dispatchDurationMs: dispatchResult.durationMs,
-            dispatchMimeType: dispatchResult.mimeType,
-            dispatchExtension: dispatchResult.fileExtension,
-            dispatchAttempts: dispatchResult.attempts.length,
-          },
-        });
-      } catch (err) {
-        const dispatchFailure =
-          err instanceof PrintDispatchError ? err.result : null;
-        const unsupportedRequestedOptions =
-          dispatchFailure?.failureCode === 'no_capable_engine';
-        const dispatchErrorMessage =
-          err instanceof Error ? err.message : 'Unknown error';
-        const rotationConstraintError =
-          dispatchErrorMessage.startsWith('Rotation is not supported') ||
-          dispatchErrorMessage.startsWith('Failed to convert document for rotation');
-        await persistAndEmitPrintLifecycleState(
-          this.deps.io,
-          {
-            mode: 'print',
-            state: 'failed',
-            printerName: telemetry.name ?? null,
-            transactionId,
-            spoolerCorrelationKey,
-            reason: dispatchErrorMessage,
-          },
-          {
-            requiredAmount,
-            sessionId: sessionId ?? null,
-            documentId: targetDocumentId ?? null,
-            meta: {
-              stage: 'dispatch',
-              dispatchEngine: dispatchFailure?.selectedEngine ?? null,
-              dispatchMode: dispatchFailure?.mode ?? null,
-              dispatchRequestedMode: dispatchFailure?.requestedMode ?? null,
-              dispatchDurationMs: dispatchFailure?.durationMs ?? null,
-              dispatchMimeType: dispatchFailure?.mimeType ?? null,
-              dispatchExtension: dispatchFailure?.fileExtension ?? null,
-              dispatchAttempts: dispatchFailure?.attempts.length ?? null,
-            },
-          },
-        );
-        void adminService.appendAdminLog(
-          'print_failed',
-          'Print failed: printer error.',
-          {
-            transactionId,
-            sessionId: sessionId ?? null,
-            filename: serverFilename,
-            error: dispatchErrorMessage,
-            failureCode: dispatchFailure?.failureCode ?? null,
-            requiredCapabilities:
-              dispatchFailure && dispatchFailure.requiredCapabilities.length > 0
-                ? dispatchFailure.requiredCapabilities.join(',')
-                : null,
-            requestedOptions: dispatchFailure
-              ? JSON.stringify(dispatchFailure.requestedOptions)
-              : null,
-          },
-        );
-        if (unsupportedRequestedOptions) {
-          sendResponse(409, {
-            code: 'PRINT_OPTIONS_UNSUPPORTED',
-            error: dispatchErrorMessage,
-          });
-          return;
-        }
-        if (rotationConstraintError) {
-          sendResponse(409, {
-            code: 'ROTATION_UNSUPPORTED',
-            error: dispatchErrorMessage,
-          });
-          return;
-        }
-        sendResponse(500, { error: 'Print failed. Please try again.' });
-        return;
-      }
+      // Queue handoff replaces direct Node-side dispatch. Payment is settled
+      // before the BullMQ worker prepares the PDF and hands it to the C# worker.
     }
 
     // Deferred monitor start until after settlement and receipt generation
@@ -2046,6 +1945,94 @@ export class FinancialService {
       }
     }
 
+    let queuedAt: string | null = null;
+    if (mode === 'print' && serverFilename && printOptions) {
+      const enqueueIdempotencyKey =
+        idempotencyKey.trim().length > 0 ? idempotencyKey.trim() : randomUUID();
+      const payload = buildPrintJobEnqueuePayload({
+        transactionId,
+        idempotencyKey: enqueueIdempotencyKey,
+        mode: 'print',
+        sessionId: sessionId ?? null,
+        documentId: targetDocumentId ?? null,
+        serverFilename,
+        printOptions: {
+          ...printOptions,
+          printerName: telemetry.name ?? undefined,
+        },
+        requiredAmount,
+        billedColorPages: printQuotePages?.billableColorPages ?? 0,
+        billedBwPages: printQuotePages?.billableBwPages ?? 0,
+        printerName: telemetry.name ?? null,
+        spoolerCorrelationKey,
+      });
+
+      try {
+        await getPrintQueueService().enqueuePrintJob(payload);
+        queuedAt = getTrustedTimestamp().timestamp;
+      } catch (enqueueError) {
+        await upsertSpoolerFailureRefund({
+          chargedAmount: settlement.chargedAmount,
+          reason: 'Failed to enqueue worker print job after payment settlement.',
+          autoRefund: true,
+          jobContext: {
+            transactionId,
+            sessionId: sessionId ?? null,
+            documentId: targetDocumentId ?? null,
+            spoolerCorrelationKey,
+            filename: serverFilename,
+            source: 'confirm-payment-enqueue',
+          },
+        });
+        this.safeUpdateReceiptTerminalStatus({
+          transactionId,
+          status: 'refunded',
+          phase: 'worker_enqueue_failed',
+          spoolerCorrelationKey,
+          terminalAt: new Date().toISOString(),
+          reason: enqueueError instanceof Error ? enqueueError.message : String(enqueueError),
+        });
+        sendResponse(503, {
+          error: 'Print job could not be queued for the worker.',
+        });
+        return;
+      }
+
+      try {
+        await checkpointRecoverySession({
+          transactionId,
+          mode,
+          phase: 'settled',
+          requiredAmount,
+          chargedAmount: settlement.chargedAmount,
+          sessionId: sessionId ?? null,
+          documentId: targetDocumentId ?? null,
+          spoolerCorrelationKey,
+          settledAt,
+          context: {
+            filename: serverFilename,
+            queuedAt,
+          },
+        });
+      } catch (checkpointError) {
+        console.error('[CONFIRM-PAYMENT] checkpointRecoverySession failed after enqueue:', {
+          error: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+          transactionId,
+          correlationKey: spoolerCorrelationKey,
+          settledAt,
+          queuedAt,
+          filename: serverFilename,
+        });
+        this.safeUpdateReceiptTerminalStatus({
+          transactionId,
+          status: 'settled_pending_terminal',
+          phase: 'worker_checkpoint_failed',
+          spoolerCorrelationKey,
+          reason: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+        });
+      }
+    }
+
     sendResponse(200, {
       ok: true,
       transactionId,
@@ -2056,13 +2043,9 @@ export class FinancialService {
       print:
         mode === 'print'
           ? {
-              state: 'awaiting_spooler_terminal',
+              state: 'queued',
               spoolerCorrelationKey,
-              jobDispatchedAt,
-              dispatchEngine: dispatchResult?.selectedEngine ?? null,
-              dispatchMode: dispatchResult?.mode ?? null,
-              dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
-              dispatchDurationMs: dispatchResult?.durationMs ?? null,
+              queuedAt,
               monitorWindowMs: PRINT_SPOOLER_MONITOR_WINDOW_MS,
             }
           : undefined,
@@ -2108,13 +2091,13 @@ export class FinancialService {
           documentId: targetDocumentId ?? null,
           sessionId: sessionId ?? null,
           filename: serverFilename ?? null,
-          dispatchEngine: dispatchResult?.selectedEngine ?? null,
-          dispatchMode: dispatchResult?.mode ?? null,
-          dispatchRequestedMode: dispatchResult?.requestedMode ?? null,
-          dispatchDurationMs: dispatchResult?.durationMs ?? null,
-          dispatchMimeType: dispatchResult?.mimeType ?? null,
-          dispatchExtension: dispatchResult?.fileExtension ?? null,
-          dispatchAttempts: dispatchResult?.attempts.length ?? null,
+          dispatchEngine: null,
+          dispatchMode: null,
+          dispatchRequestedMode: null,
+          dispatchDurationMs: null,
+          dispatchMimeType: null,
+          dispatchExtension: null,
+          dispatchAttempts: null,
           remainingBalance: settledRemainingBalance,
           changeState: settledChangeState,
           changeRequested: settledChangeRequested,
@@ -2155,31 +2138,7 @@ export class FinancialService {
       }
     })();
 
-    if (mode === 'print' && jobDispatchedAt && !spoolerMonitorStarted) {
-      if (!telemetry.name) {
-        void this.handleMissingSpoolerTelemetry({
-          transactionId,
-          chargedAmount: settledAmount,
-          spoolerCorrelationKey,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          filename: serverFilename ?? null,
-          copies,
-          colorMode: printOptions?.colorMode ?? colorMode,
-          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
-          duplex: printOptions?.duplex ?? false,
-          pageRange: printOptions?.pageRange ?? null,
-          jobDispatchedAt,
-        }).catch((error) => {
-          console.error(
-            '[CONFIRM-PAYMENT] Missing telemetry fallback failed:',
-            error instanceof Error ? error.message : error,
-          );
-        });
-      } else {
-        startSpoolerMonitor(settledAmount, 'post_settlement');
-      }
-    } else if (mode === 'copy') {
+    if (mode === 'copy') {
       void reconcileFinalizedCopySession(transactionId).catch((error) => {
         console.error(
           '[CONFIRM-PAYMENT] Failed to reconcile finalized copy session:',

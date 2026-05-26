@@ -20,6 +20,7 @@ import {
   orchestratePrintJob,
   WorkerOrchestrationError,
 } from './print-queue.orchestration';
+import { handleQueueWorkerTerminalFailure } from '@/services/worker-print-lifecycle';
 
 /**
  * Error class for worker operations
@@ -129,6 +130,10 @@ export function createPrintJobWorker(io: Server) {
     );
 
     const isRetryable = !(err instanceof PrintWorkerError) || err.isRetryable;
+    const attemptsAllowed =
+      typeof job.opts.attempts === 'number' ? job.opts.attempts : 1;
+    const isTerminalFailure =
+      !isRetryable || job.attemptsMade >= attemptsAllowed;
 
     console.log(
       `[PRINT-WORKER] Job ${job.id} will ${
@@ -146,6 +151,25 @@ export function createPrintJobWorker(io: Server) {
       attemptNumber: job.attemptsMade,
       message: err.message,
     });
+
+    if (isTerminalFailure) {
+      void handleQueueWorkerTerminalFailure({
+        transactionId: job.data.correlation.transactionId,
+        spoolerCorrelationKey: job.data.correlation.spoolerCorrelationKey,
+        failureReason: err.message,
+        failureClass:
+          err instanceof PrintWorkerError ? err.failureClass : 'UNKNOWN_FAILURE',
+        io,
+      }).catch((handlerError) => {
+        console.error(
+          `[PRINT-WORKER] Terminal failure handler failed for ${job.id}: ${
+            handlerError instanceof Error
+              ? handlerError.message
+              : String(handlerError)
+          }`,
+        );
+      });
+    }
   });
 
   worker.on('stalled', (jobId) => {

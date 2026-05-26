@@ -231,6 +231,16 @@ export async function checkpointRecoverySession(
   return entry;
 }
 
+export function getRecoverySession(
+  transactionId: string,
+): RecoverySessionEntry | null {
+  ensureRecoveryState();
+  const match = db.data!.recovery.sessions.find(
+    (entry) => entry.id === transactionId,
+  );
+  return match ? structuredClone(match) : null;
+}
+
 export interface RecordSpoolerLifecycleTransitionInput {
   transactionId: string;
   mode: 'print' | 'copy';

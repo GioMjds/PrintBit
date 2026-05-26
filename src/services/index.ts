@@ -9,6 +9,7 @@ export * from './hopper-protocol';
 export * from './hotspot';
 export * from './job-store';
 export * from './pending-refund';
+export * from './prepare-print-pdf';
 export * from './preview';
 export * from './print-quote';
 export * from './print-lifecycle-state';

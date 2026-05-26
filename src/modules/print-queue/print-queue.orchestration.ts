@@ -36,6 +36,7 @@ import {
   buildWorkerErrorPayload,
   sendWorkerError,
 } from '@/services/worker-error-pipe';
+import { preparePrintPdf } from '@/services/prepare-print-pdf';
 
 /**
  * Result of orchestration execution
@@ -177,6 +178,7 @@ export async function orchestratePrintJob(
   const chargedAmount = job.data.financial.chargedAmount ?? 0;
   const printerService = new PrinterService();
   const uploadPath = path.resolve(UPLOAD_DIR, job.data.request.serverFilename);
+  let preparedCleanupPaths: string[] = [];
 
   try {
     // =========================================================================
@@ -219,12 +221,27 @@ export async function orchestratePrintJob(
     });
 
     // =========================================================================
-    // STAGE 2: HANDOFF TO C# WORKER
+    // STAGE 2: PREPARE FINAL PDF
+    // =========================================================================
+    currentStage = 'prepare-final-pdf';
+
+    const preparedPdf = await preparePrintPdf({
+      sourcePath: uploadPath,
+      colorMode: job.data.request.colorMode,
+      orientation: job.data.request.orientation,
+      rotationDeg: job.data.request.rotationDeg,
+      pageRange: job.data.request.pageRange,
+      duplex: job.data.request.duplex,
+    });
+    preparedCleanupPaths = preparedPdf.cleanupPaths;
+
+    // =========================================================================
+    // STAGE 3: HANDOFF TO C# WORKER
     // =========================================================================
     currentStage = 'handoff';
 
     const handoffResult = await handoffToWorker({
-      sourcePath: uploadPath,
+      sourcePath: preparedPdf.pdfPath,
       queueDir: WORKER_QUEUE_DIR ?? '',
       transactionId: ctx.transactionId,
       spoolerCorrelationKey: ctx.spoolerCorrelationKey,
@@ -241,6 +258,7 @@ export async function orchestratePrintJob(
       stage: 'handoff',
       fileName: handoffResult.fileName,
       dispatchedAt: job.data.dispatch.jobDispatchedAt,
+      preparedPages: preparedPdf.pageCount,
     });
 
     return {
@@ -309,5 +327,16 @@ export async function orchestratePrintJob(
     }
 
     throw new Error(`NON_RETRYABLE - ${failureClass}: ${failureReason}`, { cause: err });
+  } finally {
+    for (const cleanupPath of preparedCleanupPaths) {
+      try {
+        await fs.unlink(cleanupPath);
+      } catch (error) {
+        console.warn('[PRINT-WORKER] Failed to clean up prepared PDF.', {
+          cleanupPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 }
