@@ -9,14 +9,15 @@
 
 import { Queue, QueueEvents } from 'bullmq';
 import type { QueueOptions, WorkerOptions } from 'bullmq';
+import { REDIS_HOST, REDIS_PORT } from '@/config';
 
 /**
  * Redis connection configuration for BullMQ
  * Uses local Redis on kiosk with health fallback to controlled degraded mode
  */
 export const redisConfig = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
+  host: REDIS_HOST,
+  port: REDIS_PORT,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   enableOfflineQueue: false,

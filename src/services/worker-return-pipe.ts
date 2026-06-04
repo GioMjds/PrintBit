@@ -3,7 +3,9 @@ import net from 'node:net';
 export type WorkerPrintEventType =
   | 'PrintStarted'
   | 'PrintSucceeded'
-  | 'PrintFailed';
+  | 'PrintFailed'
+  | 'PrinterOffline'
+  | 'PrinterOnline';
 
 export interface WorkerPrintEvent {
   type: WorkerPrintEventType;
@@ -36,7 +38,7 @@ export function parseWorkerEventLine(
 export function mapWorkerEventToSocket(
   evt: WorkerPrintEvent,
 ): {
-  event: 'workerPrintStarted' | 'workerPrintSucceeded' | 'workerPrintFailed';
+  event: 'workerPrintStarted' | 'workerPrintSucceeded' | 'workerPrintFailed' | 'workerPrinterOffline' | 'workerPrinterOnline';
   payload: WorkerPrintEvent;
 } {
   switch (evt.type) {
@@ -46,6 +48,10 @@ export function mapWorkerEventToSocket(
       return { event: 'workerPrintSucceeded', payload: evt };
     case 'PrintFailed':
       return { event: 'workerPrintFailed', payload: evt };
+    case 'PrinterOffline':
+      return { event: 'workerPrinterOffline', payload: evt };
+    case 'PrinterOnline':
+      return { event: 'workerPrinterOnline', payload: evt };
     default:
       return { event: 'workerPrintFailed', payload: evt };
   }

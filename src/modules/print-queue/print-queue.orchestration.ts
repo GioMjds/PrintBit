@@ -240,9 +240,18 @@ export async function orchestratePrintJob(
     // =========================================================================
     currentStage = 'handoff';
 
+    if (!WORKER_QUEUE_DIR) {
+      throw new WorkerOrchestrationError(
+        'WORKER_QUEUE_DIR_NOT_SET',
+        false,
+        'handoff',
+        'PRINTBIT_WORKER_QUEUE_DIR environment variable is not set',
+      );
+    }
+
     const handoffResult = await handoffToWorker({
       sourcePath: preparedPdf.pdfPath,
-      queueDir: WORKER_QUEUE_DIR ?? '',
+      queueDir: WORKER_QUEUE_DIR,
       transactionId: ctx.transactionId,
       spoolerCorrelationKey: ctx.spoolerCorrelationKey,
     });

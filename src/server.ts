@@ -229,6 +229,27 @@ async function start() {
       onEvent: (evt) => {
         const mapped = mapWorkerEventToSocket(evt);
         io.emit(mapped.event, mapped.payload);
+
+        if (evt.type === 'PrinterOffline') {
+          io.emit('printerMalfunction', {
+            printError: {
+              code: 'PRINTER_OFFLINE',
+              severity: 'fatal',
+              userMessage: 'The printer is offline. Please check the connection.',
+              hint: evt.message ?? null,
+              canRetry: false,
+              canDismiss: false,
+            },
+          });
+        }
+
+        if (evt.type === 'PrinterOnline') {
+          io.emit('printerStatusRestored', {
+            printerName: evt.printerName ?? null,
+            timestamp: evt.timestampUtc,
+          });
+        }
+
         void handleWorkerReturnPrintEvent({
           evt,
           io,
@@ -375,8 +396,8 @@ async function start() {
     await detectDefaultPrinter();
     await assertPrintDispatcherReady();
     await warmPrintDispatcherProfile();
-    await getPrintQueueService().initialize();
     createPrintJobWorker(io);
+    await getPrintQueueService().initialize();
     await detectScanner();
     await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
       console.error(
