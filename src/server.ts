@@ -223,7 +223,10 @@ async function start() {
   try {
     await initDB();
 
-    startWorkerReturnPipeServer({
+    // Capture the handle so we can await readiness before continuing startup.
+    // This guarantees the named pipe is open and accepting connections from
+    // the C# worker before any downstream service tries to use it.
+    const workerReturnPipe = startWorkerReturnPipeServer({
       pipeName: WORKER_RETURN_PIPE_NAME,
       maxBytes: WORKER_RETURN_MAX_BYTES,
       onEvent: (evt) => {
@@ -250,6 +253,24 @@ async function start() {
           });
         }
 
+        // Hardware errors are distinct from offline/online transitions: the
+        // printer is reachable but WMI reports a non-zero DetectedErrorState
+        // (paper jam, ink empty, door open, etc.).  Emit a dedicated
+        // printerMalfunction so the UI can surface the right message.
+        if (evt.type === 'PrinterError') {
+          io.emit('printerMalfunction', {
+            printError: {
+              code: 'PRINTER_HARDWARE_ERROR',
+              severity: 'fatal',
+              userMessage:
+                'The printer reported a hardware error. Please ask staff for help.',
+              hint: evt.message ?? null,
+              canRetry: false,
+              canDismiss: false,
+            },
+          });
+        }
+
         void handleWorkerReturnPrintEvent({
           evt,
           io,
@@ -263,6 +284,12 @@ async function start() {
         });
       },
     });
+
+    // Block until the named pipe is listening.  If the bind fails (e.g. the
+    // pipe is already held by a stale process) this throws and startup is
+    // marked failed — preventing the kiosk from running without a working IPC
+    // channel to the C# hardware service.
+    await workerReturnPipe.ready;
 
     const startupMarker = await markRecoveryStartup('server_start');
     const startupTrustedTime = await verifyTrustedClockSync();

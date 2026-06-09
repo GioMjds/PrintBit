@@ -5,7 +5,8 @@ export type WorkerPrintEventType =
   | 'PrintSucceeded'
   | 'PrintFailed'
   | 'PrinterOffline'
-  | 'PrinterOnline';
+  | 'PrinterOnline'
+  | 'PrinterError';
 
 export interface WorkerPrintEvent {
   type: WorkerPrintEventType;
@@ -16,6 +17,24 @@ export interface WorkerPrintEvent {
   failureStage?: string;
   message?: string;
   timestampUtc: string;
+}
+
+/**
+ * Handle returned by `startWorkerReturnPipeServer`.
+ *
+ * - `pipePath`  — the full Windows named-pipe path the server listens on.
+ * - `server`    — the underlying `net.Server` instance.
+ * - `ready`     — resolves when the server is listening; rejects if the bind
+ *                 fails (e.g. pipe already in use).  Await this in startup
+ *                 sequences to guarantee the pipe is open before proceeding.
+ * - `close`     — gracefully stops the server and resolves when all
+ *                 connections are drained.
+ */
+export interface WorkerReturnPipeServerHandle {
+  pipePath: string;
+  server: net.Server;
+  ready: Promise<void>;
+  close: () => Promise<void>;
 }
 
 export function parseWorkerEventLine(
@@ -35,10 +54,14 @@ export function parseWorkerEventLine(
   return parsed;
 }
 
-export function mapWorkerEventToSocket(
-  evt: WorkerPrintEvent,
-): {
-  event: 'workerPrintStarted' | 'workerPrintSucceeded' | 'workerPrintFailed' | 'workerPrinterOffline' | 'workerPrinterOnline';
+export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
+  event:
+  | 'workerPrintStarted'
+  | 'workerPrintSucceeded'
+  | 'workerPrintFailed'
+  | 'workerPrinterOffline'
+  | 'workerPrinterOnline'
+  | 'workerPrinterError';
   payload: WorkerPrintEvent;
 } {
   switch (evt.type) {
@@ -52,6 +75,8 @@ export function mapWorkerEventToSocket(
       return { event: 'workerPrinterOffline', payload: evt };
     case 'PrinterOnline':
       return { event: 'workerPrinterOnline', payload: evt };
+    case 'PrinterError':
+      return { event: 'workerPrinterError', payload: evt };
     default:
       return { event: 'workerPrintFailed', payload: evt };
   }
@@ -62,7 +87,7 @@ export function startWorkerReturnPipeServer(input: {
   maxBytes: number;
   onEvent: (evt: WorkerPrintEvent) => void;
   logger?: Pick<Console, 'warn' | 'error' | 'log'>;
-}): net.Server {
+}): WorkerReturnPipeServerHandle {
   const logger = input.logger ?? console;
   const pipePath = `\\\\.\\pipe\\${input.pipeName}`;
 
@@ -87,11 +112,58 @@ export function startWorkerReturnPipeServer(input: {
         index = buffer.indexOf('\n');
       }
     });
+
+    // Catch ECONNRESET and other transient socket errors so they don't
+    // propagate as unhandled exceptions and crash the process.
+    socket.on('error', (err) => {
+      logger.warn(
+        `[WORKER_RETURN_PIPE] Socket error: ${err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    });
   });
 
-  server.listen(pipePath, () => {
-    logger.log(`[WORKER_RETURN_PIPE] Listening on ${pipePath}`);
+  // Track whether the ready promise has already settled so we don't call
+  // resolve/reject twice if both 'listening' and 'error' fire.
+  let settled = false;
+
+  const ready = new Promise<void>((resolve, reject) => {
+    server.once('listening', () => {
+      settled = true;
+      logger.log(`[WORKER_RETURN_PIPE] Listening on ${pipePath}`);
+      resolve();
+    });
+
+    server.once('error', (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`[WORKER_RETURN_PIPE] Server error: ${message}`);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
   });
 
-  return server;
+  server.listen(pipePath);
+
+  return {
+    pipePath,
+    server,
+    ready,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
+
+        server.close((err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      }),
+  };
 }

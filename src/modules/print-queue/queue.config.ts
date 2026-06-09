@@ -29,12 +29,17 @@ export const redisConfig = {
 };
 
 /**
- * Queue names for print operations
+ * Queue names for print operations.
+ *
+ * NOTE: BullMQ uses queue names as Redis key prefixes separated by colons
+ * internally, so queue names MUST NOT contain colons — they would create
+ * ambiguous Redis key paths and cause `Queue name cannot contain :` errors
+ * at startup.  Use hyphen-separated names only.
  */
 export const queueNames = {
-  printJobs: 'print:jobs',
-  printJobAttempts: 'print:attempts',
-  deadLetter: 'print:dead-letter',
+  printJobs: 'printbit-print-jobs',
+  printJobAttempts: 'printbit-print-attempts',
+  deadLetter: 'printbit-print-dead-letter',
 } as const;
 
 /**

@@ -11,6 +11,7 @@
  * Note: Admin operations (pause, resume, drain, retry) in separate service
  */
 
+import { createHash } from 'node:crypto';
 import { Queue } from 'bullmq';
 import type {
   PrintJobEnqueuePayload,
@@ -31,6 +32,30 @@ export class PrintQueueServiceError extends Error {
     super(message);
     this.name = 'PrintQueueServiceError';
   }
+}
+
+/**
+ * Build a deterministic, BullMQ-safe job ID from correlation keys.
+ *
+ * BullMQ uses queue names as Redis key prefixes separated by colons, so job
+ * IDs that contain colons create ambiguous Redis keys and cause errors at
+ * runtime.  We hash the two correlation fields that uniquely identify a job
+ * (transactionId + idempotencyKey) into a hex digest and prefix it with a
+ * human-readable label.
+ *
+ * The result is:
+ *  - Deterministic: same input always produces the same ID (idempotency).
+ *  - Colon-free: safe to use as a BullMQ job ID without Redis key collisions.
+ *  - Unique: SHA-256 collision probability is negligible for this use case.
+ */
+export function buildPrintQueueJobId(correlation: PrintJobCorrelation): string {
+  const digest = createHash('sha256')
+    .update(correlation.transactionId)
+    .update('\0')
+    .update(correlation.idempotencyKey)
+    .digest('hex');
+
+  return `printjob-${digest}`;
 }
 
 /**
@@ -76,7 +101,7 @@ export class PrintQueueService {
    * Enqueue a print job to the queue
    *
    * @param payload Complete print job payload with all context
-   * @returns Job ID (transactionId:idempotencyKey)
+   * @returns Job ID (colon-free SHA-256 hash of correlation keys)
    */
   async enqueuePrintJob(payload: PrintJobEnqueuePayload): Promise<string> {
     if (!this.queue) {
@@ -96,8 +121,9 @@ export class PrintQueueService {
         );
       }
 
-      // Use correlation keys as jobId for deduplication
-      const jobId = `${payload.correlation.transactionId}:${payload.correlation.idempotencyKey}`;
+      // Use a hash-based job ID for deduplication — colon-free to satisfy
+      // BullMQ's Redis key constraints.
+      const jobId = buildPrintQueueJobId(payload.correlation);
 
       const job = await this.queue.add('print-job', payload, {
         jobId,
@@ -150,7 +176,15 @@ export class PrintQueueService {
     }
 
     try {
-      const jobId = `${transactionId}:${idempotencyKey}`;
+      const jobId = buildPrintQueueJobId({
+        transactionId,
+        idempotencyKey,
+        // spoolerCorrelationKey is not part of the ID hash, so any value works
+        // here — we only need transactionId + idempotencyKey for lookup.
+        spoolerCorrelationKey: '',
+        sessionId: null,
+        documentId: null,
+      });
       const job = await this.queue.getJob(jobId);
 
       if (!job) {
