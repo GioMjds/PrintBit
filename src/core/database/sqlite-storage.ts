@@ -1193,7 +1193,6 @@ export class AdminLogSqliteStore {
           entry.message,
           jsonOrNull(entry.meta),
         );
-
         db.prepare(
           `DELETE FROM admin_logs
            WHERE rowid NOT IN (
@@ -1209,6 +1208,7 @@ export class AdminLogSqliteStore {
         error: error instanceof Error ? error.message : String(error),
         type: entry.type,
       });
+      throw error;
     }
   }
 
@@ -2958,13 +2958,23 @@ export class PrintJobSqliteStore {
     return {
       jobId: String(row.job_id ?? ''),
       transactionId: String(row.transaction_id ?? ''),
-      state: row.state as PrintJobState,
+      state: toPrintJobState(row.state),
       payloadJson: String(row.payload_json ?? ''),
       attemptsJson: String(row.attempts_json ?? '[]'),
       createdAt: String(row.created_at ?? ''),
       updatedAt: String(row.updated_at ?? ''),
     };
   }
+}
+
+function toPrintJobState(value: unknown): PrintJobState {
+  return value === 'pending' ||
+    value === 'processing' ||
+    value === 'printed' ||
+    value === 'failed' ||
+    value === 'retrying'
+    ? value
+    : 'failed';
 }
 
 export const adminLogStore = new AdminLogSqliteStore();
