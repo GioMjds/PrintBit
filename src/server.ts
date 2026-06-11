@@ -17,10 +17,7 @@ import {
   createCsrfProtectionMiddleware,
 } from '@/middleware';
 import { registerAppModules } from '@/app.module';
-import {
-  createPrintJobWorker,
-  getPrintQueueService,
-} from '@/modules/print-queue';
+import { getJobProcessor } from '@/modules/print-queue';
 import {
   initDB,
   assertPrintDispatcherReady,
@@ -238,7 +235,8 @@ async function start() {
             printError: {
               code: 'PRINTER_OFFLINE',
               severity: 'fatal',
-              userMessage: 'The printer is offline. Please check the connection.',
+              userMessage:
+                'The printer is offline. Please check the connection.',
               hint: evt.message ?? null,
               canRetry: false,
               canDismiss: false,
@@ -276,11 +274,14 @@ async function start() {
           io,
           sessionStore,
         }).catch((error) => {
-          console.error('[WORKER_RETURN_PIPE] Failed to process worker event.', {
-            error: error instanceof Error ? error.message : String(error),
-            eventType: evt.type,
-            transactionId: evt.transactionId ?? null,
-          });
+          console.error(
+            '[WORKER_RETURN_PIPE] Failed to process worker event.',
+            {
+              error: error instanceof Error ? error.message : String(error),
+              eventType: evt.type,
+              transactionId: evt.transactionId ?? null,
+            },
+          );
         });
       },
     });
@@ -423,8 +424,9 @@ async function start() {
     await detectDefaultPrinter();
     await assertPrintDispatcherReady();
     await warmPrintDispatcherProfile();
-    createPrintJobWorker(io);
-    await getPrintQueueService().initialize();
+    const jobProcessor = getJobProcessor();
+    jobProcessor.setIo(io);
+    await jobProcessor.init();
     await detectScanner();
     await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
       console.error(

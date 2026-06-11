@@ -21,9 +21,8 @@
 
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import type { Job } from 'bullmq';
 import type { Server } from 'socket.io';
-import type { PrintJobEnqueuePayload } from './print-job.schema';
+import type { PrintJob } from './print-job.schema';
 import { PrinterService } from '@/modules/printer/printer.service';
 import {
   UPLOAD_DIR,
@@ -72,7 +71,7 @@ export class WorkerOrchestrationError extends Error {
 /**
  * Build context for logging and Socket.IO emissions
  */
-export function buildPrintJobContext(job: Job<PrintJobEnqueuePayload>): {
+export function buildPrintJobContext(job: PrintJob): {
   transactionId: string;
   spoolerCorrelationKey: string;
   jobId: string | number;
@@ -92,7 +91,7 @@ export function buildPrintJobContext(job: Job<PrintJobEnqueuePayload>): {
  * Record attempt in job history for diagnostics
  */
 export function recordJobAttempt(
-  job: Job<PrintJobEnqueuePayload>,
+  job: PrintJob,
   attemptNumber: number,
   result: 'success' | 'retryable_failure' | 'non_retryable_failure',
   failureClass?: string,
@@ -169,7 +168,7 @@ export function recordJobAttempt(
  * - printQueueJobFailed: Job failed with failure class and retryability
  */
 export async function orchestratePrintJob(
-  job: Job<PrintJobEnqueuePayload>,
+  job: PrintJob,
   io: Server,
 ): Promise<PrintWorkerOrchestrationResult> {
   const startTime = Date.now();
@@ -218,6 +217,13 @@ export async function orchestratePrintJob(
       transactionId: ctx.transactionId,
       stage: 'preflight',
       startedAt: new Date().toISOString(),
+    });
+
+    // Also emit the legacy event that the confirm page expects for immediate feedback
+    io.emit('workerPrintStarted', {
+      transactionId: ctx.transactionId,
+      spoolerCorrelationKey: ctx.spoolerCorrelationKey,
+      timestampUtc: new Date().toISOString(),
     });
 
     // =========================================================================

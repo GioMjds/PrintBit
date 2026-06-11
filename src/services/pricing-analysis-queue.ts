@@ -1,11 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { Queue, Worker, type Job, type JobsOptions } from 'bullmq';
-import { REDIS_HOST, REDIS_PORT } from '@/config';
 
-const PRICING_ANALYSIS_QUEUE_NAME = 'pricing-analysis-jobs';
 const PRICING_ANALYSIS_JOB_NAME = 'analyze-document-pricing';
 
-type QueueJobState =
+export type QueueJobState =
   | 'waiting'
   | 'active'
   | 'completed'
@@ -36,54 +33,17 @@ type PricingAnalysisJobProcessor = (
   data: PricingAnalysisJobData,
 ) => Promise<void>;
 
-const redisConnection = {
-  host: REDIS_HOST,
-  port: REDIS_PORT,
-  maxRetriesPerRequest: null,
-  connectTimeout: 5000,
-  retryStrategy: (times: number) => {
-    // Fail fast if Redis is not available
-    if (times > 1) return null; 
-    return 50;
-  },
-};
+interface LocalJob {
+  id: string;
+  data: PricingAnalysisJobData;
+  state: QueueJobState;
+  failedReason?: string | null;
+}
 
-const jobOptions: JobsOptions = {
-  attempts: 2,
-  backoff: {
-    type: 'exponential',
-    delay: 2000,
-  },
-  removeOnComplete: 50,
-  removeOnFail: 100,
-};
-
-let queue: Queue<PricingAnalysisJobData> | null = null;
-let worker: Worker<PricingAnalysisJobData> | null = null;
+const jobStore = new Map<string, LocalJob>();
+const queue: string[] = [];
 let processor: PricingAnalysisJobProcessor | null = null;
-
-function getQueue(): Queue<PricingAnalysisJobData> {
-  if (!queue) {
-    queue = new Queue<PricingAnalysisJobData>(PRICING_ANALYSIS_QUEUE_NAME, {
-      connection: redisConnection,
-      defaultJobOptions: jobOptions,
-    });
-  }
-  return queue;
-}
-
-function mapQueueState(raw: string): QueueJobState {
-  if (
-    raw === 'waiting' ||
-    raw === 'active' ||
-    raw === 'completed' ||
-    raw === 'failed' ||
-    raw === 'delayed'
-  ) {
-    return raw;
-  }
-  return 'unknown';
-}
+let isProcessing = false;
 
 function buildStableJobId(sessionId: string, documentId: string): string {
   return `${sessionId}:${documentId}`;
@@ -100,84 +60,87 @@ export function setPricingAnalysisJobProcessor(
 }
 
 export function startPricingAnalysisWorker(): void {
-  if (worker) return;
-  worker = new Worker<PricingAnalysisJobData>(
-    PRICING_ANALYSIS_QUEUE_NAME,
-    async (job: Job<PricingAnalysisJobData>) => {
-      if (!processor) {
-        throw new Error('Pricing analysis processor is not configured.');
-      }
-      await processor(job.data);
-    },
-    {
-      connection: redisConnection,
-      concurrency: 2,
-    },
-  );
-
-  worker.on('failed', (job, error) => {
-    console.error('[pricing-analysis-queue] Worker job failed.', {
-      jobId: job?.id ?? null,
-      sessionId: job?.data.sessionId ?? null,
-      documentId: job?.data.documentId ?? null,
-      error: error.message,
-    });
-  });
+  // Local worker doesn't need explicit start, it's triggered by enqueue
+  console.info('[pricing-analysis-queue] Local worker initialized');
 }
 
 export async function enqueuePricingAnalysisJob(
   data: Omit<PricingAnalysisJobData, 'requestedAt'>,
 ): Promise<PricingAnalysisJobEnqueueResult> {
-  const currentQueue = getQueue();
   const jobId = data.forceReanalyze
     ? buildForceJobId(data.sessionId, data.documentId)
     : buildStableJobId(data.sessionId, data.documentId);
+  
   const payload: PricingAnalysisJobData = {
     ...data,
     requestedAt: new Date().toISOString(),
   };
 
   if (!data.forceReanalyze) {
-    const existingJob = await currentQueue.getJob(jobId);
-    if (existingJob) {
-      const existingState = mapQueueState(await existingJob.getState());
-      if (
-        existingState === 'waiting' ||
-        existingState === 'active' ||
-        existingState === 'delayed'
-      ) {
-        return {
-          jobId,
-          status: existingState,
-        };
-      }
+    const existing = jobStore.get(jobId);
+    if (existing && (existing.state === 'waiting' || existing.state === 'active')) {
+      return { jobId, status: existing.state };
     }
   }
 
-  const job = await currentQueue.add(PRICING_ANALYSIS_JOB_NAME, payload, {
-    jobId,
-  });
-  const queuedState = mapQueueState(await job.getState());
-  return {
-    jobId: String(job.id),
-    status: queuedState,
+  const job: LocalJob = {
+    id: jobId,
+    data: payload,
+    state: 'waiting',
   };
+
+  jobStore.set(jobId, job);
+  queue.push(jobId);
+
+  // Trigger processing
+  processNext().catch((err) => {
+    console.error('[pricing-analysis-queue] Processing loop failed', err);
+  });
+
+  return { jobId, status: 'waiting' };
+}
+
+async function processNext(): Promise<void> {
+  if (isProcessing || queue.length === 0) return;
+  isProcessing = true;
+
+  try {
+    while (queue.length > 0) {
+      const jobId = queue.shift();
+      if (!jobId) continue;
+
+      const job = jobStore.get(jobId);
+      if (!job) continue;
+
+      job.state = 'active';
+
+      try {
+        if (!processor) {
+          throw new Error('Pricing analysis processor is not configured.');
+        }
+        await processor(job.data);
+        job.state = 'completed';
+      } catch (err) {
+        console.error(`[pricing-analysis-queue] Job ${jobId} failed:`, err);
+        job.state = 'failed';
+        job.failedReason = err instanceof Error ? err.message : String(err);
+      }
+    }
+  } finally {
+    isProcessing = false;
+  }
 }
 
 export async function getPricingAnalysisJobStatus(
   jobId: string,
 ): Promise<PricingAnalysisJobStatusResult> {
-  const currentQueue = getQueue();
-  const job = await currentQueue.getJob(jobId);
+  const job = jobStore.get(jobId);
   if (!job) {
     return { jobId, status: 'unknown' };
   }
-  const state = mapQueueState(await job.getState());
-  const failedReason =
-    typeof job.failedReason === 'string' ? job.failedReason : null;
   return {
     jobId,
-    status: state,
-    failedReason,
+    status: job.state,
+    failedReason: job.failedReason,
   };
 }

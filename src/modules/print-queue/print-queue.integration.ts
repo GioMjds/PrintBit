@@ -1,7 +1,8 @@
 /**
  * Print Queue Integration for Financial Service
- *
- * Handles coordination between financial confirm-payment flow and BullMQ queue:
+ /**
+  * Handles coordination between financial confirm-payment flow and local JobProcessor:
+
  * - Creates enqueue payload from print request
  * - Manages transaction-to-job correlation
  * - Handles idempotency verification

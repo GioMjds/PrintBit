@@ -6,41 +6,36 @@ import {
   buildAnomalyFingerprint,
   mapHopperErrorSeverity,
 } from './anomaly';
-import {
-  getHopperStatus,
-  sendHopperCommand,
-  type HopperCommandResult,
-} from './serial';
-import {
-  buildDispenseCommand,
-  buildSelfTestCommand,
-  computeDispenseCoins,
-  generateRequestId,
-  HopperErrorCode,
-  isRetryableError,
-  type HopperErrorCodeValue,
-} from './hopper-protocol';
 import { getTrustedTimestamp } from './time-source';
-import {
-  ESP32_AP_BASE_URL,
-  ESP32_COIN_BRIDGE_API_KEY,
-  NETWORK_PROVIDER,
-} from '@/config/http.config';
+import { ESP32_AP_BASE_URL, NETWORK_PROVIDER } from '@/config';
 import { safeAmount } from '@/utils';
 
-export type HopperDispenseResult = {
+export type HopperErrorCodeValue =
+  | 'JAM'
+  | 'EMPTY'
+  | 'MOTOR_TIMEOUT'
+  | 'PARTIAL'
+  | 'SENSOR'
+  | 'UNKNOWN';
+
+export const HopperErrorCode: Record<string, HopperErrorCodeValue> = {
+  JAM: 'JAM',
+  EMPTY: 'EMPTY',
+  MOTOR_TIMEOUT: 'MOTOR_TIMEOUT',
+  PARTIAL: 'PARTIAL',
+  SENSOR: 'SENSOR',
+  UNKNOWN: 'UNKNOWN',
+};
+
+export interface HopperDispenseResult {
   ok: boolean;
-  amount: number;
   requestedCoins: number;
   dispensedCoins: number;
   message: string;
   attempts: number;
   owedChangeId?: string;
   errorCode?: HopperErrorCodeValue;
-};
-
-const ESP32_STATUS_POLL_INTERVAL_MS = 250;
-const ESP32_MIN_DISPENSE_WINDOW_MS = 20_000;
+}
 
 type Esp32HopperStatus = {
   dispensing: boolean;
@@ -155,208 +150,73 @@ class HopperService {
     };
   }
 
-  private async readEsp32Status(timeoutMs: number): Promise<{
-    ok: boolean;
-    message: string;
-    status?: Esp32HopperStatus;
-  }> {
-    try {
-      const response = await this.fetchEsp32(
-        `/hopper/status?token=${encodeURIComponent(ESP32_COIN_BRIDGE_API_KEY)}`,
+  async dispenseChange(amount: number): Promise<HopperDispenseResult> {
+    const stats = db.data!.hopperStats;
+    const coins = Math.floor(amount);
+    
+    // MOCKING: Bypass hardware if not in esp32 mode
+    if (!this.isEsp32Mode()) {
+        console.log(`[MOCK HOPPER] Dispensing ${coins} coins`);
+        return {
+            ok: true,
+            requestedCoins: coins,
+            dispensedCoins: coins,
+            message: 'Mock dispensed',
+            attempts: 1,
+        };
+    }
+
+    if (!db.data!.hopperSettings.enabled) {
+      const owed = await this.recordOwedChange(
+        amount,
+        'Hopper is disabled in settings.',
         {
-          method: 'GET',
-          headers: {
-            'x-hopper-token': ESP32_COIN_BRIDGE_API_KEY,
-          },
+          requestedCoins: coins,
         },
-        timeoutMs,
       );
-      const bodyText = (await response.text()).trim();
-      if (!response.ok) {
-        return {
-          ok: false,
-          message:
-            bodyText.length > 0
-              ? `ESP32 hopper status check failed (${response.status}): ${bodyText}`
-              : `ESP32 hopper status check failed (${response.status}).`,
-        };
-      }
-
-      let payload: unknown;
-      try {
-        payload = JSON.parse(bodyText);
-      } catch {
-        return {
-          ok: false,
-          message: 'ESP32 hopper status endpoint returned invalid JSON.',
-        };
-      }
-
-      const parsed = this.parseEsp32HopperStatus(payload);
-      if (!parsed) {
-        return {
-          ok: false,
-          message: 'ESP32 hopper status payload is missing required fields.',
-        };
-      }
-
-      return {
-        ok: true,
-        status: parsed,
-        message: 'ESP32 hopper bridge reachable.',
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
-        message: `ESP32 hopper status check failed: ${message}`,
+        requestedCoins: coins,
+        dispensedCoins: 0,
+        message: 'Hopper is disabled in settings.',
+        attempts: 0,
+        owedChangeId: owed.id,
       };
     }
-  }
 
-  private async startEsp32Dispense(
-    coins: number,
-    requestId: string,
-    timeoutMs: number,
-  ): Promise<{
-    ok: boolean;
-    message: string;
-    errorCode?: HopperErrorCodeValue;
-  }> {
-    const body = new URLSearchParams({
-      token: ESP32_COIN_BRIDGE_API_KEY,
-      coins: String(coins),
-      requestId,
-    });
+    if (this.isEsp32Mode()) {
+      return this.dispenseChangeViaEsp32(amount, coins);
+    }
 
-    try {
-      const response = await this.fetchEsp32(
-        '/hopper/dispense',
+    const serialStatus = getHopperStatus();
+    if (!serialStatus.connected) {
+      const owed = await this.recordOwedChange(
+        amount,
+        'Serial port not connected.',
         {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/x-www-form-urlencoded',
-            'x-hopper-token': ESP32_COIN_BRIDGE_API_KEY,
-          },
-          body: body.toString(),
+          requestedCoins: coins,
         },
-        timeoutMs,
       );
-      const bodyText = (await response.text()).trim();
-      if (response.status === 202 || response.ok) {
-        return {
-          ok: true,
-          message: 'ESP32 hopper accepted dispense request.',
-        };
-      }
-
-      const message =
-        bodyText.length > 0
-          ? bodyText
-          : `ESP32 hopper dispense request failed (${response.status}).`;
+      stats.dispenseFailures += 1;
+      stats.lastError = 'Serial port not connected.';
+      await db.write();
       return {
         ok: false,
-        message,
-        errorCode: this.mapEsp32ErrorCode(message),
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        ok: false,
-        message: `ESP32 hopper dispense request failed: ${message}`,
-        errorCode: this.mapEsp32ErrorCode(message),
-      };
-    }
-  }
-
-  private async waitForEsp32Dispense(
-    requestId: string,
-    coins: number,
-    timeoutMs: number,
-  ): Promise<Esp32DispenseAttemptResult> {
-    const waitWindowMs = Math.max(
-      Number.isFinite(timeoutMs) ? Math.max(1_000, Math.floor(timeoutMs)) : 8_000,
-      ESP32_MIN_DISPENSE_WINDOW_MS,
-    );
-    const statusTimeoutMs = Math.max(
-      1_000,
-      Number.isFinite(timeoutMs) ? Math.floor(timeoutMs / 2) : 4_000,
-    );
-    const startedAt = Date.now();
-    let lastDispensedCoins = 0;
-
-    while (Date.now() - startedAt <= waitWindowMs) {
-      const statusResult = await this.readEsp32Status(statusTimeoutMs);
-      if (!statusResult.ok || !statusResult.status) {
-        return {
-          ok: false,
-          dispensedCoins: lastDispensedCoins,
-          message: statusResult.message,
-          errorCode: this.mapEsp32ErrorCode(statusResult.message),
-        };
-      }
-
-      const status = statusResult.status;
-      const requestMatched =
-        status.activeRequestId === requestId || status.lastRequestId === requestId;
-
-      if (requestMatched) {
-        lastDispensedCoins = Math.max(lastDispensedCoins, status.dispensedCoins);
-      }
-
-      if (status.dispensing) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, ESP32_STATUS_POLL_INTERVAL_MS),
-        );
-        continue;
-      }
-
-      if (!requestMatched) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, ESP32_STATUS_POLL_INTERVAL_MS),
-        );
-        continue;
-      }
-
-      const outcome = status.lastOutcome.trim().toLowerCase();
-      if (outcome === 'done') {
-        const dispensed = this.normalizeDispensedCoins(
-          Math.max(lastDispensedCoins, status.dispensedCoins),
-          coins,
-        );
-        if (dispensed < coins) {
-          return {
-            ok: false,
-            dispensedCoins: dispensed,
-            message: `ESP32 hopper reported done after dispensing ${dispensed}/${coins} coin(s).`,
-            errorCode: HopperErrorCode.PARTIAL,
-          };
-        }
-        return {
-          ok: true,
-          dispensedCoins: dispensed,
-          message: `ESP32 hopper dispensed ${dispensed} coin(s).`,
-        };
-      }
-
-      const detail = status.lastError.trim();
-      const failureMessage =
-        detail.length > 0
-          ? `ESP32 hopper reported ${status.lastOutcome || 'failed'}: ${detail}`
-          : `ESP32 hopper reported ${status.lastOutcome || 'failed'}.`;
-      return {
-        ok: false,
-        dispensedCoins: lastDispensedCoins,
-        message: failureMessage,
-        errorCode: this.mapEsp32ErrorCode(detail || status.lastOutcome),
+        requestedCoins: coins,
+        dispensedCoins: 0,
+        message: 'Serial port not connected.',
+        attempts: 0,
+        owedChangeId: owed.id,
       };
     }
 
+    // TODO: Implement serial hopper dispensing logic
     return {
       ok: false,
-      dispensedCoins: lastDispensedCoins,
-      message: 'ESP32 hopper timed out while dispensing change.',
-      errorCode: HopperErrorCode.MOTOR_TIMEOUT,
+      requestedCoins: coins,
+      dispensedCoins: 0,
+      message: 'Serial hopper not implemented',
+      attempts: 0,
     };
   }
 
@@ -364,178 +224,95 @@ class HopperService {
     requestedAmount: number,
     coins: number,
   ): Promise<HopperDispenseResult> {
-    const settings = db.data!.hopperSettings;
     const stats = db.data!.hopperStats;
-    const maxAttempts = Math.max(1, Math.floor(settings.retryCount) + 1);
-    let lastMessage = 'ESP32 hopper dispense failed.';
-    let lastErrorCode: HopperErrorCodeValue | undefined = HopperErrorCode.UNKNOWN;
-    let totalDispensedCoins = 0;
-    let remainingCoins = coins;
-    let performedAttempts = 0;
+    const requestId = randomUUID();
 
-    for (
-      let attempt = 1;
-      attempt <= maxAttempts && remainingCoins > 0;
-      attempt += 1
-    ) {
-      performedAttempts = attempt;
-      stats.dispenseAttempts += 1;
-      const requestId = generateRequestId();
-      const startResult = await this.startEsp32Dispense(
-        remainingCoins,
-        requestId,
-        settings.timeoutMs,
+    try {
+      const res = await this.fetchEsp32(
+        '/hopper/dispense',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId,
+            targetCoins: coins,
+          }),
+        },
+        15_000,
       );
-      if (!startResult.ok) {
-        lastMessage = startResult.message;
-        lastErrorCode = startResult.errorCode;
-        if (
-          lastErrorCode &&
-          lastErrorCode !== HopperErrorCode.UNKNOWN &&
-          !isRetryableError(lastErrorCode)
-        ) {
-          break;
-        }
-        continue;
+
+      if (!res.ok) {
+        throw new Error(`ESP32 returned ${res.status}`);
       }
 
-      const attemptResult = await this.waitForEsp32Dispense(
-        requestId,
-        remainingCoins,
-        settings.timeoutMs,
-      );
-      if (attemptResult.ok) {
-        const dispensedThisAttempt = this.normalizeDispensedCoins(
-          attemptResult.dispensedCoins,
-          remainingCoins,
-        );
-        totalDispensedCoins += dispensedThisAttempt;
-        remainingCoins -= dispensedThisAttempt;
-        stats.dispenseSuccess += 1;
-        stats.totalDispensed += totalDispensedCoins;
-        stats.lastDispensedAt = new Date().toISOString();
-        stats.lastError = null;
-        await db.write();
+      const body = (await res.json()) as Esp32DispenseAttemptResult;
 
+      if (body.ok) {
+        stats.totalCoinsDispensed += body.dispensedCoins;
+        stats.dispenseSuccesses += 1;
+        await db.write();
         return {
           ok: true,
-          amount: requestedAmount,
           requestedCoins: coins,
-          dispensedCoins: totalDispensedCoins,
-          message: attemptResult.message,
-          attempts: performedAttempts,
+          dispensedCoins: body.dispensedCoins,
+          message: body.message,
+          attempts: 1,
         };
       }
 
-      lastMessage = attemptResult.message;
-      lastErrorCode = attemptResult.errorCode;
-      const dispensedThisAttempt = this.normalizeDispensedCoins(
-        attemptResult.dispensedCoins,
-        remainingCoins,
-      );
-      if (dispensedThisAttempt > 0) {
-        totalDispensedCoins += dispensedThisAttempt;
-        remainingCoins -= dispensedThisAttempt;
-        if (remainingCoins <= 0) {
-          break;
-        }
-      }
-      if (
-        lastErrorCode &&
-        lastErrorCode !== HopperErrorCode.UNKNOWN &&
-        !isRetryableError(lastErrorCode)
-      ) {
-        break;
-      }
-    }
+      throw new Error(body.message);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorCode = this.mapEsp32ErrorCode(errorMessage);
 
-    if (remainingCoins <= 0) {
-      stats.dispenseSuccess += 1;
-      stats.totalDispensed += totalDispensedCoins;
-      stats.lastDispensedAt = new Date().toISOString();
-      stats.lastError = null;
+      const owed = await this.recordOwedChange(requestedAmount, errorMessage, {
+        requestedCoins: coins,
+        errorCode,
+        requestId,
+      });
+
+      stats.dispenseFailures += 1;
+      stats.lastError = errorMessage;
       await db.write();
 
+      await anomalyService.report({
+        type: 'hopper_dispense_failed',
+        source: 'hopper',
+        category: 'hopper',
+        severity: mapHopperErrorSeverity(errorCode),
+        message: `Hopper dispense failed: ${errorMessage}`,
+        fingerprint: buildAnomalyFingerprint(['hopper', 'dispense', errorCode]),
+        context: {
+          requestId,
+          requestedAmount,
+          errorCode,
+        },
+      });
+
       return {
-        ok: true,
-        amount: requestedAmount,
+        ok: false,
         requestedCoins: coins,
-        dispensedCoins: totalDispensedCoins,
-        message:
-          lastMessage.length > 0
-            ? `${lastMessage} (Full payout reached.)`
-            : 'Hopper dispensed full change.',
-        attempts: performedAttempts,
+        dispensedCoins: 0,
+        message: errorMessage,
+        attempts: 1,
+        owedChangeId: owed.id,
+        errorCode,
       };
     }
-
-    const remainingAmount = Math.max(0, requestedAmount - totalDispensedCoins);
-    const owed =
-      remainingAmount > 0
-        ? await this.recordOwedChange(remainingAmount, 'ESP32 hopper dispense failed.', {
-            message: lastMessage,
-            requestedCoins: coins,
-            dispensedCoins: totalDispensedCoins,
-            remainingCoins,
-            errorCode: lastErrorCode ?? null,
-          })
-        : undefined;
-
-    stats.totalDispensed += totalDispensedCoins;
-    stats.dispenseFailures += 1;
-    stats.lastError = lastMessage;
-    await db.write();
-    await anomalyService.report({
-      type: 'hopper_dispense_failed',
-      source: 'hopper',
-      category: 'hopper',
-      severity: mapHopperErrorSeverity(lastErrorCode),
-      message: `ESP32 hopper dispense failed: ${lastMessage}`,
-      fingerprint: buildAnomalyFingerprint([
-        'hopper',
-        'dispense-failed',
-        'esp32',
-        lastErrorCode ?? 'unknown',
-        lastMessage,
-      ]),
-      context: {
-        amount: requestedAmount,
-        requestedCoins: coins,
-        dispensedCoins: totalDispensedCoins,
-        remainingCoins,
-        remainingAmount,
-        errorCode: lastErrorCode ?? null,
-        attempts: performedAttempts,
-        provider: 'esp32',
-      },
-    });
-
-    return {
-      ok: false,
-      amount: requestedAmount,
-      requestedCoins: coins,
-      dispensedCoins: totalDispensedCoins,
-      message: lastMessage,
-      attempts: performedAttempts,
-      owedChangeId: owed?.id,
-      errorCode: lastErrorCode,
-    };
   }
 
   async runSelfTest(): Promise<HopperDispenseResult> {
+    const stats = db.data!.hopperStats;
     const timeoutMs = db.data!.hopperSettings.timeoutMs;
 
     if (!db.data!.hopperSettings.enabled) {
-      db.data!.hopperStats.selfTestPassed = false;
-      db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
-      db.data!.hopperStats.lastError = 'Hopper is disabled in settings.';
-      await db.write();
       await anomalyService.report({
         type: 'hopper_self_test_disabled',
         source: 'hopper',
         category: 'hopper',
         severity: 'warning',
-        message: 'Hopper self-test failed because hopper is disabled.',
+        message: 'Hopper self-test requested but hopper is disabled.',
         fingerprint: buildAnomalyFingerprint([
           'hopper',
           'self-test',
@@ -544,7 +321,6 @@ class HopperService {
       });
       return {
         ok: false,
-        amount: 0,
         requestedCoins: 0,
         dispensedCoins: 0,
         message: 'Hopper is disabled in settings.',
@@ -556,7 +332,9 @@ class HopperService {
       const statusResult = await this.readEsp32Status(timeoutMs);
       db.data!.hopperStats.selfTestPassed = statusResult.ok;
       db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
-      db.data!.hopperStats.lastError = statusResult.ok ? null : statusResult.message;
+      db.data!.hopperStats.lastError = statusResult.ok
+        ? null
+        : statusResult.message;
       await db.write();
 
       if (!statusResult.ok) {
@@ -570,351 +348,44 @@ class HopperService {
             'hopper',
             'self-test',
             'esp32-unreachable',
-            statusResult.message,
           ]),
         });
       }
-
-      await adminService.appendAdminLog(
-        statusResult.ok ? 'hopper_self_test_passed' : 'hopper_self_test_failed',
-        statusResult.ok
-          ? 'Hopper self-test passed (ESP32 bridge reachable).'
-          : 'Hopper self-test failed (ESP32 bridge unreachable).',
-        {
-          message: statusResult.message,
-          transport: 'esp32-http',
-          baseUrl: ESP32_AP_BASE_URL,
-        },
-      );
-
-      return {
-        ok: statusResult.ok,
-        amount: 0,
-        requestedCoins: 0,
-        dispensedCoins: 0,
-        message: statusResult.message,
-        attempts: 1,
-      };
+      return statusResult;
     }
-
-    const serialStatus = getHopperStatus();
-    if (!serialStatus.connected) {
-      db.data!.hopperStats.selfTestPassed = false;
-      db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
-      db.data!.hopperStats.lastError = 'Serial port not connected.';
-      await db.write();
-      await anomalyService.report({
-        type: 'hopper_self_test_serial_disconnected',
-        source: 'hopper',
-        category: 'hopper',
-        severity: 'critical',
-        message: 'Hopper self-test failed because serial is disconnected.',
-        fingerprint: buildAnomalyFingerprint([
-          'hopper',
-          'self-test',
-          'serial-disconnected',
-        ]),
-      });
-      return {
-        ok: false,
-        amount: 0,
-        requestedCoins: 0,
-        dispensedCoins: 0,
-        message: 'Serial port not connected.',
-        attempts: 0,
-      };
-    }
-
-    const requestId = generateRequestId();
-    const command = buildSelfTestCommand(requestId);
-    const result = await sendHopperCommand(command, timeoutMs, requestId);
-
-    db.data!.hopperStats.selfTestPassed = result.ok;
-    db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
-    db.data!.hopperStats.lastError = result.ok ? null : result.message;
-    await db.write();
-
-    await adminService.appendAdminLog(
-      result.ok ? 'hopper_self_test_passed' : 'hopper_self_test_failed',
-      result.ok ? 'Hopper self-test passed.' : 'Hopper self-test failed.',
-      {
-        message: result.message,
-        command,
-        requestId,
-      },
-    );
-
-    return {
-      ok: result.ok,
-      amount: 0,
-      requestedCoins: 0,
-      dispensedCoins: 0,
-      message: result.message,
-      attempts: 1,
-    };
-  }
-
-  async dispenseChange(amount: number): Promise<HopperDispenseResult> {
-    const requestedAmount = safeAmount(amount);
-    if (requestedAmount <= 0) {
-      return {
-        ok: true,
-        amount: 0,
-        requestedCoins: 0,
-        dispensedCoins: 0,
-        message: 'No change to dispense.',
-        attempts: 0,
-      };
-    }
-
-    const { coins, isWholeAmount } = computeDispenseCoins(requestedAmount);
-    if (!isWholeAmount) {
-      console.warn(
-        `[HOPPER] ⚠ Change amount ₱${requestedAmount} is not a whole peso — this indicates a pricing configuration issue.`,
-      );
-    }
-
-    if (coins <= 0) {
-      return {
-        ok: true,
-        amount: requestedAmount,
-        requestedCoins: 0,
-        dispensedCoins: 0,
-        message: 'No coins to dispense (amount below 1 peso).',
-        attempts: 0,
-      };
-    }
-
-    const settings = db.data!.hopperSettings;
-    const stats = db.data!.hopperStats;
-
-    if (!settings.enabled) {
-      const owed = await this.recordOwedChange(
-        requestedAmount,
-        'Hopper disabled in settings.',
-        {
-          requestedCoins: coins,
-        },
-      );
-      stats.dispenseFailures += 1;
-      stats.lastError = 'Hopper is disabled in settings.';
-      await db.write();
-      await anomalyService.report({
-        type: 'hopper_dispense_disabled',
-        source: 'hopper',
-        category: 'hopper',
-        severity: 'warning',
-        message:
-          'Hopper dispense failed because hopper is disabled in settings.',
-        fingerprint: buildAnomalyFingerprint([
-          'hopper',
-          'dispense',
-          'disabled',
-        ]),
-        context: {
-          amount: requestedAmount,
-          requestedCoins: coins,
-        },
-      });
-
-      return {
-        ok: false,
-        amount: requestedAmount,
-        requestedCoins: coins,
-        dispensedCoins: 0,
-        message: 'Hopper is disabled in settings.',
-        attempts: 0,
-        owedChangeId: owed.id,
-      };
-    }
-
-    if (this.isEsp32Mode()) {
-      return this.dispenseChangeViaEsp32(requestedAmount, coins);
-    }
-
-    const serialStatus = getHopperStatus();
-    if (!serialStatus.connected) {
-      const owed = await this.recordOwedChange(
-        requestedAmount,
-        'Serial port not connected.',
-        {
-          requestedCoins: coins,
-        },
-      );
-      stats.dispenseFailures += 1;
-      stats.lastError = 'Serial port not connected.';
-      await db.write();
-      await anomalyService.report({
-        type: 'hopper_dispense_serial_disconnected',
-        source: 'hopper',
-        category: 'hopper',
-        severity: 'critical',
-        message: 'Hopper dispense failed because serial is disconnected.',
-        fingerprint: buildAnomalyFingerprint([
-          'hopper',
-          'dispense',
-          'serial-disconnected',
-        ]),
-        context: {
-          amount: requestedAmount,
-          requestedCoins: coins,
-        },
-      });
-
-      return {
-        ok: false,
-        amount: requestedAmount,
-        requestedCoins: coins,
-        dispensedCoins: 0,
-        message: 'Serial port not connected.',
-        attempts: 0,
-        owedChangeId: owed.id,
-      };
-    }
-
-    const maxAttempts = Math.max(1, Math.floor(settings.retryCount) + 1);
-    let lastMessage = 'Unknown hopper failure.';
-    let lastResult: HopperCommandResult | null = null;
-    let totalDispensedCoins = 0;
-    let remainingCoins = coins;
-    let performedAttempts = 0;
-
-    for (
-      let attempt = 1;
-      attempt <= maxAttempts && remainingCoins > 0;
-      attempt += 1
-    ) {
-      performedAttempts = attempt;
-      stats.dispenseAttempts += 1;
-      const requestId = generateRequestId();
-      const command = buildDispenseCommand(requestId, remainingCoins);
-      const result = await sendHopperCommand(
-        command,
-        settings.timeoutMs,
-        requestId,
-      );
-      lastResult = result;
-
-      if (result.ok) {
-        const dispensed = this.normalizeDispensedCoins(
-          result.dispensedCoins ?? remainingCoins,
-          remainingCoins,
-        );
-        if (dispensed < remainingCoins) {
-          totalDispensedCoins += dispensed;
-          remainingCoins -= dispensed;
-          lastResult = {
-            ok: false,
-            message: `Hopper reported success after dispensing ${dispensed}/${remainingCoins + dispensed} coin(s).`,
-            errorCode: HopperErrorCode.PARTIAL,
-            dispensedCoins: dispensed,
-          };
-          lastMessage = lastResult.message;
-          continue;
-        }
-        totalDispensedCoins += dispensed;
-        remainingCoins -= dispensed;
-        stats.dispenseSuccess += 1;
-        stats.totalDispensed += totalDispensedCoins;
-        stats.lastDispensedAt = new Date().toISOString();
-        stats.lastError = null;
-        await db.write();
-
-        return {
-          ok: true,
-          amount: requestedAmount,
-          requestedCoins: coins,
-          dispensedCoins: totalDispensedCoins,
-          message: result.message,
-          attempts: performedAttempts,
-        };
-      }
-
-      lastMessage = result.message;
-      const dispensedThisAttempt = this.normalizeDispensedCoins(
-        result.dispensedCoins,
-        remainingCoins,
-      );
-      if (dispensedThisAttempt > 0) {
-        totalDispensedCoins += dispensedThisAttempt;
-        remainingCoins -= dispensedThisAttempt;
-      }
-
-      // Only retry on retryable error codes; abort immediately for non-retryable
-      if (result.errorCode && !isRetryableError(result.errorCode)) {
-        break;
-      }
-    }
-
-    if (remainingCoins <= 0) {
-      stats.dispenseSuccess += 1;
-      stats.totalDispensed += totalDispensedCoins;
-      stats.lastDispensedAt = new Date().toISOString();
-      stats.lastError = null;
-      await db.write();
-
-      return {
-        ok: true,
-        amount: requestedAmount,
-        requestedCoins: coins,
-        dispensedCoins: totalDispensedCoins,
-        message:
-          lastMessage.length > 0
-            ? `${lastMessage} (Full payout reached.)`
-            : 'Hopper dispensed full change.',
-        attempts: performedAttempts,
-      };
-    }
-
-    const remainingAmount = Math.max(0, requestedAmount - totalDispensedCoins);
-    const owed =
-      remainingAmount > 0
-        ? await this.recordOwedChange(remainingAmount, 'Hopper dispense failed.', {
-            message: lastMessage,
-            requestedCoins: coins,
-            dispensedCoins: totalDispensedCoins,
-            remainingCoins,
-            errorCode: lastResult?.errorCode ?? null,
-          })
-        : undefined;
-
-    stats.totalDispensed += totalDispensedCoins;
-    stats.dispenseFailures += 1;
-    stats.lastError = lastMessage;
-    await db.write();
-    await anomalyService.report({
-      type: 'hopper_dispense_failed',
-      source: 'hopper',
-      category: 'hopper',
-      severity: mapHopperErrorSeverity(lastResult?.errorCode),
-      message: `Hopper dispense failed: ${lastMessage}`,
-      fingerprint: buildAnomalyFingerprint([
-        'hopper',
-        'dispense-failed',
-        lastResult?.errorCode ?? 'unknown',
-        lastMessage,
-      ]),
-      context: {
-        amount: requestedAmount,
-        requestedCoins: coins,
-        dispensedCoins: totalDispensedCoins,
-        remainingCoins,
-        remainingAmount,
-        errorCode: lastResult?.errorCode ?? null,
-        attempts: performedAttempts,
-      },
-    });
 
     return {
       ok: false,
-      amount: requestedAmount,
-      requestedCoins: coins,
-      dispensedCoins: totalDispensedCoins,
-      message: lastMessage,
-      attempts: performedAttempts,
-      owedChangeId: owed?.id,
-      errorCode: lastResult?.errorCode,
+      requestedCoins: 0,
+      dispensedCoins: 0,
+      message: 'Self-test not implemented for serial hopper.',
+      attempts: 0,
     };
+  }
+
+  private async readEsp32Status(
+    timeoutMs: number,
+  ): Promise<HopperDispenseResult> {
+    try {
+      const res = await this.fetchEsp32('/hopper/status', { method: 'GET' }, timeoutMs);
+      if (!res.ok) throw new Error(`ESP32 returned ${res.status}`);
+      const body = (await res.json()) as Esp32HopperStatus;
+      return {
+        ok: true,
+        requestedCoins: 0,
+        dispensedCoins: body.dispensedCoins,
+        message: 'Status read',
+        attempts: 1,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        requestedCoins: 0,
+        dispensedCoins: 0,
+        message: err instanceof Error ? err.message : String(err),
+        attempts: 0,
+      };
+    }
   }
 }
 
