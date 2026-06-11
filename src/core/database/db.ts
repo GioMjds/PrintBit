@@ -252,6 +252,23 @@ export interface AdminLogEntry {
   meta?: LogMeta;
 }
 
+export type PrintJobState =
+  | 'pending'
+  | 'processing'
+  | 'printed'
+  | 'failed'
+  | 'retrying';
+
+export interface PrintJobEntry {
+  jobId: string;
+  transactionId: string;
+  state: PrintJobState;
+  payloadJson: string;
+  attemptsJson: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type FeedbackCategory =
   | 'service'
   | 'hardware'

@@ -47,7 +47,7 @@ import { monitorSpoolerJob } from '@/services/print-spooler';
 import { PRINT_SPOOLER_MONITOR_WINDOW_MS } from '@/config';
 import {
   buildPrintJobEnqueuePayload,
-  getPrintQueueService,
+  getJobProcessor,
 } from '@/modules/print-queue';
 import { checkpointRecoverySession } from '@/services/recovery';
 import { upsertSpoolerFailureRefund } from '@/services/pending-refund';
@@ -577,7 +577,7 @@ export class CopyService {
         spoolerCorrelationKey: correlationKey,
       });
 
-      await getPrintQueueService().enqueuePrintJob(payload);
+      await getJobProcessor().enqueue(payload);
     } catch (error) {
       await upsertSpoolerFailureRefund({
         chargedAmount: settlement.chargedAmount,

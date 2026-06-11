@@ -15,49 +15,6 @@ This guide explains what software to install, what dependencies are used, and ho
 - **pnpm:** `10.13.1` (as declared by `packageManager` in `package.json`).
 - **Git:** latest stable.
 
-## Kiosk/production integrations
-
-- **PDFtoPrinter** at: `bin/PDFtoPrinter.exe` (or configured via `PRINTBIT_PDFTOPRINTER_PATH`).
-- **GhostScript** (`gswin64c.exe`) installed and discoverable via PATH or `PRINTBIT_GHOSTSCRIPT_PATH`.
-- **LibreOffice** (`soffice.exe`) installed and discoverable via PATH or `PRINTBIT_LIBREOFFICE_PATH`.
-- **Optional phased fallback:** SumatraPDF portable executable at `bin/SumatraPDF.exe` (or `PRINTBIT_SUMATRA_PATH`).
-- **MyPublicWiFi** (used for hotspot/captive behavior integration).
-- **Printer driver package** for the production printer model.
-- **Scanner driver package / TWAIN/WIA support** for the scanner model.
-- **Serial/USB drivers** for coin acceptor and hopper controller (Arduino or equivalent).
-
-## Redis + BullMQ for Windows Tablet
-
-PrintBit uses **BullMQ** for background print orchestration, and BullMQ requires a running **Redis** instance.
-
-- **BullMQ** is installed with the app through `pnpm install` and updated with normal package updates.
-- **Redis** is a separate service that must be installed and running on the Windows tablet or on a reachable network host.
-- **Recommended kiosk setup:** run Redis locally on the tablet so print jobs stay available even if the network is unstable.
-
-### Windows tablet install/update options
-
-1. Install Redis as a Windows service on the tablet, or use a trusted Redis build/package that supports Windows service registration.
-2. Set `REDIS_HOST` and `REDIS_PORT` in the kiosk environment if Redis is not listening on `localhost:6379`.
-3. Verify Redis after install or update with `redis-cli ping` or an equivalent health check.
-4. Restart the PrintBit app or service after Redis changes so BullMQ reconnects cleanly.
-
-### Recommended update flow on the tablet
-
-When updating PrintBit on a Windows tablet, update Redis and BullMQ in this order:
-
-1. Stop the PrintBit app or kiosk service.
-2. Update Redis if the kiosk host is also running the Redis service.
-3. Run `pnpm install` to update `bullmq` and the rest of the Node dependencies.
-4. Run `pnpm run build` to rebuild the client bundles.
-5. Run `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` to confirm TypeScript still passes.
-6. Start the PrintBit app or kiosk service again.
-
-### Quick Redis checks on the tablet
-
-- Confirm the Redis service is running before starting PrintBit.
-- Confirm the port is reachable from the tablet itself if Redis is remote.
-- If BullMQ jobs stop processing, check Redis first before restarting the app.
-
 ## 3) Node package dependencies used by this project
 
 ## App dependencies (runtime)
@@ -68,7 +25,6 @@ When updating PrintBit on a Windows tablet, update Redis and BullMQ in this orde
 - **Document/media:** `pdfjs`, `pdfjs-dist`, `canvas`, `sharp`, `qrcode`.
 - **Security/hash:** `argon2`.
 - **Hardware/serial:** `serialport`, `@serialport/parser-readline`.
-- **Queue/orchestration:** `bullmq`.
 
 ## Development dependencies
 
@@ -109,13 +65,12 @@ pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 
 Use this when applying a new PrintBit build on the Windows kiosk/tablet:
 
-1. Verify the Redis service is online.
-2. Pull the latest PrintBit changes.
-3. Run `pnpm install` so `bullmq` and other dependencies match `package.json`.
-4. Run `pnpm run build` to rebuild the browser bundles.
-5. Run `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` to catch regressions.
-6. Restart the PrintBit process or kiosk service.
-7. Confirm the confirm page receipt QR still opens `/receipt/t/:token` and the receipt page loads.
+1. Pull the latest PrintBit changes.
+2. Run `pnpm install` so dependencies match `package.json`.
+3. Run `pnpm run build` to rebuild the browser bundles.
+4. Run `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` to catch regressions.
+5. Restart the PrintBit process or kiosk service.
+6. Confirm the confirm page receipt QR still opens `/receipt/t/:token` and the receipt page loads.
 
 ## 5) Preflight checklist (recommended)
 
@@ -129,7 +84,6 @@ Use this when applying a new PrintBit build on the Windows kiosk/tablet:
 - Serial coin/hopper controller is connected and readable.
 - `uploads/` directory is writable.
 - `printbit.sqlite` exists (or can be created by app init).
-- Redis is reachable from the tablet and BullMQ can connect.
 - Admin PIN and pricing configured through admin settings.
 
 ## 6) Common installation issues
@@ -144,10 +98,6 @@ Use this when applying a new PrintBit build on the Windows kiosk/tablet:
   - Confirm scanner drivers and device permissions.
 - **Hotspot features unavailable:**
   - Verify MyPublicWiFi installation and local permissions.
-- **BullMQ jobs are not processing:**
-  - Verify Redis is running, reachable, and using the configured host/port.
-  - Restart PrintBit after Redis restarts so the worker reconnects.
-  - Re-run `pnpm install` if `bullmq` was updated.
 
 ## 7) Related docs
 

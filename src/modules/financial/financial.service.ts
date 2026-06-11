@@ -73,7 +73,7 @@ import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 import {
   buildPrintJobEnqueuePayload,
-  getPrintQueueService,
+  getJobProcessor,
 } from '@/modules/print-queue';
 
 export interface FinancialServiceDeps {
@@ -204,7 +204,8 @@ function buildAnalysisUnavailablePayload(target: UploadedDocument): {
   if (target.analysisStatus === 'pending') {
     return {
       code: 'ANALYSIS_PENDING',
-      error: 'Document analysis is still in progress. Please wait and try again.',
+      error:
+        'Document analysis is still in progress. Please wait and try again.',
     };
   }
 
@@ -218,7 +219,8 @@ function buildAnalysisUnavailablePayload(target: UploadedDocument): {
 
   return {
     code: 'ANALYSIS_UNAVAILABLE',
-    error: 'Document analysis is unavailable. Re-upload the file and try again.',
+    error:
+      'Document analysis is unavailable. Re-upload the file and try again.',
   };
 }
 
@@ -345,7 +347,9 @@ export class FinancialService {
     const id = randomUUID();
     const previous = state.financialLedger[0] ?? null;
     const previousHash = previous?.hash ?? null;
-    const amount = Number.isFinite(coinValue) ? Number(coinValue.toFixed(2)) : 0;
+    const amount = Number.isFinite(coinValue)
+      ? Number(coinValue.toFixed(2))
+      : 0;
     const meta = {
       source,
       balance: state.balance,
@@ -686,11 +690,7 @@ export class FinancialService {
     const queryEventIdRaw = Array.isArray(queryEventId)
       ? queryEventId[0]
       : queryEventId;
-    let eventId = (
-      req.get('x-coin-event-id') ??
-      queryEventIdRaw ??
-      ''
-    ).trim();
+    let eventId = (req.get('x-coin-event-id') ?? queryEventIdRaw ?? '').trim();
     if (!eventId && !ESP32_COIN_BRIDGE_RELAXED_MODE) {
       await adminService.appendAdminLog(
         'coin_rejected_missing_event_id',
@@ -719,7 +719,10 @@ export class FinancialService {
       ? querySource[0]
       : querySource;
     const source = (req.get('x-coin-source') ?? querySourceRaw ?? '').trim();
-    if (!ESP32_COIN_BRIDGE_RELAXED_MODE && source !== ESP32_COIN_BRIDGE_SOURCE) {
+    if (
+      !ESP32_COIN_BRIDGE_RELAXED_MODE &&
+      source !== ESP32_COIN_BRIDGE_SOURCE
+    ) {
       await adminService.appendAdminLog(
         'coin_rejected_invalid_source',
         'ESP32 /coin rejected due to invalid source.',
@@ -1352,7 +1355,7 @@ export class FinancialService {
       billableColorPages: number;
       billableBwPages: number;
       effectiveColorMode: 'colored' | 'grayscale';
-      billingPageDetection: 
+      billingPageDetection:
         | 'high-confidence-page-detection'
         | 'fallback-assumptions';
       analysisConfidence: 'high' | 'medium' | 'low';
@@ -1684,7 +1687,7 @@ export class FinancialService {
       }
 
       // Queue handoff replaces direct Node-side dispatch. Payment is settled
-      // before the BullMQ worker prepares the PDF and hands it to the C# worker.
+      // before the local JobProcessor prepares the PDF and hands it to the C# worker.
     }
 
     // Deferred monitor start until after settlement and receipt generation
@@ -1780,8 +1783,14 @@ export class FinancialService {
         mode,
         chargedAmount: settlement.chargedAmount,
         // persist color/BW counts when known from quote
-        colorPages: typeof printQuotePages?.billableColorPages === 'number' ? printQuotePages?.billableColorPages : null,
-        bwPages: typeof printQuotePages?.billableBwPages === 'number' ? printQuotePages?.billableBwPages : null,
+        colorPages:
+          typeof printQuotePages?.billableColorPages === 'number'
+            ? printQuotePages?.billableColorPages
+            : null,
+        bwPages:
+          typeof printQuotePages?.billableBwPages === 'number'
+            ? printQuotePages?.billableBwPages
+            : null,
         status: initialStatus,
         change: {
           requested: settlement.change.requested,
@@ -1832,7 +1841,10 @@ export class FinancialService {
         token: tokenData.token,
         tokenId: tokenData.tokenId,
         expiresAt: tokenData.expiresAt,
-        viewUrl: new URL(`/receipt/t/${encodedToken}`, publicBaseUrl).toString(),
+        viewUrl: new URL(
+          `/receipt/t/${encodedToken}`,
+          publicBaseUrl,
+        ).toString(),
         apiUrl: new URL(
           `/api/receipts/by-token/${encodedToken}`,
           publicBaseUrl,
@@ -1902,7 +1914,8 @@ export class FinancialService {
           ? 0
           : 1;
       const estimatedSheetsUsed =
-        Math.max(1, copies) * Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
+        Math.max(1, copies) *
+        Math.ceil(selectedPages / (duplexEnabled ? 2 : 1));
       const billingPageDetection = isPrintMode
         ? (printQuotePages?.billingPageDetection ?? 'fallback-assumptions')
         : 'fallback-assumptions';
@@ -1968,12 +1981,13 @@ export class FinancialService {
       });
 
       try {
-        await getPrintQueueService().enqueuePrintJob(payload);
+        await getJobProcessor().enqueue(payload);
         queuedAt = getTrustedTimestamp().timestamp;
       } catch (enqueueError) {
         await upsertSpoolerFailureRefund({
           chargedAmount: settlement.chargedAmount,
-          reason: 'Failed to enqueue worker print job after payment settlement.',
+          reason:
+            'Failed to enqueue worker print job after payment settlement.',
           autoRefund: true,
           jobContext: {
             transactionId,
@@ -1990,7 +2004,10 @@ export class FinancialService {
           phase: 'worker_enqueue_failed',
           spoolerCorrelationKey,
           terminalAt: new Date().toISOString(),
-          reason: enqueueError instanceof Error ? enqueueError.message : String(enqueueError),
+          reason:
+            enqueueError instanceof Error
+              ? enqueueError.message
+              : String(enqueueError),
         });
         sendResponse(503, {
           error: 'Print job could not be queued for the worker.',
@@ -2015,20 +2032,29 @@ export class FinancialService {
           },
         });
       } catch (checkpointError) {
-        console.error('[CONFIRM-PAYMENT] checkpointRecoverySession failed after enqueue:', {
-          error: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
-          transactionId,
-          correlationKey: spoolerCorrelationKey,
-          settledAt,
-          queuedAt,
-          filename: serverFilename,
-        });
+        console.error(
+          '[CONFIRM-PAYMENT] checkpointRecoverySession failed after enqueue:',
+          {
+            error:
+              checkpointError instanceof Error
+                ? checkpointError.message
+                : String(checkpointError),
+            transactionId,
+            correlationKey: spoolerCorrelationKey,
+            settledAt,
+            queuedAt,
+            filename: serverFilename,
+          },
+        );
         this.safeUpdateReceiptTerminalStatus({
           transactionId,
           status: 'settled_pending_terminal',
           phase: 'worker_checkpoint_failed',
           spoolerCorrelationKey,
-          reason: checkpointError instanceof Error ? checkpointError.message : String(checkpointError),
+          reason:
+            checkpointError instanceof Error
+              ? checkpointError.message
+              : String(checkpointError),
         });
       }
     }

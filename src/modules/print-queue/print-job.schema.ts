@@ -1,7 +1,7 @@
 /**
  * Print Queue Job Payload Schema
  *
- * Defines the structure of print jobs enqueued to BullMQ with:
+ * Defines the structure of print jobs enqueued to the local JobProcessor with:
  * - Correlation tracking (transactionId, spoolerCorrelationKey)
  * - Versioning for backward compatibility
  * - Idempotency support (idempotencyKey)
@@ -268,6 +268,10 @@ export interface PrintJobContext {
 }
 
 /**
- * Type for BullMQ job data
+ * Generic Print Job interface for local JobProcessor
  */
-export type PrintQueueJobData = PrintJobEnqueuePayload;
+export interface PrintJob {
+  id: string;
+  data: PrintJobEnqueuePayload;
+  attemptsMade: number;
+}

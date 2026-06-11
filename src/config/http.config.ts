@@ -286,9 +286,3 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
   },
 ];
 
-export const REDIS_HOST = process.env.REDIS_HOST?.trim() || '127.0.0.1';
-export const REDIS_PORT = readPositiveIntEnv(
-  process.env.REDIS_PORT?.trim(),
-  6379,
-  1,
-);

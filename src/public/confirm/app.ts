@@ -840,7 +840,7 @@ if (!persistedFingerprintMatchesCurrent) {
 let latestPrinterStatusLabel = 'Checking...';
 const spoolerTimedOut = false;
 
-const NETWORK_REQUEST_TIMEOUT_MS = 30_000;
+const NETWORK_REQUEST_TIMEOUT_MS = 90_000;
 
 let currentTransactionId: string | null = null;
 let currentReceiptUrl: string | null = null;

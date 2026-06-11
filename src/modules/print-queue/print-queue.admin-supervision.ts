@@ -15,7 +15,7 @@
  */
 export interface AdminQueueJobRecord {
   /**
-   * BullMQ job ID
+   * Job processor ID
    */
   jobId: string | number;
 
@@ -87,7 +87,11 @@ export interface AdminQueueAttemptRecord {
   /**
    * Attempt outcome
    */
-  result: 'success' | 'retryable_failure' | 'non_retryable_failure' | 'manual_review';
+  result:
+    | 'success'
+    | 'retryable_failure'
+    | 'non_retryable_failure'
+    | 'manual_review';
 
   /**
    * Failure reason if not success
