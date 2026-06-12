@@ -260,6 +260,12 @@ export async function orchestratePrintJob(
       queueDir: WORKER_QUEUE_DIR,
       transactionId: ctx.transactionId,
       spoolerCorrelationKey: ctx.spoolerCorrelationKey,
+      printSettings: {
+        copies: job.data.request.copies,
+        color: job.data.request.colorMode === 'colored',
+        pageRange: job.data.request.pageRange,
+        orientation: job.data.request.orientation,
+      },
     });
 
     job.data.dispatch.jobDispatchedAt = new Date().toISOString();

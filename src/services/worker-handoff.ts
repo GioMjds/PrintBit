@@ -21,6 +21,12 @@ export async function handoffToWorker(input: {
   queueDir: string;
   transactionId: string;
   spoolerCorrelationKey: string;
+  printSettings?: {
+    copies?: number;
+    color?: boolean;
+    pageRange?: string | null;
+    orientation?: string | null;
+  };
 }): Promise<{ targetPath: string; fileName: string }> {
   if (!input.queueDir || input.queueDir.trim().length === 0) {
     throw new WorkerHandoffError(
@@ -60,19 +66,37 @@ export async function handoffToWorker(input: {
   }
 
   const safeSegment = (value: string) => value.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const fileName = `${safeSegment(input.transactionId)}_${safeSegment(input.spoolerCorrelationKey)}_${Date.now()}${ext}`;
+  const baseName = `${safeSegment(input.transactionId)}_${safeSegment(input.spoolerCorrelationKey)}_${Date.now()}`;
+  const fileName = `${baseName}${ext}`;
   const targetPath = path.join(input.queueDir, fileName);
   const tempPath = `${targetPath}.tmp`;
+  const jsonPath = path.join(input.queueDir, `${baseName}.json`);
 
   try {
+    // Write the PDF first via atomic temp+rename, then write the JSON sidecar
+    // last. The C# worker watches for *.json files and immediately looks for a
+    // matching *.pdf — writing the PDF first guarantees it is on disk when the
+    // watcher picks up the JSON trigger.
     await fs.copyFile(input.sourcePath, tempPath);
     await fs.rename(tempPath, targetPath);
+
+    const sidecar = {
+      copies: input.printSettings?.copies ?? 1,
+      color: input.printSettings?.color ?? false,
+      pageRange: input.printSettings?.pageRange ?? null,
+      orientation: input.printSettings?.orientation ?? null,
+    };
+    await fs.writeFile(jsonPath, JSON.stringify(sidecar), 'utf-8');
+
     return { targetPath, fileName };
-  } catch {
-    try {
-      await fs.unlink(tempPath);
-    } catch {
-      // ignore cleanup errors
+  } catch (err) {
+    // Clean up partial files on failure
+    for (const partial of [tempPath, targetPath, jsonPath]) {
+      try {
+        await fs.unlink(partial);
+      } catch {
+        // ignore cleanup errors
+      }
     }
 
     throw new WorkerHandoffError(
