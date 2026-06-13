@@ -16,7 +16,7 @@ applyTo: 'scripts/**/*.ps1,**/*.ps1'
 
 ## Kiosk user context
 
-- The kiosk runs under the `PrintBitKiosk` Windows user account.
+- The kiosk runs under the `printbit` Windows user account.
 - Scripts that configure Assigned Access, Shell Launcher, or lockdown settings must target this account explicitly.
 - Do not assume the running user is an admin; scripts that require elevation must call `Start-Process -Verb RunAs`.
 

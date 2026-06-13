@@ -5,25 +5,23 @@ This guide is for preparing a **Windows tablet** for PrintBit kiosk deployment w
 ## 1) Target environment
 
 - Windows 10/11 tablet (kiosk device)
-- Dedicated kiosk local user account
-- Separate admin/service account for maintenance
+- Dedicated kiosk local user account (`printbit`)
+- Separate admin/service account for maintenance (`printbit-admin`)
 
 ## 2) Required software and drivers
 
 Install these first:
 
-- Node.js 20.x LTS
+- Node.js 22.x LTS (required for built-in `node:sqlite` support)
 - pnpm `10.13.1`
+- .NET 10 SDK / Runtime (required for C# worker service)
 - Git
 - Microsoft Edge (latest stable)
-- Print dispatcher binaries available for selected mode:
-  - `bin/PDFtoPrinter.exe` (or `PRINTBIT_PDFTOPRINTER_PATH`)
-  - GhostScript (`gswin64c.exe`) via PATH or `PRINTBIT_GHOSTSCRIPT_PATH`
-  - LibreOffice (`soffice.exe`) via PATH or `PRINTBIT_LIBREOFFICE_PATH`
-  - Optional Sumatra fallback (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`) for phased mode
+- C# Worker Service & SumatraPDF (handles print queue and dispatch in production):
+  - SumatraPDF (`SumatraPDF.exe`) placed in `C:\Users\printbit\bin\SumatraPDF.exe` (or configured via worker settings)
 - Printer driver package (production printer)
 - Scanner driver + NAPS2 (`C:\Program Files\NAPS2\NAPS2.Console.exe`)
-- Serial/USB drivers for coin acceptor / hopper controller
+- Serial/USB drivers for coin acceptor / hopper controller (Node.js backend communicates with ESP32)
 
 ## 2.1) Windows Time Service & NTP baseline
 
@@ -54,6 +52,8 @@ w32tm /query /status
 
 ## 3) PrintBit app installation
 
+### 3.1) Node.js Backend App
+
 From the project root:
 
 ```powershell
@@ -68,20 +68,61 @@ Validate launcher scripts exist:
 - `scripts\start-kiosk.bat`
 - `scripts\install-startup.ps1`
 
+### 3.2) C# Worker Service (.NET 10)
+
+In production kiosk mode, the C# worker handles printer spooler watching and print job dispatch.
+
+1. Build and publish the C# worker from the `printbit-worker` repository:
+
+   ```powershell
+   cd C:\Users\Admin\Desktop\printbit-worker\src\PrintBit.HardwareService
+   dotnet publish -c Release -o C:\Users\printbit\printbit-worker-service
+   ```
+
+2. Create the queue and utility directory structure under the kiosk user `printbit`:
+
+   ```powershell
+   New-Item -ItemType Directory -Path "C:\Users\printbit\printbit-worker\queue" -Force
+   New-Item -ItemType Directory -Path "C:\Users\printbit\bin" -Force
+   ```
+
+3. Copy `SumatraPDF.exe` to `C:\Users\printbit\bin\SumatraPDF.exe`.
+4. Register the C# worker as an auto-start Windows Service (`PrintBitHardware`):
+
+   ```powershell
+   sc.exe create PrintBitHardware binPath="C:\Users\printbit\printbit-worker-service\PrintBit.HardwareService.exe" start=auto
+   sc.exe start PrintBitHardware
+   ```
+
+   _Note:_ Ensure `appsettings.json` in `C:\Users\printbit\printbit-worker-service\appsettings.json` is updated with the correct printer name and queue directory.
+
+### 3.3) Machine-Wide Environment Variables
+
+Configure environment variables for integration between Node.js and C# worker (run as Administrator):
+
+```powershell
+# Set the print queue directory watched by the C# worker
+setx PRINTBIT_WORKER_QUEUE_DIR "C:\Users\printbit\printbit-worker\queue" /M
+# Define the kiosk user name so startup scripts skip managing Edge
+setx PRINTBIT_KIOSK_USER ".\printbit" /M
+```
+
 ## 4) Startup automation
 
 Run as Administrator:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup
+powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStartup
 ```
 
-This installs the scheduled task `PrintBit Kiosk` for machine-start auto-run using the SYSTEM principal (recommended when kiosk and admin users differ).
+This installs the scheduled tasks `PrintBit Kiosk` and `PrintBit Watchdog` for machine-start auto-run using the SYSTEM principal (recommended when kiosk and admin users differ). Since `PRINTBIT_KIOSK_USER` is configured, they will run the background server and watchdog without initiating a separate Edge instance in Session 0.
 
-If kiosk login still cannot load `http://192.168.4.2:3000/loading` reliably, you can re-register startup specifically for the kiosk user token:
+If kiosk login still cannot load `http://192.168.4.2:3000/loading` reliably, you can register startup specifically under the kiosk user logon session:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
+powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\printbit"
+powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -KioskUser ".\printbit"
 ```
 
 This kiosk-user mode starts the server through `scripts\start-kiosk-server.ps1` (compiled runtime via `node dist\server.js`; `build:server` fallback if bundle is missing). If it does not come up, check `uploads\logs\kiosk-server-startup.log` for the startup failure reason.
@@ -172,10 +213,11 @@ $d | Select-Object Name,DriverProviderName,DriverVersion
 
 ## 6) Assigned Access setup checklist (tablet)
 
-1. Create/sign in dedicated kiosk user.
-2. Configure Assigned Access to Edge kiosk experience for PrintBit URL.
-3. Ensure PrintBit startup task works under kiosk login.
-4. Reboot and verify kiosk returns directly to locked app flow.
+1. Create/sign in dedicated local kiosk user (`printbit`).
+2. Configure Assigned Access to Edge kiosk experience for PrintBit URL (`http://localhost:3000/loading`).
+3. Ensure the C# worker service (`PrintBitHardware`) is installed and started.
+4. Ensure the PrintBit startup and watchdog scheduled tasks are installed and enabled for the `printbit` account or machine-start (`SYSTEM`).
+5. Reboot and verify the kiosk returns directly to the locked Edge kiosk experience.
 
 ## 7) Development-phase rehearsal (before tablet transfer)
 
@@ -184,7 +226,7 @@ Run a rehearsal on a Windows dev machine:
 1. Apply lockdown profile in test user context.
 2. Launch kiosk via `scripts\run.bat` or scheduled task.
 3. Verify users cannot escape to desktop/settings/system tools.
-4. Verify print/copy/scan core flows still work.
+4. Verify print/copy/scan core flows still work (including the C# worker dispatch).
 5. Verify USB mass storage is blocked and scan USB export is unavailable.
 6. Record pass/fail and remediation notes.
 
@@ -192,23 +234,26 @@ Run a rehearsal on a Windows dev machine:
 
 - Kiosk auto-start works after reboot
 - PrintBit reachable in kiosk mode
+- C# worker service (`PrintBitHardware`) is running in Services
+- Named pipes (`printbit-worker-events` and `printbit-node-errors`) are successfully connected
 - Alt+Tab/Win-key/task switching vectors blocked (as supported by edition/policy)
 - Screen-edge swipe gestures blocked (`AllowEdgeSwipe=0`)
 - Notifications do not disrupt kiosk flow
-- Settings/Task Manager inaccessible for kiosk user
+- Settings/Task Manager inaccessible for kiosk user (`printbit`)
 - USB storage blocked
 - Core transaction flow (upload, pay, print) still succeeds
 
 ## 9) Maintenance / break-glass expectations
 
-- Use admin/service account only for updates and troubleshooting.
+- Use admin/service account (`printbit-admin`) only for updates and troubleshooting.
 - Keep a documented rollback path to temporarily relax lockdown for servicing.
 - Re-apply lockdown after maintenance and re-run validation checklist.
 - Re-apply controlled update policy (`pnpm run updates:apply`) and verify (`pnpm run updates:verify`) after servicing.
 - Re-run driver pin verification (`pnpm run driver:verify`) before returning to public operation.
+- Confirm C# worker service (`PrintBitHardware`) is active and has no pipeline errors in the event log.
 
 ## 10) Notes
 
 - Shell Launcher can be considered only if Windows edition supports it and Assigned Access is insufficient.
-- This guide is paired with `plan.md` tasks for implementing scripts, app-level USB gating, and formal verification artifacts.
+- This guide is paired with C# worker and Node-side configurations.
 - `apply-kiosk-lockdown.ps1` includes an optional `-DisableWinKeys` flag to apply Scancode Map key blocking (requires reboot).

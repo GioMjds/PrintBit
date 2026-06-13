@@ -10,14 +10,16 @@ This guide covers:
 ## 1) Prerequisites
 
 - Windows 10/11 **Pro / Enterprise / Education** (recommended for kiosk features)
-- Node.js + pnpm installed
+- Node.js 22.x + pnpm installed
+- .NET 10 SDK / Runtime installed (required for the C# worker)
 - Microsoft Edge installed
 - PrintBit repo cloned on the tablet
 - ESP32 flashed with current `esp32-captive-portal.ino` firmware (first boot exposes provisioning AP `PrintBit-Setup`)
 
-## 2) Repository setup (PrintBit)
+## 2) Repository & C# Worker Setup
 
-From repo root:
+### 2.1) Node.js Backend Application
+From Node app repo root:
 
 ```powershell
 pnpm install
@@ -25,6 +27,15 @@ pnpm run build
 pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 
+### 2.2) C# Worker Service
+Publish the C# worker from the `printbit-worker` directory (runs the queue watcher and spooler monitor):
+
+```powershell
+cd C:\Users\Admin\Desktop\printbit-worker\src\PrintBit.HardwareService
+dotnet publish -c Release -o C:\Users\printbit\printbit-worker-service
+```
+
+### 2.3) Environment Variables
 Set machine-wide env vars (run PowerShell as Administrator):
 
 ```powershell
@@ -40,6 +51,10 @@ setx PRINTBIT_USB_EXPORT_ENABLED false /M
 setx PRINTBIT_SKIP_EDGE_LAUNCH true /M
 setx PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS 10000 /M
 setx PRINTBIT_WATCHDOG_UNREACHABLE_RESTART_THRESHOLD 3 /M
+
+# C# Worker integration environment variables
+setx PRINTBIT_WORKER_QUEUE_DIR "C:\Users\printbit\printbit-worker\queue" /M
+setx PRINTBIT_KIOSK_USER ".\printbit" /M
 ```
 
 Then reboot once so services/tasks pick up new machine env vars.
@@ -64,15 +79,15 @@ Field recovery:
 
 Use separate accounts:
 
-- `PrintBitKiosk` (daily operation)
-- `PrintBitAdmin` (maintenance only)
+- `printbit` (daily kiosk operation, limited user)
+- `printbit-admin` (maintenance/setup, administrator)
 
 Admin PowerShell:
 
 ```powershell
-net user PrintBitKiosk "ReplaceWithStrongPassword1!" /add
-net user PrintBitAdmin "ReplaceWithStrongPassword2!" /add
-net localgroup Administrators PrintBitAdmin /add
+net user printbit "ReplaceWithStrongPassword1!" /add
+net user printbit-admin "ReplaceWithStrongPassword2!" /add
+net localgroup Administrators printbit-admin /add
 ```
 
 ## 5) Configure Kiosk Mode (Windows 11 vs Windows 10)
@@ -80,7 +95,7 @@ net localgroup Administrators PrintBitAdmin /add
 ## Windows 11
 
 1. Go to `Settings > Accounts > Other users > Set up a kiosk`.
-2. Create/select `PrintBitKiosk`.
+2. Create/select local user `printbit`.
 3. Choose **Microsoft Edge**.
 4. Choose kiosk experience (`Digital signage` is typical).
 5. Set URL to `http://<kiosk-lan-ip>:3000/loading`.
@@ -88,15 +103,33 @@ net localgroup Administrators PrintBitAdmin /add
 ## Windows 10
 
 1. Go to `Settings > Accounts > Family & other users > Set up assigned access`.
-2. Select/create `PrintBitKiosk`.
+2. Select/create local user `printbit`.
 3. Select **Microsoft Edge** as assigned app.
 4. Configure start URL to `http://<kiosk-lan-ip>:3000/loading`.
 
 Note: Windows Home has limited kiosk capabilities; Pro/Edu/Enterprise is strongly preferred.
 
-## 6) Install PrintBit startup + watchdog tasks
+## 6) Install C# Worker & Node Startup Tasks
 
-From repo root (Admin PowerShell):
+### 6.1) Register C# Worker Windows Service
+From the `printbit-worker` project root (Administrator PowerShell):
+
+```powershell
+# Publish C# worker
+cd C:\Users\Admin\Desktop\printbit-worker\src\PrintBit.HardwareService
+dotnet publish -c Release -o C:\Users\printbit\printbit-worker-service
+
+# Create queue directory
+New-Item -ItemType Directory -Path "C:\Users\printbit\printbit-worker\queue" -Force
+New-Item -ItemType Directory -Path "C:\Users\printbit\bin" -Force
+
+# Register and start Windows Service
+sc.exe create PrintBitHardware binPath="C:\Users\printbit\printbit-worker-service\PrintBit.HardwareService.exe" start=auto
+sc.exe start PrintBitHardware
+```
+
+### 6.2) Register Node.js Startup and Watchdog Scheduled Tasks
+From the Node.js project root (Administrator PowerShell):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup
@@ -104,54 +137,49 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStart
 pnpm run watchdog:verify
 ```
 
-If your dedicated kiosk login still cannot reach `http://<kiosk-lan-ip>:3000/loading`, install a kiosk-user targeted startup task (server-only at kiosk logon):
+If your dedicated kiosk login still cannot reach `http://<kiosk-lan-ip>:3000/loading`, install the kiosk-user targeted startup task (runs only the Node server at kiosk logon session):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\PrintBitKiosk"
+powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUser ".\printbit"
+powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -KioskUser ".\printbit"
 ```
 
-`install-watchdog.ps1 -AtStartup` registers watchdog tasks with the **SYSTEM** principal so server recovery still runs when the kiosk login account is different from the admin account used during setup.
-Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`, watchdog Edge recovery) now honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
+*Note:* `install-watchdog.ps1 -AtStartup` and `install-startup.ps1 -AtStartup` register watchdog tasks with the **SYSTEM** principal. When running as SYSTEM, the watchdog skips managing Edge because the interactive kiosk session (Assigned Access) handles the Edge lifecycle.
+
+Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`) honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
 Startup scripts also enforce ESP32 static IPv4 on boot (`scripts\ensure-esp32-network.ps1`) when `PRINTBIT_ESP32_STATIC_IP_ENFORCE=true`, including Wi-Fi reconnect + static IP re-apply before server launch.
-`install-startup.ps1 -AtStartup` now also uses **SYSTEM** principal for cross-account kiosk deployments; when running as SYSTEM it starts/restarts the server and intentionally skips visible Edge launch in Session 0.
-`install-startup.ps1 -KioskUser <user>` creates a **kiosk-user logon** task that starts only the server under that user's interactive token via `scripts\start-kiosk-server.ps1` (compiled runtime via `node dist\server.js`, with `build:server` fallback if needed).
-`watchdog.ps1` is compatible with both **PowerShell 7** and **Windows PowerShell 5.1** task hosts for `/api/watchdog/health` polling.
-By default, watchdog restart-on-unhealthy is disabled to avoid disrupting active upload/print sessions (`PRINTBIT_WATCHDOG_RESTART_ON_UNHEALTHY=false`). The watchdog still restarts the server when the health endpoint is unreachable.
-If startup still fails, inspect `uploads\logs\kiosk-server-startup.log` from the project root for the exact command/error.
-
-What this gives you:
-
-- PrintBit launcher starts automatically at machine startup (SYSTEM)
-- watchdog task monitors health and can recover server/browser
 
 ## 7) Expected startup behavior
 
 After power-on/reboot:
 
 1. Tablet boots and connects to production Wi-Fi/LAN.
-2. Startup task runs PrintBit launcher.
-3. Server starts in background on port `3000`.
-4. Assigned Access opens Edge in kiosk mode for `PrintBitKiosk` at `http://<kiosk-lan-ip>:3000/loading`.
-5. `/loading` polls startup readiness and auto-redirects to `/` when services are ready.
-6. In ESP32 mode, PrintBit attempts kiosk registration to ESP32 (`/kiosk/register`) on the configured ESP32 LAN URL.
-7. ESP32 firmware auto-connects using saved credentials; if unavailable, it falls back to captive portal (`PrintBit-Setup`) in non-blocking mode.
-8. ESP32 coin forwarding targets the provisioned `backend_url` until kiosk registration is posted, then uses `GET http://<kiosk-ip>:3000/coin?value=<coin>` (compatibility bridge endpoint).
+2. C# worker service (`PrintBitHardware`) starts automatically in background.
+3. Startup task runs PrintBit Node server.
+4. Server starts in background on port `3000` (inherits `PRINTBIT_WORKER_QUEUE_DIR`).
+5. Assigned Access opens Edge in kiosk mode for `printbit` account at `http://<kiosk-lan-ip>:3000/loading`.
+6. `/loading` polls startup readiness and auto-redirects to `/` when services are ready.
+7. In ESP32 mode, PrintBit attempts kiosk registration to ESP32 (`/kiosk/register`) on the configured ESP32 LAN URL.
+8. ESP32 firmware auto-connects using saved credentials; if unavailable, it falls back to captive portal (`PrintBit-Setup`) in non-blocking mode.
+9. ESP32 coin forwarding targets the provisioned `backend_url` until kiosk registration is posted, then uses `GET http://<kiosk-ip>:3000/coin?value=<coin>` (compatibility bridge endpoint).
 
 ## 8) Validation checklist
 
 - `PrintBit Kiosk` and `PrintBit Watchdog` tasks exist and are `Ready/Running`.
+- `PrintBitHardware` service is running in Windows Services.
 - `GET http://127.0.0.1:3000/api/startup/ready` eventually returns `ready=true`.
 - `GET http://127.0.0.1:3000/api/watchdog/health` returns healthy locally after boot settles.
 - `Get-NetIPAddress -InterfaceAlias "Wi-Fi" -AddressFamily IPv4` includes `<kiosk-lan-ip>`.
-- `GET /api/admin/summary` shows healthy watchdog/recovery stats.
-- Kiosk UI appears after reboot without manual login steps (if auto-sign-in is configured).
+- `GET /api/admin/summary` shows healthy watchdog/recovery stats and pipe connectivity.
+- Kiosk UI appears after reboot without manual login steps (via Windows Assigned Access).
 
 ## 9) Recommended production hardening
 
 - Enable BIOS setting: **Restore on AC Power Loss = Power On**.
 - Use UPS + surge protection for tablet/printer/network.
-- Keep `PrintBitAdmin` for break-glass maintenance; do not run kiosk daily with admin account.
+- Keep `printbit-admin` for break-glass maintenance; do not run kiosk daily with admin account.
 - Re-verify after Windows updates:
+  - C# worker service (`PrintBitHardware`) status
   - startup tasks
   - Wi-Fi auto-connect profile
   - kiosk mode assignment

@@ -183,7 +183,11 @@ const errorSeverityText = document.getElementById('errorSeverityText');
 let currentPrinterError: PrintError | null = null;
 
 function hasActiveJob(): boolean {
-  return isProcessingPayment || activeSpoolerCorrelationKey !== null;
+  return (
+    isProcessingPayment ||
+    activeSpoolerCorrelationKey !== null ||
+    paymentSpoolerCorrelationKey !== null
+  );
 }
 
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =

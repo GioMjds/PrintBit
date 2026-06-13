@@ -275,11 +275,13 @@ export class PrinterService {
     }
 
     let printerName = record.printerName;
+    let recordModified = false;
     if (!printerName) {
       const telemetry = getPrinterTelemetry();
       if (telemetry.name) {
         printerName = telemetry.name;
         record.printerName = printerName;
+        recordModified = true;
       }
     }
 
@@ -303,9 +305,11 @@ export class PrinterService {
           `[PRINTER-SERVICE] Resolved spoolerJobId: ${spoolerJobId} for key ${spoolerCorrelationKey}`,
         );
         record.spoolerJobId = spoolerJobId;
-        await db.write();
+        recordModified = true;
       }
     }
+
+    if (recordModified) await db.write();
 
     if (spoolerJobId == null) {
       throw new Error(

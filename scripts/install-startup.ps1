@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Registers PrintBit as a Windows Scheduled Task for kiosk startup.
@@ -76,7 +75,7 @@ function Resolve-TaskAccount {
     }
 
     $attempted = if ($attemptedCandidates.Count -gt 0) { ([string[]]$attemptedCandidates) -join ", " } else { $raw }
-    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: [$attempted]. Use an existing local account like '.\PrintBitKiosk' or '$env:COMPUTERNAME\PrintBitKiosk'."
+    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: [$attempted]. Use an existing local account like '.\printbit' or '$env:COMPUTERNAME\printbit'."
 }
 
 if ($Uninstall) {
