@@ -177,8 +177,18 @@ const errorCloseBtn = document.getElementById('errorCloseBtn') as HTMLButtonElem
 const errorActions = document.getElementById('errorActions');
 const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElement;
 const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
+const errorSeverityBadge = document.getElementById('errorSeverityBadge');
+const errorSeverityText = document.getElementById('errorSeverityText');
 
 let currentPrinterError: PrintError | null = null;
+
+function hasActiveJob(): boolean {
+  return (
+    isProcessingPayment ||
+    activeSpoolerCorrelationKey !== null ||
+    paymentSpoolerCorrelationKey !== null
+  );
+}
 
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
   'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
@@ -201,6 +211,16 @@ function renderPrinterError(err: PrintError): void {
 
   // Severity-based styling or behavior
   printerErrorBlock.dataset.severity = err.severity;
+
+  // Severity badge label
+  if (errorSeverityText) {
+    const severityLabels: Record<PrintErrorSeverity, string> = {
+      warning: 'Warning',
+      recoverable: 'Recoverable',
+      fatal: 'Fatal Error',
+    };
+    errorSeverityText.textContent = severityLabels[err.severity] ?? err.severity;
+  }
   
   if (err.severity === 'warning') {
     if (errorCloseBtn) errorCloseBtn.removeAttribute('hidden');
@@ -219,7 +239,9 @@ function renderPrinterError(err: PrintError): void {
     else errorActions.setAttribute('hidden', '');
   }
 
-  printerErrorBlock.removeAttribute('hidden');
+  if (hasActiveJob()) {
+    printerErrorBlock.removeAttribute('hidden');
+  }
   applyConfirmGate();
 }
 
@@ -1270,18 +1292,20 @@ if (typeof ioFactory === 'function') {
   });
 
   connectedSocket.on('printErrorRaised', (payload: any) => {
+    if (!hasActiveJob()) return;
     const err = payload as PrintError;
     if (!err) return;
 
     // Filter by correlation key if present, except for warnings
     if (err.severity !== 'warning') {
       const payloadKey = (payload as any).spoolerCorrelationKey;
-      if (
-        payloadKey &&
-        paymentSpoolerCorrelationKey &&
-        payloadKey !== paymentSpoolerCorrelationKey
-      ) {
-        return;
+      if (payloadKey) {
+        if (
+          !paymentSpoolerCorrelationKey ||
+          payloadKey !== paymentSpoolerCorrelationKey
+        ) {
+          return;
+        }
       }
     }
 
@@ -1290,6 +1314,12 @@ if (typeof ioFactory === 'function') {
 
   connectedSocket.on('printLifecycleState', (payload: any) => {
     const lifecycle = payload as PrintLifecycleStatePayload;
+    const isHardwareError =
+      lifecycle.printError?.severity === 'recoverable' ||
+      lifecycle.printError?.code === 'PAPER_TRAY_EMPTY' ||
+      lifecycle.printError?.code === 'PAPER_JAM_PRINT' ||
+      currentPrinterError?.severity === 'recoverable';
+
     if (
       lifecycle.state === 'failed' &&
       matchesPendingWorkerEvent({
@@ -1297,6 +1327,18 @@ if (typeof ioFactory === 'function') {
         spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
       })
     ) {
+      if (isHardwareError) {
+        hideOverlay(printingOverlay);
+        isProcessingPayment = false;
+        // Keep activeSpoolerCorrelationKey and session state intact!
+        if (lifecycle.printError) {
+          renderPrinterError(lifecycle.printError);
+        } else if (currentPrinterError) {
+          renderPrinterError(currentPrinterError);
+        }
+        return;
+      }
+
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
       activeSpoolerCorrelationKey = null;
@@ -1306,19 +1348,20 @@ if (typeof ioFactory === 'function') {
       );
     }
     if (lifecycle.printError) {
-      renderPrinterError(lifecycle.printError);
+      if (hasActiveJob()) renderPrinterError(lifecycle.printError);
     } else if (lifecycle.state === 'printed' || lifecycle.state === 'failed') {
-      // If we move to a terminal state without an error, clear any existing error
-      clearPrinterError();
+      if (!isHardwareError) {
+        clearPrinterError();
+      }
     }
   });
 
-  // Re-sync on printer malfunction or spooler failure
+  // Re-sync on printer malfunction or spooler failure — only show after job is active
   connectedSocket.on('printerMalfunction', (payload: any) => {
-    if (payload?.printError) renderPrinterError(payload.printError);
+    if (hasActiveJob() && payload?.printError) renderPrinterError(payload.printError);
   });
   connectedSocket.on('printerSpoolerFailure', (payload: any) => {
-    if (payload?.printError) renderPrinterError(payload.printError);
+    if (hasActiveJob() && payload?.printError) renderPrinterError(payload.printError);
   });
 
   connectedSocket.on('workerPrintStarted', (payload: any) => {
@@ -1339,6 +1382,36 @@ if (typeof ioFactory === 'function') {
 
   connectedSocket.on('workerPrintFailed', (payload: any) => {
     if (!matchesPendingWorkerEvent(payload)) return;
+
+    // If the worker reports a HardwareError, show the error modal
+    // with pause/resume instead of aborting the transaction.
+    const isHardwareError =
+      payload?.failureStage === 'HardwareError' ||
+      payload?.errorType === 'HardwareError' ||
+      payload?.reason === 'HardwareError' ||
+      payload?.printError?.code === 'PAPER_TRAY_EMPTY' ||
+      payload?.printError?.code === 'PAPER_JAM_PRINT';
+
+    if (isHardwareError) {
+      hideOverlay(printingOverlay);
+      isProcessingPayment = false;
+      const hardwareError: PrintError = payload?.printError ?? {
+        code: 'PAPER_TRAY_EMPTY',
+        severity: 'recoverable' as PrintErrorSeverity,
+        userMessage:
+          payload?.message ?? 'Printer Out of Paper. Please load paper and click Resume.',
+        hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
+        canRetry: true,
+      };
+      // Ensure severity is at least recoverable for hardware errors
+      if (hardwareError.severity === 'warning') {
+        hardwareError.severity = 'recoverable';
+      }
+      renderPrinterError(hardwareError);
+      return;
+    }
+
+    // Non-hardware failure: abort as before
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
     activeSpoolerCorrelationKey = null;

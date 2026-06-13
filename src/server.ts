@@ -150,7 +150,13 @@ registerAppModules(app, {
   uploadDir: UPLOAD_DIR,
   getSerialStatus,
   getHopperStatus,
-  runHopperSelfTest,
+  runHopperSelfTest: async () => {
+    const result = await runHopperSelfTest();
+    return {
+      ...result,
+      amount: result.dispensedCoins,
+    };
+  },
   resolvePublicBaseUrl,
   convertToPdfPreview,
 });

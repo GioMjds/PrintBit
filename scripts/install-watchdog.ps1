@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
     [switch]$Uninstall,
@@ -46,7 +45,7 @@ function Resolve-TaskAccount {
         } catch { continue }
     }
     $attempted = if ($tried.Count -gt 0) { ([string[]]$tried) -join ", " } else { $raw }
-    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: [$attempted]. Use an existing local account like '.\PrintBitKiosk' or '$env:COMPUTERNAME\PrintBitKiosk'."
+    throw "[PrintBit] Failed to resolve kiosk user '$raw'. Attempted: [$attempted]. Use an existing local account like '.\printbit' or '$env:COMPUTERNAME\printbit'."
 }
 
 function Remove-PrintBitTask {

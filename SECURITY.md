@@ -82,7 +82,7 @@ or mitigation within **14 days** for critical issues.
 ### Windows Kiosk Hardening
 
 - The kiosk runs under a **dedicated Windows Assigned Access account**
-  (`PrintBitKiosk`) with restricted permissions.
+  (`printbit`) with restricted permissions.
 - PowerShell execution policy and scheduled tasks are configured to
   run only signed or explicitly allowed scripts.
 - A **watchdog service** (scheduled task) automatically restarts the

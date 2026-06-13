@@ -9,23 +9,8 @@ import {
 import { getTrustedTimestamp } from './time-source';
 import { ESP32_AP_BASE_URL, NETWORK_PROVIDER } from '@/config';
 import { safeAmount } from '@/utils';
-
-export type HopperErrorCodeValue =
-  | 'JAM'
-  | 'EMPTY'
-  | 'MOTOR_TIMEOUT'
-  | 'PARTIAL'
-  | 'SENSOR'
-  | 'UNKNOWN';
-
-export const HopperErrorCode: Record<string, HopperErrorCodeValue> = {
-  JAM: 'JAM',
-  EMPTY: 'EMPTY',
-  MOTOR_TIMEOUT: 'MOTOR_TIMEOUT',
-  PARTIAL: 'PARTIAL',
-  SENSOR: 'SENSOR',
-  UNKNOWN: 'UNKNOWN',
-};
+import { getHopperStatus } from './serial';
+import { HopperErrorCode, type HopperErrorCodeValue } from './hopper-protocol';
 
 export interface HopperDispenseResult {
   ok: boolean;
@@ -248,8 +233,8 @@ class HopperService {
       const body = (await res.json()) as Esp32DispenseAttemptResult;
 
       if (body.ok) {
-        stats.totalCoinsDispensed += body.dispensedCoins;
-        stats.dispenseSuccesses += 1;
+        stats.totalDispensed += body.dispensedCoins;
+        stats.dispenseSuccess += 1;
         await db.write();
         return {
           ok: true,

@@ -257,6 +257,19 @@ export async function handleWorkerReturnPrintEvent(input: {
     });
   }
 
+  const isHardwareError = input.evt.failureStage === 'HardwareError';
+  const printError = isHardwareError
+    ? {
+        code: 'PAPER_TRAY_EMPTY',
+        severity: 'recoverable' as const,
+        userMessage: input.evt.message ?? 'Printer Out of Paper. Please load paper and click Resume.',
+        hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
+        timestamp: new Date().toISOString(),
+        canRetry: true,
+        canDismiss: false,
+      }
+    : null;
+
   await persistAndEmitPrintLifecycleState(
     input.io,
     {
@@ -266,6 +279,7 @@ export async function handleWorkerReturnPrintEvent(input: {
       spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
       printerName: input.evt.printerName ?? null,
       reason: input.evt.message ?? 'Worker print failed.',
+      printError,
     },
     {
       requiredAmount,

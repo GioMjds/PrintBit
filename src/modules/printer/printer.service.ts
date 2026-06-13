@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { db } from '@/services/db';
 import { getPrinterTelemetry } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
@@ -7,6 +9,47 @@ import {
   resumePrintJobViaEdge,
   type EdgePrinterStatus,
 } from '@/services/windows-printer-edge';
+
+const execFileAsync = promisify(execFile);
+
+async function findSpoolerJobIdByCorrelationKey(
+  printerName: string,
+  spoolerCorrelationKey: string,
+): Promise<number | null> {
+  try {
+    const escapedPrinter = printerName.replace(/'/g, "''").replace(/`/g, '``');
+    const escapedCorrelation = spoolerCorrelationKey
+      .replace(/'/g, "''")
+      .replace(/`/g, '``');
+    const script = `Get-PrintJob -PrinterName '${escapedPrinter}' -ErrorAction SilentlyContinue | Where-Object { $_.Document -like '*${escapedCorrelation}*' } | Select-Object -ExpandProperty Id`;
+
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      { timeout: 10000 },
+    );
+
+    const jobIdStr = stdout.trim();
+    if (jobIdStr) {
+      const lines = jobIdStr
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        const id = parseInt(line, 10);
+        if (Number.isInteger(id)) {
+          return id;
+        }
+      }
+    }
+  } catch (error) {
+    console.error(
+      `[PRINTER-SERVICE] Failed to query spooler job ID via PowerShell:`,
+      error,
+    );
+  }
+  return null;
+}
 
 export interface PrinterStatusResponse {
   ready: boolean;
@@ -51,53 +94,65 @@ export class PrinterService {
     };
   }
 
-  /**
-   * Queries the live printer queue status via the edge-js System.Printing
-   * bridge and returns a PrintError if a blocking condition is detected,
-   * or null if the printer is healthy.
-   */
-  async preDispatchCheck(printerName?: string | null): Promise<PrintError | null> {
-    const name = printerName ?? getPrinterTelemetry().name;
-    if (!name) {
+  async preDispatchCheck(
+    printerName: string | null,
+  ): Promise<PrintError | null> {
+    const targetPrinter = printerName?.trim() || getPrinterTelemetry().name;
+    if (!targetPrinter) {
       return {
         code: 'PRINTER_NOT_FOUND',
         severity: 'fatal',
-        userMessage: 'No printer configured or detected.',
-        hint: 'Please check your printer connection.',
+        userMessage: 'Printer not found or not configured.',
         timestamp: new Date().toISOString(),
       };
     }
 
     try {
-      const result = await getPrinterStatusViaEdge(name);
-      if ('error' in result) {
+      const edgeStatus = await getPrinterStatusViaEdge(targetPrinter);
+      if ('error' in edgeStatus) {
         return {
           code: 'PRINTER_QUERY_FAILED',
           severity: 'fatal',
           userMessage: 'Could not query printer status.',
-          hint: result.error,
+          hint: edgeStatus.error,
           timestamp: new Date().toISOString(),
         };
       }
-
-      return this.classifyPrinterStatus(result);
+      const err = this.mapEdgeStatusToPrintError(edgeStatus);
+      if (err) return err;
     } catch (error) {
-      console.error('[PRINTER_SVC] edge-js preDispatchCheck failed:', error);
+      console.warn(
+        `[PRINTER] Edge preflight query failed, fallback to local cache:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    const telemetry = getPrinterTelemetry();
+    if (!telemetry.connected) {
       return {
-        code: 'PRINTER_QUERY_FAILED',
+        code: 'PRINTER_OFFLINE',
         severity: 'fatal',
-        userMessage: 'Printer status check failed.',
-        hint: error instanceof Error ? error.message : String(error),
+        userMessage: 'The printer is offline. Please check the connection.',
         timestamp: new Date().toISOString(),
       };
     }
+
+    const blocked = BLOCKED_STATUSES.has(telemetry.status);
+    if (blocked) {
+      return {
+        code: 'PRINTER_BLOCKED_STATE',
+        severity: 'fatal',
+        userMessage: `Printer is blocked: ${telemetry.status}`,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    return null;
   }
 
-  /**
-   * Maps System.Printing boolean flags to a structured PrintError.
-   * Returns null when the printer is in a healthy state.
-   */
-  private classifyPrinterStatus(status: EdgePrinterStatus): PrintError | null {
+  private mapEdgeStatusToPrintError(
+    status: EdgePrinterStatus,
+  ): PrintError | null {
     const now = new Date().toISOString();
 
     if (status.isOffline) {
@@ -136,7 +191,8 @@ export class PrinterService {
       return {
         code: 'PAPER_INSUFFICIENT_PRE_DISPATCH',
         severity: 'recoverable',
-        userMessage: 'Paper problem detected — the printer may not have enough paper.',
+        userMessage:
+          'Paper problem detected — the printer may not have enough paper.',
         hint: 'Please check the paper tray. You can pause and resume once ready.',
         timestamp: now,
         canRetry: true,
@@ -202,10 +258,10 @@ export class PrinterService {
 
   // ── Spooler job control (pause / resume) ──────────────────────
 
-  private findSpoolerJobDetails(spoolerCorrelationKey: string): {
+  private async findSpoolerJobDetails(spoolerCorrelationKey: string): Promise<{
     printerName: string;
     spoolerJobId: number;
-  } {
+  }> {
     if (!db.data || !db.data.spoolerLifecycle) {
       throw new Error('Database or spoolerLifecycle not initialized');
     }
@@ -217,20 +273,60 @@ export class PrinterService {
         `No spooler lifecycle record found for key: ${spoolerCorrelationKey}`,
       );
     }
-    if (!record.printerName || record.spoolerJobId == null) {
+
+    let printerName = record.printerName;
+    let recordModified = false;
+    if (!printerName) {
+      const telemetry = getPrinterTelemetry();
+      if (telemetry.name) {
+        printerName = telemetry.name;
+        record.printerName = printerName;
+        recordModified = true;
+      }
+    }
+
+    if (!printerName) {
+      throw new Error(
+        `Missing printerName in spooler details for key: ${spoolerCorrelationKey}`,
+      );
+    }
+
+    let spoolerJobId = record.spoolerJobId;
+    if (spoolerJobId == null) {
+      console.log(
+        `[PRINTER-SERVICE] spoolerJobId is missing for key ${spoolerCorrelationKey}. Attempting to resolve via Get-PrintJob...`,
+      );
+      spoolerJobId = await findSpoolerJobIdByCorrelationKey(
+        printerName,
+        spoolerCorrelationKey,
+      );
+      if (spoolerJobId !== null) {
+        console.log(
+          `[PRINTER-SERVICE] Resolved spoolerJobId: ${spoolerJobId} for key ${spoolerCorrelationKey}`,
+        );
+        record.spoolerJobId = spoolerJobId;
+        recordModified = true;
+      }
+    }
+
+    if (recordModified) await db.write();
+
+    if (spoolerJobId == null) {
       throw new Error(
         'Incomplete spooler details (missing printerName or spoolerJobId)',
       );
     }
+
     return {
-      printerName: record.printerName,
-      spoolerJobId: record.spoolerJobId,
+      printerName,
+      spoolerJobId,
     };
   }
 
   async pauseJob(spoolerCorrelationKey: string): Promise<void> {
-    const { printerName, spoolerJobId } =
-      this.findSpoolerJobDetails(spoolerCorrelationKey);
+    const { printerName, spoolerJobId } = await this.findSpoolerJobDetails(
+      spoolerCorrelationKey,
+    );
     console.log(
       `[PRINTER] Pausing job #${spoolerJobId} on ${printerName} via edge-js`,
     );
@@ -241,8 +337,9 @@ export class PrinterService {
   }
 
   async resumeJob(spoolerCorrelationKey: string): Promise<void> {
-    const { printerName, spoolerJobId } =
-      this.findSpoolerJobDetails(spoolerCorrelationKey);
+    const { printerName, spoolerJobId } = await this.findSpoolerJobDetails(
+      spoolerCorrelationKey,
+    );
     console.log(
       `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js`,
     );
