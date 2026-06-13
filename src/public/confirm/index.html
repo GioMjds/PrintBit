@@ -242,72 +242,6 @@
               >
             </div>
 
-            <!-- Printer Error Block (Issue 124) -->
-            <div
-              class="printer-error-block"
-              id="printerErrorBlock"
-              hidden
-              role="alert"
-            >
-              <div class="printer-error-block__content">
-                <div class="printer-error-block__icon">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"
-                    />
-                  </svg>
-                </div>
-                <div class="printer-error-block__text">
-                  <p class="printer-error-block__title" id="errorTitle">
-                    Printer Error
-                  </p>
-                  <p class="printer-error-block__message" id="errorMessage">
-                    Please check the printer.
-                  </p>
-                  <p class="printer-error-block__hint" id="errorHint"></p>
-                </div>
-                <button
-                  type="button"
-                  class="printer-error-block__close"
-                  id="errorCloseBtn"
-                  aria-label="Dismiss"
-                  hidden
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                  >
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <!-- Special action area for pause/resume -->
-              <div
-                class="printer-error-block__actions"
-                id="errorActions"
-                hidden
-              >
-                <button
-                  id="errorPauseBtn"
-                  class="error-action-btn error-action-btn--pause"
-                >
-                  <span>Pause</span>
-                </button>
-                <button
-                  id="errorResumeBtn"
-                  class="error-action-btn error-action-btn--resume"
-                >
-                  <span>Resume</span>
-                </button>
-              </div>
-            </div>
 
             <!-- Change-ready badge: shown when balance >= price -->
             <div
@@ -593,6 +527,93 @@
           <span>Confirm & Print</span>
         </button>
       </footer>
+    </div>
+
+    <!-- Printer Error Modal (Issue 124) -->
+    <div
+      class="printer-error-modal-overlay"
+      id="printerErrorBlock"
+      hidden
+      role="alertdialog"
+      aria-labelledby="errorTitle"
+      aria-describedby="errorMessage"
+      aria-modal="true"
+    >
+      <div class="printer-error-modal">
+        <!-- Animated Error Icon -->
+        <div class="printer-error-modal__icon-ring">
+          <svg class="printer-error-modal__icon-svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+            <!-- Outer pulse ring -->
+            <circle class="error-pulse-ring" cx="40" cy="40" r="36" stroke="#f26e6b" stroke-width="2" fill="none" opacity="0.3" />
+            <!-- Inner filled circle -->
+            <circle cx="40" cy="40" r="30" fill="rgba(242,110,107,0.12)" />
+            <circle cx="40" cy="40" r="30" stroke="#f26e6b" stroke-width="2.5" fill="none" />
+            <!-- Exclamation mark -->
+            <line x1="40" y1="24" x2="40" y2="42" stroke="#f26e6b" stroke-width="3.5" stroke-linecap="round" class="error-excl-line" />
+            <circle cx="40" cy="52" r="2.5" fill="#f26e6b" class="error-excl-dot" />
+          </svg>
+        </div>
+
+        <!-- Title -->
+        <h2 class="printer-error-modal__title" id="errorTitle">Printer Error</h2>
+
+        <!-- Severity pill badge -->
+        <div class="printer-error-modal__severity-badge" id="errorSeverityBadge">
+          <span class="printer-error-modal__severity-dot"></span>
+          <span class="printer-error-modal__severity-text" id="errorSeverityText">Recoverable</span>
+        </div>
+
+        <!-- Error message -->
+        <p class="printer-error-modal__message" id="errorMessage">
+          Please check the printer.
+        </p>
+
+        <!-- Hint (toggleable) -->
+        <p class="printer-error-modal__hint" id="errorHint" hidden></p>
+
+        <!-- Close (dismiss) button for warnings only -->
+        <button
+          type="button"
+          class="printer-error-modal__dismiss"
+          id="errorCloseBtn"
+          aria-label="Dismiss"
+          hidden
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+          <span>Dismiss</span>
+        </button>
+
+        <!-- Action buttons for pause/resume (paper errors) -->
+        <div
+          class="printer-error-modal__actions"
+          id="errorActions"
+          hidden
+        >
+          <button
+            id="errorPauseBtn"
+            type="button"
+            class="error-modal-btn error-modal-btn--pause"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="6" y="4" width="4" height="16" rx="1" />
+              <rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+            <span>Pause Job</span>
+          </button>
+          <button
+            id="errorResumeBtn"
+            type="button"
+            class="error-modal-btn error-modal-btn--resume"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="5,3 19,12 5,21" />
+            </svg>
+            <span>Resume Print</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Confirmation Modal Overlay -->
