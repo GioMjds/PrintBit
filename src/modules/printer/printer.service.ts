@@ -1,8 +1,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { db } from '@/services/db';
 import { getPrinterTelemetry } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
+import { WORKER_QUEUE_DIR, WORKER_FAILED_DIR } from '@/config/http.config';
 import {
   getPrinterStatusViaEdge,
   pausePrintJobViaEdge,
@@ -11,6 +14,12 @@ import {
 } from '@/services/windows-printer-edge';
 
 const execFileAsync = promisify(execFile);
+
+function parseIsoMs(value: string | null): number {
+  if (!value) return Number.NaN;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
 
 async function findSpoolerJobIdByCorrelationKey(
   printerName: string,
@@ -261,18 +270,33 @@ export class PrinterService {
   private async findSpoolerJobDetails(spoolerCorrelationKey: string): Promise<{
     printerName: string;
     spoolerJobId: number;
+    transactionId: string;
   }> {
     if (!db.data || !db.data.spoolerLifecycle) {
       throw new Error('Database or spoolerLifecycle not initialized');
     }
-    const record = db.data.spoolerLifecycle.find(
+    const matchingRecords = db.data.spoolerLifecycle.filter(
       (r) => r.spoolerCorrelationKey === spoolerCorrelationKey,
     );
-    if (!record) {
+    if (matchingRecords.length === 0) {
       throw new Error(
         `No spooler lifecycle record found for key: ${spoolerCorrelationKey}`,
       );
     }
+
+    // Sort by updatedAt descending (newest first), then prefer failed state
+    const record = matchingRecords.sort((a, b) => {
+      const aMs = parseIsoMs(a.updatedAt);
+      const bMs = parseIsoMs(b.updatedAt);
+      const aValid = Number.isFinite(aMs);
+      const bValid = Number.isFinite(bMs);
+      if (aValid && bValid && bMs !== aMs) return bMs - aMs;
+      if (aValid && !bValid) return -1;
+      if (!aValid && bValid) return 1;
+      if (a.currentState === 'failed' && b.currentState !== 'failed') return -1;
+      if (a.currentState !== 'failed' && b.currentState === 'failed') return 1;
+      return 0;
+    })[0];
 
     let printerName = record.printerName;
     let recordModified = false;
@@ -320,6 +344,7 @@ export class PrinterService {
     return {
       printerName,
       spoolerJobId,
+      transactionId: record.transactionId,
     };
   }
 
@@ -337,15 +362,66 @@ export class PrinterService {
   }
 
   async resumeJob(spoolerCorrelationKey: string): Promise<void> {
-    const { printerName, spoolerJobId } = await this.findSpoolerJobDetails(
+    const { printerName, spoolerJobId, transactionId } = await this.findSpoolerJobDetails(
       spoolerCorrelationKey,
     );
     console.log(
       `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js`,
     );
     const result = await resumePrintJobViaEdge(printerName, spoolerJobId);
-    if (!result.success) {
-      throw new Error(result.error ?? 'Unknown resume failure');
+    if (result.success) {
+      return;
+    }
+
+    console.warn(
+      `[PRINTER] Failed to resume spooler job #${spoolerJobId}: ${result.error}. Checking for files in failed directory to resubmit...`,
+    );
+
+    if (!WORKER_QUEUE_DIR) {
+      throw new Error(
+        `Cannot resubmit job: WORKER_QUEUE_DIR is not configured. Original resume error: ${result.error}`,
+      );
+    }
+
+    const failedDir = WORKER_FAILED_DIR || path.join(path.dirname(WORKER_QUEUE_DIR), 'failed');
+
+    try {
+      const files = await fs.readdir(failedDir);
+      const prefix = `${transactionId}_${spoolerCorrelationKey}_`;
+      const pdfFiles = files.filter((f) => f.startsWith(prefix) && f.endsWith('.pdf'));
+      const jsonFiles = files.filter((f) => f.startsWith(prefix) && f.endsWith('.json'));
+
+      if (pdfFiles.length === 0 || jsonFiles.length === 0) {
+        throw new Error(
+          `Print files not found in failed directory for key ${spoolerCorrelationKey} (transaction ${transactionId}). Original resume error: ${result.error}`,
+        );
+      }
+
+      pdfFiles.sort().reverse();
+      jsonFiles.sort().reverse();
+
+      const pdfFile = pdfFiles[0];
+      const jsonFile = jsonFiles[0];
+
+      const sourcePdfPath = path.join(failedDir, pdfFile);
+      const sourceJsonPath = path.join(failedDir, jsonFile);
+
+      const targetPdfPath = path.join(WORKER_QUEUE_DIR, pdfFile);
+      const targetJsonPath = path.join(WORKER_QUEUE_DIR, jsonFile);
+
+      // Move PDF first, then JSON to ensure watcher detects them in the correct order
+      await fs.rename(sourcePdfPath, targetPdfPath);
+      await fs.rename(sourceJsonPath, targetJsonPath);
+
+      console.log(
+        `[PRINTER] Successfully resubmitted failed job files to queue: ${pdfFile} and ${jsonFile}`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[PRINTER] Failed to resubmit job: ${msg}`);
+      throw new Error(
+        `Failed to resume or resubmit job. (Original resume error: ${result.error}. Handoff retry error: ${msg})`,
+      );
     }
   }
 }

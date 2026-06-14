@@ -19,6 +19,12 @@ import { jobStore } from './job-store';
 
 const receiptService = new ReceiptService();
 
+function parseSpoolerJobId(value: string | undefined | null): number | null {
+  if (value === null) return null;
+  const parsed = parseInt(value ?? '', 10);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
 async function deleteUploadByStoredFilename(
   storedFilename: string,
 ): Promise<{ deleted: boolean; alreadyMissing: boolean }> {
@@ -175,6 +181,7 @@ export async function handleWorkerReturnPrintEvent(input: {
         state: 'processing',
         transactionId,
         spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
         printerName: input.evt.printerName ?? null,
         reason: input.evt.message ?? null,
       },
@@ -199,6 +206,7 @@ export async function handleWorkerReturnPrintEvent(input: {
         state: 'printed',
         transactionId,
         spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
         printerName: input.evt.printerName ?? null,
         reason: input.evt.message ?? null,
       },
@@ -277,6 +285,7 @@ export async function handleWorkerReturnPrintEvent(input: {
       state: 'failed',
       transactionId,
       spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+      spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
       printerName: input.evt.printerName ?? null,
       reason: input.evt.message ?? 'Worker print failed.',
       printError,
