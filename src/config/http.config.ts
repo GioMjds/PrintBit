@@ -15,6 +15,11 @@ export const WORKER_QUEUE_DIR =
   rawWorkerQueueDir && rawWorkerQueueDir.length > 0
     ? rawWorkerQueueDir
     : undefined;
+const rawWorkerFailedDir = process.env.PRINTBIT_WORKER_FAILED_DIR?.trim();
+export const WORKER_FAILED_DIR =
+  rawWorkerFailedDir && rawWorkerFailedDir.length > 0
+    ? rawWorkerFailedDir
+    : undefined;
 export const WORKER_PIPE_NAME =
   process.env.PRINTBIT_WORKER_PIPE_NAME?.trim() || 'printbit-node-errors';
 const rawWorkerPrechecks = process.env.PRINTBIT_WORKER_PRECHECKS_ENABLED

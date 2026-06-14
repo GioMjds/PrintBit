@@ -12,6 +12,7 @@ export interface WorkerPrintEvent {
   type: WorkerPrintEventType;
   transactionId?: string;
   spoolerCorrelationKey?: string;
+  spoolerJobId?: string;
   fileName?: string;
   printerName?: string;
   failureStage?: string;
