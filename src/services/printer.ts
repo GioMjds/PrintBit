@@ -38,7 +38,9 @@ export class PrinterService {
   }
 
   async detectDefaultPrinter(): Promise<void> {
-    console.log('[PRINTER] -- Detecting default printer ------------------------');
+    console.log(
+      '[PRINTER] -- Detecting default printer ------------------------',
+    );
 
     const sumatraExists = fs.existsSync(this.sumatraPath);
     console.log(
@@ -95,11 +97,21 @@ export class PrinterService {
   ): Promise<PrintDispatchResult> {
     const uploadsDir = path.resolve('uploads');
     const normalizedFilename = filename.trim();
-    if (!normalizedFilename) {
+    if (!/^[a-zA-Z0-9._-]+$/.test(normalizedFilename)) {
+      throw new Error('Invalid filename');
+    }
+    const VALID_UPLOAD_FILENAME =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]+$/i;
+
+    if (!VALID_UPLOAD_FILENAME.test(normalizedFilename)) {
       throw new Error('Invalid filename');
     }
 
-    const filePath = path.resolve(uploadsDir, normalizedFilename);
+    if (path.basename(normalizedFilename) !== normalizedFilename) {
+      throw new Error('Invalid filename');
+    }
+    const safeFilename = path.basename(normalizedFilename);
+    const filePath = path.join(uploadsDir, safeFilename);
     const relativePath = path.relative(uploadsDir, filePath);
     const outsideUploads =
       relativePath === '..' ||
