@@ -362,9 +362,8 @@ export class PrinterService {
   }
 
   async resumeJob(spoolerCorrelationKey: string): Promise<void> {
-    const { printerName, spoolerJobId, transactionId } = await this.findSpoolerJobDetails(
-      spoolerCorrelationKey,
-    );
+    const { printerName, spoolerJobId, transactionId } =
+      await this.findSpoolerJobDetails(spoolerCorrelationKey);
     console.log(
       `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js`,
     );
@@ -383,13 +382,20 @@ export class PrinterService {
       );
     }
 
-    const failedDir = WORKER_FAILED_DIR || path.join(path.dirname(WORKER_QUEUE_DIR), 'failed');
+    const failedDir =
+      WORKER_FAILED_DIR || path.join(path.dirname(WORKER_QUEUE_DIR), 'failed');
 
     try {
       const files = await fs.readdir(failedDir);
-      const prefix = `${transactionId}_${spoolerCorrelationKey}_`;
-      const pdfFiles = files.filter((f) => f.startsWith(prefix) && f.endsWith('.pdf'));
-      const jsonFiles = files.filter((f) => f.startsWith(prefix) && f.endsWith('.json'));
+      const safeSegment = (value: string) =>
+        value.replace(/[^a-zA-Z0-9-_]/g, '_');
+      const prefix = `${safeSegment(transactionId)}_${safeSegment(spoolerCorrelationKey)}_`;
+      const pdfFiles = files.filter(
+        (f) => f.startsWith(prefix) && f.endsWith('.pdf'),
+      );
+      const jsonFiles = files.filter(
+        (f) => f.startsWith(prefix) && f.endsWith('.json'),
+      );
 
       if (pdfFiles.length === 0 || jsonFiles.length === 0) {
         throw new Error(
