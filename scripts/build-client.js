@@ -51,11 +51,13 @@ const builds = [
 try {
   copyFlatpickrCss();
   for (const cmd of builds) {
-    console.log(`Running: ${cmd}`);
-    execSync(cmd, { stdio: 'inherit' });
+    const minifiedCmd = `${cmd} --minify`;
+    console.log(`Running: ${minifiedCmd}`);
+    execSync(minifiedCmd, { stdio: 'inherit' });
   }
   console.log('Build completed successfully.');
 } catch (error) {
   console.error('Build failed:', error);
   process.exit(1);
 }
+

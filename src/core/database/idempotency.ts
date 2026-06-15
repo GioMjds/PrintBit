@@ -11,7 +11,7 @@
  */
 
 /** 5 minutes - expiry for cached responses */
-const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000; 
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Stored idempotency payload: the response body (opaque) and HTTP status
@@ -172,11 +172,11 @@ Usage in this codebase:
 
   1. Read client-supplied key (e.g. from `Idempotency-Key` header).
   2. Call `acquireIdempotencyKey(key, namespace)`.
-     - If `{ type: 'hit' }` replay the cached response.
-     - If `{ type: 'inflight' }` await the returned promise and replay (or 503).
-     - If `{ type: 'claimed' }` proceed with processing and then:
-       - On success call `storeIdempotencyKey(key, namespace, status, body)`.
-       - On failure call `releaseIdempotencyKey(key, namespace)` so waiters receive `null`.
+    - If `{ type: 'hit' }` replay the cached response.
+    - If `{ type: 'inflight' }` await the returned promise and replay (or 503).
+    - If `{ type: 'claimed' }` proceed with processing and then:
+      - On success call `storeIdempotencyKey(key, namespace, status, body)`.
+      - On failure call `releaseIdempotencyKey(key, namespace)` so waiters receive `null`.
 
 - There is also a near-duplicate implementation present in
   [src/core/database/db.ts](src/core/database/db.ts) which contains similar

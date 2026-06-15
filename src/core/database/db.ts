@@ -10,160 +10,166 @@ import {
   readRuntimeState,
   writeRuntimeState,
 } from './sqlite-storage';
+import { PrintJobState, PrintJobEntry } from './models/print-job.model';
+import {
+  SpoolerLifecycleState,
+  SpoolerLifecycleTransitionEntry,
+  SpoolerLifecycleRecord,
+} from './models/spooler-lifecycle.model';
+import {
+  OwedChangeEntry,
+  PendingRefundEntry,
+  FinancialEventType,
+  FinancialLedgerEntry,
+} from './models/payment.model';
+import {
+  ReceiptMode,
+  ReceiptRecordStatus,
+  ReceiptChangeState,
+  ReceiptChangeSnapshot,
+  ReceiptRecordEntry,
+  ReceiptAccessTokenEntry,
+} from './models/receipt.model';
+import {
+  ConsumableUsageEventEntry,
+  ConsumableInkSnapshotSupply,
+  ConsumableInkSnapshotEntry,
+  InkHistoryEntry,
+  InkRefillBaseline,
+} from './models/consumables.model';
+import {
+  RecoverySessionPhase,
+  RecoveryReconciliationAction,
+  RecoverySessionEntry,
+  RecoveryLifecycleState,
+  RecoveryState,
+} from './models/recovery.model';
+import {
+  FeedbackCategory,
+  FeedbackStatus,
+  FeedbackEntry,
+  FeedbackSessionEntry,
+} from './models/feedback.model';
+import {
+  ReportIssueCategory,
+  ReportIssueStatus,
+  ReportIssueSessionEntry,
+  ReportIssueAttachmentEntry,
+  ReportIssueEntry,
+} from './models/report-issue.model';
+
+import {
+  AdminLockout,
+  PricingSettings,
+  PricingEngineRoundingMode,
+  PricingEnginePaperProfile,
+  PricingEngineBulkDiscountTier,
+  PricingEngineSettings,
+  InkTelemetryUnknownPolicy,
+  InkMonitoringSettings,
+  ConsumablesForecastingSettings,
+  ConsumableEstimationCoefficients,
+  ConsumableEstimationSettings,
+  AdminSettings,
+  KioskPreferences,
+  AlertDashboardSettings,
+  AlertEmailSettings,
+  AlertDedupeSettings,
+  AlertSettings,
+  AdminLogEntry,
+} from './models/admin.model';
+
+import {
+  AlertChannel,
+  AnomalySeverity,
+  AnomalyStatus,
+  AnomalyCategory,
+  AnomalyIncidentEntry,
+} from './models/anomaly-incident.model';
+
+import { SupportedLanguage } from './shared.schema';
+
+export {
+  AdminLockout,
+  PricingSettings,
+  PricingEngineRoundingMode,
+  PricingEnginePaperProfile,
+  PricingEngineBulkDiscountTier,
+  PricingEngineSettings,
+  InkTelemetryUnknownPolicy,
+  InkMonitoringSettings,
+  ConsumablesForecastingSettings,
+  ConsumableEstimationCoefficients,
+  ConsumableEstimationSettings,
+  AdminSettings,
+  KioskPreferences,
+  AlertDashboardSettings,
+  AlertEmailSettings,
+  AlertDedupeSettings,
+  AlertSettings,
+  AdminLogEntry,
+};
+
+export {
+  AlertChannel,
+  AnomalySeverity,
+  AnomalyStatus,
+  AnomalyCategory,
+  AnomalyIncidentEntry,
+};
+
+export { SupportedLanguage };
+
+export { PrintJobState, PrintJobEntry };
+export {
+  SpoolerLifecycleState,
+  SpoolerLifecycleTransitionEntry,
+  SpoolerLifecycleRecord,
+};
+export {
+  OwedChangeEntry,
+  PendingRefundEntry,
+  FinancialEventType,
+  FinancialLedgerEntry,
+};
+export {
+  ReceiptMode,
+  ReceiptRecordStatus,
+  ReceiptChangeState,
+  ReceiptChangeSnapshot,
+  ReceiptRecordEntry,
+  ReceiptAccessTokenEntry,
+};
+export {
+  ConsumableUsageEventEntry,
+  ConsumableInkSnapshotSupply,
+  ConsumableInkSnapshotEntry,
+  InkHistoryEntry,
+  InkRefillBaseline,
+};
+export {
+  RecoverySessionPhase,
+  RecoveryReconciliationAction,
+  RecoverySessionEntry,
+  RecoveryLifecycleState,
+  RecoveryState,
+};
+export {
+  FeedbackCategory,
+  FeedbackStatus,
+  FeedbackEntry,
+  FeedbackSessionEntry,
+};
+export {
+  ReportIssueCategory,
+  ReportIssueStatus,
+  ReportIssueSessionEntry,
+  ReportIssueAttachmentEntry,
+  ReportIssueEntry,
+};
 
 export type PrintMode = 'print' | 'copy' | 'scan';
 export type ColorMode = 'colored' | 'grayscale';
-export type AdminLockout = {
-  failedAttempts: number;
-  lockedUntil: string | null;
-};
-
-export interface PricingSettings {
-  printPerPage: number;
-  copyPerPage: number;
-  scanDocument: number;
-  colorSurcharge: number;
-}
-
-export type PricingEngineRoundingMode = 'whole_peso_total_only';
-
-export interface PricingEnginePaperProfile {
-  baseBwPrice: number;
-  baseColorPrice: number;
-}
-
-export interface PricingEngineBulkDiscountTier {
-  minPages: number;
-  maxPages?: number;
-  discountPerPage: number;
-}
-
-export interface PricingEngineSettings {
-  paperProfiles: {
-    a4: PricingEnginePaperProfile;
-    shortBond: PricingEnginePaperProfile;
-    longBond: PricingEnginePaperProfile;
-  };
-  bulkDiscountTiers: PricingEngineBulkDiscountTier[];
-  rounding: PricingEngineRoundingMode;
-}
-
-export type InkTelemetryUnknownPolicy = 'warn_allow' | 'block';
-
-export interface InkMonitoringSettings {
-  enabled: boolean;
-  targetPrinterName: string | null;
-  lowThresholdPercent: number;
-  criticalThresholdPercent: number;
-  blockOnLow: boolean;
-  blockOnEmpty: boolean;
-  telemetryUnknownPolicy: InkTelemetryUnknownPolicy;
-}
-
-export interface ConsumablesForecastingSettings {
-  enabled: boolean;
-  rollingWindowDays: number;
-  alertDaysThreshold: number;
-  paperTrayCapacitySheets: number;
-  paperCurrentSheets: number;
-  paperRefillUpdatedAt: string | null;
-}
-
-export interface ConsumableEstimationCoefficients {
-  bwBlack: number;
-  colorCyan: number;
-  colorMagenta: number;
-  colorYellow: number;
-  colorBlack: number;
-}
-
-export interface ConsumableEstimationSettings {
-  defaultCoefficients: ConsumableEstimationCoefficients;
-  printerOverrides: Record<string, Partial<ConsumableEstimationCoefficients>>;
-}
-
-export interface AdminSettings {
-  pricing: PricingSettings;
-  pricingEngine: PricingEngineSettings;
-  idleTimeoutSeconds: number;
-  adminPin: string;
-  adminLocalOnly: boolean;
-  kioskPreferences: KioskPreferences;
-  alerts: AlertSettings;
-  inkMonitoring: InkMonitoringSettings;
-  consumablesForecasting: ConsumablesForecastingSettings;
-  consumableEstimation: ConsumableEstimationSettings;
-}
-
-export type SupportedLanguage = 'en' | 'fil';
-
-export interface KioskPreferences {
-  language: SupportedLanguage;
-  highContrast: boolean;
-}
-
-export type AlertChannel = 'dashboard' | 'email';
-export type AnomalySeverity = 'warning' | 'critical';
-export type AnomalyStatus = 'open' | 'acknowledged' | 'resolved';
-export type AnomalyCategory =
-  | 'printer'
-  | 'spooler'
-  | 'serial'
-  | 'hopper'
-  | 'network'
-  | 'security';
-
-export interface AlertDashboardSettings {
-  enabled: boolean;
-}
-
-export interface AlertEmailSettings {
-  enabled: boolean;
-  smtpHost: string;
-  smtpPort: number;
-  secure: boolean;
-  username: string;
-  from: string;
-  to: string;
-}
-
-export interface AlertDedupeSettings {
-  printerMs: number;
-  spoolerMs: number;
-  serialMs: number;
-  hopperMs: number;
-  networkMs: number;
-  securityMs: number;
-}
-
-export interface AlertSettings {
-  severityThreshold: AnomalySeverity;
-  dashboard: AlertDashboardSettings;
-  email: AlertEmailSettings;
-  dedupe: AlertDedupeSettings;
-}
-
-export interface AnomalyIncidentEntry {
-  id: string;
-  type: string;
-  source: string;
-  category: AnomalyCategory;
-  severity: AnomalySeverity;
-  status: AnomalyStatus;
-  fingerprint: string;
-  message: string;
-  context?: LogMeta;
-  occurrenceCount: number;
-  firstDetectedAt: string;
-  lastDetectedAt: string;
-  createdAt: string;
-  updatedAt: string;
-  acknowledgedAt: string | null;
-  resolvedAt: string | null;
-  lastNotificationAt: string | null;
-  lastNotifiedChannels: AlertChannel[];
-}
-
 export interface CoinStats {
   one: number;
   five: number;
@@ -197,22 +203,6 @@ export interface HopperStats {
   lastSelfTestAt: string | null;
 }
 
-export interface InkRefillBaseline {
-  colorPages: number;
-  bwPages: number;
-  updatedAt: string | null;
-}
-
-export interface OwedChangeEntry {
-  id: string;
-  timestamp: string;
-  timestampMeta?: TrustedTimestampMeta;
-  amount: number;
-  reason: string;
-  status: 'open' | 'resolved';
-  meta?: LogMeta;
-}
-
 export type LogMeta = Record<string, string | number | boolean | null>;
 
 export type TrustedTimestampSource = 'ntp' | 'system';
@@ -222,306 +212,6 @@ export interface TrustedTimestampMeta {
   synced: boolean;
   offsetMs: number | null;
   detail: string | null;
-}
-
-export type FinancialEventType =
-  | 'coin_inserted'
-  | 'job_started'
-  | 'job_completed'
-  | 'refund_issued'
-  | 'variance_alert';
-
-export interface FinancialLedgerEntry {
-  id: string;
-  timestamp: string;
-  timestampMeta: TrustedTimestampMeta;
-  eventType: FinancialEventType;
-  amount: number;
-  referenceId: string | null;
-  meta: LogMeta;
-  previousHash: string | null;
-  hash: string;
-}
-
-export interface AdminLogEntry {
-  id: string;
-  timestamp: string;
-  timestampMeta?: TrustedTimestampMeta;
-  type: string;
-  message: string;
-  meta?: LogMeta;
-}
-
-export type PrintJobState =
-  | 'pending'
-  | 'processing'
-  | 'printed'
-  | 'failed'
-  | 'retrying';
-
-export interface PrintJobEntry {
-  jobId: string;
-  transactionId: string;
-  state: PrintJobState;
-  payloadJson: string;
-  attemptsJson: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type FeedbackCategory =
-  | 'service'
-  | 'hardware'
-  | 'software'
-  | 'print'
-  | 'scan'
-  | 'copy'
-  | 'payment'
-  | 'other';
-
-export type FeedbackStatus = 'open' | 'resolved';
-
-export interface FeedbackEntry {
-  id: string;
-  sessionId: string;
-  timestamp: string;
-  comment: string;
-  category: FeedbackCategory | null;
-  rating: number | null;
-  status: FeedbackStatus;
-  resolvedAt?: string | null;
-  meta?: LogMeta;
-}
-
-export interface FeedbackSessionEntry {
-  id: string;
-  token: string;
-  feedbackUrl: string;
-  createdAt: string;
-  expiresAt: string;
-  submittedAt: string | null;
-}
-
-export type ReportIssueCategory =
-  | 'hardware'
-  | 'software'
-  | 'print'
-  | 'copy'
-  | 'scan'
-  | 'payment'
-  | 'network'
-  | 'other';
-
-export type ReportIssueStatus = 'open' | 'acknowledged' | 'resolved';
-
-export interface ReportIssueSessionEntry {
-  id: string;
-  token: string;
-  reportUrl: string;
-  createdAt: string;
-  expiresAt: string;
-  submittedAt: string | null;
-}
-
-export interface ReportIssueAttachmentEntry {
-  id: string;
-  sessionId: string;
-  reportIssueId: string | null;
-  timestamp: string;
-  originalName: string;
-  storedName: string;
-  contentType: string;
-  sizeBytes: number;
-  filePath: string;
-}
-
-export interface ReportIssueEntry {
-  id: string;
-  sessionId: string;
-  timestamp: string;
-  title: string;
-  description: string;
-  category: ReportIssueCategory;
-  status: ReportIssueStatus;
-  attachmentIds: string[];
-  acknowledgedAt: string | null;
-  resolvedAt: string | null;
-  meta?: LogMeta;
-}
-
-export interface PendingRefundEntry {
-  id: string;
-  timestamp: string;
-  chargedAmount: number;
-  reason: string;
-  status: 'open' | 'refunded' | 'dismissed';
-  closedAt: string | null;
-  jobContext: Record<string, string | number | boolean | null>;
-}
-
-export interface InkHistoryEntry {
-  id: string;
-  timestamp: string;
-  printerName: string | null;
-  printerStatus: string;
-  inkDetectionMethod:
-    | 'snmp'
-    | 'vendor-wmi'
-    | 'printer-property'
-    | 'error-state'
-    | 'none';
-  inkTelemetryAvailable: boolean;
-  inkTelemetryReason: string | null;
-  supplies: Array<{
-    name: string;
-    level: number | null;
-    status: 'ok' | 'low' | 'empty' | 'unknown';
-  }>;
-}
-
-export type SpoolerLifecycleState =
-  | 'queued'
-  | 'processing'
-  | 'printed'
-  | 'failed';
-
-export interface SpoolerLifecycleTransitionEntry {
-  state: SpoolerLifecycleState;
-  timestamp: string;
-  reason: string | null;
-  printerName: string | null;
-  spoolerCorrelationKey: string | null;
-  spoolerJobId: number | null;
-  jobStatus: string | null;
-  pagesPrinted: number | null;
-  totalPages: number | null;
-  meta: LogMeta;
-}
-
-export interface SpoolerLifecycleRecord {
-  transactionId: string;
-  mode: 'print' | 'copy';
-  createdAt: string;
-  updatedAt: string;
-  currentState: SpoolerLifecycleState | null;
-  queuedAt: string | null;
-  processingAt: string | null;
-  printedAt: string | null;
-  failedAt: string | null;
-  sessionId: string | null;
-  documentId: string | null;
-  requiredAmount: number;
-  spoolerCorrelationKey: string | null;
-  spoolerJobId: number | null;
-  printerName: string | null;
-  reason: string | null;
-  jobStatus: string | null;
-  pagesPrinted: number | null;
-  totalPages: number | null;
-  transitions: SpoolerLifecycleTransitionEntry[];
-}
-
-export type RecoverySessionPhase =
-  | 'initiated'
-  | 'preflight_passed'
-  | 'job_dispatched'
-  | 'settled'
-  | 'spooler_confirmed'
-  | 'spooler_failed'
-  | 'spooler_timeout'
-  | 'reconciled';
-
-export type RecoveryReconciliationAction =
-  | 'none'
-  | 'void'
-  | 'auto_refund'
-  | 'pending_admin_review';
-
-export interface RecoverySessionEntry {
-  id: string;
-  mode: 'print' | 'copy';
-  createdAt: string;
-  updatedAt: string;
-  phase: RecoverySessionPhase;
-  requiredAmount: number;
-  chargedAmount: number;
-  sessionId: string | null;
-  documentId: string | null;
-  spoolerCorrelationKey: string | null;
-  spoolerJobId: number | null;
-  jobDispatchedAt: string | null;
-  settledAt: string | null;
-  spoolerTerminalAt: string | null;
-  reconciledAt: string | null;
-  startupReconciled: boolean;
-  reconciliationAction: RecoveryReconciliationAction;
-  reconciliationReason: string | null;
-  lastError: string | null;
-  wasPresentAtStartup?: boolean;
-  context: LogMeta;
-}
-
-export interface RecoveryLifecycleState {
-  bootCount: number;
-  unexpectedRestartCount: number;
-  lastStartupAt: string | null;
-  lastStartupPid: number | null;
-  lastStartupReason: string | null;
-  lastShutdownAt: string | null;
-  lastShutdownPid: number | null;
-  lastShutdownSignal: string | null;
-  lastUnexpectedRestartAt: string | null;
-}
-
-export interface RecoveryState {
-  lifecycle: RecoveryLifecycleState;
-  sessions: RecoverySessionEntry[];
-}
-
-export type ReceiptMode = 'print' | 'copy';
-
-export type ReceiptRecordStatus =
-  | 'settled_pending_terminal'
-  | 'printed'
-  | 'failed'
-  | 'refunded'
-  | 'refunded_pending_review';
-
-export type ReceiptChangeState = 'none' | 'dispensed' | 'failed';
-
-export interface ReceiptChangeSnapshot {
-  requested: number;
-  dispensed: number;
-  state: ReceiptChangeState;
-  attempts: number;
-  owedChangeId: string | null;
-  message: string | null;
-}
-
-export interface ReceiptRecordEntry {
-  id: string;
-  transactionId: string;
-  mode: ReceiptMode;
-  chargedAmount: number;
-  // Optional persisted page composition counts (nullable when unknown)
-  colorPages?: number | null;
-  bwPages?: number | null;
-  status: ReceiptRecordStatus;
-  change: ReceiptChangeSnapshot;
-  settledAt: string | null;
-  terminalAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  expiresAt: string;
-}
-
-export interface ReceiptAccessTokenEntry {
-  id: string;
-  receiptId: string;
-  tokenHash: string;
-  createdAt: string;
-  expiresAt: string;
-  revokedAt: string | null;
 }
 
 export type Schema = {
@@ -1956,141 +1646,10 @@ export async function initDB() {
 }
 
 // ── Balance mutex ─────────────────────────────────────────────────────────────
-// Serialises concurrent balance/earnings mutations for the payment endpoints
-// (/api/confirm-payment and the /api/copy/jobs charge path).
-// Other paths (serial coin events, admin/test balance routes) do not hold this
-// lock; they are low-frequency and safe to interleave with coin acceptance.
-
-let balanceLockPromise = Promise.resolve();
-
-export async function withBalanceLock<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = balanceLockPromise;
-  let release: () => void;
-  balanceLockPromise = new Promise<void>((r) => {
-    release = r;
-  });
-  await prev;
-  try {
-    return await fn();
-  } finally {
-    release!();
-  }
-}
-
-// ── Idempotency key store ────────────────────────────────────────────────────
-// Prevents double-charge from retry/double-click on payment endpoints.
-// Keys are namespaced by route (e.g. "POST:/api/confirm-payment") to avoid
-// cross-endpoint collisions. An in-flight Promise is stored synchronously as
-// soon as a key is claimed, so concurrent duplicate requests wait for the
-// first to complete rather than both proceeding independently.
-
-const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-export interface IdempotencyEntry {
-  response: unknown;
-  statusCode: number;
-  expiresAt: number;
-}
-
-interface InFlightEntry {
-  promise: Promise<IdempotencyEntry | null>;
-  resolve: (entry: IdempotencyEntry | null) => void;
-}
-
-const idempotencyStore = new Map<string, IdempotencyEntry>();
-const idempotencyInFlight = new Map<string, InFlightEntry>();
-
-function namespacedKey(key: string, namespace: string): string {
-  return `${namespace}\x00${key}`;
-}
-
-/** Creates a Promise together with its resolve function. */
-function makeDeferred(): {
-  promise: Promise<IdempotencyEntry | null>;
-  resolve: (entry: IdempotencyEntry | null) => void;
-} {
-  let resolve!: (entry: IdempotencyEntry | null) => void;
-  const promise = new Promise<IdempotencyEntry | null>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
-
-/**
- * Try to claim an idempotency key for the given namespace.
- *
- * Returns:
- *  - `{ type: "hit", entry }` — a completed response is cached; replay it.
- *  - `{ type: "inflight", promise }` — another request is processing this key;
- *    await the promise and replay (or 503 if it resolves to null).
- *  - `{ type: "claimed" }` — this call has reserved the key; proceed with the
- *    request and then call `storeIdempotencyKey` or `releaseIdempotencyKey`.
- */
-export function acquireIdempotencyKey(
-  key: string,
-  namespace: string,
-):
-  | { type: 'hit'; entry: IdempotencyEntry }
-  | { type: 'inflight'; promise: Promise<IdempotencyEntry | null> }
-  | { type: 'claimed' } {
-  const nk = namespacedKey(key, namespace);
-
-  const completed = idempotencyStore.get(nk);
-  if (completed) {
-    if (Date.now() <= completed.expiresAt)
-      return { type: 'hit', entry: completed };
-    idempotencyStore.delete(nk);
-  }
-
-  const inFlight = idempotencyInFlight.get(nk);
-  if (inFlight) return { type: 'inflight', promise: inFlight.promise };
-
-  // Reserve the slot with a deferred promise so concurrent duplicates wait.
-  const deferred = makeDeferred();
-  idempotencyInFlight.set(nk, deferred);
-  return { type: 'claimed' };
-}
-
-/** Finalise a claimed slot with the actual response. */
-export function storeIdempotencyKey(
-  key: string,
-  namespace: string,
-  statusCode: number,
-  response: unknown,
-): void {
-  const nk = namespacedKey(key, namespace);
-  const entry: IdempotencyEntry = {
-    response,
-    statusCode,
-    expiresAt: Date.now() + IDEMPOTENCY_TTL_MS,
-  };
-  idempotencyStore.set(nk, entry);
-  const inFlight = idempotencyInFlight.get(nk);
-  if (inFlight) {
-    inFlight.resolve(entry);
-    idempotencyInFlight.delete(nk);
-  }
-}
-
-/**
- * Release a claimed slot without caching a response (e.g. on server error).
- * Waiting duplicates will receive `null` and should return 503.
- */
-export function releaseIdempotencyKey(key: string, namespace: string): void {
-  const nk = namespacedKey(key, namespace);
-  const inFlight = idempotencyInFlight.get(nk);
-  if (inFlight) {
-    inFlight.resolve(null);
-    idempotencyInFlight.delete(nk);
-  }
-}
-
-// Periodic cleanup of expired idempotency keys
-const idempotencyCleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of idempotencyStore) {
-    if (now > entry.expiresAt) idempotencyStore.delete(key);
-  }
-}, IDEMPOTENCY_TTL_MS);
-
-idempotencyCleanupTimer.unref();
+export { withBalanceLock } from './balance-lock';
+export {
+  type IdempotencyEntry,
+  acquireIdempotencyKey,
+  storeIdempotencyKey,
+  releaseIdempotencyKey,
+} from './idempotency';
