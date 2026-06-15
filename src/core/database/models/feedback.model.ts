@@ -170,15 +170,21 @@ export class FeedbackSqliteStore {
 
   createFeedbackSubmission(entry: FeedbackEntry): void {
     withTransaction(() => {
+      const changes = this.markSessionSubmitted(entry.sessionId, entry.timestamp);
+      if (changes !== 1) {
+        throw new Error('Feedback session already submitted or does not exist.');
+      }
       this.insertFeedback(entry);
-      this.markSessionSubmitted(entry.sessionId, entry.timestamp);
     });
   }
 
-  markSessionSubmitted(sessionId: string, submittedAt: string): void {
-    getSqliteDb()
-      .prepare('UPDATE feedback_sessions SET submitted_at = ? WHERE id = ?')
-      .run(submittedAt, sessionId);
+  markSessionSubmitted(sessionId: string, submittedAt: string): number {
+    const result = getSqliteDb()
+      .prepare(
+        'UPDATE feedback_sessions SET submitted_at = ? WHERE id = ? AND submitted_at IS NULL',
+      )
+      .run(submittedAt, sessionId) as { changes?: unknown };
+    return Number(result.changes ?? 0);
   }
 
   listFeedback(options: ListFeedbackOptions): {
@@ -359,9 +365,20 @@ export class FeedbackSqliteStore {
 
   private toFeedbackEntry(row: Record<string, unknown>): FeedbackEntry {
     const parsedMeta = normalizeLogMeta(parseJsonValue<unknown>(row.meta_json));
+    const validCategories = new Set<string>([
+      'service',
+      'hardware',
+      'software',
+      'print',
+      'scan',
+      'copy',
+      'payment',
+      'other',
+    ]);
+    const categoryRaw = typeof row.category === 'string' ? row.category : null;
     const categoryValue =
-      typeof row.category === 'string' && row.category.length > 0
-        ? row.category
+      categoryRaw && validCategories.has(categoryRaw)
+        ? (categoryRaw as FeedbackCategory)
         : null;
     const ratingValue =
       typeof row.rating === 'number' && Number.isFinite(row.rating)
@@ -374,7 +391,7 @@ export class FeedbackSqliteStore {
       sessionId: String(row.session_id ?? ''),
       timestamp: String(row.timestamp ?? ''),
       comment: String(row.comment ?? ''),
-      category: categoryValue as FeedbackEntry['category'],
+      category: categoryValue,
       rating: ratingValue,
       status: statusValue,
       resolvedAt: typeof row.resolved_at === 'string' ? row.resolved_at : null,

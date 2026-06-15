@@ -221,6 +221,8 @@ export class ConsumablesSqliteStore {
       Math.min(Math.floor(nextCurrentSheets), normalizedCapacity),
     );
     getSqliteDb();
+    if (!runtimeDb.data) await runtimeDb.read();
+    if (!runtimeDb.data) throw new Error('Runtime database was not initialized properly.');
     runtimeDb.data!.settings.consumablesForecasting.paperTrayCapacitySheets =
       normalizedCapacity;
     runtimeDb.data!.settings.consumablesForecasting.paperCurrentSheets =

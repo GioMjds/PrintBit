@@ -45,12 +45,13 @@ export class PricingAnalysisCacheSqliteStore {
         `INSERT INTO pricing_analysis_cache (
           file_hash,
           config_fingerprint,
+          algorithm_version,
           content_type,
           page_count,
           analysis_json,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_hash, config_fingerprint) DO UPDATE SET
           algorithm_version = excluded.algorithm_version,
           content_type = excluded.content_type,

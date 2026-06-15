@@ -68,7 +68,9 @@ function parseJsonValue<T>(value: unknown): T | undefined {
   }
 }
 
-function normalizeLogMeta(value: unknown): Record<string, string | number | boolean | null> | undefined {
+function normalizeLogMeta(
+  value: unknown,
+): Record<string, string | number | boolean | null> | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return undefined;
   }
@@ -265,25 +267,42 @@ export class ReportIssueSqliteStore {
        WHERE id = ? AND session_id = ? AND report_issue_id IS NULL`,
     );
     for (const attachmentId of attachmentIds) {
-      stmt.run(reportIssueId, attachmentId, sessionId);
+      const result = stmt.run(reportIssueId, attachmentId, sessionId) as {
+        changes?: unknown;
+      };
+
+      if (Number(result.changes ?? 0) !== 1) {
+        throw new Error('Attachment is not available for this report session.');
+      }
     }
   }
 
-  markSessionSubmitted(sessionId: string, submittedAt: string): void {
-    getSqliteDb()
-      .prepare('UPDATE report_issue_sessions SET submitted_at = ? WHERE id = ?')
-      .run(submittedAt, sessionId);
+  markSessionSubmitted(sessionId: string, submittedAt: string): number {
+    const result = getSqliteDb()
+      .prepare(
+        'UPDATE report_issue_sessions SET submitted_at = ? WHERE id = ? AND submitted_at IS NULL',
+      )
+      .run(submittedAt, sessionId) as { changes?: unknown };
+    return Number(result.changes ?? 0);
   }
 
   createSessionIssueWithAttachments(entry: ReportIssueEntry): void {
     withTransaction(() => {
+      const changes = this.markSessionSubmitted(
+        entry.sessionId,
+        entry.timestamp,
+      );
+      if (changes !== 1) {
+        throw new Error(
+          'Report issue session already submitted or does not exist.',
+        );
+      }
       this.createReportIssue(entry);
       this.assignAttachmentsToIssue(
         entry.attachmentIds,
         entry.id,
         entry.sessionId,
       );
-      this.markSessionSubmitted(entry.sessionId, entry.timestamp);
     });
   }
 
@@ -526,14 +545,40 @@ export class ReportIssueSqliteStore {
         )
       : [];
 
+    const validCategories = new Set<string>([
+      'hardware',
+      'software',
+      'print',
+      'copy',
+      'scan',
+      'payment',
+      'network',
+      'other',
+    ]);
+    const validStatuses = new Set<string>([
+      'open',
+      'acknowledged',
+      'resolved',
+    ]);
+
+    const categoryRaw = typeof row.category === 'string' ? row.category : '';
+    const categoryValue = validCategories.has(categoryRaw)
+      ? (categoryRaw as ReportIssueCategory)
+      : 'other';
+
+    const statusRaw = typeof row.status === 'string' ? row.status : '';
+    const statusValue = validStatuses.has(statusRaw)
+      ? (statusRaw as ReportIssueStatus)
+      : 'open';
+
     return {
       id: String(row.id ?? ''),
       sessionId: String(row.session_id ?? ''),
       timestamp: String(row.timestamp ?? ''),
       title: String(row.title ?? ''),
       description: String(row.description ?? ''),
-      category: String(row.category ?? 'other') as ReportIssueCategory,
-      status: String(row.status ?? 'open') as ReportIssueStatus,
+      category: categoryValue,
+      status: statusValue,
       attachmentIds,
       acknowledgedAt:
         typeof row.acknowledged_at === 'string' ? row.acknowledged_at : null,
