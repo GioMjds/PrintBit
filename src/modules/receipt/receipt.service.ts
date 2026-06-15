@@ -10,6 +10,7 @@ import type {
   ReceiptRecordStatus,
 } from '@/services/db';
 import { adminService } from '@/services/admin';
+import { getSpoolerLifecycleRecord } from '@/services/recovery';
 
 const RECEIPT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const RECEIPT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -62,6 +63,10 @@ export interface ReceiptPayload {
   transactionId: string;
   mode: ReceiptMode;
   chargedAmount: number;
+  colorPages: number | null;
+  bwPages: number | null;
+  pagesPrinted: number | null;
+  totalPages: number | null;
   status: ReceiptRecordStatus;
   change: ReceiptPayloadChange;
   settledAt: string | null;
@@ -349,10 +354,17 @@ export class ReceiptService {
       0,
       record.change.requested - record.change.dispensed,
     );
+
+    const lifecycle = getSpoolerLifecycleRecord(record.transactionId);
+
     return {
       transactionId: record.transactionId,
       mode: record.mode,
       chargedAmount: record.chargedAmount,
+      colorPages: record.colorPages ?? null,
+      bwPages: record.bwPages ?? null,
+      pagesPrinted: lifecycle?.pagesPrinted ?? null,
+      totalPages: lifecycle?.totalPages ?? null,
       status: record.status,
       change: {
         requested: record.change.requested,

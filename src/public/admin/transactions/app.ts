@@ -50,6 +50,9 @@ const dTransactionId = document.getElementById('dTransactionId') as HTMLElement 
 const dMode = document.getElementById('dMode') as HTMLElement | null;
 const dAmount = document.getElementById('dAmount') as HTMLElement | null;
 const dStatus = document.getElementById('dStatus') as HTMLElement | null;
+const dColorPages = document.getElementById('dColorPages') as HTMLElement | null;
+const dBwPages = document.getElementById('dBwPages') as HTMLElement | null;
+const dPagesPrinted = document.getElementById('dPagesPrinted') as HTMLElement | null;
 const dChangeRequested = document.getElementById(
   'dChangeRequested',
 ) as HTMLElement | null;
@@ -103,6 +106,8 @@ type TransactionContextPayload = {
   transactionId: string;
   mode: string | null;
   chargedAmount: number | null;
+  colorPages: number | null;
+  bwPages: number | null;
   status: string | null;
   change: {
     requested: number | null;
@@ -463,6 +468,9 @@ function resetDrawerView(): void {
   setField(dMode, '—');
   setField(dAmount, '—');
   setField(dStatus, '—');
+  setField(dColorPages, '—');
+  setField(dBwPages, '—');
+  setField(dPagesPrinted, '—');
   setField(dChangeRequested, '—');
   setField(dChangeDispensed, '—');
   setField(dChangeRemaining, '—');
@@ -498,6 +506,20 @@ async function fetchTransactionContext(
   return payload;
 }
 
+function resolveSpoolerPagesPrinted(context: TransactionContextPayload): {
+  pagesPrinted: number | null;
+  totalPages: number | null;
+} {
+  const transitions = context.spoolerLifecycle?.transitions ?? [];
+  const lastPrinted = [...transitions]
+    .reverse()
+    .find((t) => t.state === 'printed');
+  return {
+    pagesPrinted: lastPrinted?.pagesPrinted ?? null,
+    totalPages: lastPrinted?.totalPages ?? null,
+  };
+}
+
 function renderDrawerRelatedLogs(context: TransactionContextPayload): void {
   if (!dRelatedLogsBody) return;
   dRelatedLogsBody.innerHTML = '';
@@ -519,10 +541,25 @@ function renderDrawerRelatedLogs(context: TransactionContextPayload): void {
 }
 
 function renderDrawer(context: TransactionContextPayload): void {
+  const { pagesPrinted, totalPages } = resolveSpoolerPagesPrinted(context);
+
   setField(dTransactionId, context.transactionId);
   setField(dMode, formatMode(context.mode));
   setField(dAmount, formatPeso(context.chargedAmount));
   setField(dStatus, formatStatus(context.status));
+  setField(
+    dColorPages,
+    context.colorPages != null ? String(context.colorPages) : '—',
+  );
+  setField(dBwPages, context.bwPages != null ? String(context.bwPages) : '—');
+  setField(
+    dPagesPrinted,
+    pagesPrinted != null
+      ? totalPages != null
+        ? `${pagesPrinted} of ${totalPages}`
+        : `${pagesPrinted}`
+      : '—',
+  );
   setField(dChangeRequested, formatPeso(context.change.requested));
   setField(dChangeDispensed, formatPeso(context.change.dispensed));
   setField(dChangeRemaining, formatPeso(context.change.remaining));

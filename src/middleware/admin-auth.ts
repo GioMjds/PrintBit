@@ -26,7 +26,8 @@ function isLocalRequestIp(rawIp: string): boolean {
 }
 
 export const requireAdminLocalAccess: RequestHandler = (req, res, next) => {
-  if (!db.data!.settings.adminLocalOnly) return next();
+  const adminLocalOnly = db.data?.settings.adminLocalOnly ?? true;
+  if (!adminLocalOnly) return next();
 
   const remoteIp = req.ip || req.socket.remoteAddress || '';
   if (!isLocalRequestIp(remoteIp)) {

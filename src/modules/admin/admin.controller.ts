@@ -2206,6 +2206,8 @@ export class AdminController {
     transactionId: string;
     mode: string | null;
     chargedAmount: number | null;
+    colorPages: number | null;
+    bwPages: number | null;
     status: string | null;
     change: {
       requested: number | null;
@@ -2370,6 +2372,8 @@ export class AdminController {
       transactionId,
       mode,
       chargedAmount,
+      colorPages: receiptPayload?.colorPages ?? null,
+      bwPages: receiptPayload?.bwPages ?? null,
       status,
       change: receiptPayload
         ? {

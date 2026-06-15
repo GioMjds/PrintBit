@@ -2,9 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>E-Receipt · PrintBit</title>
-    <meta name="description" content="Your PrintBit transaction E-Receipt. Save or download for your records." />
+    <meta
+      name="description"
+      content="Your PrintBit transaction E-Receipt. Save or download for your records."
+    />
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/receipt/styles.css" />
   </head>
@@ -23,10 +29,33 @@
         <header class="receipt-header">
           <div class="receipt-logo" aria-hidden="true">
             <svg viewBox="0 0 32 32" fill="none" width="40" height="40">
-              <rect x="7" y="4" width="18" height="11" rx="2" fill="var(--indigo)" />
-              <rect x="4" y="12" width="24" height="14" rx="3" fill="var(--indigo)" opacity=".8" />
+              <rect
+                x="7"
+                y="4"
+                width="18"
+                height="11"
+                rx="2"
+                fill="var(--indigo)"
+              />
+              <rect
+                x="4"
+                y="12"
+                width="24"
+                height="14"
+                rx="3"
+                fill="var(--indigo)"
+                opacity=".8"
+              />
               <rect x="7" y="20" width="18" height="10" rx="2" fill="#f5f4ff" />
-              <rect x="10" y="23" width="12" height="2" rx="1" fill="var(--lavender)" opacity=".7" />
+              <rect
+                x="10"
+                y="23"
+                width="12"
+                height="2"
+                rx="1"
+                fill="var(--lavender)"
+                opacity=".7"
+              />
             </svg>
           </div>
           <div class="receipt-brand">
@@ -42,7 +71,11 @@
         <div class="receipt-body" id="receiptBody" hidden>
           <div class="receipt-row" id="rowTransactionId">
             <span class="receipt-row__label">Transaction ID</span>
-            <span class="receipt-row__value receipt-row__value--mono" id="rTransactionId">—</span>
+            <span
+              class="receipt-row__value receipt-row__value--mono"
+              id="rTransactionId"
+              >—</span
+            >
           </div>
           <div class="receipt-row" id="rowMode">
             <span class="receipt-row__label">Service</span>
@@ -53,7 +86,23 @@
 
           <div class="receipt-row receipt-row--highlight" id="rowAmount">
             <span class="receipt-row__label">Amount Charged</span>
-            <span class="receipt-row__value receipt-row__value--amount" id="rAmount">—</span>
+            <span
+              class="receipt-row__value receipt-row__value--amount"
+              id="rAmount"
+              >—</span
+            >
+          </div>
+          <div class="receipt-row" id="rowColorPages">
+            <span class="receipt-row__label">Pages (Color)</span>
+            <span class="receipt-row__value" id="rColorPages">—</span>
+          </div>
+          <div class="receipt-row" id="rowBwPages">
+            <span class="receipt-row__label">Pages (B&W)</span>
+            <span class="receipt-row__value" id="rBwPages">—</span>
+          </div>
+          <div class="receipt-row" id="rowPagesPrinted">
+            <span class="receipt-row__label">Pages Printed</span>
+            <span class="receipt-row__value" id="rPagesPrinted">—</span>
           </div>
           <div class="receipt-row" id="rowChangeRequested">
             <span class="receipt-row__label">Change Requested</span>
@@ -65,7 +114,11 @@
           </div>
           <div class="receipt-row" id="rowChangeRemaining">
             <span class="receipt-row__label">Remaining Owed</span>
-            <span class="receipt-row__value receipt-row__value--warn" id="rChangeRemaining">—</span>
+            <span
+              class="receipt-row__value receipt-row__value--warn"
+              id="rChangeRemaining"
+              >—</span
+            >
           </div>
 
           <div class="receipt-separator" aria-hidden="true"></div>
@@ -76,14 +129,20 @@
           </div>
           <div class="receipt-row" id="rowChangeMessage">
             <span class="receipt-row__label">Note</span>
-            <span class="receipt-row__value receipt-row__value--note" id="rChangeMessage">—</span>
+            <span
+              class="receipt-row__value receipt-row__value--note"
+              id="rChangeMessage"
+              >—</span
+            >
           </div>
 
           <div class="receipt-separator" aria-hidden="true"></div>
 
           <div class="receipt-row" id="rowStatus">
             <span class="receipt-row__label">Status</span>
-            <span class="receipt-badge" id="rStatus" data-status="pending">—</span>
+            <span class="receipt-badge" id="rStatus" data-status="pending"
+              >—</span
+            >
           </div>
           <div class="receipt-row" id="rowSettledAt">
             <span class="receipt-row__label">Settled</span>
@@ -113,7 +172,16 @@
       <!-- ── Action buttons (outside capture area) ─────────────── -->
       <div class="receipt-actions" id="receiptActions" hidden>
         <button type="button" class="receipt-download-btn" id="downloadBtn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            width="20"
+            height="20"
+          >
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />

@@ -15,6 +15,10 @@ type ReceiptPayload = {
   settledAt: string | null;
   terminalAt: string | null;
   generatedAt: string;
+  colorPages: number | null;
+  bwPages: number | null;
+  pagesPrinted: number | null;
+  totalPages: number | null;
 };
 
 type ReceiptLookup =
@@ -49,6 +53,9 @@ const fields = {
   ) as HTMLElement | null,
   mode: document.getElementById('rMode') as HTMLElement | null,
   amount: document.getElementById('rAmount') as HTMLElement | null,
+  colorPages: document.getElementById('rColorPages') as HTMLElement | null,
+  bwPages: document.getElementById('rBwPages') as HTMLElement | null,
+  pagesPrinted: document.getElementById('rPagesPrinted') as HTMLElement | null,
   changeRequested: document.getElementById(
     'rChangeRequested',
   ) as HTMLElement | null,
@@ -293,6 +300,22 @@ function renderReceipt(payload: ReceiptPayload): void {
   setField(fields.transactionId, payload.transactionId);
   setField(fields.mode, fmtMode(payload.mode));
   setField(fields.amount, fmtPeso(payload.chargedAmount));
+  setField(
+    fields.colorPages,
+    payload.colorPages != null ? String(payload.colorPages) : '—',
+  );
+  setField(
+    fields.bwPages,
+    payload.bwPages != null ? String(payload.bwPages) : '—',
+  );
+  setField(
+    fields.pagesPrinted,
+    payload.pagesPrinted != null
+      ? payload.totalPages != null
+        ? `${payload.pagesPrinted} of ${payload.totalPages} pages`
+        : `${payload.pagesPrinted} pages`
+      : '—',
+  );
   setField(fields.changeRequested, fmtPeso(change.requested));
   setField(fields.changeDispensed, fmtPeso(change.dispensed));
   setField(fields.changeRemaining, fmtPeso(change.remaining));
