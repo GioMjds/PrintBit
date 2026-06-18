@@ -150,48 +150,50 @@ body {
 .confirm-layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.1fr 1.4fr 0.9fr;
   gap: 20px;
   padding: 20px 0 8px;
   min-height: 0;
 }
 
-/* ── LEFT: payment column ─────────────────────────────────── */
-.payment-col {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.coin-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
+/* ── Shared panel utility ─────────────────────────────────── */
+.panel {
   background: rgba(255, 255, 255, 0.03);
   border: 1.5px solid rgba(167, 170, 225, 0.12);
   border-radius: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 170, 225, 0.15) transparent;
+}
+
+/* ── LEFT: payment column ─────────────────────────────────── */
+.payment-col {
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
   padding: 28px 20px;
 }
 
 /* Coin illustration */
-.coin-panel__icon {
+.payment-col__icon {
   width: 80px;
   height: 80px;
   flex-shrink: 0;
 }
 
-.coin-panel__cta {
+.payment-col__cta {
   font-size: 15px;
   font-weight: 600;
   color: var(--lavender);
   opacity: 0.8;
   margin: 0;
+  text-align: center;
 }
 
-.coin-panel__note {
+.payment-col__note {
   margin: -4px 0 0;
   max-width: 320px;
   font-size: 12px;
@@ -697,27 +699,12 @@ body {
 }
 
 
-/* ── RIGHT: summary column ────────────────────────────────── */
+/* ── MIDDLE: summary column ───────────────────────────────── */
 .summary-col {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+  padding: 22px 24px;
 }
 
-.summary-panel {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1.5px solid rgba(167, 170, 225, 0.12);
-  border-radius: 24px;
-  padding: 24px 28px;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(167, 170, 225, 0.15) transparent;
-}
-
-.summary-panel__title {
+.summary-col__title {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.3px;
@@ -782,8 +769,14 @@ body {
 .summary-row:nth-child(6) {
   animation-delay: 240ms;
 }
+.summary-row:nth-child(7) {
+  animation-delay: 280ms;
+}
 .summary-row:nth-child(8) {
-  animation-delay: 300ms;
+  animation-delay: 280ms;
+}
+.summary-row:nth-child(9) {
+  animation-delay: 280ms;
 }
 
 .summary-row__label {
@@ -858,13 +851,10 @@ body {
   letter-spacing: -0.5px;
 }
 
-/* ── Footer ───────────────────────────────────────────────── */
+/* ── Footer (slimmed — tip only) ─────────────────────────── */
 .confirm-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 0 20px;
   border-top: 1px solid rgba(167, 170, 225, 0.1);
+  padding: 12px 0 20px;
   flex-shrink: 0;
 }
 
@@ -879,18 +869,56 @@ body {
   color: #a3e6ac;
 }
 
-/* ── Confirm button ───────────────────────────────────────── */
-.confirm-btn {
+/* ── RIGHT: Action column ─────────────────────────────────── */
+.action-col {
+  align-items: stretch;
+  justify-content: center;
+  gap: 28px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.action-col__price-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-col__price-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--lavender);
+  opacity: 0.7;
+}
+
+.action-col__price {
+  font-size: 72px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1;
+  color: var(--peach);
+  transition: color 300ms ease;
+}
+
+.action-col.is-ready .action-col__price {
+  color: #a3e6ac;
+}
+
+.action-col__confirm {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 32px;
+  justify-content: center;
+  gap: 12px;
+  padding: 22px 32px;
   border: none;
-  border-radius: 16px;
+  border-radius: 18px;
   background: var(--indigo);
   color: var(--white);
   font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 20px rgba(105, 111, 199, 0.35);
@@ -899,44 +927,44 @@ body {
     transform 160ms cubic-bezier(0.34, 1.4, 0.64, 1),
     box-shadow 160ms;
   -webkit-tap-highlight-color: transparent;
+  min-height: 64px;
 }
 
-.confirm-btn svg {
+.action-col__confirm svg {
   width: 22px;
   height: 22px;
   transition: transform 160ms;
   flex-shrink: 0;
 }
 
-.confirm-btn:not(:disabled):hover {
+.action-col__confirm:not(:disabled):hover {
   background: #7c82d6;
   transform: translateY(-3px);
   box-shadow: 0 10px 32px rgba(105, 111, 199, 0.55);
 }
-.confirm-btn:not(:disabled):hover svg {
+.action-col__confirm:not(:disabled):hover svg {
   transform: scale(1.15);
 }
-.confirm-btn:not(:disabled):active {
+.action-col__confirm:not(:disabled):active {
   transform: scale(0.97);
 }
 
-.confirm-btn:disabled {
+.action-col__confirm:disabled {
   opacity: 0.38;
   cursor: not-allowed;
   box-shadow: none;
 }
 
-/* Ready-to-pay: swap to green */
-.confirm-btn.is-ready {
+.action-col__confirm.is-ready {
   background: #3a9e52;
   box-shadow: 0 4px 20px rgba(58, 158, 82, 0.4);
 }
-.confirm-btn.is-ready:not(:disabled):hover {
+.action-col__confirm.is-ready:not(:disabled):hover {
   background: #45b560;
   box-shadow: 0 10px 32px rgba(58, 158, 82, 0.55);
 }
 
-.confirm-btn:not(:disabled) {
+.action-col__confirm:not(:disabled) {
   animation: pulse-btn 2.4s ease-in-out infinite;
 }
 
@@ -950,7 +978,7 @@ body {
   }
 }
 
-.confirm-btn.is-ready:not(:disabled) {
+.action-col__confirm.is-ready:not(:disabled) {
   animation: pulse-green 2.4s ease-in-out infinite;
 }
 
@@ -964,8 +992,8 @@ body {
   }
 }
 
-/* ── Confirmation Modal ───────────────────────────────────── */
-.modal-overlay {
+/* ── Modal shared primitive ───────────────────────────────── */
+.modal {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -978,9 +1006,14 @@ body {
   pointer-events: none;
   transition: opacity 250ms ease;
 }
-.modal-overlay.is-visible {
+.modal.is-visible {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Pattern 1: card (centered) — used by confirmModal, printerErrorBlock */
+.modal--card {
+  /* inherits .modal centering */
 }
 
 .modal-card {
@@ -994,8 +1027,55 @@ body {
   transform: translateY(16px) scale(0.97);
   transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.modal-overlay.is-visible .modal-card {
+.modal.is-visible .modal-card {
   transform: translateY(0) scale(1);
+}
+
+/* Pattern 2: sheet (bottom) — used by printingOverlay, thankYouOverlay, scanQrOverlay */
+.modal--sheet {
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 16px 16px;
+}
+
+.modal-sheet {
+  width: 100%;
+  max-width: 640px;
+  background: #181730;
+  border: 1.5px solid rgba(167, 170, 225, 0.18);
+  border-radius: 28px;
+  padding: 40px 36px 32px;
+  box-shadow: 0 -8px 60px rgba(0, 0, 0, 0.5);
+  text-align: center;
+  transform: translateY(100%);
+  transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal.is-visible .modal-sheet {
+  transform: translateY(0);
+}
+
+/* Pattern 3: fullscreen — used by jamRefundOverlay, idleWarningModal */
+.modal--fs {
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-fs {
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 0 24px;
+}
+
+/* Also support the legacy .printer-error-modal-overlay show/hide via hidden attribute */
+.modal--error {
+  /* z-index override applied inline in HTML (200) */
 }
 
 .modal-title {
@@ -1042,6 +1122,15 @@ body {
   color: var(--white);
   margin: 0;
   text-transform: capitalize;
+}
+#modalFile {
+  text-transform: none;
+  font-size: 14px;
+  max-width: 60%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--lavender);
 }
 .modal-summary__row--total dt {
   font-size: 17px;
@@ -1136,10 +1225,9 @@ body {
   cursor: not-allowed;
 }
 
-/* ── Status modal (printing / thank you) ──────────────────── */
-.modal-card--status {
-  text-align: center;
-  padding: 52px 40px 40px;
+/* ── Status modal (printing / thank you) — sheet variant ─── */
+.modal-sheet--status {
+  /* text-align: center already on .modal-sheet */
 }
 
 .status-icon {
@@ -1232,10 +1320,8 @@ body {
   opacity: 0.6;
 }
 
-/* ── Scan QR overlay ──────────────────────────────────────── */
-.modal-card--qr {
-  text-align: center;
-  padding: 44px 40px 36px;
+/* ── Scan QR overlay — sheet variant ─────────────────────── */
+.modal-sheet--qr {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1290,8 +1376,9 @@ body {
     grid-template-columns: 1fr;
     height: auto;
   }
-  .coin-panel,
-  .summary-panel {
+  .payment-col,
+  .summary-col,
+  .action-col {
     min-height: 280px;
   }
 }
@@ -1299,7 +1386,7 @@ body {
 /* ── Locked coin slot state ────────────────────────────────────── */
 
 /* Swap coin CTA text color to green when locked */
-.coin-panel--locked .coin-panel__cta {
+.payment-col--locked .payment-col__cta {
   color: #a3e6ac;
 }
 
@@ -1320,30 +1407,30 @@ body {
 }
 
 /* Balance ring turns green when locked */
-.coin-panel--locked .balance-ring__svg {
+.payment-col--locked .balance-ring__svg {
   filter: drop-shadow(0 0 20px rgba(58, 158, 82, 0.5));
 }
 
-.coin-panel--locked #balanceArc {
+.payment-col--locked #balanceArc {
   stroke: #6ac47a;
 }
 
-.coin-panel--locked .balance-ring__amount {
+.payment-col--locked .balance-ring__amount {
   color: #a3e6ac;
 }
 
 /* Coin slot locked status badge variant */
-.coin-panel--locked .status-badge {
+.payment-col--locked .status-badge {
   background: rgba(106, 196, 122, 0.12);
   border-color: rgba(106, 196, 122, 0.3);
 }
 
-.coin-panel--locked .status-badge__dot {
+.payment-col--locked .status-badge__dot {
   background: #6ac47a;
   animation: none;
 }
 
-.coin-panel--locked .status-badge__text {
+.payment-col--locked .status-badge__text {
   color: #a3e6ac;
 }
 

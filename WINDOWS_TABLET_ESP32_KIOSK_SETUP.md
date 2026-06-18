@@ -19,6 +19,7 @@ This guide covers:
 ## 2) Repository & C# Worker Setup
 
 ### 2.1) Node.js Backend Application
+
 From Node app repo root:
 
 ```powershell
@@ -28,6 +29,7 @@ pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 ```
 
 ### 2.2) C# Worker Service
+
 Publish the C# worker from the `printbit-worker` directory (runs the queue watcher and spooler monitor):
 
 ```powershell
@@ -36,6 +38,7 @@ dotnet publish -c Release -o C:\Users\printbit\printbit-worker-service
 ```
 
 ### 2.3) Environment Variables
+
 Set machine-wide env vars (run PowerShell as Administrator):
 
 ```powershell
@@ -112,6 +115,7 @@ Note: Windows Home has limited kiosk capabilities; Pro/Edu/Enterprise is strongl
 ## 6) Install C# Worker & Node Startup Tasks
 
 ### 6.1) Register C# Worker Windows Service
+
 From the `printbit-worker` project root (Administrator PowerShell):
 
 ```powershell
@@ -129,6 +133,7 @@ sc.exe start PrintBitHardware
 ```
 
 ### 6.2) Register Node.js Startup and Watchdog Scheduled Tasks
+
 From the Node.js project root (Administrator PowerShell):
 
 ```powershell
@@ -144,7 +149,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -KioskUse
 powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -KioskUser ".\printbit"
 ```
 
-*Note:* `install-watchdog.ps1 -AtStartup` and `install-startup.ps1 -AtStartup` register watchdog tasks with the **SYSTEM** principal. When running as SYSTEM, the watchdog skips managing Edge because the interactive kiosk session (Assigned Access) handles the Edge lifecycle.
+_Note:_ `install-watchdog.ps1 -AtStartup` and `install-startup.ps1 -AtStartup` register watchdog tasks with the **SYSTEM** principal. When running as SYSTEM, the watchdog skips managing Edge because the interactive kiosk session (Assigned Access) handles the Edge lifecycle.
 
 Launcher scripts (`start-kiosk.ps1`, `start-kiosk.bat`, `launch-kiosk.js`) honor `PRINTBIT_ESP32_KIOSK_IP` in ESP32 mode and default to `192.168.4.2` when unset.
 Startup scripts also enforce ESP32 static IPv4 on boot (`scripts\ensure-esp32-network.ps1`) when `PRINTBIT_ESP32_STATIC_IP_ENFORCE=true`, including Wi-Fi reconnect + static IP re-apply before server launch.

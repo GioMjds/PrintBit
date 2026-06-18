@@ -151,14 +151,20 @@ function normalizeRotationDeg(value: unknown): RotationDeg {
 const modeValue = document.getElementById('modeValue');
 const fileValue = document.getElementById('fileValue');
 const colorValue = document.getElementById('colorValue');
+const colorRow = document.getElementById('colorRow');
 const copiesValue = document.getElementById('copiesValue');
+const copiesRow = document.getElementById('copiesRow');
 const pagesValue = document.getElementById('pagesValue');
 const pagesRow = document.getElementById('pagesRow');
 
 const orientationRow = document.getElementById('orientationRow');
 const orientationValue = document.getElementById('orientationValue');
 const rotationValue = document.getElementById('rotationValue');
+const rotationRow = document.getElementById('rotationRow');
 const paperSizeValue = document.getElementById('paperSizeValue');
+const paperRow = document.getElementById('paperRow');
+const duplexValue = document.getElementById('duplexValue');
+const duplexRow = document.getElementById('duplexRow');
 const priceValue = document.getElementById('priceValue');
 const balanceValue = document.getElementById('balanceValue');
 const changeValue = document.getElementById('changeValue');
@@ -167,6 +173,10 @@ const statusMessage = document.getElementById('statusMessage');
 const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
+
+// Action column refs (spec: JS bridge)
+const actionPriceValue = document.getElementById('actionPriceValue');
+const actionCol = document.querySelector<HTMLElement>('.action-col');
 
 // Printer Error Elements (Issue 124)
 const printerErrorBlock = document.getElementById('printerErrorBlock');
@@ -179,6 +189,60 @@ const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElem
 const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
 const errorSeverityBadge = document.getElementById('errorSeverityBadge');
 const errorSeverityText = document.getElementById('errorSeverityText');
+
+// Confirmation Modal Elements
+const confirmModal = document.getElementById('confirmModal');
+const modalCancelBtn = document.getElementById(
+  'modalCancelBtn',
+) as HTMLButtonElement;
+const modalConfirmBtn = document.getElementById(
+  'modalConfirmBtn',
+) as HTMLButtonElement;
+const modalFile = document.getElementById('modalFile');
+const modalMode = document.getElementById('modalMode');
+const modalColor = document.getElementById('modalColor');
+const modalColorRow = document.getElementById('modalColorRow');
+const modalCopies = document.getElementById('modalCopies');
+const modalCopiesRow = document.getElementById('modalCopiesRow');
+const modalPages = document.getElementById('modalPages');
+const modalPagesRow = document.getElementById('modalPagesRow');
+const modalOrientation = document.getElementById('modalOrientation');
+const modalOrientationRow = document.getElementById('modalOrientationRow');
+const modalRotation = document.getElementById('modalRotation');
+const modalRotationRow = document.getElementById('modalRotationRow');
+const modalPaper = document.getElementById('modalPaper');
+const modalPaperRow = document.getElementById('modalPaperRow');
+const modalDuplex = document.getElementById('modalDuplex');
+const modalDuplexRow = document.getElementById('modalDuplexRow');
+const modalPrice = document.getElementById('modalPrice');
+const modalChangeRow = document.getElementById('modalChangeRow');
+const modalChange = document.getElementById('modalChange');
+
+// Printing In Progress Elements
+const printingOverlay = document.getElementById('printingOverlay');
+const printingSubtitle = document.getElementById('printingSubtitle');
+const printingHint = document.getElementById('printingHint');
+
+// Thank You Elements
+const thankYouOverlay = document.getElementById('thankYouOverlay');
+const thankYouDoneBtn = document.getElementById(
+  'thankYouDoneBtn',
+) as HTMLButtonElement;
+const printAnotherBtn = document.getElementById(
+  'printAnotherBtn',
+) as HTMLButtonElement | null;
+const transactionReference = document.getElementById(
+  'transactionReference',
+) as HTMLElement | null;
+const receiptCtaContainer = document.getElementById(
+  'receiptCtaContainer',
+) as HTMLElement | null;
+const receiptQrCanvas = document.getElementById(
+  'receiptQrCanvas',
+) as HTMLCanvasElement | null;
+const receiptQrLink = document.getElementById(
+  'receiptQrLink',
+) as HTMLElement | null;
 
 let currentPrinterError: PrintError | null = null;
 
@@ -421,8 +485,9 @@ function getColorModeSummaryLabel(): string {
   return formatColorMode(getDisplayColorMode());
 }
 
-if (confirmBtn) {
-  confirmBtn.textContent =
+const confirmBtnSpan = confirmBtn?.querySelector('span');
+if (confirmBtnSpan) {
+  confirmBtnSpan.textContent =
     config.mode === 'print'
       ? 'Confirm & Print'
       : config.mode === 'copy'
@@ -441,13 +506,38 @@ if (modalConfirmBtnSpan) {
 }
 
 if (config.mode === 'scan') {
+  // Hide all scan-irrelevant rows on the main view
+  colorRow?.setAttribute('hidden', '');
+  copiesRow?.setAttribute('hidden', '');
   pagesRow?.setAttribute('hidden', '');
-}
+  orientationRow?.setAttribute('hidden', '');
+  rotationRow?.setAttribute('hidden', '');
+  paperRow?.setAttribute('hidden', '');
+  duplexRow?.setAttribute('hidden', '');
 
-if (config.mode === 'scan') {
-  colorValue?.closest('.summary-row')?.setAttribute('hidden', '');
-  copiesValue?.closest('.summary-row')?.setAttribute('hidden', '');
-  paperSizeValue?.closest('.summary-row')?.setAttribute('hidden', '');
+  // Hide all scan-irrelevant rows in the modal
+  modalColorRow?.setAttribute('hidden', '');
+  modalCopiesRow?.setAttribute('hidden', '');
+  modalPagesRow?.setAttribute('hidden', '');
+  modalOrientationRow?.setAttribute('hidden', '');
+  modalRotationRow?.setAttribute('hidden', '');
+  modalPaperRow?.setAttribute('hidden', '');
+  modalDuplexRow?.setAttribute('hidden', '');
+} else {
+  // Populate main screen values for print/copy
+  if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
+  if (copiesValue) copiesValue.textContent = String(config.copies);
+  if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
+  if (orientationValue) {
+    orientationValue.textContent =
+      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+  if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
+  if (paperSizeValue)
+    paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
+  if (duplexValue) {
+    duplexValue.textContent = config.duplex ? 'Double-sided' : 'Single-sided';
+  }
 }
 
 if (modeValue) modeValue.textContent = config.mode.toUpperCase();
@@ -458,41 +548,23 @@ if (fileValue)
       : config.mode === 'copy'
         ? 'Physical document copy'
         : (config.scanFilename ?? 'Scanned document');
-if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
-if (copiesValue) copiesValue.textContent = String(config.copies);
-if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
-
-// Show orientation for print/copy; hide for scan
-if (config.mode === 'scan') {
-  orientationRow?.setAttribute('hidden', '');
-} else {
-  orientationRow?.removeAttribute('hidden');
-  if (orientationValue) {
-    orientationValue.textContent =
-      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
-  }
-}
-
-if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
-if (paperSizeValue)
-  paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
 if (priceValue) priceValue.textContent = 'Loading...';
 
 function applyLockState(locked: boolean): void {
   coinSlotIsLocked = locked;
   const changeAmount = Math.max(0, currentBalance - totalPrice);
 
-  const coinPanel = document.querySelector<HTMLElement>('.coin-panel');
+  const paymentColEl = document.querySelector<HTMLElement>('.payment-col');
   const coinIcon = document.getElementById('coinIcon');
   const padlockIcon = document.getElementById('padlockIcon');
   const changeReadyBadge = document.getElementById('changeReadyBadge');
   const changeReadyAmount = document.getElementById('changeReadyAmount');
-  const ctaText = document.querySelector<HTMLElement>('.coin-panel__cta');
+  const ctaText = document.querySelector<HTMLElement>('.payment-col__cta');
 
   if (locked) {
-    coinPanel?.classList.add('coin-panel--locked');
-    if (coinIcon) coinIcon.style.display = 'none';
-    if (padlockIcon) padlockIcon.style.display = '';
+    paymentColEl?.classList.add('payment-col--locked');
+    if (padlockIcon) padlockIcon.removeAttribute('hidden'); // was: padlockIcon.style.display = ''
+    if (coinIcon) coinIcon.setAttribute('hidden', '');     // was: coinIcon.style.display = 'none'
     if (ctaText) ctaText.textContent = 'Coin slot locked — ready to confirm';
     if (changeReadyAmount) {
       changeReadyAmount.textContent =
@@ -502,9 +574,9 @@ function applyLockState(locked: boolean): void {
     }
     changeReadyBadge?.removeAttribute('hidden');
   } else {
-    coinPanel?.classList.remove('coin-panel--locked');
-    if (coinIcon) coinIcon.style.display = '';
-    if (padlockIcon) padlockIcon.style.display = 'none';
+    paymentColEl?.classList.remove('payment-col--locked');
+    if (coinIcon) coinIcon.removeAttribute('hidden');      // was: coinIcon.style.display = ''
+    if (padlockIcon) padlockIcon.setAttribute('hidden', ''); // was: padlockIcon.style.display = 'none'
     if (ctaText)
       ctaText.textContent = 'Insert coins into the kiosk slot to pay';
     changeReadyBadge?.setAttribute('hidden', '');
@@ -578,9 +650,13 @@ function applyConfirmGate(statusOverride?: string): void {
   if (currentBalance >= totalPrice) {
     confirmBtn.disabled = false;
     confirmBtn.setAttribute('aria-disabled', 'false');
+    confirmBtn.classList.add('is-ready');          // NEW
+    actionCol?.classList.add('is-ready');          // NEW (turns price green)
     statusMessage.textContent =
       statusOverride ?? 'Sufficient balance detected. You can confirm now.';
   } else {
+    confirmBtn.classList.remove('is-ready');       // NEW
+    actionCol?.classList.remove('is-ready');       // NEW
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
@@ -742,6 +818,7 @@ async function loadPricing(): Promise<void> {
       pricingLoaded = true;
       pricingError = null;
       if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
+      if (actionPriceValue) actionPriceValue.textContent = `₱ ${totalPrice}`;
       if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
       if (pagesValue) {
         pagesValue.textContent =
@@ -763,6 +840,7 @@ async function loadPricing(): Promise<void> {
       pricingLoaded = false;
       pricingError = message;
       if (priceValue) priceValue.textContent = 'Unavailable';
+      if (actionPriceValue) actionPriceValue.textContent = '₱ 0';
       updateChangeDisplay(currentBalance);
       syncCoinSlotLockState();
       applyConfirmGate();
@@ -782,49 +860,13 @@ async function loadPricing(): Promise<void> {
   pricingLoaded = true;
   pricingError = null;
   if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
+  if (actionPriceValue) actionPriceValue.textContent = `₱ ${totalPrice}`;
   updateChangeDisplay(currentBalance);
   syncCoinSlotLockState();
   applyConfirmGate();
 }
 
-const confirmModal = document.getElementById('confirmModal');
-const modalCancelBtn = document.getElementById(
-  'modalCancelBtn',
-) as HTMLButtonElement;
-const modalConfirmBtn = document.getElementById(
-  'modalConfirmBtn',
-) as HTMLButtonElement;
-const modalFile = document.getElementById('modalFile');
-const modalMode = document.getElementById('modalMode');
-const modalColor = document.getElementById('modalColor');
-const modalCopies = document.getElementById('modalCopies');
-const modalPages = document.getElementById('modalPages');
-const modalOrientation = document.getElementById('modalOrientation');
-const modalPrice = document.getElementById('modalPrice');
-const modalChangeRow = document.getElementById('modalChangeRow');
-const modalChange = document.getElementById('modalChange');
-const printingOverlay = document.getElementById('printingOverlay');
-const printingSubtitle = document.getElementById('printingSubtitle');
-const printingHint = document.getElementById('printingHint');
-const thankYouOverlay = document.getElementById('thankYouOverlay');
-const thankYouDoneBtn = document.getElementById(
-  'thankYouDoneBtn',
-) as HTMLButtonElement;
-const printAnotherBtn = document.getElementById(
-  'printAnotherBtn',
-) as HTMLButtonElement | null;
-const transactionReference = document.getElementById(
-  'transactionReference',
-) as HTMLElement | null;
-const receiptCtaContainer = document.getElementById(
-  'receiptCtaContainer',
-) as HTMLElement | null;
-const receiptQrCanvas = document.getElementById(
-  'receiptQrCanvas',
-) as HTMLCanvasElement | null;
-const receiptQrLink = document.getElementById(
-  'receiptQrLink',
-) as HTMLElement | null;
+// Modal declarations removed (moved to top of file)
 
 let isProcessingPayment = false;
 let activeSpoolerCorrelationKey: string | null = null;
@@ -1053,13 +1095,29 @@ function showModal(): void {
           ? 'Physical document copy'
           : (config.scanFilename ?? 'Scanned document');
   if (modalMode) modalMode.textContent = config.mode.toUpperCase();
-  if (modalColor) modalColor.textContent = getColorModeSummaryLabel();
-  if (modalCopies) modalCopies.textContent = String(config.copies);
-  if (modalPages) modalPages.textContent = pageRangeLabel(config.pageRange);
-  if (modalOrientation) {
-    modalOrientation.textContent =
-      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+
+  if (config.mode !== 'scan') {
+    if (modalColor) modalColor.textContent = getColorModeSummaryLabel();
+    if (modalCopies) modalCopies.textContent = String(config.copies);
+    if (modalPages) {
+      if (currentPrintQuote) {
+        modalPages.textContent =
+          `${pageRangeLabel(config.pageRange)} (${currentPrintQuote.selectedPages} of ${currentPrintQuote.totalPages} pages)`;
+      } else {
+        modalPages.textContent = pageRangeLabel(config.pageRange);
+      }
+    }
+    if (modalOrientation) {
+      modalOrientation.textContent =
+        config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+    }
+    if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
+    if (modalPaper) modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
+    if (modalDuplex) {
+      modalDuplex.textContent = config.duplex ? 'Double-sided' : 'Single-sided';
+    }
   }
+
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
 
   // Show coin change in modal when overpaid

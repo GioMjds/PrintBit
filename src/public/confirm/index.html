@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <link rel="stylesheet" href="/globals.css" />
-    <title>Confirm & Pay · PrintBit</title>
+    <title>Confirm &amp; Pay · PrintBit</title>
     <link rel="stylesheet" href="/confirm/styles.css" />
   </head>
   <body>
@@ -62,474 +62,493 @@
         <div class="topbar-spacer"></div>
       </header>
 
-      <!-- Main content: two columns -->
+      <!-- Main content: three columns -->
       <main class="confirm-layout" role="main">
-        <!-- ── LEFT: Coin / payment ── -->
-        <section class="payment-col" aria-label="Payment">
-          <!-- Coin insert illustration + live balance -->
-          <div class="coin-panel">
-            <div class="coin-panel__icon" aria-hidden="true">
-              <!-- Coin icon: visible by default, hidden when slot is locked -->
-              <svg id="coinIcon" viewBox="0 0 80 80" fill="none">
-                <!-- Coin stack -->
-                <ellipse
-                  cx="40"
-                  cy="62"
-                  rx="22"
-                  ry="7"
-                  fill="var(--peach)"
-                  opacity=".5"
-                />
-                <ellipse
-                  cx="40"
-                  cy="56"
-                  rx="22"
-                  ry="7"
-                  fill="var(--peach)"
-                  opacity=".7"
-                />
-                <ellipse cx="40" cy="50" rx="22" ry="7" fill="var(--peach)" />
-                <rect
-                  x="18"
-                  y="50"
-                  width="44"
-                  height="10"
-                  fill="var(--peach)"
-                />
-                <ellipse cx="40" cy="50" rx="22" ry="7" fill="#f5d3c4" />
-                <!-- Shine -->
-                <ellipse
-                  cx="34"
-                  cy="48"
-                  rx="5"
-                  ry="2"
-                  fill="white"
-                  opacity=".3"
-                  transform="rotate(-20 34 48)"
-                />
-                <!-- Arrow down into slot -->
-                <path
-                  d="M40 14v18M33 26l7 7 7-7"
-                  stroke="var(--lavender)"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  opacity=".8"
-                />
-              </svg>
+        <!-- ── LEFT: Payment column ── -->
+        <section class="payment-col panel" aria-label="Payment">
+          <div class="payment-col__icon" aria-hidden="true">
+            <!-- Coin icon: visible by default, hidden when slot is locked -->
+            <svg id="coinIcon" viewBox="0 0 80 80" fill="none">
+              <!-- Coin stack -->
+              <ellipse
+                cx="40"
+                cy="62"
+                rx="22"
+                ry="7"
+                fill="var(--peach)"
+                opacity=".5"
+              />
+              <ellipse
+                cx="40"
+                cy="56"
+                rx="22"
+                ry="7"
+                fill="var(--peach)"
+                opacity=".7"
+              />
+              <ellipse cx="40" cy="50" rx="22" ry="7" fill="var(--peach)" />
+              <rect
+                x="18"
+                y="50"
+                width="44"
+                height="10"
+                fill="var(--peach)"
+              />
+              <ellipse cx="40" cy="50" rx="22" ry="7" fill="#f5d3c4" />
+              <!-- Shine -->
+              <ellipse
+                cx="34"
+                cy="48"
+                rx="5"
+                ry="2"
+                fill="white"
+                opacity=".3"
+                transform="rotate(-20 34 48)"
+              />
+              <!-- Arrow down into slot -->
+              <path
+                d="M40 14v18M33 26l7 7 7-7"
+                stroke="var(--lavender)"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity=".8"
+              />
+            </svg>
 
-              <!-- Padlock icon: hidden by default, shown when slot is locked -->
-              <svg
-                id="padlockIcon"
-                viewBox="0 0 80 80"
-                fill="none"
-                style="display: none"
-              >
-                <!-- Shackle (arc) -->
-                <path
-                  d="M27 36v-8a13 13 0 0126 0v8"
-                  stroke="#6ac47a"
-                  stroke-width="3.5"
-                  stroke-linecap="round"
-                  fill="none"
-                />
-                <!-- Lock body -->
-                <rect
-                  x="18"
-                  y="36"
-                  width="44"
-                  height="30"
-                  rx="6"
-                  fill="rgba(58,158,82,0.2)"
-                />
-                <rect
-                  x="18"
-                  y="36"
-                  width="44"
-                  height="30"
-                  rx="6"
-                  stroke="#6ac47a"
-                  stroke-width="2"
-                  fill="none"
-                />
-                <!-- Keyhole circle -->
-                <circle cx="40" cy="50" r="5" fill="#6ac47a" opacity=".7" />
-                <!-- Keyhole stem -->
-                <rect
-                  x="38"
-                  y="50"
-                  width="4"
-                  height="7"
-                  rx="2"
-                  fill="#6ac47a"
-                  opacity=".7"
-                />
-                <!-- Check mark inside body -->
-                <path
-                  d="M32 51l5 5 11-10"
-                  stroke="#a3e6ac"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  opacity=".9"
-                />
-              </svg>
-            </div>
-
-            <p class="coin-panel__cta">
-              Insert coins into the kiosk slot to pay
-            </p>
-            <p class="coin-panel__note" id="coinInsertNote">
-              Tip: Insert one coin at a time. Rapid insertion may not be
-              detected by the kiosk.
-            </p>
-
-            <!-- Balance ring -->
-            <div
-              class="balance-ring"
-              id="balanceRing"
-              role="meter"
-              aria-label="Coin balance"
-              aria-valuemin="0"
-              aria-valuenow="0"
-            >
-              <svg
-                class="balance-ring__svg"
-                viewBox="0 0 120 120"
-                aria-hidden="true"
-              >
-                <!-- Track -->
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="52"
-                  stroke="rgba(167,170,225,.15)"
-                  stroke-width="8"
-                  fill="none"
-                />
-                <!-- Progress arc — dashoffset controlled by JS -->
-                <circle
-                  id="balanceArc"
-                  cx="60"
-                  cy="60"
-                  r="52"
-                  stroke="var(--indigo)"
-                  stroke-width="8"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-dasharray="326.7"
-                  stroke-dashoffset="326.7"
-                  transform="rotate(-90 60 60)"
-                />
-              </svg>
-              <div class="balance-ring__inner">
-                <span class="balance-ring__amount" id="balanceValue">₱0</span>
-                <span class="balance-ring__label">balance</span>
-              </div>
-            </div>
-
-            <!-- Status message -->
-            <div
-              class="status-badge"
-              id="statusBadge"
-              data-state="waiting"
-              role="status"
-              aria-live="polite"
-            >
-              <span class="status-badge__dot" aria-hidden="true"></span>
-              <span class="status-badge__text" id="statusMessage"
-                >Waiting for coins…</span
-              >
-            </div>
-
-
-            <!-- Change-ready badge: shown when balance >= price -->
-            <div
-              class="change-ready-badge"
-              id="changeReadyBadge"
-              aria-live="polite"
+            <!-- Padlock icon: hidden by default, shown when slot is locked -->
+            <svg
+              id="padlockIcon"
+              viewBox="0 0 80 80"
+              fill="none"
               hidden
             >
-              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
-                  1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0
-                  000-.7l-2.5-2.5a.5.5 0 00-.7.7L10.3 7.5H4.5z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <span id="changeReadyAmount">₱0 change will be dispensed</span>
-            </div>
-
-            <!-- Coin event toast -->
-            <div
-              class="coin-toast"
-              id="coinToast"
-              aria-live="polite"
-              aria-atomic="true"
-            ></div>
+              <!-- Shackle (arc) -->
+              <path
+                d="M27 36v-8a13 13 0 0126 0v8"
+                stroke="#6ac47a"
+                stroke-width="3.5"
+                stroke-linecap="round"
+                fill="none"
+              />
+              <!-- Lock body -->
+              <rect
+                x="18"
+                y="36"
+                width="44"
+                height="30"
+                rx="6"
+                fill="rgba(58,158,82,0.2)"
+              />
+              <rect
+                x="18"
+                y="36"
+                width="44"
+                height="30"
+                rx="6"
+                stroke="#6ac47a"
+                stroke-width="2"
+                fill="none"
+              />
+              <!-- Keyhole circle -->
+              <circle cx="40" cy="50" r="5" fill="#6ac47a" opacity=".7" />
+              <!-- Keyhole stem -->
+              <rect
+                x="38"
+                y="50"
+                width="4"
+                height="7"
+                rx="2"
+                fill="#6ac47a"
+                opacity=".7"
+              />
+              <!-- Check mark inside body -->
+              <path
+                d="M32 51l5 5 11-10"
+                stroke="#a3e6ac"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity=".9"
+              />
+            </svg>
           </div>
+
+          <p class="payment-col__cta">
+            Insert coins into the kiosk slot to pay
+          </p>
+          <p class="payment-col__note" id="coinInsertNote">
+            Tip: Insert one coin at a time. Rapid insertion may not be
+            detected by the kiosk.
+          </p>
+
+          <!-- Balance ring -->
+          <div
+            class="balance-ring"
+            id="balanceRing"
+            role="meter"
+            aria-label="Coin balance"
+            aria-valuemin="0"
+            aria-valuenow="0"
+          >
+            <svg
+              class="balance-ring__svg"
+              viewBox="0 0 120 120"
+              aria-hidden="true"
+            >
+              <!-- Track -->
+              <circle
+                cx="60"
+                cy="60"
+                r="52"
+                stroke="rgba(167,170,225,.15)"
+                stroke-width="8"
+                fill="none"
+              />
+              <!-- Progress arc — dashoffset controlled by JS -->
+              <circle
+                id="balanceArc"
+                cx="60"
+                cy="60"
+                r="52"
+                stroke="var(--indigo)"
+                stroke-width="8"
+                fill="none"
+                stroke-linecap="round"
+                stroke-dasharray="326.7"
+                stroke-dashoffset="326.7"
+                transform="rotate(-90 60 60)"
+              />
+            </svg>
+            <div class="balance-ring__inner">
+              <span class="balance-ring__amount" id="balanceValue">₱0</span>
+              <span class="balance-ring__label">balance</span>
+            </div>
+          </div>
+
+          <!-- Status message -->
+          <div
+            class="status-badge"
+            id="statusBadge"
+            data-state="waiting"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="status-badge__dot" aria-hidden="true"></span>
+            <span class="status-badge__text" id="statusMessage"
+              >Waiting for coins…</span
+            >
+          </div>
+
+          <!-- Change-ready badge: shown when balance >= price -->
+          <div
+            class="change-ready-badge"
+            id="changeReadyBadge"
+            aria-live="polite"
+            hidden
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
+                1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0
+                000-.7l-2.5-2.5a.5.5 0 00-.7.7L10.3 7.5H4.5z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span id="changeReadyAmount">₱0 change will be dispensed</span>
+          </div>
+
+          <!-- Coin event toast -->
+          <div
+            class="coin-toast"
+            id="coinToast"
+            aria-live="polite"
+            aria-atomic="true"
+          ></div>
         </section>
 
-        <!-- ── RIGHT: Job summary ── -->
-        <section class="summary-col" aria-label="Job summary">
-          <div class="summary-panel">
-            <h2 class="summary-panel__title">Job Summary</h2>
+        <!-- ── MIDDLE: Job summary column ── -->
+        <section class="summary-col panel" aria-label="Job summary">
+          <h2 class="summary-col__title">Job Summary</h2>
 
-            <dl class="summary-list">
-              <div class="summary-row" id="modeRow">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M4 2a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2V6.414A2 2 0
-                    0013.414 5L11 2.586A2 2 0 009.586 2H4zm6 7a1 1 0 11-2 0 1 1 0
-                    012 0zm-1-3a1 1 0 10-2 0v2a1 1 0 102 0V6z"
-                    />
-                  </svg>
-                  Mode
-                </dt>
-                <dd class="summary-row__value" id="modeValue">—</dd>
-              </div>
-
-              <div class="summary-row" id="fileRow">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M4 2a2 2 0 012-2h4.586A2 2 0 0112
-                    2.586L14.414 5A2 2 0 0115 6.414V14a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2
-                    2 0 012-2zm4.5 5.5a.5.5 0 000 1H9v1.5a.5.5 0 001 0V8.5h1.5a.5.5 0
-                    000-1H10V6a.5.5 0 00-1 0v1.5H8.5z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  File
-                </dt>
-                <dd
-                  class="summary-row__value summary-row__value--file"
-                  id="fileValue"
+          <dl class="summary-list">
+            <div class="summary-row" id="modeRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
                 >
-                  —
-                </dd>
-              </div>
+                  <path
+                    d="M4 2a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2V6.414A2 2 0
+                  0013.414 5L11 2.586A2 2 0 009.586 2H4zm6 7a1 1 0 11-2 0 1 1 0
+                  012 0zm-1-3a1 1 0 10-2 0v2a1 1 0 102 0V6z"
+                  />
+                </svg>
+                Mode
+              </dt>
+              <dd class="summary-row__value" id="modeValue">—</dd>
+            </div>
 
-              <div class="summary-row">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <circle cx="5" cy="8" r="3" opacity=".6" />
-                    <circle cx="11" cy="8" r="3" opacity=".4" />
-                    <circle cx="8" cy="11" r="3" opacity=".5" />
-                  </svg>
-                  Color
-                </dt>
-                <dd class="summary-row__value" id="colorValue">—</dd>
-              </div>
-
-              <div class="summary-row">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1
-                    1H4a1 1 0 01-1-1V7z"
-                    />
-                  </svg>
-                  Copies
-                </dt>
-                <dd class="summary-row__value" id="copiesValue">—</dd>
-              </div>
-
-              <div class="summary-row" id="pagesRow">
-                <dt class="summary-row__label">Pages</dt>
-                <dd class="summary-row__value" id="pagesValue">—</dd>
-              </div>
-
-              <div class="summary-row" id="orientationRow">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <rect
-                      x="4"
-                      y="2"
-                      width="8"
-                      height="12"
-                      rx="1"
-                      opacity=".3"
-                    />
-                    <rect
-                      x="3"
-                      y="1"
-                      width="10"
-                      height="14"
-                      rx="1"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    />
-                  </svg>
-                  Orientation
-                </dt>
-                <dd class="summary-row__value" id="orientationValue">—</dd>
-              </div>
-
-              <div class="summary-row" id="rotationRow">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M8 2a6 6 0 015.196 3H11a1 1 0 000 2h4a1 1 0 001-1V2a1 1 0 10-2 0v1.042A8 8 0 108 16a8 8 0 007.869-6.556 1 1 0 10-1.972-.332A6 6 0 118 2z"
-                    />
-                  </svg>
-                  Rotation
-                </dt>
-                <dd class="summary-row__value" id="rotationValue">—</dd>
-              </div>
-
-              <div class="summary-row">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1
-                    1H3a1 1 0 01-1-1V3z"
-                      opacity=".25"
-                    />
-                    <path
-                      fill-rule="evenodd"
-                      d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1
-                    1H3a1 1 0 01-1-1V3a1 1 0 011-1zm0 1v10h10V3H3z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  Paper
-                </dt>
-                <dd class="summary-row__value" id="paperSizeValue">—</dd>
-              </div>
-
-              <div class="summary-divider" aria-hidden="true"></div>
-
-              <div class="summary-row summary-row--price">
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      cx="8"
-                      cy="8"
-                      r="7"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                    />
-                    <path
-                      d="M8 5v1.5M8 9.5V11M6.5 6.5a1.5 1.5 0 013 0c0 .828-.672
-                    1.5-1.5 1.5s-1.5.672-1.5 1.5a1.5 1.5 0 003 0"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      stroke-linecap="round"
-                      fill="none"
-                    />
-                  </svg>
-                  Total Price
-                </dt>
-                <dd
-                  class="summary-row__value summary-row__value--price"
-                  id="priceValue"
+            <div class="summary-row" id="fileRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
                 >
-                  —
-                </dd>
-              </div>
-
-              <div
-                class="summary-row summary-row--change"
-                id="changeRow"
-                hidden
+                  <path
+                    fill-rule="evenodd"
+                    d="M4 2a2 2 0 012-2h4.586A2 2 0 0112
+                  2.586L14.414 5A2 2 0 0115 6.414V14a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2
+                  2 0 012-2zm4.5 5.5a.5.5 0 000 1H9v1.5a.5.5 0 001 0V8.5h1.5a.5.5 0
+                  000-1H10V6a.5.5 0 00-1 0v1.5H8.5z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                File
+              </dt>
+              <dd
+                class="summary-row__value summary-row__value--file"
+                id="fileValue"
               >
-                <dt class="summary-row__label">
-                  <svg
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
-                    1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0 000-.7l-2.5-2.5a.5.5
-                    0 00-.7.7L10.3 7.5H4.5z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
-                  Change
-                </dt>
-                <dd
-                  class="summary-row__value summary-row__value--change"
-                  id="changeValue"
+                —
+              </dd>
+            </div>
+
+            <div class="summary-row" id="colorRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
                 >
-                  —
-                </dd>
-              </div>
-            </dl>
+                  <circle cx="5" cy="8" r="3" opacity=".6" />
+                  <circle cx="11" cy="8" r="3" opacity=".4" />
+                  <circle cx="8" cy="11" r="3" opacity=".5" />
+                </svg>
+                Color
+              </dt>
+              <dd class="summary-row__value" id="colorValue">—</dd>
+            </div>
+
+            <div class="summary-row" id="copiesRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1
+                  1H4a1 1 0 01-1-1V7z"
+                  />
+                </svg>
+                Copies
+              </dt>
+              <dd class="summary-row__value" id="copiesValue">—</dd>
+            </div>
+
+            <div class="summary-row" id="pagesRow">
+              <dt class="summary-row__label">Pages</dt>
+              <dd class="summary-row__value" id="pagesValue">—</dd>
+            </div>
+
+            <div class="summary-row" id="orientationRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <rect
+                    x="4"
+                    y="2"
+                    width="8"
+                    height="12"
+                    rx="1"
+                    opacity=".3"
+                  />
+                  <rect
+                    x="3"
+                    y="1"
+                    width="10"
+                    height="14"
+                    rx="1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                </svg>
+                Orientation
+              </dt>
+              <dd class="summary-row__value" id="orientationValue">—</dd>
+            </div>
+
+            <div class="summary-row" id="rotationRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M8 2a6 6 0 015.196 3H11a1 1 0 000 2h4a1 1 0 001-1V2a1 1 0 10-2 0v1.042A8 8 0 108 16a8 8 0 007.869-6.556 1 1 0 10-1.972-.332A6 6 0 118 2z"
+                  />
+                </svg>
+                Rotation
+              </dt>
+              <dd class="summary-row__value" id="rotationValue">—</dd>
+            </div>
+
+            <div class="summary-row" id="paperRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1
+                  1H3a1 1 0 01-1-1V3z"
+                    opacity=".25"
+                  />
+                  <path
+                    fill-rule="evenodd"
+                    d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1
+                  1H3a1 1 0 01-1-1V3a1 1 0 011-1zm0 1v10h10V3H3z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                Paper
+              </dt>
+              <dd class="summary-row__value" id="paperSizeValue">—</dd>
+            </div>
+
+            <div class="summary-row" id="duplexRow">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2.5 3h11a.5.5 0 01.5.5v9a.5.5 0 01-.5.5h-11a.5.5 0 01-.5-.5v-9a.5.5 0 01.5-.5zM1 3.5A1.5 1.5 0 012.5 2h11A1.5 1.5 0 0115 3.5v9a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9zM4.5 5a.5.5 0 000 1h7a.5.5 0 000-1h-7zm0 2.5a.5.5 0 000 1h7a.5.5 0 000-1h-7zm0 2.5a.5.5 0 000 1h4a.5.5 0 000-1h-4z"
+                  />
+                </svg>
+                Sides
+              </dt>
+              <dd class="summary-row__value" id="duplexValue">—</dd>
+            </div>
+
+            <div class="summary-divider" aria-hidden="true"></div>
+
+            <div class="summary-row summary-row--price">
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="7"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                  <path
+                    d="M8 5v1.5M8 9.5V11M6.5 6.5a1.5 1.5 0 013 0c0 .828-.672
+                  1.5-1.5 1.5s-1.5.672-1.5 1.5a1.5 1.5 0 003 0"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    fill="none"
+                  />
+                </svg>
+                Total Price
+              </dt>
+              <dd
+                class="summary-row__value summary-row__value--price"
+                id="priceValue"
+              >
+                —
+              </dd>
+            </div>
+
+            <div
+              class="summary-row summary-row--change"
+              id="changeRow"
+              hidden
+            >
+              <dt class="summary-row__label">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
+                  1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0 000-.7l-2.5-2.5a.5.5
+                  0 00-.7.7L10.3 7.5H4.5z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                Change
+              </dt>
+              <dd
+                class="summary-row__value summary-row__value--change"
+                id="changeValue"
+              >
+                —
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <!-- ── RIGHT: Action column ── -->
+        <section class="action-col panel" aria-label="Confirm action">
+          <div class="action-col__price-block">
+            <span class="action-col__price-eyebrow">Total to pay</span>
+            <span class="action-col__price" id="actionPriceValue">₱ 0</span>
           </div>
+
+          <button
+            id="confirmBtn"
+            type="button"
+            class="action-col__confirm"
+            disabled
+            aria-disabled="true"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+            <span>Confirm &amp; Print</span>
+          </button>
         </section>
       </main>
 
-      <!-- Footer -->
+      <!-- Footer (slimmed — no button) -->
       <footer class="confirm-footer">
         <p class="footer-note" id="footerNote">
           Tip: Insert one coin at a time. Rapid insertion may not be detected by
           the kiosk.
         </p>
-        <button
-          id="confirmBtn"
-          type="button"
-          class="confirm-btn"
-          disabled
-          aria-disabled="true"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
-          <span>Confirm & Print</span>
-        </button>
       </footer>
     </div>
 
-    <!-- Printer Error Modal (Issue 124) -->
+    <!-- Printer Error Modal — z-index 200, shown via hidden attr (own animation) -->
     <div
       class="printer-error-modal-overlay"
       id="printerErrorBlock"
@@ -616,9 +635,9 @@
       </div>
     </div>
 
-    <!-- Confirmation Modal Overlay -->
+    <!-- Confirmation Modal — card pattern -->
     <div
-      class="modal-overlay"
+      class="modal modal--card"
       id="confirmModal"
       aria-hidden="true"
       role="dialog"
@@ -632,9 +651,13 @@
         </p>
 
         <dl class="modal-summary">
-          <div class="modal-summary__row">
+          <div class="modal-summary__row" id="modalModeRow">
             <dt>Mode</dt>
             <dd id="modalMode">—</dd>
+          </div>
+          <div class="modal-summary__row" id="modalFileRow">
+            <dt>File</dt>
+            <dd id="modalFile">—</dd>
           </div>
           <div class="modal-summary__row" id="modalColorRow">
             <dt>Color</dt>
@@ -659,6 +682,10 @@
           <div class="modal-summary__row" id="modalPaperRow">
             <dt>Paper</dt>
             <dd id="modalPaper">—</dd>
+          </div>
+          <div class="modal-summary__row" id="modalDuplexRow">
+            <dt>Sides</dt>
+            <dd id="modalDuplex">—</dd>
           </div>
           <div class="modal-summary__divider" aria-hidden="true"></div>
           <div class="modal-summary__row modal-summary__row--total">
@@ -705,16 +732,16 @@
       </div>
     </div>
 
-    <!-- Printing In Progress Overlay -->
+    <!-- Printing In Progress Overlay — sheet pattern -->
     <div
-      class="modal-overlay"
+      class="modal modal--sheet"
       id="printingOverlay"
       aria-hidden="true"
       role="dialog"
       aria-labelledby="printingTitle"
       aria-modal="true"
     >
-      <div class="modal-card modal-card--status">
+      <div class="modal-sheet modal-sheet--status">
         <div class="status-icon status-icon--spinner" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
             <circle
@@ -748,16 +775,16 @@
       </div>
     </div>
 
-    <!-- Thank You Overlay -->
+    <!-- Thank You Overlay — sheet pattern -->
     <div
-      class="modal-overlay"
+      class="modal modal--sheet"
       id="thankYouOverlay"
       aria-hidden="true"
       role="dialog"
       aria-labelledby="thankYouTitle"
       aria-modal="true"
     >
-      <div class="modal-card modal-card--status">
+      <div class="modal-sheet modal-sheet--status">
         <div class="status-icon status-icon--check" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
             <circle cx="24" cy="24" r="22" fill="rgba(58,158,82,0.15)" />
@@ -847,16 +874,16 @@
       </div>
     </div>
 
-    <!-- Printer Jam / Refund Notice Overlay -->
+    <!-- Printer Jam / Refund Notice Overlay — fullscreen pattern -->
     <div
-      class="modal-overlay"
+      class="modal modal--fs"
       id="jamRefundOverlay"
       aria-hidden="true"
       role="dialog"
       aria-labelledby="jamRefundTitle"
       aria-modal="true"
     >
-      <div class="modal-card modal-card--status">
+      <div class="modal-fs">
         <div class="status-icon status-icon--error" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
             <circle cx="24" cy="24" r="22" fill="rgba(242,110,107,0.16)" />
@@ -894,16 +921,16 @@
       </div>
     </div>
 
-    <!-- Scan QR Download Overlay (scan mode only) -->
+    <!-- Scan QR Download Overlay (scan mode only) — sheet pattern -->
     <div
-      class="modal-overlay"
+      class="modal modal--sheet"
       id="scanQrOverlay"
       aria-hidden="true"
       role="dialog"
       aria-labelledby="scanQrTitle"
       aria-modal="true"
     >
-      <div class="modal-card modal-card--qr">
+      <div class="modal-sheet modal-sheet--qr">
         <div class="status-icon status-icon--check" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
             <circle cx="24" cy="24" r="22" fill="rgba(58,158,82,0.15)" />
@@ -943,27 +970,25 @@
 
     <script src="/socket.io/socket.io.js"></script>
 
-    <!-- Idle Warning Modal -->
+    <!-- Idle Warning Modal — fullscreen pattern -->
     <div
       id="idleWarningModal"
-      class="idle-warning-overlay"
+      class="modal modal--fs"
       style="display: none"
     >
-      <div class="idle-warning-modal">
-        <div class="idle-warning-content">
-          <div class="idle-warning-icon" aria-hidden="true">⏱️</div>
-          <h2 class="idle-warning-title">Session Idle</h2>
-          <p class="idle-warning-message">
-            No activity detected. Your session will close in
-            <span id="idleCountdown">0</span>s
-          </p>
-          <p class="idle-warning-subtitle">
-            Click below to keep your session active.
-          </p>
-          <button id="keepActiveBtn" type="button" class="idle-warning-btn">
-            Keep Me Active
-          </button>
-        </div>
+      <div class="modal-fs modal-fs__content">
+        <div class="idle-warning-icon" aria-hidden="true">⏱️</div>
+        <h2 class="idle-warning-title">Session Idle</h2>
+        <p class="idle-warning-message">
+          No activity detected. Your session will close in
+          <span id="idleCountdown">0</span>s
+        </p>
+        <p class="idle-warning-subtitle">
+          Click below to keep your session active.
+        </p>
+        <button id="keepActiveBtn" type="button" class="idle-warning-btn">
+          Keep Me Active
+        </button>
       </div>
     </div>
 
