@@ -39,7 +39,7 @@ dotnet publish -c Release -o C:\Users\printbit\printbit-worker-service
 
 ### 2.3) Environment Variables
 
-Set machine-wide env vars (run PowerShell as Administrator):
+Set machine-wide env vars (run PowerShell):
 
 ```powershell
 setx PRINTBIT_NETWORK_PROVIDER esp32 /M
