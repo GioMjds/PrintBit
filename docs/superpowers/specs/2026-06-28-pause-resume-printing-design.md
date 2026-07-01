@@ -20,16 +20,17 @@ During multi-page print operations (e.g. printing a 2-page document with only 1 
 
 ### 2.1 Frontend Action & Error Handling (`src/public/confirm/app.ts`)
 
-* **Error Code Expansion:** Update `showActions` condition in `renderPrinterError` to recognize all paper and recovery error codes:
+- **Error Code Expansion:** Update `showActions` condition in `renderPrinterError` to recognize all paper and recovery error codes:
   - `PAPER_INSUFFICIENT_PRE_DISPATCH`
   - `PAPER_INSUFFICIENT_MID_JOB`
   - `PAPER_TRAY_EMPTY`
   - `PAPER_JAM_PRINT`
-* **Correlation Key Fallback:** When Pause or Resume buttons are clicked, resolve the active correlation key dynamically:
+- **Correlation Key Fallback:** When Pause or Resume buttons are clicked, resolve the active correlation key dynamically:
   ```typescript
-  const targetKey = paymentSpoolerCorrelationKey || currentPrinterError?.spoolerCorrelationKey;
+  const targetKey =
+    paymentSpoolerCorrelationKey || currentPrinterError?.spoolerCorrelationKey;
   ```
-* **Interactive Button Lifecycle & Feedback:**
+- **Interactive Button Lifecycle & Feedback:**
   - On click: Immediately disable buttons and show active loading labels (`"Pausing..."` / `"Resuming..."`).
   - On Pause Success (`/api/printer/pause` HTTP 200): Update modal title/subtitle to reflect paused state, hide Pause button, highlight Resume button.
   - On Resume Success (`/api/printer/resume` HTTP 200): Invoke `clearPrinterError()` and restore normal confirmation gate state.
@@ -37,8 +38,8 @@ During multi-page print operations (e.g. printing a 2-page document with only 1 
 
 ### 2.2 Backend Spooler Lifecycle & Job Control (`src/modules/printer/printer.service.ts`)
 
-* **Robust Lifecycle Lookup:** Enhance `findSpoolerJobDetails(spoolerCorrelationKey)` to match records in `db.data.spoolerLifecycle` and dynamically resolve `spoolerJobId` via `findSpoolerJobIdByCorrelationKey` if unpopulated.
-* **Smart Job Resubmission & Mid-Job Recovery:**
+- **Robust Lifecycle Lookup:** Enhance `findSpoolerJobDetails(spoolerCorrelationKey)` to match records in `db.data.spoolerLifecycle` and dynamically resolve `spoolerJobId` via `findSpoolerJobIdByCorrelationKey` if unpopulated.
+- **Smart Job Resubmission & Mid-Job Recovery:**
   - In `resumeJob(spoolerCorrelationKey)`, call `resumePrintJobViaEdge(printerName, spoolerJobId)`.
   - If PowerShell Edge returns `"Job not found in queue"` (indicating job purging by OS/driver during paper-out):
     1. Verify total pages requested vs pages printed.
@@ -47,7 +48,7 @@ During multi-page print operations (e.g. printing a 2-page document with only 1 
 
 ### 2.3 Windows Spooler PowerShell Edge Integration (`src/services/windows-printer-edge.ts`)
 
-* Enhance PowerShell script blocks in `pausePrintJobViaEdge` and `resumePrintJobViaEdge`:
+- Enhance PowerShell script blocks in `pausePrintJobViaEdge` and `resumePrintJobViaEdge`:
   - Check current job status flags (`IsPaused`).
   - If a job is already paused on `pausePrintJobViaEdge` or active on `resumePrintJobViaEdge`, return `{ success: true }` to maintain idempotency.
   - Return detailed structured diagnostics in `EdgeJobActionResult`.
@@ -66,5 +67,5 @@ During multi-page print operations (e.g. printing a 2-page document with only 1 
 
 ## 4. Verification & Testing
 
-* **TypeScript Type Safety:** Run `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` to ensure strict compilation.
-* **Frontend Compilation:** Run `pnpm run build` to compile TypeScript browser bundles into `src/public/`.
+- **TypeScript Type Safety:** Run `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` to ensure strict compilation.
+- **Frontend Compilation:** Run `pnpm run build` to compile TypeScript browser bundles into `src/public/`.

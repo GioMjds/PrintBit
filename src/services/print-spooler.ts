@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
 import type { Server } from 'socket.io';
 import { db, type LogMeta, type ReceiptRecordStatus } from './db';
 import { adminService } from './admin';
+import { createPersistentPS, type PersistentPS } from './powershell-runspace';
 import {
   PendingRefundServiceError,
   upsertSpoolerFailureRefund,
@@ -112,6 +112,59 @@ function classifySpoolerJobError(
 }
 
 /**
+ * Reads the most recent worker-reported `pagesPrinted` / `totalPages` for
+ * the given spooler correlation key from `db.data.spoolerLifecycle`. Returns
+ * `{ pagesPrinted: null, totalPages: null }` when no record matches or the
+ * worker never published a progress snapshot.
+ *
+ * The worker (printbit-worker) polls the printer engine directly and emits
+ * `PrintProgress` events with the physical page count. These are persisted
+ * to the lifecycle record as they arrive (see `worker-print-lifecycle.ts`
+ * and `recordSpoolerLifecycleTransition`). On printers whose driver lies
+ * about completion (e.g. Epson L5290 reporting `Printed 2/2` after
+ * physically printing only 1/2 because page 2 hit paper-out), the spooler's
+ * `pagesPrinted` is unreliable, so we prefer the worker's snapshot when
+ * available.
+ */
+function readWorkerReportedPageProgress(spoolerCorrelationKey: string | null): {
+  pagesPrinted: number | null;
+  totalPages: number | null;
+} {
+  if (!spoolerCorrelationKey || !db.data || !db.data.spoolerLifecycle) {
+    return { pagesPrinted: null, totalPages: null };
+  }
+  const matching = db.data.spoolerLifecycle.filter(
+    (r) => r.spoolerCorrelationKey === spoolerCorrelationKey,
+  );
+  if (matching.length === 0) {
+    return { pagesPrinted: null, totalPages: null };
+  }
+  // Pick the most recently updated record (matches the convention used in
+  // `printer.service.ts:findSpoolerJobDetails`).
+  const sorted = matching.slice().sort((a, b) => {
+    const aMs = Date.parse(a.updatedAt);
+    const bMs = Date.parse(b.updatedAt);
+    const aValid = Number.isFinite(aMs);
+    const bValid = Number.isFinite(bMs);
+    if (aValid && bValid && bMs !== aMs) return bMs - aMs;
+    if (aValid && !bValid) return -1;
+    if (!aValid && bValid) return 1;
+    return 0;
+  });
+  const record = sorted[0];
+  return {
+    pagesPrinted:
+      typeof record.pagesPrinted === 'number' && Number.isFinite(record.pagesPrinted)
+        ? record.pagesPrinted
+        : null,
+    totalPages:
+      typeof record.totalPages === 'number' && Number.isFinite(record.totalPages)
+        ? record.totalPages
+        : null,
+  };
+}
+
+/**
  * Checks whether the printer is in a paper-out or error state that would
  * indicate a partial print (e.g. 2 copies requested but only 1 sheet loaded).
  *
@@ -120,6 +173,14 @@ function classifySpoolerJobError(
  *
  * This is called on every "success" path in the spooler monitor so the kiosk
  * never shows "Thank You" when pages are still pending.
+ *
+ * The page-count comparison prefers the worker's reported `pagesPrinted`
+ * (persisted to `db.data.spoolerLifecycle` from `PrintProgress` events) over
+ * the spooler's `pagesPrinted`. Some printer drivers — notably the Epson
+ * L5290 EcoTank — mark a job `Printed` with `pagesPrinted = totalPages`
+ * even when a physical paper-out stopped partway through, because the
+ * driver tracks pages *dispatched* to the engine rather than pages
+ * *confirmed*. The worker's snapshot is the physical truth.
  */
 async function partialPrintGuard(
   printerName: string,
@@ -127,17 +188,31 @@ async function partialPrintGuard(
   totalPages: number,
   spoolerCorrelationKey: string | null,
 ): Promise<ReturnType<typeof classifySpoolerJobError> | null> {
-  // 1) If the spooler itself reports fewer pages printed than total, something
-  //    went wrong even if the job status token says "Printed".
-  if (
-    totalPages > 0 &&
-    pagesPrinted >= 0 &&
-    pagesPrinted < totalPages
-  ) {
+  // 1) Page-count check. The worker-reported value wins when both are
+  //    available; otherwise we fall back to the spooler snapshot. Either
+  //    way, `pagesPrinted < totalPages` is a partial print.
+  const workerProgress = readWorkerReportedPageProgress(spoolerCorrelationKey);
+  const spoolerShowsPartial =
+    totalPages > 0 && pagesPrinted >= 0 && pagesPrinted < totalPages;
+  const workerShowsPartial =
+    workerProgress.totalPages !== null &&
+    workerProgress.totalPages > 0 &&
+    workerProgress.pagesPrinted !== null &&
+    workerProgress.pagesPrinted >= 0 &&
+    workerProgress.pagesPrinted < workerProgress.totalPages;
+
+  if (spoolerShowsPartial || workerShowsPartial) {
+    // Prefer the worker's numbers in the user-facing message since they're
+    // the physically accurate ones; fall back to the spooler's numbers if
+    // the worker never published a snapshot.
+    const reportedPrinted =
+      workerProgress.pagesPrinted !== null ? workerProgress.pagesPrinted : pagesPrinted;
+    const reportedTotal =
+      workerProgress.totalPages !== null ? workerProgress.totalPages : totalPages;
     return {
       code: 'PAPER_INSUFFICIENT_MID_JOB',
       severity: 'recoverable',
-      userMessage: `Only ${pagesPrinted} of ${totalPages} page(s) were printed. The printer may be out of paper.`,
+      userMessage: `Only ${reportedPrinted} of ${reportedTotal} page(s) were printed. The printer may be out of paper.`,
       hint: 'Please load more paper into the rear tray, then press Resume.',
       timestamp: new Date().toISOString(),
       canRetry: true,
@@ -294,80 +369,10 @@ async function safeUpdateReceiptTerminalStatus(input: {
   }
 }
 
-// Persistent PowerShell
-
-interface PersistentPS {
-  run: (script: string, timeoutMs?: number) => Promise<string>;
-  dispose: () => void;
-}
-
-function createPersistentPS(): PersistentPS {
-  const ps = spawn(
-    'powershell.exe',
-    ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '-'],
-    { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
-  );
-
-  // Drain stderr so the process never blocks on a full stderr pipe buffer.
-  // We don't need it — non-fatal PS warnings go there and can be ignored.
-  ps.stderr.resume();
-
-  let disposed = false;
-
-  function run(script: string, timeoutMs = 10_000): Promise<string> {
-    // NOTE: This implementation is NOT safe for concurrent calls.
-    // Always await the previous run() before calling again.
-    if (disposed) {
-      return Promise.reject(
-        new Error('[SPOOLER-MONITOR] PS runspace already disposed'),
-      );
-    }
-
-    return new Promise((resolve, reject) => {
-      // A unique sentinel lets us know exactly when this command's output ends,
-      // since stdout is a continuous stream shared across all run() calls.
-      const sentinel = `__PS_DONE_${Date.now()}_${Math.random().toString(36).slice(2)}__`;
-      let output = '';
-
-      const timer = setTimeout(() => {
-        ps.stdout.off('data', onData);
-        dispose();
-        reject(new Error('[SPOOLER-MONITOR] PS runspace query timed out'));
-      }, timeoutMs);
-
-      const onData = (chunk: Buffer): void => {
-        output += chunk.toString();
-        if (output.includes(sentinel)) {
-          clearTimeout(timer);
-          ps.stdout.off('data', onData);
-          // Return everything before the sentinel line, trimmed
-          resolve(output.slice(0, output.indexOf(sentinel)).trim());
-        }
-      };
-
-      ps.stdout.on('data', onData);
-      // Append Write-Output of the sentinel so we detect end-of-output
-      ps.stdin.write(`${script}\nWrite-Output '${sentinel}'\n`);
-    });
-  }
-
-  function dispose(): void {
-    if (disposed) return;
-    disposed = true;
-    try {
-      ps.stdin.end();
-    } catch {
-      /* ignore — process may already be gone */
-    }
-    try {
-      ps.kill();
-    } catch {
-      /* ignore */
-    }
-  }
-
-  return { run, dispose };
-}
+// Persistent PowerShell — implementation now lives in ./powershell-runspace.
+// We import the helper here so the spooler monitor owns its own runspace
+// (kept separate from the printer-edge runspace because they have different
+// concurrency profiles and different timeout requirements).
 
 // ── PowerShell helper ───────────────────────────────────────────────────────
 

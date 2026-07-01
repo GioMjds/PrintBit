@@ -1,4 +1,4 @@
-﻿import { execFile, spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -144,8 +144,9 @@ export class PreviewService {
       "$word = New-Object -ComObject Word.Application",
       "$word.Visible = $false",
       "$word.DisplayAlerts = 0",
+      "$word.AutomationSecurity = 3",
       "try {",
-      `  $doc = $word.Documents.Open('${esc(absSource)}')`,
+      `  $doc = $word.Documents.Open('${esc(absSource)}', $false, $true, $false)`,
       `  $doc.SaveAs2('${esc(absOutput)}', 17)`,
       "  $doc.Close([ref]$false)",
       "} finally {",

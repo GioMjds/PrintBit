@@ -44,6 +44,7 @@ import {
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
   warmPrintDispatcherProfile,
+  warmPrinterEdgeRunspace,
   isCoinSlotLocked,
   getCoinSlotLockOwnerId,
   getCoinSlotLockedAt,
@@ -91,6 +92,64 @@ function markStartupReady(): void {
   startupReadinessState.readyAt = new Date().toISOString();
   startupReadinessState.failedAt = null;
   startupReadinessState.message = null;
+}
+
+/**
+ * Translates the worker's generic `PrinterError` message into a specific
+ * `PrintError` payload that the confirm page can act on. The worker emits a
+ * `DetectedErrorState` from WMI (1–11) inside a parenthesised segment of the
+ * message, e.g. "(No Paper, code 4)". Without this translation the modal
+ * would always render as `PRINTER_HARDWARE_ERROR` (fatal) and never expose
+ * the Pause/Resume controls — even when the underlying condition is
+ * recoverable (paper-out, paper-jam). Returns a fatal-staff-help payload
+ * when the message can't be classified.
+ */
+function translateHardwarePrinterError(message: string | null): {
+  code: string;
+  severity: 'warning' | 'recoverable' | 'fatal';
+  userMessage: string;
+  canRetry: boolean;
+  canDismiss: boolean;
+} {
+  const lower = (message ?? '').toLowerCase();
+  if (lower.includes('no paper') || lower.includes('low paper')) {
+    return {
+      code: 'PAPER_TRAY_EMPTY',
+      severity: 'recoverable',
+      userMessage:
+        'Printer Out of Paper. Please load paper and click Resume.',
+      canRetry: true,
+      canDismiss: false,
+    };
+  }
+  if (lower.includes('jammed')) {
+    return {
+      code: 'PAPER_JAM_PRINT',
+      severity: 'recoverable',
+      userMessage:
+        'Paper jam detected. Clear the jam and click Resume to continue.',
+      canRetry: true,
+      canDismiss: false,
+    };
+  }
+  if (lower.includes('no toner') || lower.includes('low toner')) {
+    return {
+      code: 'PRINTER_OUT_OF_TONER',
+      severity: 'fatal',
+      userMessage:
+        'The printer is out of toner. Please ask staff to replace the cartridge.',
+      canRetry: false,
+      canDismiss: false,
+    };
+  }
+  return {
+    code: 'PRINTER_HARDWARE_ERROR',
+    severity: 'fatal',
+    userMessage:
+      'The printer reported a hardware error. Please ask staff for help.',
+    canRetry: false,
+    canDismiss: false,
+  };
 }
 
 function markStartupFailed(message: string): void {
@@ -261,16 +320,23 @@ async function start() {
         // printer is reachable but WMI reports a non-zero DetectedErrorState
         // (paper jam, ink empty, door open, etc.).  Emit a dedicated
         // printerMalfunction so the UI can surface the right message.
+        //
+        // We translate the worker's generic `PrinterError` message into a
+        // more specific code/severity so the confirm page can offer
+        // Pause/Resume for paper-related conditions (the kiosk's primary
+        // recovery action) instead of always showing a fatal-staff-help
+        // modal. The worker formats the message as:
+        //   "Printer hardware error detected (<Description>, code <N>). ..."
         if (evt.type === 'PrinterError') {
+          const translated = translateHardwarePrinterError(evt.message ?? null);
           io.emit('printerMalfunction', {
             printError: {
-              code: 'PRINTER_HARDWARE_ERROR',
-              severity: 'fatal',
-              userMessage:
-                'The printer reported a hardware error. Please ask staff for help.',
+              code: translated.code,
+              severity: translated.severity,
+              userMessage: translated.userMessage,
               hint: evt.message ?? null,
-              canRetry: false,
-              canDismiss: false,
+              canRetry: translated.canRetry,
+              canDismiss: translated.canDismiss,
             },
           });
         }
@@ -430,6 +496,15 @@ async function start() {
     await detectDefaultPrinter();
     await assertPrintDispatcherReady();
     await warmPrintDispatcherProfile();
+    // Prime the persistent PowerShell runspace used by pause/resume/status
+    // calls so the first user-driven operation is fast (sub-50 ms instead of
+    // ~450 ms). Failure is non-fatal — subsequent calls will retry the load.
+    void warmPrinterEdgeRunspace().catch((error: unknown) => {
+      console.error(
+        '[SERVER] Failed to warm printer-edge PowerShell runspace.',
+        error instanceof Error ? error.message : String(error),
+      );
+    });
     const jobProcessor = getJobProcessor();
     jobProcessor.setIo(io);
     await jobProcessor.init();

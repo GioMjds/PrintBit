@@ -194,6 +194,47 @@ export async function handleWorkerReturnPrintEvent(input: {
     return;
   }
 
+  if (input.evt.type === 'PrintProgress') {
+    // Defensive guard: the worker already filters pagesPrinted <= 0, but a
+    // corrupt payload (e.g. NaN) must not flip the lifecycle into a
+    // "processing with no progress" state that the confirm page can't
+    // render meaningfully.
+    const pagesPrinted =
+      typeof input.evt.pagesPrinted === 'number' &&
+      Number.isFinite(input.evt.pagesPrinted)
+        ? input.evt.pagesPrinted
+        : null;
+    if (pagesPrinted === null || pagesPrinted <= 0) {
+      return;
+    }
+    const totalPages =
+      typeof input.evt.totalPages === 'number' &&
+      Number.isFinite(input.evt.totalPages) &&
+      input.evt.totalPages > 0
+        ? input.evt.totalPages
+        : null;
+
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'processing',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
+        printerName: input.evt.printerName ?? null,
+        pagesPrinted,
+        totalPages: totalPages ?? undefined,
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+      },
+    );
+    return;
+  }
+
   if (input.evt.type === 'PrintSucceeded') {
     if (mode === 'copy') {
       jobStore.updateJobState(transactionId, 'printed');

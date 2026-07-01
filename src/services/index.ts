@@ -14,6 +14,7 @@ export * from './preview';
 export * from './print-quote';
 export * from './print-lifecycle-state';
 export * from './print-spooler';
+export { warmPrinterEdgeRunspace } from './windows-printer-edge';
 export * from './printer-monitor';
 export * from './printer-fault-lock';
 export type { Orientation, PaperSize, PrintJobOptions } from './printer';

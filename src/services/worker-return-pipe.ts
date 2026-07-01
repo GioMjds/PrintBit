@@ -2,6 +2,7 @@ import net from 'node:net';
 
 export type WorkerPrintEventType =
   | 'PrintStarted'
+  | 'PrintProgress'
   | 'PrintSucceeded'
   | 'PrintFailed'
   | 'PrinterOffline'
@@ -17,6 +18,16 @@ export interface WorkerPrintEvent {
   printerName?: string;
   failureStage?: string;
   message?: string;
+  /**
+   * Pages printed so far, reported by the worker's Win32_PrintJob poller.
+   * Only populated on `PrintProgress` events.
+   */
+  pagesPrinted?: number;
+  /**
+   * Total pages in the spooler job. Reported alongside `pagesPrinted` so the
+   * confirm page can render an "N of M" progress indicator.
+   */
+  totalPages?: number;
   timestampUtc: string;
 }
 
@@ -58,6 +69,7 @@ export function parseWorkerEventLine(
 export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
   event:
   | 'workerPrintStarted'
+  | 'workerPrintProgress'
   | 'workerPrintSucceeded'
   | 'workerPrintFailed'
   | 'workerPrinterOffline'
@@ -68,6 +80,8 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
   switch (evt.type) {
     case 'PrintStarted':
       return { event: 'workerPrintStarted', payload: evt };
+    case 'PrintProgress':
+      return { event: 'workerPrintProgress', payload: evt };
     case 'PrintSucceeded':
       return { event: 'workerPrintSucceeded', payload: evt };
     case 'PrintFailed':
@@ -78,8 +92,15 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
       return { event: 'workerPrinterOnline', payload: evt };
     case 'PrinterError':
       return { event: 'workerPrinterError', payload: evt };
-    default:
+    default: {
+      // Exhaustiveness check: if a new WorkerPrintEventType variant is added
+      // and not mapped here, fail the type system instead of silently
+      // misrouting the event as a print failure (which used to be the
+      // behavior of this branch and would corrupt the kiosk UX).
+      const _exhaustive: never = evt.type;
+      void _exhaustive;
       return { event: 'workerPrintFailed', payload: evt };
+    }
   }
 }
 

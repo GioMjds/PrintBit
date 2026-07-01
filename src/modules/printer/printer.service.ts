@@ -119,16 +119,13 @@ export class PrinterService {
     try {
       const edgeStatus = await getPrinterStatusViaEdge(targetPrinter);
       if ('error' in edgeStatus) {
-        return {
-          code: 'PRINTER_QUERY_FAILED',
-          severity: 'fatal',
-          userMessage: 'Could not query printer status.',
-          hint: edgeStatus.error,
-          timestamp: new Date().toISOString(),
-        };
+        console.warn(
+          `[PRINTER] Edge preflight query returned error, falling back to local cache: ${edgeStatus.error}`,
+        );
+      } else {
+        const err = this.mapEdgeStatusToPrintError(edgeStatus);
+        if (err) return err;
       }
-      const err = this.mapEdgeStatusToPrintError(edgeStatus);
-      if (err) return err;
     } catch (error) {
       console.warn(
         `[PRINTER] Edge preflight query failed, fallback to local cache:`,
@@ -356,25 +353,59 @@ export class PrinterService {
       `[PRINTER] Pausing job #${spoolerJobId} on ${printerName} via edge-js`,
     );
     const result = await pausePrintJobViaEdge(printerName, spoolerJobId);
-    if (!result.success) {
-      throw new Error(result.error ?? 'Unknown pause failure');
+    if (result.success) {
+      return;
     }
+
+    // Race condition with EPSON driver: when paper-out (or any other driver-
+    // initiated stop) fires, the Windows print driver purges the spooler job
+    // before the user can click Pause. From the user's perspective, the job
+    // IS paused — it has stopped printing — so we treat "Job not found in
+    // queue" as a no-op success rather than surfacing a confusing error.
+    // Any other failure (driver access denied, etc.) still bubbles up.
+    if (result.error === 'Job not found in queue') {
+      console.warn(
+        `[PRINTER] Pause on job #${spoolerJobId} short-circuited: spooler job was already gone (likely purged by the printer driver on paper-out). Treating as already-paused.`,
+      );
+      return;
+    }
+
+    throw new Error(result.error ?? 'Unknown pause failure');
   }
 
   async resumeJob(spoolerCorrelationKey: string): Promise<void> {
     const { printerName, spoolerJobId, transactionId } =
       await this.findSpoolerJobDetails(spoolerCorrelationKey);
+
+    // Read the spooler-lifecycle page counters so the resubmit path can
+    // print only the unprinted pages instead of re-dispatching the whole
+    // document. The spooler numbers pages in the *prepared* PDF that the
+    // worker handed off — the same coordinate space the worker uses when
+    // interpreting `pageRange` in the sidecar.
+    const lifecyclePages = this.readLifecyclePageProgress(spoolerCorrelationKey);
+
     console.log(
       `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js`,
     );
     const result = await resumePrintJobViaEdge(printerName, spoolerJobId);
     if (result.success) {
+      if (result.alreadyInState) {
+        console.log(
+          `[PRINTER] Job #${spoolerJobId} was already in the desired (non-paused) state; skipping resubmit fallback.`,
+        );
+      }
       return;
     }
 
-    console.warn(
-      `[PRINTER] Failed to resume spooler job #${spoolerJobId}: ${result.error}. Checking for files in failed directory to resubmit...`,
-    );
+    if (result.error === 'Job not found in queue') {
+      console.warn(
+        `[PRINTER] Resume on job #${spoolerJobId} short-circuited: spooler job was already gone (likely purged by the printer driver on paper-out). Falling through to resubmit of remaining pages from the worker queue.`,
+      );
+    } else {
+      console.warn(
+        `[PRINTER] Failed to resume spooler job #${spoolerJobId}: ${result.error}. Searching worker queue + failed directories for original PDF to resubmit...`,
+      );
+    }
 
     if (!WORKER_QUEUE_DIR) {
       throw new Error(
@@ -385,42 +416,129 @@ export class PrinterService {
     const failedDir =
       WORKER_FAILED_DIR || path.join(path.dirname(WORKER_QUEUE_DIR), 'failed');
 
-    try {
-      const files = await fs.readdir(failedDir);
-      const safeSegment = (value: string) =>
-        value.replace(/[^a-zA-Z0-9-_]/g, '_');
-      const prefix = `${safeSegment(transactionId)}_${safeSegment(spoolerCorrelationKey)}_`;
-      const pdfFiles = files.filter(
-        (f) => f.startsWith(prefix) && f.endsWith('.pdf'),
-      );
-      const jsonFiles = files.filter(
-        (f) => f.startsWith(prefix) && f.endsWith('.json'),
-      );
+    const safeSegment = (value: string) =>
+      value.replace(/[^a-zA-Z0-9-_]/g, '_');
+    const prefix = `${safeSegment(transactionId)}_${safeSegment(spoolerCorrelationKey)}_`;
 
-      if (pdfFiles.length === 0 || jsonFiles.length === 0) {
-        throw new Error(
-          `Print files not found in failed directory for key ${spoolerCorrelationKey} (transaction ${transactionId}). Original resume error: ${result.error}`,
-        );
-      }
+    /**
+     * Find the matching pdf+json pair in `sourceDir` (lexicographically
+     * greatest, matching the existing reverse-sort convention). Returns null
+     * if no matching pair is found.
+     */
+    const findPairInDir = async (
+      sourceDir: string,
+    ): Promise<{ pdfFile: string; jsonFile: string; dir: string } | null> => {
+      const files = await fs.readdir(sourceDir);
+      const pdfFile = files
+        .filter((f) => f.startsWith(prefix) && f.endsWith('.pdf'))
+        .sort()
+        .reverse()[0];
+      const jsonFile = files
+        .filter((f) => f.startsWith(prefix) && f.endsWith('.json'))
+        .sort()
+        .reverse()[0];
+      if (!pdfFile || !jsonFile) return null;
+      return { pdfFile, jsonFile, dir: sourceDir };
+    };
 
-      pdfFiles.sort().reverse();
-      jsonFiles.sort().reverse();
-
-      const pdfFile = pdfFiles[0];
-      const jsonFile = jsonFiles[0];
-
-      const sourcePdfPath = path.join(failedDir, pdfFile);
-      const sourceJsonPath = path.join(failedDir, jsonFile);
-
-      const targetPdfPath = path.join(WORKER_QUEUE_DIR, pdfFile);
-      const targetJsonPath = path.join(WORKER_QUEUE_DIR, jsonFile);
-
+    /**
+     * Move the matching pdf+json pair from `sourceDir` into WORKER_QUEUE_DIR,
+     * rewriting the sidecar's pageRange so the worker prints only the
+     * unprinted pages. Returns true if files were moved.
+     */
+    const resubmitFromDir = async (
+      sourceDir: string,
+      missingPageRange: string | null,
+    ): Promise<boolean> => {
+      const pair = await findPairInDir(sourceDir);
+      if (!pair) return false;
+      const sourcePdfPath = path.join(pair.dir, pair.pdfFile);
+      const sourceJsonPath = path.join(pair.dir, pair.jsonFile);
+      const targetPdfPath = path.join(WORKER_QUEUE_DIR!, pair.pdfFile);
+      const targetJsonPath = path.join(WORKER_QUEUE_DIR!, pair.jsonFile);
       // Move PDF first, then JSON to ensure watcher detects them in the correct order
       await fs.rename(sourcePdfPath, targetPdfPath);
       await fs.rename(sourceJsonPath, targetJsonPath);
-
+      if (missingPageRange !== null) {
+        await rewriteSidecarPageRange(targetJsonPath, missingPageRange);
+      }
       console.log(
-        `[PRINTER] Successfully resubmitted failed job files to queue: ${pdfFile} and ${jsonFile}`,
+        `[PRINTER] Successfully resubmitted job files to queue from ${sourceDir}: ${pair.pdfFile} and ${pair.jsonFile}` +
+          (missingPageRange ? ` (pageRange="${missingPageRange}")` : ''),
+      );
+      return true;
+    };
+
+    try {
+      const plan = computeResubmitPlan(
+        lifecyclePages.pagesPrinted,
+        lifecyclePages.totalPages,
+      );
+      if (plan.kind === 'no_resubmit') {
+        // All pages were already printed; the spooler job was purged after
+        // success. Nothing to do — report success without resubmitting.
+        console.log(
+          `[PRINTER] Lifecycle shows ${lifecyclePages.pagesPrinted}/${lifecyclePages.totalPages} pages already printed for key ${spoolerCorrelationKey}; no resubmit required.`,
+        );
+        return;
+      }
+      if (plan.kind === 'partial') {
+        console.log(
+          `[PRINTER] Resubmit will print only missing pages: "${plan.pageRange}" (printed ${lifecyclePages.pagesPrinted ?? '?'} of ${lifecyclePages.totalPages ?? '?'}).`,
+        );
+      } else {
+        console.warn(
+          `[PRINTER] No pagesPrinted/totalPages in lifecycle record for key ${spoolerCorrelationKey}; resubmit will reprint the full document.`,
+        );
+      }
+      const missingPageRange = plan.kind === 'partial' ? plan.pageRange : null;
+
+      // Preferred path: the worker may have left the original PDF in the
+      // queue dir (OS purged the spooler job, but the worker file is still
+      // there). The existing JSON sidecar, if any, corresponds to the
+      // spooler job that was just purged — replace it with a fresh one
+      // carrying the corrected pageRange so the worker re-spawns the job
+      // for the missing pages only.
+      const queuePair = await findPairInDir(WORKER_QUEUE_DIR);
+      if (queuePair) {
+        const oldJsonPath = path.join(WORKER_QUEUE_DIR, queuePair.jsonFile);
+        // Drop the old sidecar (if present) so the worker doesn't re-process
+        // stale metadata. The PDF stays put — it's still the prepared
+        // document we want to print from. We write a brand-new JSON file
+        // under a fresh timestamp suffix so filesystem watchers that fire
+        // on JSON *creation* (rather than modification) reliably retrigger.
+        try {
+          await fs.unlink(oldJsonPath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw error;
+          }
+        }
+        const sidecarBase = `${safeSegment(transactionId)}_${safeSegment(spoolerCorrelationKey)}_${Date.now()}`;
+        const newJsonPath = path.join(WORKER_QUEUE_DIR, `${sidecarBase}.json`);
+        if (missingPageRange) {
+          await rewriteSidecarPageRange(newJsonPath, missingPageRange);
+        } else {
+          // No progress info — let the worker print everything. We still
+          // need a sidecar for the watcher to pick the pair up, so write
+          // a fresh one without a pageRange.
+          await rewriteSidecarPageRange(newJsonPath, '');
+        }
+        console.log(
+          `[PRINTER] Original PDF still in worker queue (${queuePair.pdfFile}); wrote fresh sidecar${
+            missingPageRange ? ` with pageRange="${missingPageRange}"` : ''
+          } at ${path.basename(newJsonPath)}.`,
+        );
+        return;
+      }
+
+      // Fallback: move from the failed directory back into the queue.
+      if (await resubmitFromDir(failedDir, missingPageRange)) {
+        return;
+      }
+
+      throw new Error(
+        `Print files not found in worker queue or failed directory for key ${spoolerCorrelationKey} (transaction ${transactionId}). Original resume error: ${result.error}`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -430,4 +548,126 @@ export class PrinterService {
       );
     }
   }
+
+  /**
+   * Reads the most recent spooler-lifecycle record for the given correlation
+   * key and returns the latest pagesPrinted / totalPages snapshot. Returns
+   * { pagesPrinted: null, totalPages: null } when the record is missing or
+   * the values are unset (e.g. the monitor never latched onto a job).
+   */
+  private readLifecyclePageProgress(spoolerCorrelationKey: string): {
+    pagesPrinted: number | null;
+    totalPages: number | null;
+  } {
+    if (!db.data || !db.data.spoolerLifecycle) {
+      return { pagesPrinted: null, totalPages: null };
+    }
+    const records = db.data.spoolerLifecycle.filter(
+      (r) => r.spoolerCorrelationKey === spoolerCorrelationKey,
+    );
+    if (records.length === 0) {
+      return { pagesPrinted: null, totalPages: null };
+    }
+    // Prefer the most recently updated record (matches findSpoolerJobDetails).
+    const record = records.sort((a, b) => {
+      const aMs = parseIsoMs(a.updatedAt);
+      const bMs = parseIsoMs(b.updatedAt);
+      const aValid = Number.isFinite(aMs);
+      const bValid = Number.isFinite(bMs);
+      if (aValid && bValid && bMs !== aMs) return bMs - aMs;
+      if (aValid && !bValid) return -1;
+      if (!aValid && bValid) return 1;
+      return 0;
+    })[0];
+    return {
+      pagesPrinted:
+        typeof record.pagesPrinted === 'number' && Number.isFinite(record.pagesPrinted)
+          ? record.pagesPrinted
+          : null,
+      totalPages:
+        typeof record.totalPages === 'number' && Number.isFinite(record.totalPages)
+          ? record.totalPages
+          : null,
+    };
+  }
+}
+
+/**
+ * Describes what the resubmit path should do based on lifecycle progress.
+ * - `no_resubmit`: lifecycle shows all pages already printed; nothing to do.
+ * - `partial`: print only the unprinted tail of the prepared PDF.
+ * - `full`: no progress info; fall back to reprinting the whole document.
+ *
+ * The pageRange string is in the same coordinate space the worker uses for
+ * `pageRange` in the sidecar (1-indexed positions within the prepared PDF).
+ */
+type ResubmitPlan =
+  | { kind: 'no_resubmit' }
+  | { kind: 'partial'; pageRange: string }
+  | { kind: 'full' };
+
+function computeResubmitPlan(
+  pagesPrinted: number | null,
+  totalPages: number | null,
+): ResubmitPlan {
+  if (pagesPrinted === null || totalPages === null) return { kind: 'full' };
+  if (!Number.isFinite(pagesPrinted) || !Number.isFinite(totalPages)) {
+    return { kind: 'full' };
+  }
+  if (totalPages <= 0) return { kind: 'full' };
+  if (pagesPrinted >= totalPages) return { kind: 'no_resubmit' };
+  if (pagesPrinted < 0) {
+    return { kind: 'partial', pageRange: `1-${totalPages}` };
+  }
+  return {
+    kind: 'partial',
+    pageRange: `${pagesPrinted + 1}-${totalPages}`,
+  };
+}
+
+/**
+ * Rewrites the worker sidecar JSON to apply a new `pageRange`. Preserves
+ * copies / color / orientation from the original sidecar. Falls back to
+ * overwriting with sensible defaults if the sidecar is unreadable or
+ * missing the expected fields — in that case we still write a sidecar so
+ * the worker has something to consume.
+ *
+ * Pass an empty string for `pageRange` to clear the field (worker interprets
+ * a missing/null pageRange as "print all pages").
+ */
+async function rewriteSidecarPageRange(
+  jsonPath: string,
+  pageRange: string,
+): Promise<void> {
+  type WorkerSidecar = {
+    copies?: number;
+    color?: boolean;
+    pageRange?: string | null;
+    orientation?: string | null;
+  };
+  let sidecar: WorkerSidecar = {};
+  try {
+    const raw = await fs.readFile(jsonPath, 'utf-8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object') {
+      sidecar = parsed as WorkerSidecar;
+    }
+  } catch (error) {
+    console.warn(
+      `[PRINTER] Could not read existing sidecar at ${jsonPath}; writing fresh sidecar${
+        pageRange ? ` with pageRange="${pageRange}"` : ' without pageRange'
+      }.`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  const next: WorkerSidecar = {
+    ...sidecar,
+    pageRange: pageRange.length > 0 ? pageRange : null,
+  };
+  await fs.writeFile(jsonPath, JSON.stringify(next), 'utf-8');
+  console.log(
+    `[PRINTER] Rewrote sidecar ${path.basename(jsonPath)}${
+      pageRange ? ` with pageRange="${pageRange}"` : ' without pageRange'
+    }.`,
+  );
 }

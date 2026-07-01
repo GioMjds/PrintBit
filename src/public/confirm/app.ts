@@ -67,7 +67,6 @@ type ConfirmConfig = {
   copyPreviewReleaseToken?: string | null;
   detectedColorMode?: 'colored' | 'grayscale' | null;
   colorMode: 'colored' | 'grayscale';
-  duplex?: boolean;
   copies: number;
   orientation: 'portrait' | 'landscape';
   rotationDeg?: number;
@@ -125,6 +124,12 @@ type PrintError = {
   timestamp?: string;
   canRetry?: boolean;
   canDismiss?: boolean;
+  /**
+   * Correlation key of the spooler job this error refers to. Carried in
+   * the printErrorRaised socket payload so the Pause/Resume buttons have a
+   * fallback key when paymentSpoolerCorrelationKey is null.
+   */
+  spoolerCorrelationKey?: string | null;
 };
 
 type PrintLifecycleStatePayload = {
@@ -163,8 +168,6 @@ const rotationValue = document.getElementById('rotationValue');
 const rotationRow = document.getElementById('rotationRow');
 const paperSizeValue = document.getElementById('paperSizeValue');
 const paperRow = document.getElementById('paperRow');
-const duplexValue = document.getElementById('duplexValue');
-const duplexRow = document.getElementById('duplexRow');
 const priceValue = document.getElementById('priceValue');
 const balanceValue = document.getElementById('balanceValue');
 const changeValue = document.getElementById('changeValue');
@@ -212,8 +215,6 @@ const modalRotation = document.getElementById('modalRotation');
 const modalRotationRow = document.getElementById('modalRotationRow');
 const modalPaper = document.getElementById('modalPaper');
 const modalPaperRow = document.getElementById('modalPaperRow');
-const modalDuplex = document.getElementById('modalDuplex');
-const modalDuplexRow = document.getElementById('modalDuplexRow');
 const modalPrice = document.getElementById('modalPrice');
 const modalChangeRow = document.getElementById('modalChangeRow');
 const modalChange = document.getElementById('modalChange');
@@ -222,6 +223,17 @@ const modalChange = document.getElementById('modalChange');
 const printingOverlay = document.getElementById('printingOverlay');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
+const printingProgressText = document.getElementById('printingProgressText');
+const printingProgressCurrent = document.getElementById(
+  'printingProgressCurrent',
+);
+const printingProgressTotal = document.getElementById(
+  'printingProgressTotal',
+);
+const printingProgressBar = document.getElementById('printingProgressBar');
+const printingProgressFill = document.getElementById(
+  'printingProgressFill',
+) as HTMLDivElement | null;
 
 // Thank You Elements
 const thankYouOverlay = document.getElementById('thankYouOverlay');
@@ -285,22 +297,31 @@ function renderPrinterError(err: PrintError): void {
     };
     errorSeverityText.textContent = severityLabels[err.severity] ?? err.severity;
   }
-  
+
   if (err.severity === 'warning') {
     if (errorCloseBtn) errorCloseBtn.removeAttribute('hidden');
   } else {
     if (errorCloseBtn) errorCloseBtn.setAttribute('hidden', '');
   }
 
-  // Special case: Not enough paper (PAPER_INSUFFICIENT_PRE_DISPATCH)
-  // or other states that might benefit from pause/resume
-  const showActions = err.code === 'PAPER_INSUFFICIENT_PRE_DISPATCH' || 
-                      err.code === 'PAPER_TRAY_EMPTY' ||
-                      err.code === 'PAPER_JAM_PRINT';
-  
+  // Pause/Resume controls are valid for all paper/jam related codes,
+  // including mid-job exhaustion where the OS may have purged the job.
+  const PAUSE_RESUME_ERROR_CODES = new Set([
+    'PAPER_INSUFFICIENT_PRE_DISPATCH',
+    'PAPER_INSUFFICIENT_MID_JOB',
+    'PAPER_TRAY_EMPTY',
+    'PAPER_JAM_PRINT',
+  ]);
+  const showActions = PAUSE_RESUME_ERROR_CODES.has(err.code);
+
   if (errorActions) {
-    if (showActions) errorActions.removeAttribute('hidden');
-    else errorActions.setAttribute('hidden', '');
+    if (showActions) {
+      errorActions.removeAttribute('hidden');
+      // Reset button state every time the modal becomes visible
+      resetErrorActionButtons();
+    } else {
+      errorActions.setAttribute('hidden', '');
+    }
   }
 
   if (hasActiveJob()) {
@@ -313,6 +334,178 @@ function clearPrinterError(): void {
   currentPrinterError = null;
   if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
   applyConfirmGate();
+}
+
+const PAUSE_BTN_DEFAULT_LABEL = 'Pause Job';
+const RESUME_BTN_DEFAULT_LABEL = 'Resume Print';
+const PAUSE_BTN_LOADING_LABEL = 'Pausing…';
+const RESUME_BTN_LOADING_LABEL = 'Resuming…';
+
+/**
+ * Minimum duration the loading label stays visible after a click. The new
+ * persistent PowerShell runspace returns pause/resume in ~60 ms (down from
+ * ~820 ms), which is fast enough that the user can't tell the click
+ * registered. Hold the "Pausing…" / "Resuming…" label for at least this
+ * long so the UI gives visible feedback for every click.
+ */
+const ERROR_ACTION_MIN_LOADING_MS = 350;
+
+/**
+ * Restores the printer-error action buttons to their default labels, removes
+ * the loading/disabled state, and clears any inline error from a previous
+ * failed action.
+ */
+function resetErrorActionButtons(): void {
+  if (errorPauseBtn) {
+    errorPauseBtn.removeAttribute('hidden');
+    errorPauseBtn.disabled = false;
+    const span = errorPauseBtn.querySelector('span');
+    if (span) span.textContent = PAUSE_BTN_DEFAULT_LABEL;
+  }
+  if (errorResumeBtn) {
+    errorResumeBtn.removeAttribute('hidden');
+    errorResumeBtn.disabled = false;
+    const span = errorResumeBtn.querySelector('span');
+    if (span) span.textContent = RESUME_BTN_DEFAULT_LABEL;
+  }
+  clearErrorActionInlineError();
+}
+
+/**
+ * Shows an inline error message under the Pause/Resume action buttons.
+ * Replaces any previous inline error.
+ */
+function showErrorActionInlineError(message: string): void {
+  if (!errorActions) return;
+  let el = errorActions.querySelector<HTMLElement>(
+    '.printer-error-modal__inline-error',
+  );
+  if (!el) {
+    el = document.createElement('p');
+    el.className = 'printer-error-modal__inline-error';
+    el.setAttribute('role', 'alert');
+    errorActions.appendChild(el);
+  }
+  el.textContent = message;
+  el.removeAttribute('hidden');
+}
+
+function clearErrorActionInlineError(): void {
+  if (!errorActions) return;
+  const el = errorActions.querySelector<HTMLElement>(
+    '.printer-error-modal__inline-error',
+  );
+  if (el) {
+    el.textContent = '';
+    el.setAttribute('hidden', '');
+  }
+}
+
+/**
+ * Resolves the spooler correlation key to send to /api/printer/{action}.
+ * Prefers the live key from the active payment; falls back to whichever key
+ * the currently-displayed printer error carries.
+ */
+function resolveErrorActionCorrelationKey(): string | null {
+  if (paymentSpoolerCorrelationKey) return paymentSpoolerCorrelationKey;
+  if (currentPrinterError?.spoolerCorrelationKey) {
+    return currentPrinterError.spoolerCorrelationKey;
+  }
+  return null;
+}
+
+async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
+  if (!errorPauseBtn || !errorResumeBtn) return;
+
+  const targetKey = resolveErrorActionCorrelationKey();
+  if (!targetKey) {
+    console.warn(
+      `[PRINTER-ACTION] Cannot ${action}: no spooler correlation key available.`,
+    );
+    showErrorActionInlineError(
+      'No active print job to control. Please try again or contact staff.',
+    );
+    return;
+  }
+
+  // Enter loading state for both buttons so a rapid second click is ignored.
+  const clickedBtn = action === 'pause' ? errorPauseBtn : errorResumeBtn;
+  const otherBtn = action === 'pause' ? errorResumeBtn : errorPauseBtn;
+  const loadingLabel =
+    action === 'pause' ? PAUSE_BTN_LOADING_LABEL : RESUME_BTN_LOADING_LABEL;
+  const defaultLabel =
+    action === 'pause' ? PAUSE_BTN_DEFAULT_LABEL : RESUME_BTN_DEFAULT_LABEL;
+
+  errorPauseBtn.disabled = true;
+  errorResumeBtn.disabled = true;
+  const clickedSpan = clickedBtn.querySelector('span');
+  if (clickedSpan) clickedSpan.textContent = loadingLabel;
+  clearErrorActionInlineError();
+
+  const loadingStartedAt = Date.now();
+
+  try {
+    const response = await fetchWithTimeout(`/api/printer/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spoolerCorrelationKey: targetKey }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const message =
+        (errBody && typeof errBody.error === 'string' && errBody.error) ||
+        `Server returned HTTP ${response.status}.`;
+      throw new Error(message);
+    }
+
+    // Hold the loading label for at least ERROR_ACTION_MIN_LOADING_MS so
+    // fast (~60 ms) persistent-PS round-trips still produce visible
+    // feedback. If the call already took longer than the floor, no wait.
+    const elapsed = Date.now() - loadingStartedAt;
+    if (elapsed < ERROR_ACTION_MIN_LOADING_MS) {
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, ERROR_ACTION_MIN_LOADING_MS - elapsed),
+      );
+    }
+
+    if (action === 'pause') {
+      // Reflect paused state in the modal: keep Resume prominent, hide Pause.
+      if (errorTitle) errorTitle.textContent = 'Job Paused';
+      if (errorMessage) {
+        errorMessage.textContent =
+          'The print job is paused. Reload paper, then press Resume to continue.';
+      }
+      clickedBtn.setAttribute('hidden', '');
+      const clickedLoadingSpan = clickedBtn.querySelector('span');
+      if (clickedLoadingSpan) clickedLoadingSpan.textContent = defaultLabel;
+      otherBtn.disabled = false;
+      const otherSpan = otherBtn.querySelector('span');
+      if (otherSpan) otherSpan.textContent = RESUME_BTN_DEFAULT_LABEL;
+      return;
+    }
+
+    // action === 'resume' — restore normal flow.
+    clearPrinterError();
+  } catch (err) {
+    console.error(`[PRINTER-ACTION] Failed to ${action} job:`, err);
+    const message =
+      err instanceof Error
+        ? err.message
+        : `Could not ${action} the print job.`;
+    // Re-enable both buttons with their default labels.
+    const clickedSpanAgain = clickedBtn.querySelector('span');
+    if (clickedSpanAgain) clickedSpanAgain.textContent = defaultLabel;
+    const otherSpanAgain = otherBtn.querySelector('span');
+    if (otherSpanAgain) otherSpanAgain.textContent = defaultLabel;
+    clickedBtn.removeAttribute('hidden');
+    otherBtn.removeAttribute('hidden');
+    errorPauseBtn.disabled = false;
+    errorResumeBtn.disabled = false;
+    showErrorActionInlineError(
+      `Could not ${action} the print job. ${message} Please try again.`,
+    );
+  }
 }
 
 function syncCoinInsertGuidanceMessage(): void {
@@ -354,7 +547,6 @@ if (!rawConfig) {
 }
 
 const config = JSON.parse(rawConfig ?? '{}') as ConfirmConfig;
-config.duplex = config.duplex === true;
 config.rotationDeg = normalizeRotationDeg(config.rotationDeg);
 if (typeof config.documentId !== 'string') {
   config.documentId = uploadedDocumentId;
@@ -374,7 +566,6 @@ const currentPaymentFingerprint = JSON.stringify({
   documentId: config.documentId ?? null,
   copies: config.copies,
   colorMode: config.colorMode,
-  duplex: config.duplex === true,
   orientation: config.orientation,
   rotationDeg: config.rotationDeg,
   paperSize: config.paperSize,
@@ -513,7 +704,6 @@ if (config.mode === 'scan') {
   orientationRow?.setAttribute('hidden', '');
   rotationRow?.setAttribute('hidden', '');
   paperRow?.setAttribute('hidden', '');
-  duplexRow?.setAttribute('hidden', '');
 
   // Hide all scan-irrelevant rows in the modal
   modalColorRow?.setAttribute('hidden', '');
@@ -522,7 +712,6 @@ if (config.mode === 'scan') {
   modalOrientationRow?.setAttribute('hidden', '');
   modalRotationRow?.setAttribute('hidden', '');
   modalPaperRow?.setAttribute('hidden', '');
-  modalDuplexRow?.setAttribute('hidden', '');
 } else {
   // Populate main screen values for print/copy
   if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
@@ -535,9 +724,6 @@ if (config.mode === 'scan') {
   if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
   if (paperSizeValue)
     paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
-  if (duplexValue) {
-    duplexValue.textContent = config.duplex ? 'Double-sided' : 'Single-sided';
-  }
 }
 
 if (modeValue) modeValue.textContent = config.mode.toUpperCase();
@@ -729,6 +915,64 @@ function setPrintingPhase(
   }
 }
 
+/**
+ * Updates the printing overlay's progress indicator from a
+ * `printLifecycleState` payload. Called whenever a 'processing' transition
+ * arrives with `pagesPrinted` set. The block stays hidden on the very first
+ * call (the call must reveal text + bar), then updates are progressively
+ * cheap text/bar mutations.
+ */
+function renderPrintProgress(input: {
+  pagesPrinted?: number | null;
+  totalPages?: number | null;
+}): void {
+  const pagesPrinted =
+    typeof input.pagesPrinted === 'number' && Number.isFinite(input.pagesPrinted)
+      ? Math.max(0, Math.floor(input.pagesPrinted))
+      : null;
+  if (pagesPrinted === null || pagesPrinted <= 0) return;
+
+  const totalPages =
+    typeof input.totalPages === 'number' && Number.isFinite(input.totalPages) &&
+    input.totalPages > 0
+      ? Math.floor(input.totalPages)
+      : null;
+
+  if (printingProgressCurrent) {
+    printingProgressCurrent.textContent = String(pagesPrinted);
+  }
+  if (printingProgressTotal) {
+    printingProgressTotal.textContent = totalPages !== null
+      ? String(totalPages)
+      : '—';
+  }
+
+  let pct: number | null = null;
+  if (totalPages !== null) {
+    pct = Math.max(0, Math.min(100, (pagesPrinted / totalPages) * 100));
+  }
+  if (printingProgressFill && pct !== null) {
+    printingProgressFill.style.setProperty('--progress', `${pct}%`);
+  }
+
+  if (printingProgressText) printingProgressText.removeAttribute('hidden');
+  if (printingProgressBar) printingProgressBar.removeAttribute('hidden');
+}
+
+/**
+ * Hides and resets the progress indicator. Called on terminal states
+ * (printed / failed / paused) so the next session starts clean.
+ */
+function hidePrintProgress(): void {
+  if (printingProgressText) printingProgressText.setAttribute('hidden', '');
+  if (printingProgressBar) printingProgressBar.setAttribute('hidden', '');
+  if (printingProgressFill) {
+    printingProgressFill.style.setProperty('--progress', '0%');
+  }
+  if (printingProgressCurrent) printingProgressCurrent.textContent = '0';
+  if (printingProgressTotal) printingProgressTotal.textContent = '0';
+}
+
 async function showScanQrOverlay(
   downloadUrl: string,
   expiresAt?: string,
@@ -790,7 +1034,6 @@ async function loadPricing(): Promise<void> {
           rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
           pageRange: config.pageRange,
-          duplex: config.duplex === true,
           ...(config.mode === 'print'
             ? {
                 sessionId: config.sessionId,
@@ -981,6 +1224,7 @@ function captureReceiptCta(payload: ReceiptLinkPayload): void {
 function finalizePrintSuccess(transactionId: string | null): void {
   setTransactionReference(transactionId ?? currentTransactionId);
   hideOverlay(printingOverlay);
+  hidePrintProgress();
   showOverlay(thankYouOverlay);
   clearPendingPaymentSessionState();
   activeSpoolerCorrelationKey = null;
@@ -1113,9 +1357,6 @@ function showModal(): void {
     }
     if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
     if (modalPaper) modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
-    if (modalDuplex) {
-      modalDuplex.textContent = config.duplex ? 'Double-sided' : 'Single-sided';
-    }
   }
 
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
@@ -1234,7 +1475,6 @@ modalConfirmBtn?.addEventListener('click', async () => {
           rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
           pageRange: config.pageRange,
-          duplex: config.duplex === true,
           previewPath: config.copyPreviewPath,
           spoolerCorrelationKey,
         }),
@@ -1281,7 +1521,6 @@ modalConfirmBtn?.addEventListener('click', async () => {
           colorMode: getDisplayColorMode(),
           orientation: config.orientation,
           rotationDeg: config.rotationDeg,
-          duplex: config.duplex === true,
           paperSize: config.paperSize,
           pageRange: config.pageRange,
           spoolerCorrelationKey,
@@ -1378,6 +1617,21 @@ if (typeof ioFactory === 'function') {
       lifecycle.printError?.code === 'PAPER_JAM_PRINT' ||
       currentPrinterError?.severity === 'recoverable';
 
+    // Live progress updates — only 'processing' transitions carry
+    // pagesPrinted. PrintStarted emits the same state without pagesPrinted,
+    // which is a no-op here and lets the spinner-only copy stand.
+    if (lifecycle.state === 'processing') {
+      if (
+        typeof lifecycle.pagesPrinted === 'number' &&
+        lifecycle.pagesPrinted > 0
+      ) {
+        renderPrintProgress({
+          pagesPrinted: lifecycle.pagesPrinted,
+          totalPages: lifecycle.totalPages ?? null,
+        });
+      }
+    }
+
     if (
       lifecycle.state === 'failed' &&
       matchesPendingWorkerEvent({
@@ -1398,6 +1652,7 @@ if (typeof ioFactory === 'function') {
       }
 
       hideOverlay(printingOverlay);
+      hidePrintProgress();
       isProcessingPayment = false;
       activeSpoolerCorrelationKey = null;
       clearPendingPaymentSessionState();
@@ -1408,6 +1663,7 @@ if (typeof ioFactory === 'function') {
     if (lifecycle.printError) {
       if (hasActiveJob()) renderPrinterError(lifecycle.printError);
     } else if (lifecycle.state === 'printed' || lifecycle.state === 'failed') {
+      if (lifecycle.state === 'printed') hidePrintProgress();
       if (!isHardwareError) {
         clearPrinterError();
       }
@@ -1471,6 +1727,7 @@ if (typeof ioFactory === 'function') {
 
     // Non-hardware failure: abort as before
     hideOverlay(printingOverlay);
+    hidePrintProgress();
     isProcessingPayment = false;
     activeSpoolerCorrelationKey = null;
     clearPendingPaymentSessionState();
@@ -1485,34 +1742,12 @@ errorCloseBtn?.addEventListener('click', () => {
   clearPrinterError();
 });
 
-errorPauseBtn?.addEventListener('click', async () => {
-  if (!paymentSpoolerCorrelationKey) return;
-  try {
-    await fetch('/api/printer/pause', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spoolerCorrelationKey: paymentSpoolerCorrelationKey }),
-    });
-  } catch (err) {
-    console.error('Failed to pause printer:', err);
-  }
+errorPauseBtn?.addEventListener('click', () => {
+  void handleErrorAction('pause');
 });
 
-errorResumeBtn?.addEventListener('click', async () => {
-  if (!paymentSpoolerCorrelationKey) return;
-  try {
-    await fetch('/api/printer/resume', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spoolerCorrelationKey: paymentSpoolerCorrelationKey }),
-    });
-    // Optimistically clear error if it was a pause/resume scenario
-    if (currentPrinterError?.code === 'PAPER_INSUFFICIENT_PRE_DISPATCH') {
-        clearPrinterError();
-    }
-  } catch (err) {
-    console.error('Failed to resume printer:', err);
-  }
+errorResumeBtn?.addEventListener('click', () => {
+  void handleErrorAction('resume');
 });
 
 async function loadPrinterStatus(): Promise<void> {
