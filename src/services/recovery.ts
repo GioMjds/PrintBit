@@ -364,6 +364,9 @@ export async function recordSpoolerLifecycleTransition(
   if (input.state === 'processing' && entry.processingAt === null) {
     entry.processingAt = timestamp;
   }
+  if (input.state === 'paused' && entry.pausedAt === null) {
+    entry.pausedAt = timestamp;
+  }
   if (input.state === 'printed' && entry.printedAt === null) {
     entry.printedAt = timestamp;
   }
@@ -816,6 +819,7 @@ function baseSpoolerLifecycleRecord(input: {
     currentState: null,
     queuedAt: null,
     processingAt: null,
+    pausedAt: null,
     printedAt: null,
     failedAt: null,
     sessionId: input.sessionId ?? null,

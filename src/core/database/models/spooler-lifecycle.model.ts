@@ -3,6 +3,7 @@ import { LogMeta } from '../shared.schema';
 export type SpoolerLifecycleState =
   | 'queued'
   | 'processing'
+  | 'paused'
   | 'printed'
   | 'failed';
 
@@ -27,6 +28,7 @@ export interface SpoolerLifecycleRecord {
   currentState: SpoolerLifecycleState | null;
   queuedAt: string | null;
   processingAt: string | null;
+  pausedAt: string | null;
   printedAt: string | null;
   failedAt: string | null;
   sessionId: string | null;
