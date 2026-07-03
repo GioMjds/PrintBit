@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { db } from '@/services/db';
-import { getPrinterTelemetry } from '@/services';
+import { getPrinterTelemetry, recordSpoolerLifecycleTransition } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
 import { WORKER_QUEUE_DIR, WORKER_FAILED_DIR } from '@/config/http.config';
 import {
@@ -12,6 +12,12 @@ import {
   resumePrintJobViaEdge,
   type EdgePrinterStatus,
 } from '@/services/windows-printer-edge';
+import { computeResubmitPlan, type ResubmitPlan } from './resubmit-plan';
+
+// Re-export so that `printer.service.ts` remains the canonical public
+// surface of this module — callers should not need to know about
+// `resubmit-plan.ts` directly.
+export { computeResubmitPlan, type ResubmitPlan };
 
 const execFileAsync = promisify(execFile);
 
@@ -354,6 +360,10 @@ export class PrinterService {
     );
     const result = await pausePrintJobViaEdge(printerName, spoolerJobId);
     if (result.success) {
+      await this.persistPausedTransition(
+        spoolerCorrelationKey,
+        `User-initiated pause of spooler job #${spoolerJobId} on ${printerName}.`,
+      );
       return;
     }
 
@@ -367,6 +377,10 @@ export class PrinterService {
       console.warn(
         `[PRINTER] Pause on job #${spoolerJobId} short-circuited: spooler job was already gone (likely purged by the printer driver on paper-out). Treating as already-paused.`,
       );
+      // Don't persist 'paused' here — the lifecycle's most-recent state is
+      // still 'processing' (or 'failed' if the driver reported a terminal
+      // status). The resume path will detect that and route to the resubmit
+      // path with a clear log, which is the correct UX for a paper-out.
       return;
     }
 
@@ -383,24 +397,57 @@ export class PrinterService {
     // worker handed off — the same coordinate space the worker uses when
     // interpreting `pageRange` in the sidecar.
     const lifecyclePages = this.readLifecyclePageProgress(spoolerCorrelationKey);
+    const isGenuineUserPause = lifecyclePages.currentState === 'paused';
 
     console.log(
-      `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js`,
+      `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js (lifecycle state: ${lifecyclePages.currentState ?? 'unknown'})`,
     );
     const result = await resumePrintJobViaEdge(printerName, spoolerJobId);
     if (result.success) {
-      if (result.alreadyInState) {
+      if (result.alreadyInState && isGenuineUserPause) {
+        // EPSON L5290 quirk: the firmware may have parked with
+        // `IsPaused=false` already, in which case the edge script reported
+        // `alreadyInState=true`. We still consider this a successful resume
+        // because the user pressed Resume on a known-paused job. If the
+        // firmware didn't actually restart, the spooler monitor's
+        // `partialPrintGuard` will catch the missing pages on the next poll.
+        console.log(
+          `[PRINTER] Job #${spoolerJobId} resumed from a 'paused' lifecycle state; edge reported alreadyInState (EPSON firmware quirk) — trusting user intent and not falling through to resubmit.`,
+        );
+      } else if (result.alreadyInState) {
         console.log(
           `[PRINTER] Job #${spoolerJobId} was already in the desired (non-paused) state; skipping resubmit fallback.`,
+        );
+      }
+      if (isGenuineUserPause) {
+        // Move the lifecycle back to 'processing' so the spooler monitor's
+        // subsequent transitions (e.g. PrintSucceeded) don't get stuck on
+        // 'paused' or mis-classified as already-final.
+        await this.persistProcessingTransition(
+          spoolerCorrelationKey,
+          `Resume accepted for spooler job #${spoolerJobId} on ${printerName}.`,
         );
       }
       return;
     }
 
     if (result.error === 'Job not found in queue') {
-      console.warn(
-        `[PRINTER] Resume on job #${spoolerJobId} short-circuited: spooler job was already gone (likely purged by the printer driver on paper-out). Falling through to resubmit of remaining pages from the worker queue.`,
-      );
+      if (isGenuineUserPause) {
+        // The user pressed Pause, we recorded 'paused', but by the time they
+        // pressed Resume the spooler had purged the job anyway (e.g. the
+        // printer was power-cycled during the pause). That's still a
+        // resubmit scenario, but the user genuinely intended to pause this
+        // job, so we don't want to print the whole document — we need a
+        // pageRange from the lifecycle. If the lifecycle has no progress
+        // info, fall through to the 'unknown' error path below.
+        console.warn(
+          `[PRINTER] Resume on job #${spoolerJobId} short-circuited: spooler job was already gone (was 'paused' before the printer purged it). Falling through to resubmit of remaining pages from the worker queue.`,
+        );
+      } else {
+        console.warn(
+          `[PRINTER] Resume on job #${spoolerJobId} short-circuited: spooler job was already gone (likely purged by the printer driver on paper-out). Falling through to resubmit of remaining pages from the worker queue.`,
+        );
+      }
     } else {
       console.warn(
         `[PRINTER] Failed to resume spooler job #${spoolerJobId}: ${result.error}. Searching worker queue + failed directories for original PDF to resubmit...`,
@@ -482,13 +529,33 @@ export class PrinterService {
         );
         return;
       }
+      if (plan.kind === 'unknown') {
+        // No progress info from the worker and no successful resume from the
+        // spooler. This is the EPSON L5290 paper-out case (driver purged the
+        // job AND never reported a progress snapshot). The previous behavior
+        // was to fall through and reprint the entire document, which is the
+        // user-reported bug. Surface a structured error instead — the
+        // prepared PDF is still on disk, so the user can re-upload it.
+        const message = isGenuineUserPause
+          ? `Cannot resume: spooler job was purged while paused, but no page-progress info is available for key ${spoolerCorrelationKey}. Please re-upload your document.`
+          : `Cannot resume: spooler job was purged by the printer and no page-progress info is available for key ${spoolerCorrelationKey}. Please re-upload your document.`;
+        console.error(
+          `[PRINTER] ✗ ${message} (pagesPrinted=${lifecyclePages.pagesPrinted}, totalPages=${lifecyclePages.totalPages})`,
+        );
+        throw new Error(
+          `${message} (Original resume error: ${result.error})`,
+        );
+      }
       if (plan.kind === 'partial') {
         console.log(
           `[PRINTER] Resubmit will print only missing pages: "${plan.pageRange}" (printed ${lifecyclePages.pagesPrinted ?? '?'} of ${lifecyclePages.totalPages ?? '?'}).`,
         );
       } else {
+        // 'full' — the worker explicitly reported pagesPrinted=0/totalPages=N,
+        // meaning the printer refused the job outright and nothing was ever
+        // printed. The previous behavior of full-reprint is correct here.
         console.warn(
-          `[PRINTER] No pagesPrinted/totalPages in lifecycle record for key ${spoolerCorrelationKey}; resubmit will reprint the full document.`,
+          `[PRINTER] Lifecycle reports pagesPrinted=0/totalPages=${lifecyclePages.totalPages} for key ${spoolerCorrelationKey}; resubmit will reprint the full document.`,
         );
       }
       const missingPageRange = plan.kind === 'partial' ? plan.pageRange : null;
@@ -519,9 +586,9 @@ export class PrinterService {
         if (missingPageRange) {
           await rewriteSidecarPageRange(newJsonPath, missingPageRange);
         } else {
-          // No progress info — let the worker print everything. We still
-          // need a sidecar for the watcher to pick the pair up, so write
-          // a fresh one without a pageRange.
+          // 'full' plan — let the worker print everything. We still need a
+          // sidecar for the watcher to pick the pair up, so write a fresh
+          // one without a pageRange.
           await rewriteSidecarPageRange(newJsonPath, '');
         }
         console.log(
@@ -551,22 +618,25 @@ export class PrinterService {
 
   /**
    * Reads the most recent spooler-lifecycle record for the given correlation
-   * key and returns the latest pagesPrinted / totalPages snapshot. Returns
-   * { pagesPrinted: null, totalPages: null } when the record is missing or
-   * the values are unset (e.g. the monitor never latched onto a job).
+   * key and returns the latest pagesPrinted / totalPages snapshot plus the
+   * current state. Returns
+   * `{ pagesPrinted: null, totalPages: null, currentState: null }` when the
+   * record is missing or the values are unset (e.g. the monitor never
+   * latched onto a job).
    */
   private readLifecyclePageProgress(spoolerCorrelationKey: string): {
     pagesPrinted: number | null;
     totalPages: number | null;
+    currentState: import('@/core/database/models/spooler-lifecycle.model').SpoolerLifecycleState | null;
   } {
     if (!db.data || !db.data.spoolerLifecycle) {
-      return { pagesPrinted: null, totalPages: null };
+      return { pagesPrinted: null, totalPages: null, currentState: null };
     }
     const records = db.data.spoolerLifecycle.filter(
       (r) => r.spoolerCorrelationKey === spoolerCorrelationKey,
     );
     if (records.length === 0) {
-      return { pagesPrinted: null, totalPages: null };
+      return { pagesPrinted: null, totalPages: null, currentState: null };
     }
     // Prefer the most recently updated record (matches findSpoolerJobDetails).
     const record = records.sort((a, b) => {
@@ -588,41 +658,108 @@ export class PrinterService {
         typeof record.totalPages === 'number' && Number.isFinite(record.totalPages)
           ? record.totalPages
           : null,
+      currentState: record.currentState ?? null,
     };
   }
-}
 
-/**
- * Describes what the resubmit path should do based on lifecycle progress.
- * - `no_resubmit`: lifecycle shows all pages already printed; nothing to do.
- * - `partial`: print only the unprinted tail of the prepared PDF.
- * - `full`: no progress info; fall back to reprinting the whole document.
- *
- * The pageRange string is in the same coordinate space the worker uses for
- * `pageRange` in the sidecar (1-indexed positions within the prepared PDF).
- */
-type ResubmitPlan =
-  | { kind: 'no_resubmit' }
-  | { kind: 'partial'; pageRange: string }
-  | { kind: 'full' };
+  /**
+   * Reads the most recent spooler-lifecycle record for the given correlation
+   * key and returns the `transactionId` + `mode` needed to write a follow-up
+   * lifecycle transition (e.g. a `paused` state). Returns `null` when no
+   * record matches.
+   */
+  private findLifecycleIdentity(
+    spoolerCorrelationKey: string,
+  ): { transactionId: string; mode: 'print' | 'copy' } | null {
+    if (!db.data || !db.data.spoolerLifecycle) {
+      return null;
+    }
+    const records = db.data.spoolerLifecycle.filter(
+      (r) => r.spoolerCorrelationKey === spoolerCorrelationKey,
+    );
+    if (records.length === 0) return null;
+    const record = records.sort((a, b) => {
+      const aMs = parseIsoMs(a.updatedAt);
+      const bMs = parseIsoMs(b.updatedAt);
+      const aValid = Number.isFinite(aMs);
+      const bValid = Number.isFinite(bMs);
+      if (aValid && bValid && bMs !== aMs) return bMs - aMs;
+      if (aValid && !bValid) return -1;
+      if (!aValid && bValid) return 1;
+      return 0;
+    })[0];
+    return { transactionId: record.transactionId, mode: record.mode };
+  }
 
-function computeResubmitPlan(
-  pagesPrinted: number | null,
-  totalPages: number | null,
-): ResubmitPlan {
-  if (pagesPrinted === null || totalPages === null) return { kind: 'full' };
-  if (!Number.isFinite(pagesPrinted) || !Number.isFinite(totalPages)) {
-    return { kind: 'full' };
+  /**
+   * Persist a `paused` lifecycle transition for the given correlation key.
+   * Best-effort: a DB-write failure is logged but does not break the pause
+   * UX, because the spooler itself is already paused. The downside is the
+   * resume path won't be able to distinguish a user pause from a driver
+   * purge on the next Resume click — which is exactly the symptom this
+   * helper is meant to prevent, so we keep the error visible.
+   */
+  private async persistPausedTransition(
+    spoolerCorrelationKey: string,
+    reason: string,
+  ): Promise<void> {
+    const identity = this.findLifecycleIdentity(spoolerCorrelationKey);
+    if (!identity) {
+      console.warn(
+        `[PRINTER] Could not persist paused transition: no lifecycle record for key ${spoolerCorrelationKey}.`,
+      );
+      return;
+    }
+    try {
+      await recordSpoolerLifecycleTransition({
+        transactionId: identity.transactionId,
+        mode: identity.mode,
+        state: 'paused',
+        spoolerCorrelationKey,
+        reason,
+      });
+    } catch (error) {
+      console.error(
+        `[PRINTER] Failed to persist paused transition for key ${spoolerCorrelationKey}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
-  if (totalPages <= 0) return { kind: 'full' };
-  if (pagesPrinted >= totalPages) return { kind: 'no_resubmit' };
-  if (pagesPrinted < 0) {
-    return { kind: 'partial', pageRange: `1-${totalPages}` };
+
+  /**
+   * Persist a `processing` lifecycle transition for the given correlation
+   * key. Used to clear a previously-recorded 'paused' state once Resume
+   * has been accepted by the spooler — without this, the lifecycle would
+   * stay stuck on 'paused' and the spooler monitor's terminal-success
+   * path (which only transitions to 'printed' from 'processing' or
+   * 'queued') wouldn't fire.
+   */
+  private async persistProcessingTransition(
+    spoolerCorrelationKey: string,
+    reason: string,
+  ): Promise<void> {
+    const identity = this.findLifecycleIdentity(spoolerCorrelationKey);
+    if (!identity) {
+      console.warn(
+        `[PRINTER] Could not persist processing transition: no lifecycle record for key ${spoolerCorrelationKey}.`,
+      );
+      return;
+    }
+    try {
+      await recordSpoolerLifecycleTransition({
+        transactionId: identity.transactionId,
+        mode: identity.mode,
+        state: 'processing',
+        spoolerCorrelationKey,
+        reason,
+      });
+    } catch (error) {
+      console.error(
+        `[PRINTER] Failed to persist processing transition for key ${spoolerCorrelationKey}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
-  return {
-    kind: 'partial',
-    pageRange: `${pagesPrinted + 1}-${totalPages}`,
-  };
 }
 
 /**

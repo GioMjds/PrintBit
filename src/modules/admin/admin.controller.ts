@@ -36,8 +36,12 @@ import {
   runInkTelemetryDiagnostics,
 } from '@/services/printer-status';
 import { getExternalWatchdogState } from '@/services/watchdog-health';
-import { detectDefaultPrinter, printFile } from '@/services/printer';
-import { PrintDispatchError } from '@/services/print-dispatcher';
+import { detectDefaultPrinter } from '@/services/printer';
+import {
+  PrintDispatchError,
+  assertPrintDispatcherReady,
+  printDispatcher,
+} from '@/services/print-dispatcher';
 import { getScannerStatus } from '@/services/scanner';
 import {
   getTrustedTimeStatus,
@@ -1917,11 +1921,17 @@ export class AdminController {
     const tmpAbsPath = path.resolve(this.deps.uploadDir, tmpFilename);
 
     try {
+      assertPrintDispatcherReady();
       const pdfBuffer = generateTestPagePdf(new Date());
       fs.writeFileSync(tmpAbsPath, pdfBuffer);
 
-      const dispatchResult = await printFile(
-        tmpFilename,
+      // Dispatch directly through the print dispatcher instead of the
+      // user-facing `printFile()` helper. The helper enforces a strict UUID
+      // filename pattern to harden against untrusted upload paths, but the
+      // admin test page is generated server-side under a controlled uploads
+      // directory, so we can safely hand the dispatcher the absolute path.
+      const dispatchResult = await printDispatcher.dispatchFile(
+        tmpAbsPath,
         {
           copies: 1,
           colorMode: 'grayscale',

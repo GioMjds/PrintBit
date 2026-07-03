@@ -9,6 +9,7 @@ import {
   type Schema,
   type FinancialLedgerEntry,
   type ReceiptRecordStatus,
+  type SpoolerLifecycleState,
   acquireIdempotencyKey,
   storeIdempotencyKey,
   releaseIdempotencyKey,
@@ -2206,7 +2207,7 @@ export class FinancialService {
 
   private resolvePrintReceiptTerminalStatus(
     transactionId: string,
-    lifecycleState: 'queued' | 'processing' | 'printed' | 'failed' | null,
+    lifecycleState: SpoolerLifecycleState | null,
   ): ReceiptRecordStatus | null {
     if (lifecycleState === 'printed') return 'printed';
     if (lifecycleState !== 'failed') return null;

@@ -617,6 +617,7 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       const currentState: SpoolerLifecycleState | null =
         currentStateCandidate === 'queued' ||
         currentStateCandidate === 'processing' ||
+        currentStateCandidate === 'paused' ||
         currentStateCandidate === 'printed' ||
         currentStateCandidate === 'failed'
           ? currentStateCandidate
@@ -631,6 +632,8 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
                   'queued' ||
                   (entry as SpoolerLifecycleTransitionEntry).state ===
                     'processing' ||
+                  (entry as SpoolerLifecycleTransitionEntry).state ===
+                    'paused' ||
                   (entry as SpoolerLifecycleTransitionEntry).state ===
                     'printed' ||
                   (entry as SpoolerLifecycleTransitionEntry).state ===
@@ -689,6 +692,8 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
           typeof candidate.processingAt === 'string'
             ? candidate.processingAt
             : null,
+        pausedAt:
+          typeof candidate.pausedAt === 'string' ? candidate.pausedAt : null,
         printedAt:
           typeof candidate.printedAt === 'string' ? candidate.printedAt : null,
         failedAt:
