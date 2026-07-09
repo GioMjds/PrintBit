@@ -90,6 +90,11 @@ export interface PrintError {
 }
 
 export class PrinterService {
+  constructor(
+    private readonly io?: import('socket.io').Server,
+    private readonly sessionStore?: import('@/services/session').SessionStore,
+  ) {}
+
   getStatusResponse(): PrinterStatusResponse {
     const telemetry = getPrinterTelemetry();
     const blocked =

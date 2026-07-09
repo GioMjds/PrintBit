@@ -112,7 +112,10 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
   });
-  registerPrinterModule(app);
+  registerPrinterModule(app, {
+    io: deps.io,
+    sessionStore: deps.sessionStore,
+  });
   registerLanguageModule(app, { io: deps.io });
 
   registerHotspotModule(app);
