@@ -2,16 +2,24 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { db } from '@/services/db';
-import { getPrinterTelemetry, recordSpoolerLifecycleTransition } from '@/services';
-import { BLOCKED_STATUSES } from '@/utils';
-import { WORKER_QUEUE_DIR, WORKER_FAILED_DIR } from '@/config/http.config';
+import type { Server as SocketIOServer } from 'socket.io';
+import type { SessionStore } from '@/services/session';
 import {
   getPrinterStatusViaEdge,
   pausePrintJobViaEdge,
   resumePrintJobViaEdge,
+  cancelPrintJobViaEdge,
   type EdgePrinterStatus,
 } from '@/services/windows-printer-edge';
+import { getRecoverySession, checkpointRecoverySession } from '@/services/recovery';
+import { withBalanceLock, db } from '@/core/database/db';
+import { financialLedgerService } from '@/services/financial-ledger';
+import { ReceiptService } from '@/modules/receipt/receipt.service';
+import { deleteTransientScanFile } from '@/services/transient-scan-file';
+import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
+import { getPrinterTelemetry, recordSpoolerLifecycleTransition } from '@/services';
+import { BLOCKED_STATUSES } from '@/utils';
+import { WORKER_QUEUE_DIR, WORKER_FAILED_DIR } from '@/config/http.config';
 import { computeResubmitPlan, type ResubmitPlan } from './resubmit-plan';
 
 // Re-export so that `printer.service.ts` remains the canonical public
@@ -91,8 +99,8 @@ export interface PrintError {
 
 export class PrinterService {
   constructor(
-    private readonly io?: import('socket.io').Server,
-    private readonly sessionStore?: import('@/services/session').SessionStore,
+    private readonly io?: SocketIOServer,
+    private readonly sessionStore?: SessionStore,
   ) {}
 
   getStatusResponse(): PrinterStatusResponse {
@@ -764,6 +772,146 @@ export class PrinterService {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  async cancelRemaining(spoolerCorrelationKey: string): Promise<void> {
+    if (!this.io || !this.sessionStore) {
+      throw new Error('PrinterService was not initialized with Socket.IO or SessionStore.');
+    }
+
+    const { printerName, spoolerJobId, transactionId } =
+      await this.findSpoolerJobDetails(spoolerCorrelationKey);
+
+    const lifecyclePages = this.readLifecyclePageProgress(spoolerCorrelationKey);
+    const totalPages = Math.max(1, lifecyclePages.totalPages || 1);
+    const pagesPrinted = Math.min(totalPages, Math.max(0, lifecyclePages.pagesPrinted ?? 0));
+
+    const recovery = getRecoverySession(transactionId);
+    if (!recovery) {
+      throw new Error(`No recovery session found for transaction: ${transactionId}`);
+    }
+
+    const mode = recovery.mode;
+    const requiredAmount = recovery.requiredAmount;
+
+    // Calculate cost of printed pages and partial refund amount
+    const pricePerPage = requiredAmount / totalPages;
+    const printedCost = Math.ceil(pagesPrinted * pricePerPage);
+    const refundAmount = Math.max(0, requiredAmount - printedCost);
+
+    if (refundAmount > 0) {
+      await withBalanceLock(async () => {
+        db.data!.balance += refundAmount;
+        db.data!.earnings = Math.max(0, db.data!.earnings - refundAmount);
+        await db.write();
+      });
+
+      await financialLedgerService.append({
+        eventType: 'refund_issued',
+        amount: refundAmount,
+        referenceId: transactionId,
+        meta: {
+          source: 'cancel_remaining',
+          spoolerCorrelationKey,
+          pagesPrinted,
+          totalPages,
+          originalRequiredAmount: requiredAmount,
+        },
+      });
+
+      this.io.emit('balance', db.data!.balance);
+    }
+
+    // Instruct spooler/worker to delete the job
+    if (printerName && typeof spoolerJobId === 'number') {
+      try {
+        console.log(`[PRINTER] Cancelling spooler job #${spoolerJobId} on ${printerName} via edge-js`);
+        const result = await cancelPrintJobViaEdge(printerName, spoolerJobId);
+        if (!result.success) {
+          console.warn(`[PRINTER] Cancel print job via edge-js returned success=false: ${result.error}`);
+        }
+      } catch (err) {
+        console.warn(`[PRINTER] Failed to cancel spooler job: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // Create partial receipt snapshot
+    const receiptService = new ReceiptService();
+    receiptService.upsertReceiptSnapshot({
+      transactionId,
+      mode,
+      chargedAmount: printedCost,
+      status: 'printed',
+      terminalAt: new Date().toISOString(),
+    });
+
+    // Cleanup transient session files
+    const filename = typeof recovery.context.filename === 'string' ? recovery.context.filename : null;
+    const sessionId = recovery.sessionId;
+    const documentId = recovery.documentId;
+
+    if (filename) {
+      if (sessionId && documentId) {
+        await this.sessionStore.removeDocument(sessionId, documentId);
+      } else {
+        const uploadsDir = path.resolve('uploads');
+        const normalized = filename.trim();
+        if (normalized) {
+          const filePath = path.resolve(uploadsDir, normalized);
+          const relativePath = path.relative(uploadsDir, filePath);
+          const isSafe = relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+          if (isSafe) {
+            try {
+              await fs.unlink(filePath);
+            } catch (e) {
+              // ignore missing
+            }
+          }
+        }
+      }
+    }
+
+    if (mode === 'copy') {
+      const previewFilename = typeof recovery.context.previewFilename === 'string' ? recovery.context.previewFilename : null;
+      if (previewFilename) {
+        await deleteTransientScanFile(previewFilename);
+      }
+    }
+
+    // Transition lifecycle to printed
+    await persistAndEmitPrintLifecycleState(
+      this.io,
+      {
+        mode,
+        state: 'printed',
+        transactionId,
+        spoolerCorrelationKey,
+        pagesPrinted,
+        totalPages,
+        reason: 'User cancelled remaining pages.',
+      },
+      {
+        requiredAmount,
+        sessionId,
+        documentId,
+      }
+    );
+
+    // Save final reconciled state
+    await checkpointRecoverySession({
+      transactionId,
+      mode,
+      phase: 'reconciled',
+      requiredAmount,
+      chargedAmount: printedCost,
+      sessionId,
+      documentId,
+      spoolerCorrelationKey,
+      reconciledAt: new Date().toISOString(),
+      spoolerTerminalAt: new Date().toISOString(),
+      reconciliationAction: 'none',
+      reconciliationReason: `User cancelled remaining pages. Printed ${pagesPrinted} of ${totalPages}.`,
+    });
   }
 }
 
