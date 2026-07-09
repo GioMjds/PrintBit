@@ -14,6 +14,7 @@ export class PrinterController {
     this.router.post('/preflight', this.preflight);
     this.router.post('/pause', this.pauseJob);
     this.router.post('/resume', this.resumeJob);
+    this.router.post('/cancel-remaining', this.cancelRemainingJob);
   }
 
   private getStatus = async (_req: Request, res: Response): Promise<void> => {
@@ -79,6 +80,21 @@ export class PrinterController {
     } catch (error) {
       console.error('[PRINTER_CTRL] Failed to resume job:', error);
       res.status(500).json({ error: 'Failed to resume job' });
+    }
+  };
+
+  private cancelRemainingJob = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { spoolerCorrelationKey } = req.body;
+      if (!spoolerCorrelationKey) {
+        res.status(400).json({ error: 'Missing spoolerCorrelationKey' });
+        return;
+      }
+      await this.printerService.cancelRemaining(spoolerCorrelationKey);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('[PRINTER_CTRL] Failed to cancel remaining pages:', error);
+      res.status(500).json({ error: 'Failed to cancel remaining pages' });
     }
   };
 }
