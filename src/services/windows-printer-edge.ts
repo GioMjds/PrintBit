@@ -385,3 +385,48 @@ export async function listPrintersViaEdge(): Promise<any[]> {
     return [];
   }
 }
+
+/**
+ * Cancels/deletes a specific print job in the Windows spooler via
+ * System.Printing.PrintSystemJobInfo.Cancel().
+ */
+export async function cancelPrintJobViaEdge(
+  printerName: string,
+  jobId: number,
+): Promise<EdgeJobActionResult> {
+  const escaped = escapePsString(printerName);
+  const script = `
+    Add-Type -AssemblyName System.Printing | Out-Null
+    try {
+      $ps = [System.Printing.LocalPrintServer]::new()
+      $queue = New-Object System.Printing.PrintQueue($ps, '${escaped}')
+      $queue.Refresh()
+      $found = $false
+      foreach ($job in $queue.GetPrintJobInfoCollection()) {
+        if ($job.JobIdentifier -eq ${jobId}) {
+          $job.Cancel()
+          $found = $true
+          break
+        }
+      }
+      if ($found) {
+        @{ success = $true } | ConvertTo-Json -Compress
+      } else {
+        @{ success = $false; error = 'Job not found in queue' } | ConvertTo-Json -Compress
+      }
+    } catch {
+      @{ success = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+    }
+  `;
+
+  try {
+    const json = await runEdgeScript(script, PAUSE_RESUME_TIMEOUT_MS);
+    if (!json) return { success: false, error: 'Empty response' };
+    return JSON.parse(json) as EdgeJobActionResult;
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
