@@ -609,14 +609,17 @@ body {
 /* ── Action buttons (pause / resume) ──────────────────────── */
 
 .printer-error-modal__actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 14px;
   width: 100%;
   margin-top: 28px;
 }
 
 .error-modal-btn {
+  flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -670,6 +673,31 @@ body {
   box-shadow: 0 8px 32px rgba(58, 158, 82, 0.45);
 }
 
+/* Cancel Remaining Button */
+.error-modal-btn--cancel-remaining {
+  background: rgba(242, 110, 107, 0.1);
+  color: #f26e6b;
+  border: 1.5px solid rgba(242, 110, 107, 0.25);
+}
+
+.error-modal-btn--cancel-remaining:hover {
+  background: rgba(242, 110, 107, 0.18);
+  border-color: rgba(242, 110, 107, 0.4);
+  box-shadow: 0 4px 20px rgba(242, 110, 107, 0.15);
+}
+
+/* Progress text styling */
+.printer-error-modal__progress {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(167, 170, 225, 0.08);
+  padding: 8px 16px;
+  border-radius: 10px;
+  margin-top: 12px;
+  display: inline-block;
+}
+
 /* Loading + error feedback for the action buttons */
 
 .error-modal-btn[disabled] {
@@ -686,6 +714,7 @@ body {
 
 .printer-error-modal__inline-error {
   grid-column: 1 / -1;
+  width: 100%;
   margin: 6px 0 0;
   padding: 12px 14px;
   border-radius: 12px;
@@ -711,7 +740,7 @@ body {
   }
 
   .printer-error-modal__actions {
-    grid-template-columns: 1fr;
+    flex-direction: column;
     gap: 10px;
   }
 
