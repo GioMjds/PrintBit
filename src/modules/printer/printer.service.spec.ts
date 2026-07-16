@@ -16,6 +16,13 @@ import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-st
 import { SessionStore } from '@/services/session';
 import type { Server as SocketIOServer } from 'socket.io';
 import fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+
+jest.mock('node:child_process', () => ({
+  execFile: jest.fn().mockImplementation((cmd, args, opts, callback) => {
+    callback(null, '123', '');
+  }),
+}));
 
 jest.mock('@/core/database/db', () => ({
   db: {
@@ -456,6 +463,11 @@ describe('PrinterService.pauseJob', () => {
     await expect(printerService.pauseJob('invalid key!'))
       .rejects.toThrow('Invalid spoolerCorrelationKey');
   });
+
+  it('throws error if spoolerCorrelationKey length exceeds 255 characters', async () => {
+    await expect(printerService.pauseJob('a'.repeat(256)))
+      .rejects.toThrow('Invalid spoolerCorrelationKey');
+  });
 });
 
 describe('PrinterService.resumeJob', () => {
@@ -680,5 +692,68 @@ describe('PrinterService.resumeJob', () => {
     await expect(printerService.resumeJob('invalid key!'))
       .rejects.toThrow('Invalid spoolerCorrelationKey');
   });
+
+  it('throws error if spoolerCorrelationKey length exceeds 255 characters', async () => {
+    await expect(printerService.resumeJob('a'.repeat(256)))
+      .rejects.toThrow('Invalid spoolerCorrelationKey');
+  });
+
+  it('throws error when resolving spoolerJobId if printerName is invalid format', async () => {
+    db.data!.spoolerLifecycle[0].spoolerJobId = null as any;
+    db.data!.spoolerLifecycle[0].printerName = 'Invalid@PrinterName#';
+
+    await expect(printerService.resumeJob('key-123')).rejects.toThrow(
+      'Invalid printerName format'
+    );
+  });
+
+  it('throws error when resolving spoolerJobId if printerName length exceeds 255 characters', async () => {
+    db.data!.spoolerLifecycle[0].spoolerJobId = null as any;
+    db.data!.spoolerLifecycle[0].printerName = 'a'.repeat(256);
+
+    await expect(printerService.resumeJob('key-123')).rejects.toThrow(
+      'Invalid printerName format'
+    );
+  });
+
+  it('successfully resolves spoolerJobId via PowerShell when it is missing in the database', async () => {
+    db.data!.spoolerLifecycle[0].spoolerJobId = null as any;
+    db.data!.spoolerLifecycle[0].printerName = 'TestPrinter';
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.resumeJob('key-123');
+
+    expect(db.data!.spoolerLifecycle[0].spoolerJobId).toBe(123);
+    expect(resumePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 123);
+  });
 });
 
+describe('PrinterService.preDispatchCheck', () => {
+  let printerService: PrinterService;
+
+  beforeEach(() => {
+    printerService = new PrinterService();
+  });
+
+  it('returns INVALID_PRINTER_NAME when printerName is invalid format', async () => {
+    const result = await printerService.preDispatchCheck('Invalid@Printer#');
+    expect(result).toEqual(
+      expect.objectContaining({
+        code: 'INVALID_PRINTER_NAME',
+        severity: 'fatal',
+        userMessage: 'Invalid printer name format.',
+      })
+    );
+  });
+
+  it('returns INVALID_PRINTER_NAME when printerName length exceeds 255 characters', async () => {
+    const result = await printerService.preDispatchCheck('a'.repeat(256));
+    expect(result).toEqual(
+      expect.objectContaining({
+        code: 'INVALID_PRINTER_NAME',
+        severity: 'fatal',
+        userMessage: 'Invalid printer name format.',
+      })
+    );
+  });
+});

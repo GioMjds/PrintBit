@@ -131,6 +131,17 @@ export class PrinterService {
   async preDispatchCheck(
     printerName: string | null,
   ): Promise<PrintError | null> {
+    if (printerName !== null) {
+      if (typeof printerName !== 'string' || printerName.length > 255 || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
+        return {
+          code: 'INVALID_PRINTER_NAME',
+          severity: 'fatal',
+          userMessage: 'Invalid printer name format.',
+          timestamp: new Date().toISOString(),
+        };
+      }
+    }
+
     const targetPrinter = printerName?.trim() || getPrinterTelemetry().name;
     if (!targetPrinter) {
       return {
