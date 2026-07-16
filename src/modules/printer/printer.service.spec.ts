@@ -7,6 +7,7 @@ import { financialLedgerService } from '@/services/financial-ledger';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import { SessionStore } from '@/services/session';
 import type { Server as SocketIOServer } from 'socket.io';
+import fs from 'node:fs/promises';
 
 jest.mock('@/core/database/db', () => ({
   db: {
@@ -44,6 +45,14 @@ jest.mock('@/services/financial-ledger', () => ({
 
 jest.mock('@/services/print-lifecycle-state', () => ({
   persistAndEmitPrintLifecycleState: jest.fn(),
+}));
+
+jest.mock('node:fs/promises', () => ({
+  unlink: jest.fn().mockResolvedValue(undefined),
+  readdir: jest.fn(),
+  rename: jest.fn(),
+  readFile: jest.fn(),
+  writeFile: jest.fn(),
 }));
 
 describe('PrinterService.cancelRemaining', () => {
@@ -245,5 +254,88 @@ describe('PrinterService.cancelRemaining', () => {
 
     // 3 printed out of 10 pages => printedCost = 15 => refund = 35
     expect(db.data!.balance).toBe(35);
+  });
+
+  it('does not call deleteTransientScanFile when mode is print', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf', previewFilename: 'preview-img-123.jpg' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.cancelRemaining('key-123');
+
+    expect(deleteTransientScanFile).not.toHaveBeenCalled();
+  });
+
+  it('unlinks filename directly if sessionId is missing', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: undefined,
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.cancelRemaining('key-123');
+
+    expect(mockSessionStore.removeDocument).not.toHaveBeenCalled();
+    expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining('test.pdf'));
+  });
+
+  it('unlinks filename directly if documentId is missing', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: undefined,
+      context: { filename: 'test.pdf' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.cancelRemaining('key-123');
+
+    expect(mockSessionStore.removeDocument).not.toHaveBeenCalled();
+    expect(fs.unlink).toHaveBeenCalledWith(expect.stringContaining('test.pdf'));
+  });
+
+  it('logs a warning and does not abort when deleteTransientScanFile throws an error', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'copy' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf', previewFilename: 'preview-img-123.jpg' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+    (deleteTransientScanFile as jest.Mock).mockRejectedValue(new Error('Delete failed'));
+
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await printerService.cancelRemaining('key-123');
+
+    expect(deleteTransientScanFile).toHaveBeenCalledWith('preview-img-123.jpg');
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to delete transient scan file'),
+      'Delete failed'
+    );
+
+    consoleWarnSpy.mockRestore();
   });
 });

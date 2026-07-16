@@ -890,7 +890,14 @@ export class PrinterService {
     if (mode === 'copy') {
       const previewFilename = typeof recovery.context.previewFilename === 'string' ? recovery.context.previewFilename : null;
       if (previewFilename) {
-        await deleteTransientScanFile(previewFilename);
+        try {
+          await deleteTransientScanFile(previewFilename);
+        } catch (error) {
+          console.warn(
+            `[PRINTER] Failed to delete transient scan file ${previewFilename}:`,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
       }
     }
 

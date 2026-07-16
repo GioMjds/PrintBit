@@ -30,6 +30,12 @@ export class PrinterController {
   private preflight = async (req: Request, res: Response): Promise<void> => {
     try {
       const { printerName } = req.body ?? {};
+      if (printerName !== undefined) {
+        if (typeof printerName !== 'string' || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
+          res.status(400).json({ error: 'Invalid printerName format' });
+          return;
+        }
+      }
       const printError = await this.printerService.preDispatchCheck(
         typeof printerName === 'string' ? printerName : null,
       );
@@ -55,7 +61,7 @@ export class PrinterController {
 
   private pauseJob = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { spoolerCorrelationKey } = req.body;
+      const { spoolerCorrelationKey } = req.body ?? {};
       if (!isValidCorrelationKey(spoolerCorrelationKey)) {
         res.status(400).json({ error: 'Invalid or missing spoolerCorrelationKey' });
         return;
@@ -70,7 +76,7 @@ export class PrinterController {
 
   private resumeJob = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { spoolerCorrelationKey } = req.body;
+      const { spoolerCorrelationKey } = req.body ?? {};
       if (!isValidCorrelationKey(spoolerCorrelationKey)) {
         res.status(400).json({ error: 'Invalid or missing spoolerCorrelationKey' });
         return;
@@ -85,7 +91,7 @@ export class PrinterController {
 
   private cancelRemainingJob = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { spoolerCorrelationKey } = req.body;
+      const { spoolerCorrelationKey } = req.body ?? {};
       if (!isValidCorrelationKey(spoolerCorrelationKey)) {
         res.status(400).json({ error: 'Invalid or missing spoolerCorrelationKey' });
         return;

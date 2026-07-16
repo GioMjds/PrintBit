@@ -26,6 +26,9 @@ import {
   type PersistentPS,
 } from './powershell-runspace';
 
+const PRINTER_NAME_REGEX = /^[a-zA-Z0-9-_\s\\.:()]+$/;
+
+
 // ── Types ────────────────────────────────────────────────────────
 
 export interface EdgePrinterStatus {
@@ -180,6 +183,9 @@ function escapePsString(value: string): string {
 export async function getPrinterStatusViaEdge(
   printerName: string,
 ): Promise<EdgePrinterStatus | EdgePrinterError> {
+  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+    throw new Error('Invalid printerName format');
+  }
   const escaped = escapePsString(printerName);
   // Add-Type is idempotent — re-running on a warm runspace is a no-op.
   // We keep it here as a belt-and-braces measure in case warmup() was
@@ -248,6 +254,9 @@ export async function pausePrintJobViaEdge(
   printerName: string,
   jobId: number,
 ): Promise<EdgeJobActionResult> {
+  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+    return { success: false, error: 'Invalid printerName format' };
+  }
   const escaped = escapePsString(printerName);
   const script = `
     Add-Type -AssemblyName System.Printing | Out-Null
@@ -298,6 +307,9 @@ export async function resumePrintJobViaEdge(
   printerName: string,
   jobId: number,
 ): Promise<EdgeJobActionResult> {
+  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+    return { success: false, error: 'Invalid printerName format' };
+  }
   const escaped = escapePsString(printerName);
   const script = `
     Add-Type -AssemblyName System.Printing | Out-Null
@@ -394,6 +406,9 @@ export async function cancelPrintJobViaEdge(
   printerName: string,
   jobId: number,
 ): Promise<EdgeJobActionResult> {
+  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+    return { success: false, error: 'Invalid printerName format' };
+  }
   const escaped = escapePsString(printerName);
   const script = `
     Add-Type -AssemblyName System.Printing | Out-Null
