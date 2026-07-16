@@ -306,7 +306,9 @@ export async function handleWorkerReturnPrintEvent(input: {
     });
   }
 
-  const isHardwareError = input.evt.failureStage === 'HardwareError';
+  const isHardwareError =
+    input.evt.failureStage === 'HardwareError' ||
+    input.evt.failureStage === 'IncompleteOutput';
   const printError = isHardwareError
     ? {
         code: 'PAPER_TRAY_EMPTY',
@@ -329,6 +331,17 @@ export async function handleWorkerReturnPrintEvent(input: {
       spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
       printerName: input.evt.printerName ?? null,
       reason: input.evt.message ?? 'Worker print failed.',
+      pagesPrinted:
+        typeof input.evt.pagesPrinted === 'number' &&
+        Number.isFinite(input.evt.pagesPrinted)
+          ? input.evt.pagesPrinted
+          : undefined,
+      totalPages:
+        typeof input.evt.totalPages === 'number' &&
+        Number.isFinite(input.evt.totalPages) &&
+        input.evt.totalPages > 0
+          ? input.evt.totalPages
+          : undefined,
       printError,
     },
     {
