@@ -183,7 +183,7 @@ function escapePsString(value: string): string {
 export async function getPrinterStatusViaEdge(
   printerName: string,
 ): Promise<EdgePrinterStatus | EdgePrinterError> {
-  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+  if (typeof printerName !== 'string' || !PRINTER_NAME_REGEX.test(printerName)) {
     throw new Error('Invalid printerName format');
   }
   const escaped = escapePsString(printerName);
@@ -254,7 +254,7 @@ export async function pausePrintJobViaEdge(
   printerName: string,
   jobId: number,
 ): Promise<EdgeJobActionResult> {
-  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+  if (typeof printerName !== 'string' || !PRINTER_NAME_REGEX.test(printerName)) {
     return { success: false, error: 'Invalid printerName format' };
   }
   const escaped = escapePsString(printerName);
@@ -307,7 +307,7 @@ export async function resumePrintJobViaEdge(
   printerName: string,
   jobId: number,
 ): Promise<EdgeJobActionResult> {
-  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+  if (typeof printerName !== 'string' || !PRINTER_NAME_REGEX.test(printerName)) {
     return { success: false, error: 'Invalid printerName format' };
   }
   const escaped = escapePsString(printerName);
@@ -406,7 +406,7 @@ export async function cancelPrintJobViaEdge(
   printerName: string,
   jobId: number,
 ): Promise<EdgeJobActionResult> {
-  if (printerName !== undefined && printerName !== null && !PRINTER_NAME_REGEX.test(printerName)) {
+  if (typeof printerName !== 'string' || !PRINTER_NAME_REGEX.test(printerName)) {
     return { success: false, error: 'Invalid printerName format' };
   }
   const escaped = escapePsString(printerName);

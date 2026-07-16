@@ -39,6 +39,9 @@ async function findSpoolerJobIdByCorrelationKey(
   printerName: string,
   spoolerCorrelationKey: string,
 ): Promise<number | null> {
+  if (printerName && !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
+    throw new Error('Invalid printerName format');
+  }
   if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
     throw new Error('Invalid spoolerCorrelationKey');
   }
@@ -802,7 +805,7 @@ export class PrinterService {
 
     // Calculate cost of printed pages and partial refund amount
     const pricePerPage = requiredAmount / totalPages;
-    const printedCost = Math.ceil(pagesPrinted * pricePerPage);
+    const printedCost = Math.min(requiredAmount, Math.ceil(pagesPrinted * pricePerPage));
     const refundAmount = Math.max(0, requiredAmount - printedCost);
 
     // Instruct spooler/worker to delete the job before financial refund updates
