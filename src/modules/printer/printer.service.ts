@@ -824,6 +824,8 @@ export class PrinterService {
       throw new Error(`Cannot cancel: transaction ${transactionId} is already reconciled.`);
     }
 
+    const originalPhase = recovery.phase;
+
     const lifecyclePages = this.readLifecyclePageProgress(spoolerCorrelationKey);
     const totalPages = Math.max(1, lifecyclePages.totalPages || 1);
     const pagesPrinted = Math.min(totalPages, Math.max(0, lifecyclePages.pagesPrinted ?? 0));
@@ -853,120 +855,144 @@ export class PrinterService {
       reconciliationReason: `User cancelled remaining pages. Printed ${pagesPrinted} of ${totalPages}.`,
     });
 
-    const refundAmount = Math.max(0, requiredAmount - printedCost);
+    try {
+      const refundAmount = Math.max(0, requiredAmount - printedCost);
 
-    // Instruct spooler/worker to delete the job before financial refund updates
-    if (printerName && typeof spoolerJobId === 'number') {
-      try {
-        console.log(`[PRINTER] Cancelling spooler job #${spoolerJobId} on ${printerName} via edge-js`);
-        const result = await cancelPrintJobViaEdge(printerName, spoolerJobId);
-        if (!result.success) {
-          const errMessage = result.error || 'Unknown error';
-          const isMissing = errMessage.toLowerCase().includes('not found') || errMessage.toLowerCase().includes('missing');
-          if (!isMissing) {
-            throw new Error(`Failed to cancel print job: ${errMessage}`);
+      // Instruct spooler/worker to delete the job before financial refund updates
+      if (printerName && typeof spoolerJobId === 'number') {
+        try {
+          console.log(`[PRINTER] Cancelling spooler job #${spoolerJobId} on ${printerName} via edge-js`);
+          const result = await cancelPrintJobViaEdge(printerName, spoolerJobId);
+          if (!result.success) {
+            const errMessage = result.error || 'Unknown error';
+            const isMissing = errMessage.toLowerCase().includes('not found') || errMessage.toLowerCase().includes('missing');
+            if (!isMissing) {
+              throw new Error(`Failed to cancel print job: ${errMessage}`);
+            }
+            console.warn(`[PRINTER] Cancel print job via edge-js indicated job was already missing: ${errMessage}`);
           }
-          console.warn(`[PRINTER] Cancel print job via edge-js indicated job was already missing: ${errMessage}`);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const isMissing = errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('missing');
+          if (!isMissing) {
+            throw err;
+          }
+          console.warn(`[PRINTER] Unexpected error indicating missing job: ${errMsg}`);
         }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const isMissing = errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('missing');
-        if (!isMissing) {
-          throw err;
-        }
-        console.warn(`[PRINTER] Unexpected error indicating missing job: ${errMsg}`);
       }
-    }
 
-    if (refundAmount > 0) {
-      await withBalanceLock(async () => {
-        db.data!.balance += refundAmount;
-        db.data!.earnings = Math.max(0, db.data!.earnings - refundAmount);
-        await db.write();
+      if (refundAmount > 0) {
+        await withBalanceLock(async () => {
+          db.data!.balance += refundAmount;
+          db.data!.earnings = Math.max(0, db.data!.earnings - refundAmount);
+          await db.write();
+        });
+
+        await financialLedgerService.append({
+          eventType: 'refund_issued',
+          amount: refundAmount,
+          referenceId: transactionId,
+          meta: {
+            source: 'cancel_remaining',
+            spoolerCorrelationKey,
+            pagesPrinted,
+            totalPages,
+            originalRequiredAmount: requiredAmount,
+          },
+        });
+
+        this.io.emit('balance', db.data!.balance);
+      }
+
+      // Create partial receipt snapshot
+      const receiptService = new ReceiptService();
+      receiptService.upsertReceiptSnapshot({
+        transactionId,
+        mode,
+        chargedAmount: printedCost,
+        status: 'printed',
+        terminalAt: new Date().toISOString(),
       });
 
-      await financialLedgerService.append({
-        eventType: 'refund_issued',
-        amount: refundAmount,
-        referenceId: transactionId,
-        meta: {
-          source: 'cancel_remaining',
-          spoolerCorrelationKey,
-          pagesPrinted,
-          totalPages,
-          originalRequiredAmount: requiredAmount,
-        },
-      });
+      // Cleanup transient session files
+      const filename = typeof recovery.context.filename === 'string' ? recovery.context.filename : null;
 
-      this.io.emit('balance', db.data!.balance);
-    }
-
-    // Create partial receipt snapshot
-    const receiptService = new ReceiptService();
-    receiptService.upsertReceiptSnapshot({
-      transactionId,
-      mode,
-      chargedAmount: printedCost,
-      status: 'printed',
-      terminalAt: new Date().toISOString(),
-    });
-
-    // Cleanup transient session files
-    const filename = typeof recovery.context.filename === 'string' ? recovery.context.filename : null;
-
-    if (filename) {
-      if (sessionId && documentId) {
-        await this.sessionStore.removeDocument(sessionId, documentId);
-      } else {
-        const uploadsDir = path.resolve('uploads');
-        const normalized = filename.trim();
-        if (normalized) {
-          const filePath = path.resolve(uploadsDir, normalized);
-          const relativePath = path.relative(uploadsDir, filePath);
-          const isSafe = relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
-          if (isSafe) {
-            try {
-              await fs.unlink(filePath);
-            } catch (e) {
-              // ignore missing
+      if (filename) {
+        if (sessionId && documentId) {
+          await this.sessionStore.removeDocument(sessionId, documentId);
+        } else {
+          const uploadsDir = path.resolve('uploads');
+          const normalized = filename.trim();
+          if (normalized) {
+            const filePath = path.resolve(uploadsDir, normalized);
+            const relativePath = path.relative(uploadsDir, filePath);
+            const isSafe = relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+            if (isSafe) {
+              try {
+                await fs.unlink(filePath);
+              } catch (e) {
+                // ignore missing
+              }
             }
           }
         }
       }
-    }
 
-    if (mode === 'copy') {
-      const previewFilename = typeof recovery.context.previewFilename === 'string' ? recovery.context.previewFilename : null;
-      if (previewFilename) {
-        try {
-          await deleteTransientScanFile(previewFilename);
-        } catch (error) {
-          console.warn(
-            `[PRINTER] Failed to delete transient scan file ${previewFilename}:`,
-            error instanceof Error ? error.message : String(error)
-          );
+      if (mode === 'copy') {
+        const previewFilename = typeof recovery.context.previewFilename === 'string' ? recovery.context.previewFilename : null;
+        if (previewFilename) {
+          try {
+            await deleteTransientScanFile(previewFilename);
+          } catch (error) {
+            console.warn(
+              `[PRINTER] Failed to delete transient scan file ${previewFilename}:`,
+              error instanceof Error ? error.message : String(error)
+            );
+          }
         }
       }
-    }
 
-    // Transition lifecycle to printed
-    await persistAndEmitPrintLifecycleState(
-      this.io,
-      {
-        mode,
-        state: 'printed',
+      // Transition lifecycle to printed
+      await persistAndEmitPrintLifecycleState(
+        this.io,
+        {
+          mode,
+          state: 'printed',
+          transactionId,
+          spoolerCorrelationKey,
+          pagesPrinted,
+          totalPages,
+          reason: 'User cancelled remaining pages.',
+        },
+        {
+          requiredAmount,
+          sessionId,
+          documentId,
+        }
+      );
+    } catch (err) {
+      await checkpointRecoverySession({
         transactionId,
-        spoolerCorrelationKey,
-        pagesPrinted,
-        totalPages,
-        reason: 'User cancelled remaining pages.',
-      },
-      {
+        mode,
+        phase: originalPhase,
         requiredAmount,
+        chargedAmount: recovery.chargedAmount,
         sessionId,
         documentId,
-      }
-    );
+        spoolerCorrelationKey,
+        spoolerJobId: recovery.spoolerJobId,
+        jobDispatchedAt: recovery.jobDispatchedAt,
+        settledAt: recovery.settledAt,
+        spoolerTerminalAt: recovery.spoolerTerminalAt,
+        reconciledAt: recovery.reconciledAt,
+        startupReconciled: recovery.startupReconciled,
+        reconciliationAction: recovery.reconciliationAction,
+        reconciliationReason: recovery.reconciliationReason,
+        lastError: recovery.lastError,
+        context: recovery.context,
+      });
+      throw err;
+    }
   }
 }
 

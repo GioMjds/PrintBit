@@ -20,7 +20,8 @@ import { execFile } from 'node:child_process';
 
 jest.mock('node:child_process', () => ({
   execFile: jest.fn().mockImplementation((cmd, args, opts, callback) => {
-    callback(null, '123', '');
+    const cb = typeof opts === 'function' ? opts : callback;
+    cb(null, { stdout: '123\n', stderr: '' });
   }),
 }));
 
@@ -245,6 +246,11 @@ describe('PrinterService.cancelRemaining', () => {
       .rejects.toThrow('Invalid spoolerCorrelationKey');
   });
 
+  it('throws error if spoolerCorrelationKey length exceeds 255 characters', async () => {
+    await expect(printerService.cancelRemaining('a'.repeat(256)))
+      .rejects.toThrow('Invalid spoolerCorrelationKey');
+  });
+
   it('throws error and does not issue refund if cancelPrintJobViaEdge fails with a non-missing error', async () => {
     const mockRecovery = {
       id: 'tx-123',
@@ -391,6 +397,30 @@ describe('PrinterService.cancelRemaining', () => {
 
     await expect(printerService.cancelRemaining('key-123'))
       .rejects.toThrow('No recovery session found for transaction: tx-123');
+  });
+
+  it('rolls back recovery session phase to originalPhase if a subsequent operation throws an error', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+      phase: 'job_dispatched' as const,
+      spoolerCorrelationKey: 'key-123',
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockRejectedValue(new Error('Simulated Edge Error'));
+
+    await expect(printerService.cancelRemaining('key-123'))
+      .rejects.toThrow('Simulated Edge Error');
+
+    expect(checkpointRecoverySession).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: 'tx-123',
+      phase: 'job_dispatched',
+    }));
   });
 });
 
