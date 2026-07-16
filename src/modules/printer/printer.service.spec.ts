@@ -1,7 +1,15 @@
 import { PrinterService } from './printer.service';
 import { db } from '@/core/database/db';
-import { getRecoverySession, checkpointRecoverySession } from '@/services/recovery';
-import { cancelPrintJobViaEdge } from '@/services/windows-printer-edge';
+import {
+  getRecoverySession,
+  checkpointRecoverySession,
+  recordSpoolerLifecycleTransition,
+} from '@/services/recovery';
+import {
+  cancelPrintJobViaEdge,
+  pausePrintJobViaEdge,
+  resumePrintJobViaEdge,
+} from '@/services/windows-printer-edge';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import { financialLedgerService } from '@/services/financial-ledger';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
@@ -29,8 +37,14 @@ jest.mock('@/services/recovery', () => ({
   recordSpoolerLifecycleTransition: jest.fn(),
 }));
 
+jest.mock('@/services/printer-status', () => ({
+  getPrinterTelemetry: jest.fn().mockReturnValue({ name: 'TestPrinter' }),
+}));
+
 jest.mock('@/services/windows-printer-edge', () => ({
   cancelPrintJobViaEdge: jest.fn(),
+  pausePrintJobViaEdge: jest.fn(),
+  resumePrintJobViaEdge: jest.fn(),
 }));
 
 jest.mock('@/services/transient-scan-file', () => ({
@@ -54,6 +68,14 @@ jest.mock('node:fs/promises', () => ({
   readFile: jest.fn(),
   writeFile: jest.fn(),
 }));
+jest.mock('@/config/http.config', () => {
+  const actual = jest.requireActual('@/config/http.config');
+  return {
+    ...actual,
+    WORKER_QUEUE_DIR: 'mock-queue-dir',
+    WORKER_FAILED_DIR: 'mock-failed-dir',
+  };
+});
 
 describe('PrinterService.cancelRemaining', () => {
   let printerService: PrinterService;
@@ -339,3 +361,251 @@ describe('PrinterService.cancelRemaining', () => {
     consoleWarnSpy.mockRestore();
   });
 });
+
+describe('PrinterService.pauseJob', () => {
+  let printerService: PrinterService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    db.data = {
+      balance: 0,
+      earnings: 100,
+      spoolerLifecycle: [
+        {
+          spoolerCorrelationKey: 'key-123',
+          transactionId: 'tx-123',
+          pagesPrinted: 3,
+          totalPages: 10,
+          currentState: 'processing',
+          updatedAt: new Date().toISOString(),
+          printerName: 'TestPrinter',
+          spoolerJobId: 456,
+          mode: 'print',
+        } as any,
+      ],
+      recovery: { sessions: [] },
+      pendingRefunds: []
+    } as any;
+
+    printerService = new PrinterService();
+  });
+
+  it('successfully pauses a print job and records the paused transition', async () => {
+    (pausePrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.pauseJob('key-123');
+
+    expect(pausePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 456);
+    expect(recordSpoolerLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionId: 'tx-123',
+        state: 'paused',
+        spoolerCorrelationKey: 'key-123',
+      })
+    );
+  });
+
+  it('handles the EPSON driver race condition (job not found) as a no-op success', async () => {
+    (pausePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Job not found in queue',
+    });
+
+    await expect(printerService.pauseJob('key-123')).resolves.not.toThrow();
+
+    expect(pausePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 456);
+    expect(recordSpoolerLifecycleTransition).not.toHaveBeenCalled();
+  });
+
+  it('throws an error if pausePrintJobViaEdge fails with other errors', async () => {
+    (pausePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Access Denied',
+    });
+
+    await expect(printerService.pauseJob('key-123')).rejects.toThrow('Access Denied');
+    expect(recordSpoolerLifecycleTransition).not.toHaveBeenCalled();
+  });
+});
+
+describe('PrinterService.resumeJob', () => {
+  let printerService: PrinterService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    db.data = {
+      balance: 0,
+      earnings: 100,
+      spoolerLifecycle: [
+        {
+          spoolerCorrelationKey: 'key-123',
+          transactionId: 'tx-123',
+          pagesPrinted: 3,
+          totalPages: 10,
+          currentState: 'paused',
+          updatedAt: new Date().toISOString(),
+          printerName: 'TestPrinter',
+          spoolerJobId: 456,
+          mode: 'print',
+        } as any,
+      ],
+      recovery: { sessions: [] },
+      pendingRefunds: []
+    } as any;
+
+    printerService = new PrinterService();
+  });
+
+  it('successfully resumes a paused print job and records processing transition', async () => {
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.resumeJob('key-123');
+
+    expect(resumePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 456);
+    expect(recordSpoolerLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionId: 'tx-123',
+        state: 'processing',
+        spoolerCorrelationKey: 'key-123',
+      })
+    );
+  });
+
+  it('handles EPSON firmware quirk (already in state) when it was a genuine user pause', async () => {
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: true,
+      alreadyInState: true,
+    });
+
+    await printerService.resumeJob('key-123');
+
+    expect(resumePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 456);
+    // Should still record transition to processing
+    expect(recordSpoolerLifecycleTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionId: 'tx-123',
+        state: 'processing',
+        spoolerCorrelationKey: 'key-123',
+      })
+    );
+  });
+
+  it('skips resubmit/transition if already in state and not a genuine user pause', async () => {
+    db.data!.spoolerLifecycle[0].currentState = 'processing';
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: true,
+      alreadyInState: true,
+    });
+
+    await printerService.resumeJob('key-123');
+
+    expect(resumePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 456);
+    expect(recordSpoolerLifecycleTransition).not.toHaveBeenCalled();
+  });
+
+  it('resubmits job if job is not found in queue and plan is partial (files in queue dir)', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = 3;
+    db.data!.spoolerLifecycle[0].totalPages = 10;
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Job not found in queue',
+    });
+
+    (fs.readdir as jest.Mock).mockImplementation((dir) => {
+      if (dir === 'mock-queue-dir') {
+        return Promise.resolve(['tx-123_key-123_1623.pdf', 'tx-123_key-123_1623.json']);
+      }
+      return Promise.resolve([]);
+    });
+
+    (fs.readFile as jest.Mock).mockResolvedValue(
+      JSON.stringify({ copies: 2, color: true })
+    );
+
+    await printerService.resumeJob('key-123');
+
+    expect(fs.unlink).toHaveBeenCalledWith(
+      expect.stringContaining('tx-123_key-123_1623.json')
+    );
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('tx-123_key-123_'),
+      expect.stringContaining('"pageRange":"4-10"'),
+      'utf-8'
+    );
+  });
+
+  it('resubmits job if job is not found in queue and plan is partial (files in failed dir)', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = 3;
+    db.data!.spoolerLifecycle[0].totalPages = 10;
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Job not found in queue',
+    });
+
+    (fs.readdir as jest.Mock).mockImplementation((dir) => {
+      if (dir === 'mock-failed-dir') {
+        return Promise.resolve(['tx-123_key-123_1623.pdf', 'tx-123_key-123_1623.json']);
+      }
+      return Promise.resolve([]);
+    });
+
+    (fs.readFile as jest.Mock).mockResolvedValue(
+      JSON.stringify({ copies: 2, color: true })
+    );
+
+    await printerService.resumeJob('key-123');
+
+    expect(fs.rename).toHaveBeenCalledWith(
+      expect.stringContaining('mock-failed-dir'),
+      expect.stringContaining('mock-queue-dir')
+    );
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining('tx-123_key-123_1623.json'),
+      expect.stringContaining('"pageRange":"4-10"'),
+      'utf-8'
+    );
+  });
+
+  it('does nothing and returns successfully if plan is no_resubmit', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = 10;
+    db.data!.spoolerLifecycle[0].totalPages = 10;
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Job not found in queue',
+    });
+
+    await printerService.resumeJob('key-123');
+
+    expect(fs.readdir).not.toHaveBeenCalled();
+    expect(fs.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('throws a structured error if plan is unknown', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = null;
+    db.data!.spoolerLifecycle[0].totalPages = null;
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Job not found in queue',
+    });
+
+    await expect(printerService.resumeJob('key-123')).rejects.toThrow(
+      /Cannot resume: spooler job was purged/
+    );
+  });
+
+  it('throws an error if files are not found in queue or failed directories', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = 3;
+    db.data!.spoolerLifecycle[0].totalPages = 10;
+    (resumePrintJobViaEdge as jest.Mock).mockResolvedValue({
+      success: false,
+      error: 'Job not found in queue',
+    });
+
+    (fs.readdir as jest.Mock).mockResolvedValue([]);
+
+    await expect(printerService.resumeJob('key-123')).rejects.toThrow(
+      /Print files not found in worker queue or failed directory/
+    );
+  });
+});
+

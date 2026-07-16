@@ -39,10 +39,10 @@ async function findSpoolerJobIdByCorrelationKey(
   printerName: string,
   spoolerCorrelationKey: string,
 ): Promise<number | null> {
-  if (printerName && !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
+  if (typeof printerName !== 'string' || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
     throw new Error('Invalid printerName format');
   }
-  if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+  if (typeof spoolerCorrelationKey !== 'string' || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
     throw new Error('Invalid spoolerCorrelationKey');
   }
   try {
