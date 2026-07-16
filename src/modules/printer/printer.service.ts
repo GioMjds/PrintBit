@@ -371,6 +371,9 @@ export class PrinterService {
   }
 
   async pauseJob(spoolerCorrelationKey: string): Promise<void> {
+    if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+      throw new Error('Invalid spoolerCorrelationKey');
+    }
     const { printerName, spoolerJobId } = await this.findSpoolerJobDetails(
       spoolerCorrelationKey,
     );
@@ -407,8 +410,16 @@ export class PrinterService {
   }
 
   async resumeJob(spoolerCorrelationKey: string): Promise<void> {
+    if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+      throw new Error('Invalid spoolerCorrelationKey');
+    }
     const { printerName, spoolerJobId, transactionId } =
       await this.findSpoolerJobDetails(spoolerCorrelationKey);
+
+    const recovery = getRecoverySession(transactionId);
+    if (recovery && recovery.phase === 'reconciled') {
+      throw new Error(`Cannot resume: transaction ${transactionId} is already reconciled.`);
+    }
 
     // Read the spooler-lifecycle page counters so the resubmit path can
     // print only the unprinted pages instead of re-dispatching the whole
@@ -798,6 +809,9 @@ export class PrinterService {
     const recovery = getRecoverySession(transactionId);
     if (!recovery) {
       throw new Error(`No recovery session found for transaction: ${transactionId}`);
+    }
+    if (recovery.phase === 'reconciled') {
+      throw new Error(`Cannot cancel: transaction ${transactionId} is already reconciled.`);
     }
 
     const mode = recovery.mode;

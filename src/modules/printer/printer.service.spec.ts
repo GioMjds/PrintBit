@@ -84,6 +84,7 @@ describe('PrinterService.cancelRemaining', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (getRecoverySession as jest.Mock).mockReset();
     db.data = {
       balance: 0,
       earnings: 100,
@@ -360,6 +361,23 @@ describe('PrinterService.cancelRemaining', () => {
 
     consoleWarnSpy.mockRestore();
   });
+
+  it('throws error when the recovery session phase is reconciled', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+      phase: 'reconciled',
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+
+    await expect(printerService.cancelRemaining('key-123'))
+      .rejects.toThrow('Cannot cancel: transaction tx-123 is already reconciled.');
+  });
 });
 
 describe('PrinterService.pauseJob', () => {
@@ -426,6 +444,11 @@ describe('PrinterService.pauseJob', () => {
     await expect(printerService.pauseJob('key-123')).rejects.toThrow('Access Denied');
     expect(recordSpoolerLifecycleTransition).not.toHaveBeenCalled();
   });
+
+  it('throws error if spoolerCorrelationKey is invalid', async () => {
+    await expect(printerService.pauseJob('invalid key!'))
+      .rejects.toThrow('Invalid spoolerCorrelationKey');
+  });
 });
 
 describe('PrinterService.resumeJob', () => {
@@ -433,6 +456,7 @@ describe('PrinterService.resumeJob', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (getRecoverySession as jest.Mock).mockReset();
     db.data = {
       balance: 0,
       earnings: 100,
@@ -606,6 +630,28 @@ describe('PrinterService.resumeJob', () => {
     await expect(printerService.resumeJob('key-123')).rejects.toThrow(
       /Print files not found in worker queue or failed directory/
     );
+  });
+
+  it('throws error when the recovery session phase is reconciled', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+      phase: 'reconciled',
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+
+    await expect(printerService.resumeJob('key-123'))
+      .rejects.toThrow('Cannot resume: transaction tx-123 is already reconciled.');
+  });
+
+  it('throws error if spoolerCorrelationKey is invalid', async () => {
+    await expect(printerService.resumeJob('invalid key!'))
+      .rejects.toThrow('Invalid spoolerCorrelationKey');
   });
 });
 

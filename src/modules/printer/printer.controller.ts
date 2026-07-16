@@ -30,8 +30,8 @@ export class PrinterController {
   private preflight = async (req: Request, res: Response): Promise<void> => {
     try {
       const { printerName } = req.body ?? {};
-      if (printerName !== undefined) {
-        if (typeof printerName !== 'string' || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
+      if (printerName !== undefined && printerName !== null) {
+        if (typeof printerName !== 'string' || printerName.length > 255 || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
           res.status(400).json({ error: 'Invalid printerName format' });
           return;
         }
