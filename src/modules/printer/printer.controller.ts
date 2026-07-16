@@ -56,8 +56,8 @@ export class PrinterController {
   private pauseJob = async (req: Request, res: Response): Promise<void> => {
     try {
       const { spoolerCorrelationKey } = req.body;
-      if (!spoolerCorrelationKey) {
-        res.status(400).json({ error: 'Missing spoolerCorrelationKey' });
+      if (!isValidCorrelationKey(spoolerCorrelationKey)) {
+        res.status(400).json({ error: 'Invalid or missing spoolerCorrelationKey' });
         return;
       }
       await this.printerService.pauseJob(spoolerCorrelationKey);
@@ -71,8 +71,8 @@ export class PrinterController {
   private resumeJob = async (req: Request, res: Response): Promise<void> => {
     try {
       const { spoolerCorrelationKey } = req.body;
-      if (!spoolerCorrelationKey) {
-        res.status(400).json({ error: 'Missing spoolerCorrelationKey' });
+      if (!isValidCorrelationKey(spoolerCorrelationKey)) {
+        res.status(400).json({ error: 'Invalid or missing spoolerCorrelationKey' });
         return;
       }
       await this.printerService.resumeJob(spoolerCorrelationKey);
@@ -86,8 +86,8 @@ export class PrinterController {
   private cancelRemainingJob = async (req: Request, res: Response): Promise<void> => {
     try {
       const { spoolerCorrelationKey } = req.body;
-      if (!spoolerCorrelationKey) {
-        res.status(400).json({ error: 'Missing spoolerCorrelationKey' });
+      if (!isValidCorrelationKey(spoolerCorrelationKey)) {
+        res.status(400).json({ error: 'Invalid or missing spoolerCorrelationKey' });
         return;
       }
       await this.printerService.cancelRemaining(spoolerCorrelationKey);
@@ -97,4 +97,8 @@ export class PrinterController {
       res.status(500).json({ error: 'Failed to cancel remaining pages' });
     }
   };
+}
+
+function isValidCorrelationKey(key: any): key is string {
+  return typeof key === 'string' && /^[a-zA-Z0-9-_]+$/.test(key);
 }

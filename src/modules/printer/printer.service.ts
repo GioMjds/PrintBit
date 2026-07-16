@@ -39,6 +39,9 @@ async function findSpoolerJobIdByCorrelationKey(
   printerName: string,
   spoolerCorrelationKey: string,
 ): Promise<number | null> {
+  if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+    throw new Error('Invalid spoolerCorrelationKey');
+  }
   try {
     const escapedPrinter = printerName.replace(/'/g, "''").replace(/`/g, '``');
     const escapedCorrelation = spoolerCorrelationKey
@@ -775,6 +778,9 @@ export class PrinterService {
   }
 
   async cancelRemaining(spoolerCorrelationKey: string): Promise<void> {
+    if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+      throw new Error('Invalid spoolerCorrelationKey');
+    }
     if (!this.io || !this.sessionStore) {
       throw new Error('PrinterService was not initialized with Socket.IO or SessionStore.');
     }
@@ -799,6 +805,29 @@ export class PrinterService {
     const printedCost = Math.ceil(pagesPrinted * pricePerPage);
     const refundAmount = Math.max(0, requiredAmount - printedCost);
 
+    // Instruct spooler/worker to delete the job before financial refund updates
+    if (printerName && typeof spoolerJobId === 'number') {
+      try {
+        console.log(`[PRINTER] Cancelling spooler job #${spoolerJobId} on ${printerName} via edge-js`);
+        const result = await cancelPrintJobViaEdge(printerName, spoolerJobId);
+        if (!result.success) {
+          const errMessage = result.error || 'Unknown error';
+          const isMissing = errMessage.toLowerCase().includes('not found') || errMessage.toLowerCase().includes('missing');
+          if (!isMissing) {
+            throw new Error(`Failed to cancel print job: ${errMessage}`);
+          }
+          console.warn(`[PRINTER] Cancel print job via edge-js indicated job was already missing: ${errMessage}`);
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const isMissing = errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('missing');
+        if (!isMissing) {
+          throw err;
+        }
+        console.warn(`[PRINTER] Unexpected error indicating missing job: ${errMsg}`);
+      }
+    }
+
     if (refundAmount > 0) {
       await withBalanceLock(async () => {
         db.data!.balance += refundAmount;
@@ -820,19 +849,6 @@ export class PrinterService {
       });
 
       this.io.emit('balance', db.data!.balance);
-    }
-
-    // Instruct spooler/worker to delete the job
-    if (printerName && typeof spoolerJobId === 'number') {
-      try {
-        console.log(`[PRINTER] Cancelling spooler job #${spoolerJobId} on ${printerName} via edge-js`);
-        const result = await cancelPrintJobViaEdge(printerName, spoolerJobId);
-        if (!result.success) {
-          console.warn(`[PRINTER] Cancel print job via edge-js returned success=false: ${result.error}`);
-        }
-      } catch (err) {
-        console.warn(`[PRINTER] Failed to cancel spooler job: ${err instanceof Error ? err.message : String(err)}`);
-      }
     }
 
     // Create partial receipt snapshot

@@ -121,4 +121,129 @@ describe('PrinterService.cancelRemaining', () => {
       expect.any(Object)
     );
   });
+
+  it('clamps pagesPrinted when it exceeds totalPages', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = 15; // exceeds totalPages = 10
+    db.data!.spoolerLifecycle[0].totalPages = 10;
+
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.cancelRemaining('key-123');
+
+    // 15 printed out of 10 pages => clamped to 10 printed => printedCost = 50 => refund = 0
+    expect(db.data!.balance).toBe(0);
+    expect(persistAndEmitPrintLifecycleState).toHaveBeenCalledWith(
+      mockIo,
+      expect.objectContaining({
+        pagesPrinted: 10,
+        totalPages: 10,
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('protects against division by zero when totalPages is 0', async () => {
+    db.data!.spoolerLifecycle[0].pagesPrinted = 0;
+    db.data!.spoolerLifecycle[0].totalPages = 0; // will clamp totalPages to 1
+
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.cancelRemaining('key-123');
+
+    // totalPages clamped to 1. pagesPrinted clamped to 1 (which is min(1, max(0, 0)) = 0).
+    // printedCost = Math.ceil(0 * (50/1)) = 0 => refund = 50
+    expect(db.data!.balance).toBe(50);
+    expect(persistAndEmitPrintLifecycleState).toHaveBeenCalledWith(
+      mockIo,
+      expect.objectContaining({
+        pagesPrinted: 0,
+        totalPages: 1,
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('calls deleteTransientScanFile in copy mode if previewFilename is present', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'copy' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf', previewFilename: 'preview-img-123.jpg' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+
+    await printerService.cancelRemaining('key-123');
+
+    expect(deleteTransientScanFile).toHaveBeenCalledWith('preview-img-123.jpg');
+  });
+
+  it('throws error if spoolerCorrelationKey is invalid', async () => {
+    await expect(printerService.cancelRemaining('invalid key!'))
+      .rejects.toThrow('Invalid spoolerCorrelationKey');
+  });
+
+  it('throws error and does not issue refund if cancelPrintJobViaEdge fails with a non-missing error', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: false, error: 'Access Denied' });
+
+    const balanceBefore = db.data!.balance;
+    await expect(printerService.cancelRemaining('key-123'))
+      .rejects.toThrow('Failed to cancel print job: Access Denied');
+
+    // Assert refund was NOT issued
+    expect(db.data!.balance).toBe(balanceBefore);
+  });
+
+  it('does not throw and issues refund if cancelPrintJobViaEdge fails with a job not found / missing error', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    // return "Job not found in queue"
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: false, error: 'Job not found in queue' });
+
+    await printerService.cancelRemaining('key-123');
+
+    // 3 printed out of 10 pages => printedCost = 15 => refund = 35
+    expect(db.data!.balance).toBe(35);
+  });
 });
