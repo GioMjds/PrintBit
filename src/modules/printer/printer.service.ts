@@ -39,10 +39,10 @@ async function findSpoolerJobIdByCorrelationKey(
   printerName: string,
   spoolerCorrelationKey: string,
 ): Promise<number | null> {
-  if (typeof printerName !== 'string' || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
+  if (typeof printerName !== 'string' || printerName.length > 255 || !/^[a-zA-Z0-9-_\s\\.:()]+$/.test(printerName)) {
     throw new Error('Invalid printerName format');
   }
-  if (typeof spoolerCorrelationKey !== 'string' || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+  if (typeof spoolerCorrelationKey !== 'string' || spoolerCorrelationKey.length > 255 || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
     throw new Error('Invalid spoolerCorrelationKey');
   }
   try {
@@ -371,7 +371,7 @@ export class PrinterService {
   }
 
   async pauseJob(spoolerCorrelationKey: string): Promise<void> {
-    if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+    if (typeof spoolerCorrelationKey !== 'string' || spoolerCorrelationKey.length > 255 || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
       throw new Error('Invalid spoolerCorrelationKey');
     }
     const { printerName, spoolerJobId } = await this.findSpoolerJobDetails(
@@ -410,14 +410,17 @@ export class PrinterService {
   }
 
   async resumeJob(spoolerCorrelationKey: string): Promise<void> {
-    if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+    if (typeof spoolerCorrelationKey !== 'string' || spoolerCorrelationKey.length > 255 || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
       throw new Error('Invalid spoolerCorrelationKey');
     }
     const { printerName, spoolerJobId, transactionId } =
       await this.findSpoolerJobDetails(spoolerCorrelationKey);
 
     const recovery = getRecoverySession(transactionId);
-    if (recovery && recovery.phase === 'reconciled') {
+    if (!recovery) {
+      throw new Error(`No recovery session found for transaction: ${transactionId}`);
+    }
+    if (recovery.phase === 'reconciled') {
       throw new Error(`Cannot resume: transaction ${transactionId} is already reconciled.`);
     }
 
@@ -792,7 +795,7 @@ export class PrinterService {
   }
 
   async cancelRemaining(spoolerCorrelationKey: string): Promise<void> {
-    if (!/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
+    if (typeof spoolerCorrelationKey !== 'string' || spoolerCorrelationKey.length > 255 || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
       throw new Error('Invalid spoolerCorrelationKey');
     }
     if (!this.io || !this.sessionStore) {
@@ -802,10 +805,6 @@ export class PrinterService {
     const { printerName, spoolerJobId, transactionId } =
       await this.findSpoolerJobDetails(spoolerCorrelationKey);
 
-    const lifecyclePages = this.readLifecyclePageProgress(spoolerCorrelationKey);
-    const totalPages = Math.max(1, lifecyclePages.totalPages || 1);
-    const pagesPrinted = Math.min(totalPages, Math.max(0, lifecyclePages.pagesPrinted ?? 0));
-
     const recovery = getRecoverySession(transactionId);
     if (!recovery) {
       throw new Error(`No recovery session found for transaction: ${transactionId}`);
@@ -814,12 +813,35 @@ export class PrinterService {
       throw new Error(`Cannot cancel: transaction ${transactionId} is already reconciled.`);
     }
 
+    const lifecyclePages = this.readLifecyclePageProgress(spoolerCorrelationKey);
+    const totalPages = Math.max(1, lifecyclePages.totalPages || 1);
+    const pagesPrinted = Math.min(totalPages, Math.max(0, lifecyclePages.pagesPrinted ?? 0));
+
     const mode = recovery.mode;
     const requiredAmount = recovery.requiredAmount;
 
     // Calculate cost of printed pages and partial refund amount
     const pricePerPage = requiredAmount / totalPages;
     const printedCost = Math.min(requiredAmount, Math.ceil(pagesPrinted * pricePerPage));
+
+    // Save final reconciled state immediately after checking reconciled
+    const sessionId = recovery.sessionId;
+    const documentId = recovery.documentId;
+    await checkpointRecoverySession({
+      transactionId,
+      mode,
+      phase: 'reconciled',
+      requiredAmount,
+      chargedAmount: printedCost,
+      sessionId,
+      documentId,
+      spoolerCorrelationKey,
+      reconciledAt: new Date().toISOString(),
+      spoolerTerminalAt: new Date().toISOString(),
+      reconciliationAction: 'none',
+      reconciliationReason: `User cancelled remaining pages. Printed ${pagesPrinted} of ${totalPages}.`,
+    });
+
     const refundAmount = Math.max(0, requiredAmount - printedCost);
 
     // Instruct spooler/worker to delete the job before financial refund updates
@@ -880,8 +902,6 @@ export class PrinterService {
 
     // Cleanup transient session files
     const filename = typeof recovery.context.filename === 'string' ? recovery.context.filename : null;
-    const sessionId = recovery.sessionId;
-    const documentId = recovery.documentId;
 
     if (filename) {
       if (sessionId && documentId) {
@@ -936,22 +956,6 @@ export class PrinterService {
         documentId,
       }
     );
-
-    // Save final reconciled state
-    await checkpointRecoverySession({
-      transactionId,
-      mode,
-      phase: 'reconciled',
-      requiredAmount,
-      chargedAmount: printedCost,
-      sessionId,
-      documentId,
-      spoolerCorrelationKey,
-      reconciledAt: new Date().toISOString(),
-      spoolerTerminalAt: new Date().toISOString(),
-      reconciliationAction: 'none',
-      reconciliationReason: `User cancelled remaining pages. Printed ${pagesPrinted} of ${totalPages}.`,
-    });
   }
 }
 

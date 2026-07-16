@@ -378,6 +378,13 @@ describe('PrinterService.cancelRemaining', () => {
     await expect(printerService.cancelRemaining('key-123'))
       .rejects.toThrow('Cannot cancel: transaction tx-123 is already reconciled.');
   });
+
+  it('throws error when the recovery session is missing', async () => {
+    (getRecoverySession as jest.Mock).mockReturnValue(null);
+
+    await expect(printerService.cancelRemaining('key-123'))
+      .rejects.toThrow('No recovery session found for transaction: tx-123');
+  });
 });
 
 describe('PrinterService.pauseJob', () => {
@@ -457,6 +464,19 @@ describe('PrinterService.resumeJob', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (getRecoverySession as jest.Mock).mockReset();
+
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 0,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+      phase: 'active',
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+
     db.data = {
       balance: 0,
       earnings: 100,
@@ -647,6 +667,13 @@ describe('PrinterService.resumeJob', () => {
 
     await expect(printerService.resumeJob('key-123'))
       .rejects.toThrow('Cannot resume: transaction tx-123 is already reconciled.');
+  });
+
+  it('throws error when recovery session is missing', async () => {
+    (getRecoverySession as jest.Mock).mockReturnValue(null);
+
+    await expect(printerService.resumeJob('key-123'))
+      .rejects.toThrow('No recovery session found for transaction: tx-123');
   });
 
   it('throws error if spoolerCorrelationKey is invalid', async () => {
