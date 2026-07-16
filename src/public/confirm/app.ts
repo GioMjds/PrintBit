@@ -192,6 +192,8 @@ const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElem
 const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
 const errorSeverityBadge = document.getElementById('errorSeverityBadge');
 const errorSeverityText = document.getElementById('errorSeverityText');
+const errorProgressEl = document.getElementById('errorProgress') as HTMLParagraphElement | null;
+const errorCancelRemainingBtn = document.getElementById('errorCancelRemainingBtn') as HTMLButtonElement | null;
 
 // Confirmation Modal Elements
 const confirmModal = document.getElementById('confirmModal');
@@ -257,6 +259,8 @@ const receiptQrLink = document.getElementById(
 ) as HTMLElement | null;
 
 let currentPrinterError: PrintError | null = null;
+let lastKnownPagesPrinted = 0;
+let lastKnownTotalPages = 0;
 
 function hasActiveJob(): boolean {
   return (
@@ -314,8 +318,25 @@ function renderPrinterError(err: PrintError): void {
   ]);
   const showActions = PAUSE_RESUME_ERROR_CODES.has(err.code);
 
+  if (lastKnownPagesPrinted > 0) {
+    if (errorProgressEl) {
+      errorProgressEl.textContent = `Printed: ${lastKnownPagesPrinted} of ${lastKnownTotalPages || 1} pages`;
+      errorProgressEl.removeAttribute('hidden');
+    }
+    if (errorCancelRemainingBtn) {
+      errorCancelRemainingBtn.removeAttribute('hidden');
+    }
+  } else {
+    if (errorProgressEl) {
+      errorProgressEl.setAttribute('hidden', '');
+    }
+    if (errorCancelRemainingBtn) {
+      errorCancelRemainingBtn.setAttribute('hidden', '');
+    }
+  }
+
   if (errorActions) {
-    if (showActions) {
+    if (showActions || lastKnownPagesPrinted > 0) {
       errorActions.removeAttribute('hidden');
       // Reset button state every time the modal becomes visible
       resetErrorActionButtons();
@@ -333,6 +354,8 @@ function renderPrinterError(err: PrintError): void {
 function clearPrinterError(): void {
   currentPrinterError = null;
   if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
+  if (errorProgressEl) errorProgressEl.setAttribute('hidden', '');
+  if (errorCancelRemainingBtn) errorCancelRemainingBtn.setAttribute('hidden', '');
   applyConfirmGate();
 }
 
@@ -356,17 +379,43 @@ const ERROR_ACTION_MIN_LOADING_MS = 350;
  * failed action.
  */
 function resetErrorActionButtons(): void {
+  const PAUSE_RESUME_ERROR_CODES = new Set([
+    'PAPER_INSUFFICIENT_PRE_DISPATCH',
+    'PAPER_INSUFFICIENT_MID_JOB',
+    'PAPER_TRAY_EMPTY',
+    'PAPER_JAM_PRINT',
+  ]);
+  const showPauseResume = currentPrinterError && PAUSE_RESUME_ERROR_CODES.has(currentPrinterError.code);
+
   if (errorPauseBtn) {
-    errorPauseBtn.removeAttribute('hidden');
-    errorPauseBtn.disabled = false;
-    const span = errorPauseBtn.querySelector('span');
-    if (span) span.textContent = PAUSE_BTN_DEFAULT_LABEL;
+    if (showPauseResume) {
+      errorPauseBtn.removeAttribute('hidden');
+      errorPauseBtn.disabled = false;
+      const span = errorPauseBtn.querySelector('span');
+      if (span) span.textContent = PAUSE_BTN_DEFAULT_LABEL;
+    } else {
+      errorPauseBtn.setAttribute('hidden', '');
+    }
   }
   if (errorResumeBtn) {
-    errorResumeBtn.removeAttribute('hidden');
-    errorResumeBtn.disabled = false;
-    const span = errorResumeBtn.querySelector('span');
-    if (span) span.textContent = RESUME_BTN_DEFAULT_LABEL;
+    if (showPauseResume) {
+      errorResumeBtn.removeAttribute('hidden');
+      errorResumeBtn.disabled = false;
+      const span = errorResumeBtn.querySelector('span');
+      if (span) span.textContent = RESUME_BTN_DEFAULT_LABEL;
+    } else {
+      errorResumeBtn.setAttribute('hidden', '');
+    }
+  }
+  if (errorCancelRemainingBtn) {
+    if (lastKnownPagesPrinted > 0) {
+      errorCancelRemainingBtn.removeAttribute('hidden');
+      errorCancelRemainingBtn.disabled = false;
+      const span = errorCancelRemainingBtn.querySelector('span');
+      if (span) span.textContent = 'Cancel Remaining';
+    } else {
+      errorCancelRemainingBtn.setAttribute('hidden', '');
+    }
   }
   clearErrorActionInlineError();
 }
@@ -1611,6 +1660,12 @@ if (typeof ioFactory === 'function') {
 
   connectedSocket.on('printLifecycleState', (payload: any) => {
     const lifecycle = payload as PrintLifecycleStatePayload;
+    if (typeof lifecycle.pagesPrinted === 'number') {
+      lastKnownPagesPrinted = lifecycle.pagesPrinted;
+    }
+    if (typeof lifecycle.totalPages === 'number') {
+      lastKnownTotalPages = lifecycle.totalPages;
+    }
     const isHardwareError =
       lifecycle.printError?.severity === 'recoverable' ||
       lifecycle.printError?.code === 'PAPER_TRAY_EMPTY' ||
@@ -1701,6 +1756,7 @@ if (typeof ioFactory === 'function') {
     // with pause/resume instead of aborting the transaction.
     const isHardwareError =
       payload?.failureStage === 'HardwareError' ||
+      payload?.failureStage === 'IncompleteOutput' ||
       payload?.errorType === 'HardwareError' ||
       payload?.reason === 'HardwareError' ||
       payload?.printError?.code === 'PAPER_TRAY_EMPTY' ||
@@ -1748,6 +1804,47 @@ errorPauseBtn?.addEventListener('click', () => {
 
 errorResumeBtn?.addEventListener('click', () => {
   void handleErrorAction('resume');
+});
+
+errorCancelRemainingBtn?.addEventListener('click', async () => {
+  const key = resolveErrorActionCorrelationKey();
+  if (!key) {
+    showErrorActionInlineError('No active print job to control. Please try again or contact staff.');
+    return;
+  }
+
+  if (errorCancelRemainingBtn) {
+    errorCancelRemainingBtn.disabled = true;
+    const span = errorCancelRemainingBtn.querySelector('span');
+    if (span) span.textContent = 'Cancelling…';
+  }
+  clearErrorActionInlineError();
+
+  try {
+    const response = await fetchWithTimeout('/api/printer/cancel-remaining', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spoolerCorrelationKey: key }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      const message =
+        (errBody && typeof errBody.error === 'string' && errBody.error) ||
+        `Server returned HTTP ${response.status}.`;
+      throw new Error(message);
+    }
+
+    clearPrinterError();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not cancel the print job.';
+    showErrorActionInlineError(message);
+    if (errorCancelRemainingBtn) {
+      errorCancelRemainingBtn.disabled = false;
+      const span = errorCancelRemainingBtn.querySelector('span');
+      if (span) span.textContent = 'Cancel Remaining';
+    }
+  }
 });
 
 async function loadPrinterStatus(): Promise<void> {
