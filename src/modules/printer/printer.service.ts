@@ -855,9 +855,10 @@ export class PrinterService {
       reconciliationReason: `User cancelled remaining pages. Printed ${pagesPrinted} of ${totalPages}.`,
     });
 
-    try {
-      const refundAmount = Math.max(0, requiredAmount - printedCost);
+    const refundAmount = Math.max(0, requiredAmount - printedCost);
+    let refundApplied = refundAmount === 0;
 
+    try {
       // Instruct spooler/worker to delete the job before financial refund updates
       if (printerName && typeof spoolerJobId === 'number') {
         try {
@@ -887,6 +888,7 @@ export class PrinterService {
           db.data!.earnings = Math.max(0, db.data!.earnings - refundAmount);
           await db.write();
         });
+        refundApplied = true;
 
         await financialLedgerService.append({
           eventType: 'refund_issued',
@@ -971,26 +973,24 @@ export class PrinterService {
         }
       );
     } catch (err) {
-      await checkpointRecoverySession({
-        transactionId,
-        mode,
-        phase: originalPhase,
-        requiredAmount,
-        chargedAmount: recovery.chargedAmount,
-        sessionId,
-        documentId,
-        spoolerCorrelationKey,
-        spoolerJobId: recovery.spoolerJobId,
-        jobDispatchedAt: recovery.jobDispatchedAt,
-        settledAt: recovery.settledAt,
-        spoolerTerminalAt: recovery.spoolerTerminalAt,
-        reconciledAt: recovery.reconciledAt,
-        startupReconciled: recovery.startupReconciled,
-        reconciliationAction: recovery.reconciliationAction,
-        reconciliationReason: recovery.reconciliationReason,
-        lastError: recovery.lastError,
-        context: recovery.context,
-      });
+      if (!refundApplied) {
+        try {
+          await checkpointRecoverySession({
+            transactionId,
+            mode,
+            phase: originalPhase,
+            requiredAmount,
+            chargedAmount: recovery.chargedAmount,
+            sessionId,
+            documentId,
+            spoolerCorrelationKey,
+            reconciliationAction: 'none',
+            reconciliationReason: `Reconciliation aborted due to failure: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        } catch (checkpointErr) {
+          console.error('[PRINTER] Failed to restore recovery phase on cancel failure:', checkpointErr);
+        }
+      }
       throw err;
     }
   }

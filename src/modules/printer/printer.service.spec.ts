@@ -422,6 +422,37 @@ describe('PrinterService.cancelRemaining', () => {
       phase: 'job_dispatched',
     }));
   });
+
+  it('does not roll back recovery session phase if the refund has already been applied', async () => {
+    const mockRecovery = {
+      id: 'tx-123',
+      mode: 'print' as const,
+      requiredAmount: 50,
+      chargedAmount: 50,
+      sessionId: 'session-123',
+      documentId: 'doc-123',
+      context: { filename: 'test.pdf' },
+      phase: 'job_dispatched' as const,
+      spoolerCorrelationKey: 'key-123',
+    };
+    (getRecoverySession as jest.Mock).mockReturnValue(mockRecovery);
+    (cancelPrintJobViaEdge as jest.Mock).mockResolvedValue({ success: true });
+    
+    // Force a failure after refund by making financialLedgerService.append throw an error
+    (financialLedgerService.append as jest.Mock).mockRejectedValue(new Error('Ledger Append Failed'));
+
+    await expect(printerService.cancelRemaining('key-123'))
+      .rejects.toThrow('Ledger Append Failed');
+
+    // The initial call to checkpointRecoverySession is made to reconcile the session
+    expect(checkpointRecoverySession).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: 'tx-123',
+      phase: 'reconciled',
+    }));
+    
+    // There should NOT be any subsequent call to checkpointRecoverySession restoring it to job_dispatched
+    expect(checkpointRecoverySession).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('PrinterService.pauseJob', () => {
