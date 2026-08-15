@@ -16,6 +16,10 @@ import {
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import type { WorkerPrintEvent } from './worker-return-pipe';
 import { jobStore } from './job-store';
+import { printJobStore } from '@/core/database/sqlite-storage';
+import { translateHardwarePrinterError } from '@/utils';
+
+
 
 const receiptService = new ReceiptService();
 
@@ -173,6 +177,16 @@ export async function handleWorkerReturnPrintEvent(input: {
   const requiredAmount = recovery?.requiredAmount ?? 0;
   const recoveryContext = recovery?.context ?? {};
 
+  if (input.evt.type === 'JobCompleted') {
+    if (input.evt.outcome === 'completed') {
+      input.evt.type = 'PrintSucceeded';
+    } else {
+      input.evt.type = 'PrintFailed';
+    }
+  } else if (input.evt.type === 'JobResumed') {
+    input.evt.type = 'PrintStarted';
+  }
+
   if (input.evt.type === 'PrintStarted') {
     await persistAndEmitPrintLifecycleState(
       input.io,
@@ -236,6 +250,7 @@ export async function handleWorkerReturnPrintEvent(input: {
   }
 
   if (input.evt.type === 'PrintSucceeded') {
+    printJobStore.updateJobStateByTransactionId(transactionId, 'printed');
     if (mode === 'copy') {
       jobStore.updateJobState(transactionId, 'printed');
     }
@@ -295,6 +310,57 @@ export async function handleWorkerReturnPrintEvent(input: {
     return;
   }
 
+  if (input.evt.type === 'JobPaused') {
+    const pagesPrinted =
+      typeof input.evt.pagesPrinted === 'number' && Number.isFinite(input.evt.pagesPrinted)
+        ? input.evt.pagesPrinted
+        : typeof input.evt.completedCount === 'number' && Number.isFinite(input.evt.completedCount)
+          ? input.evt.completedCount
+          : undefined;
+    const totalPages =
+      typeof input.evt.totalPages === 'number' && Number.isFinite(input.evt.totalPages) && input.evt.totalPages > 0
+        ? input.evt.totalPages
+        : typeof input.evt.totalCount === 'number' && Number.isFinite(input.evt.totalCount) && input.evt.totalCount > 0
+          ? input.evt.totalCount
+          : undefined;
+
+    const translated = translateHardwarePrinterError(input.evt.message ?? input.evt.errorMessage ?? null);
+    const printError = {
+      code: translated.code,
+      severity: translated.severity,
+      userMessage: translated.userMessage,
+      hint: input.evt.message ?? input.evt.errorMessage ?? 'Ask staff to load paper into the rear tray, then press Resume to retry.',
+      timestamp: new Date().toISOString(),
+      canRetry: translated.canRetry,
+      canDismiss: translated.canDismiss,
+      spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? undefined,
+    };
+
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'paused',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
+        printerName: input.evt.printerName ?? null,
+        reason: input.evt.message ?? input.evt.errorMessage ?? 'Printer paused.',
+        pagesPrinted,
+        totalPages,
+        printError,
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+      },
+    );
+
+    return;
+  }
+
+  printJobStore.updateJobStateByTransactionId(transactionId, 'failed');
   if (mode === 'copy') {
     jobStore.updateJobState(transactionId, 'failed', {
       failure: {

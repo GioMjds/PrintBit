@@ -5,7 +5,7 @@
 
 #define coinAcceptorPin 4
 #define hopperSensorPin 18
-#define relayPin 33
+#define relayPin 32
 
 const char* ssid = "PrintBit";
 const char* password = "printbit123";
@@ -93,10 +93,19 @@ String decodeUrlComponent(const String& value) {
 String getFormValue(const String& body, const String& key) {
   String needle = key + "=";
   int start = body.indexOf(needle);
+  if (start < 0) {
+    needle = "\"" + key + "\":";
+    start = body.indexOf(needle);
+  }
   if (start < 0) return "";
   start += needle.length();
-  int end = body.indexOf('&', start);
-  if (end < 0) end = body.length();
+  while (start < body.length() && (body.charAt(start) == ' ' || body.charAt(start) == '"')) {
+    start++;
+  }
+  int end = start;
+  while (end < body.length() && body.charAt(end) != '&' && body.charAt(end) != ',' && body.charAt(end) != '}' && body.charAt(end) != '"' && body.charAt(end) != '\r' && body.charAt(end) != '\n') {
+    end++;
+  }
   return decodeUrlComponent(body.substring(start, end));
 }
 
@@ -397,7 +406,7 @@ void handleWifiRequest(NetworkClient& client) {
       String lengthPart = headerLine.substring(colonPos + 1);
       lengthPart.trim();
       contentLength = lengthPart.toInt();
-    } else if (headerKey == "x-hopper-token") {
+    } else if (headerKey == "x-hopper-token" || headerKey == "x-coin-api-key") {
       hopperTokenHeader = headerLine.substring(colonPos + 1);
       hopperTokenHeader.trim();
     }
@@ -428,10 +437,12 @@ void handleWifiRequest(NetworkClient& client) {
   if ((method == "POST" || method == "GET") && routePath == "/hopper/dispense") {
     String postedToken = getFormValue(body, "token");
     String postedCoins = getFormValue(body, "coins");
+    if (postedCoins.length() == 0) postedCoins = getFormValue(body, "targetCoins");
     String postedRequestId = getFormValue(body, "requestId");
     if (postedToken.length() == 0) postedToken = hopperTokenHeader;
     if (postedToken.length() == 0) postedToken = getQueryValue(query, "token");
     if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "coins");
+    if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "targetCoins");
     if (postedRequestId.length() == 0) postedRequestId = getQueryValue(query, "requestId");
 
     if (postedToken.length() == 0 || postedToken != hopperControlToken) {

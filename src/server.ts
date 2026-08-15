@@ -104,53 +104,8 @@ function markStartupReady(): void {
  * recoverable (paper-out, paper-jam). Returns a fatal-staff-help payload
  * when the message can't be classified.
  */
-function translateHardwarePrinterError(message: string | null): {
-  code: string;
-  severity: 'warning' | 'recoverable' | 'fatal';
-  userMessage: string;
-  canRetry: boolean;
-  canDismiss: boolean;
-} {
-  const lower = (message ?? '').toLowerCase();
-  if (lower.includes('no paper') || lower.includes('low paper')) {
-    return {
-      code: 'PAPER_TRAY_EMPTY',
-      severity: 'recoverable',
-      userMessage:
-        'Printer Out of Paper. Please load paper and click Resume.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (lower.includes('jammed')) {
-    return {
-      code: 'PAPER_JAM_PRINT',
-      severity: 'recoverable',
-      userMessage:
-        'Paper jam detected. Clear the jam and click Resume to continue.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (lower.includes('no toner') || lower.includes('low toner')) {
-    return {
-      code: 'PRINTER_OUT_OF_TONER',
-      severity: 'fatal',
-      userMessage:
-        'The printer is out of toner. Please ask staff to replace the cartridge.',
-      canRetry: false,
-      canDismiss: false,
-    };
-  }
-  return {
-    code: 'PRINTER_HARDWARE_ERROR',
-    severity: 'fatal',
-    userMessage:
-      'The printer reported a hardware error. Please ask staff for help.',
-    canRetry: false,
-    canDismiss: false,
-  };
-}
+import { translateHardwarePrinterError } from '@/utils';
+
 
 function markStartupFailed(message: string): void {
   startupReadinessState.phase = 'failed';
@@ -327,16 +282,18 @@ async function start() {
         // recovery action) instead of always showing a fatal-staff-help
         // modal. The worker formats the message as:
         //   "Printer hardware error detected (<Description>, code <N>). ..."
-        if (evt.type === 'PrinterError') {
-          const translated = translateHardwarePrinterError(evt.message ?? null);
+        if (evt.type === 'PrinterError' || evt.type === 'JobPaused') {
+          const rawMsg = evt.message ?? evt.errorMessage ?? null;
+          const translated = translateHardwarePrinterError(rawMsg);
           io.emit('printerMalfunction', {
             printError: {
               code: translated.code,
               severity: translated.severity,
               userMessage: translated.userMessage,
-              hint: evt.message ?? null,
+              hint: rawMsg,
               canRetry: translated.canRetry,
               canDismiss: translated.canDismiss,
+              spoolerCorrelationKey: evt.spoolerCorrelationKey ?? null,
             },
           });
         }
