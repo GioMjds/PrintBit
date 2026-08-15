@@ -41,15 +41,15 @@
 
 ## File Map
 
-| Area | Primary files |
-| --- | --- |
-| Node worker v2 contract | `src/config/http.config.ts`, `src/services/worker-handoff.ts`, `src/services/worker-command-pipe.ts`, `src/services/worker-return-pipe.ts` |
+| Area                        | Primary files                                                                                                                                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node worker v2 contract     | `src/config/http.config.ts`, `src/services/worker-handoff.ts`, `src/services/worker-command-pipe.ts`, `src/services/worker-return-pipe.ts`                                                           |
 | Node durable event handling | new `src/services/worker-terminal-outbox.ts`, new `src/core/database/models/worker-event.model.ts`, `src/core/database/sqlite-storage.ts`, `src/services/worker-print-lifecycle.ts`, `src/server.ts` |
-| Node visits | new `src/modules/visit/`, `src/app.module.ts`, `src/modules/page/page.controller.ts`, `src/services/session.ts` |
-| Node mobile client | new `src/public/mobile/`, `src/public/print/`, `src/public/confirm/`, existing upload/feedback/report/receipt/scan clients |
-| Node payment safety | `src/modules/financial/financial.service.ts`, `src/services/settlement.ts`, `src/services/hopper.ts`, `src/services/session.ts`, `src/core/database/models/payment.model.ts` |
-| Worker contract | `PrintJobSidecarValidator.cs`, `WorkerPrintEvent.cs`, `WorkerCommandMessage.cs`, `WorkerCommandParser.cs`, `WorkerCommandListenerHostedService.cs` |
-| Worker durability | new `WorkerJobJournal.cs`, new `WorkerTerminalOutbox.cs`, `PrintQueueWatcher.cs`, `JobOrchestrator.cs`, `HardwareSettings.cs`, `IpcSettings.cs` |
+| Node visits                 | new `src/modules/visit/`, `src/app.module.ts`, `src/modules/page/page.controller.ts`, `src/services/session.ts`                                                                                      |
+| Node mobile client          | new `src/public/mobile/`, `src/public/print/`, `src/public/confirm/`, existing upload/feedback/report/receipt/scan clients                                                                           |
+| Node payment safety         | `src/modules/financial/financial.service.ts`, `src/services/settlement.ts`, `src/services/hopper.ts`, `src/services/session.ts`, `src/core/database/models/payment.model.ts`                         |
+| Worker contract             | `PrintJobSidecarValidator.cs`, `WorkerPrintEvent.cs`, `WorkerCommandMessage.cs`, `WorkerCommandParser.cs`, `WorkerCommandListenerHostedService.cs`                                                   |
+| Worker durability           | new `WorkerJobJournal.cs`, new `WorkerTerminalOutbox.cs`, `PrintQueueWatcher.cs`, `JobOrchestrator.cs`, `HardwareSettings.cs`, `IpcSettings.cs`                                                      |
 
 ## Task 1: Stabilize and prove the v2 IPC contract
 
