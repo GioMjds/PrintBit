@@ -85,6 +85,9 @@ export async function handoffToWorker(input: {
       color: input.printSettings?.color ?? false,
       pageRange: input.printSettings?.pageRange ?? null,
       orientation: input.printSettings?.orientation ?? null,
+      schemaVersion: 2,
+      transactionId: input.transactionId,
+      spoolerCorrelationKey: input.spoolerCorrelationKey,
     };
     await fs.writeFile(jsonPath, JSON.stringify(sidecar), 'utf-8');
 

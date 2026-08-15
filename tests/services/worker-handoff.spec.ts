@@ -23,6 +23,39 @@ describe('worker-handoff', () => {
 		expect(result.fileName.endsWith('.pdf')).toBe(true);
 	});
 
+	it('writes legacy print settings and v2 correlation IDs in the JSON sidecar', async () => {
+		const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pb-worker-'));
+		const queueDir = path.join(baseDir, 'queue');
+		await fs.mkdir(queueDir, { recursive: true });
+		const sourcePath = path.join(baseDir, 'sample.pdf');
+		await fs.writeFile(sourcePath, 'PDFDATA');
+
+		const result = await handoffToWorker({
+			sourcePath,
+			queueDir,
+			transactionId: 'tx-123',
+			spoolerCorrelationKey: 'spool-456',
+			printSettings: {
+				copies: 2,
+				color: true,
+				pageRange: '3-7',
+				orientation: 'landscape',
+			},
+		});
+
+		const sidecarPath = path.join(queueDir, result.fileName.replace(/\.pdf$/, '.json'));
+		const sidecar = JSON.parse(await fs.readFile(sidecarPath, 'utf-8'));
+		expect(sidecar).toEqual({
+			copies: 2,
+			color: true,
+			pageRange: '3-7',
+			orientation: 'landscape',
+			schemaVersion: 2,
+			transactionId: 'tx-123',
+			spoolerCorrelationKey: 'spool-456',
+		});
+	});
+
 	it('throws when queue directory is missing', async () => {
 		const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pb-worker-'));
 		const sourcePath = path.join(baseDir, 'sample.pdf');

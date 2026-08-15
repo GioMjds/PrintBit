@@ -94,6 +94,7 @@ jest.mock('@/config/http.config', () => {
     ...actual,
     WORKER_QUEUE_DIR: 'mock-queue-dir',
     WORKER_FAILED_DIR: 'mock-failed-dir',
+    WORKER_COMMAND_PIPE_NAME: 'configured-worker-command-pipe',
   };
 });
 
@@ -901,7 +902,10 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
         type: 'pause_job',
         transactionId: 'tx_pause',
         spoolerCorrelationKey: 'key_pause',
+        protocolVersion: 2,
+        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       }),
+      { pipeName: 'configured-worker-command-pipe' },
     );
   });
 
@@ -939,7 +943,10 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
         type: 'resume_job',
         transactionId: 'tx_resume',
         spoolerCorrelationKey: 'key_resume',
+        protocolVersion: 2,
+        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       }),
+      { pipeName: 'configured-worker-command-pipe' },
     );
   });
 
@@ -990,7 +997,10 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
         type: 'cancel_job',
         transactionId: 'tx_1',
         spoolerCorrelationKey: 'key_1',
+        protocolVersion: 2,
+        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       }),
+      { pipeName: 'configured-worker-command-pipe' },
     );
   });
 

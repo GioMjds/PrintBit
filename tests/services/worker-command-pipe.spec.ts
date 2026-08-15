@@ -28,6 +28,8 @@ describe('worker-command-pipe', () => {
       spoolerCorrelationKey: 'spooler_def2',
       reason: 'User cancelled remaining pages',
       timestampUtc: '2026-07-23T11:06:27.000Z',
+      protocolVersion: 2,
+      commandId: 'cmd-001',
     };
 
     const success = await sendWorkerCommand(payload, { pipeName, timeoutMs: 2000 });
@@ -37,5 +39,31 @@ describe('worker-command-pipe', () => {
     const parsed = JSON.parse(receivedData.join('').trim());
     expect(parsed.type).toBe('cancel_job');
     expect(parsed.spoolerCorrelationKey).toBe('spooler_def2');
+    expect(parsed.protocolVersion).toBe(2);
+    expect(parsed.commandId).toBe('cmd-001');
+  });
+
+  it('preserves a legacy command frame without v2 fields', async () => {
+    const payload: WorkerCommandPayload = {
+      type: 'cancel_job',
+      transactionId: 'tx_20260723_190105_abc1',
+      spoolerCorrelationKey: 'spooler_def2',
+      reason: 'User cancelled remaining pages',
+      timestampUtc: '2026-07-23T11:06:27.000Z',
+    };
+
+    const success = await sendWorkerCommand(payload, { pipeName, timeoutMs: 2000 });
+
+    expect(success).toBe(true);
+    const parsed = JSON.parse(receivedData.join('').trim());
+    expect(parsed).toEqual({
+      type: 'cancel_job',
+      transactionId: 'tx_20260723_190105_abc1',
+      spoolerCorrelationKey: 'spooler_def2',
+      reason: 'User cancelled remaining pages',
+      timestampUtc: '2026-07-23T11:06:27.000Z',
+    });
+    expect(parsed).not.toHaveProperty('protocolVersion');
+    expect(parsed).not.toHaveProperty('commandId');
   });
 });

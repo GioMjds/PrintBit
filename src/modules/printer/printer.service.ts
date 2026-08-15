@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,7 +20,11 @@ import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import { getPrinterTelemetry, recordSpoolerLifecycleTransition } from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
-import { WORKER_QUEUE_DIR, WORKER_FAILED_DIR } from '@/config/http.config';
+import {
+  WORKER_COMMAND_PIPE_NAME,
+  WORKER_QUEUE_DIR,
+  WORKER_FAILED_DIR,
+} from '@/config/http.config';
 import { computeResubmitPlan, type ResubmitPlan } from './resubmit-plan';
 import { sendWorkerCommand } from '@/services/worker-command-pipe';
 
@@ -392,11 +397,13 @@ export class PrinterService {
 
     void sendWorkerCommand({
       type: 'pause_job',
+      protocolVersion: 2,
+      commandId: randomUUID(),
       transactionId,
       spoolerCorrelationKey,
       reason: 'User paused print job in UI',
       timestampUtc: new Date().toISOString(),
-    });
+    }, { pipeName: WORKER_COMMAND_PIPE_NAME });
 
     console.log(
       `[PRINTER] Pausing job #${spoolerJobId} on ${printerName} via edge-js`,
@@ -439,11 +446,13 @@ export class PrinterService {
 
     void sendWorkerCommand({
       type: 'resume_job',
+      protocolVersion: 2,
+      commandId: randomUUID(),
       transactionId,
       spoolerCorrelationKey,
       reason: 'User resumed print job in UI',
       timestampUtc: new Date().toISOString(),
-    });
+    }, { pipeName: WORKER_COMMAND_PIPE_NAME });
 
     const recovery = getRecoverySession(transactionId);
     if (!recovery) {
@@ -880,11 +889,13 @@ export class PrinterService {
       // Instruct spooler/worker to delete the job before financial refund updates
       void sendWorkerCommand({
         type: 'cancel_job',
+        protocolVersion: 2,
+        commandId: randomUUID(),
         transactionId,
         spoolerCorrelationKey,
         reason: 'User cancelled remaining pages in UI',
         timestampUtc: new Date().toISOString(),
-      });
+      }, { pipeName: WORKER_COMMAND_PIPE_NAME });
 
       if (printerName && typeof spoolerJobId === 'number') {
         try {

@@ -12,8 +12,26 @@ export type WorkerPrintEventType =
   | 'JobResumed'
   | 'JobCompleted';
 
+export type WorkerTerminalOutcome =
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'partially_completed'
+  | 'unknown';
+
+const workerTerminalOutcomes = new Set<WorkerTerminalOutcome>([
+  'completed',
+  'failed',
+  'cancelled',
+  'partially_completed',
+  'unknown',
+]);
+
 export interface WorkerPrintEvent {
   type: WorkerPrintEventType;
+  protocolVersion?: 2;
+  eventId?: string;
+  sequence?: number;
   transactionId?: string;
   spoolerCorrelationKey?: string;
   spoolerJobId?: string;
@@ -22,7 +40,7 @@ export interface WorkerPrintEvent {
   failureStage?: string;
   message?: string;
   errorMessage?: string;
-  outcome?: 'completed' | 'failed' | 'partially_completed' | string;
+  outcome?: WorkerTerminalOutcome;
   pagesPrinted?: number;
   totalPages?: number;
   completedCount?: number;
@@ -62,11 +80,26 @@ export function parseWorkerEventLine(
   if (Buffer.byteLength(line, 'utf8') > maxBytes) {
     throw new Error('PayloadTooLarge');
   }
-  const parsed = JSON.parse(line) as WorkerPrintEvent;
+  const parsed = JSON.parse(line) as Record<string, unknown>;
   if (!parsed.type || !parsed.timestampUtc) {
     throw new Error('InvalidPayload');
   }
-  return parsed;
+  if (parsed.protocolVersion !== undefined) {
+    if (
+      parsed.protocolVersion !== 2 ||
+      typeof parsed.eventId !== 'string' ||
+      parsed.eventId.trim().length === 0 ||
+      typeof parsed.sequence !== 'number' ||
+      !Number.isInteger(parsed.sequence) ||
+      parsed.sequence < 0 ||
+      (parsed.outcome !== undefined &&
+        (typeof parsed.outcome !== 'string' ||
+          !workerTerminalOutcomes.has(parsed.outcome as WorkerTerminalOutcome)))
+    ) {
+      throw new Error('InvalidV2Payload');
+    }
+  }
+  return parsed as unknown as WorkerPrintEvent;
 }
 
 export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {

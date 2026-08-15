@@ -33,6 +33,9 @@ export const WORKER_PRECHECKS_ENABLED =
 export const WORKER_RETURN_PIPE_NAME =
   process.env.PRINTBIT_WORKER_RETURN_PIPE_NAME?.trim() ||
   'printbit-worker-events';
+export const WORKER_COMMAND_PIPE_NAME =
+  process.env.PRINTBIT_WORKER_COMMAND_PIPE_NAME?.trim() ||
+  'printbit-worker-commands';
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PORTAL_DIR = path.resolve('src/public/upload');
 export const PUBLIC_DIR = path.resolve('src/public');

@@ -4,6 +4,8 @@ export type WorkerCommandType = 'cancel_job' | 'pause_job' | 'resume_job';
 
 export interface WorkerCommandPayload {
   type: WorkerCommandType;
+  protocolVersion?: 2;
+  commandId?: string;
   transactionId: string;
   spoolerCorrelationKey: string;
   reason: string;
