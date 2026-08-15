@@ -1,7 +1,3 @@
-/**
- * Root application module that registers all feature modules.
- * This is the central point for wiring up all modules with the Express app.
- */
 import type { Express } from 'express';
 import type { Request } from 'express';
 import type { Server as SocketIOServer } from 'socket.io';
@@ -13,7 +9,10 @@ import {
   UPLOAD_DIR,
 } from '@/config';
 import { getHotspotConfig } from '@/services';
-import { registerStaticAssets } from '@/middleware';
+import {
+  createKioskAccessMiddleware,
+  registerStaticAssets,
+} from '@/middleware';
 import { registerAdminModule } from '@/modules/admin';
 import { registerFinancialModule } from '@/modules/financial';
 import { registerPrinterModule } from '@/modules/printer';
@@ -64,6 +63,20 @@ export interface AppModuleDeps {
  */
 export function registerAppModules(app: Express, deps: AppModuleDeps): void {
   registerStaticAssets(app);
+
+  const requireKiosk = createKioskAccessMiddleware();
+  app.use(
+    [
+      '/api/scanner',
+      '/api/scan',
+      '/api/copy',
+      '/api/printer',
+      '/api/confirm-payment',
+      '/api/balance/reset',
+      '/api/balance/add-test-coin',
+    ],
+    requireKiosk,
+  );
   registerPageModule(app, {
     io: deps.io,
     sessionStore: deps.sessionStore,

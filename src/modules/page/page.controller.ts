@@ -2,6 +2,13 @@ import { Router, Request, Response } from 'express';
 import { requireAdminLocalAccess } from '@/middleware/admin-auth';
 import type { SessionStore } from '@/services/session';
 import { db } from '@/services/db';
+import {
+  createKioskAccessMiddleware,
+  isLoopbackRequest,
+  KIOSK_COOKIE_NAME,
+  kioskAccessService,
+  type KioskAccessService,
+} from '@/middleware/kiosk-access';
 
 export type PageRoute = { route: string; filePath: string };
 
@@ -9,6 +16,7 @@ export interface PageControllerDeps {
   sessionStore: SessionStore;
   publicPageRoutes: PageRoute[];
   resolvePublicBaseUrl: (req: Request) => URL;
+  kioskAccessService?: KioskAccessService;
 }
 
 const PORTAL_WAITING_HTML = `<!DOCTYPE html>
@@ -36,12 +44,23 @@ const PORTAL_WAITING_HTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
+const KIOSK_ONLY_PAGE_ROUTES = new Set([
+  '/',
+  '/print',
+  '/copy',
+  '/config',
+  '/confirm',
+  '/scan',
+]);
+
 export class PageController {
   public readonly router: Router;
   private readonly deps: PageControllerDeps;
+  private readonly kioskAccess: KioskAccessService;
 
   constructor(deps: PageControllerDeps) {
     this.deps = deps;
+    this.kioskAccess = deps.kioskAccessService ?? kioskAccessService;
     this.router = Router();
     this.initializeRoutes();
   }
@@ -56,6 +75,13 @@ export class PageController {
     // Portal - redirects to active session or shows waiting page
     this.router.get('/portal', this.handlePortal.bind(this));
 
+    // The launcher obtains a one-time credential over loopback, then Edge consumes it.
+    this.router.post(
+      '/api/kiosk/bootstrap-credential',
+      this.issueBootstrap.bind(this),
+    );
+    this.router.get('/kiosk/bootstrap', this.handleBootstrap.bind(this));
+
     // Public endpoint to get idle timeout configuration (for client-side idle detection)
     this.router.get(
       '/api/settings/idle-timeout',
@@ -69,7 +95,12 @@ export class PageController {
       this.handleAdminRedirect.bind(this),
     );
     this.router.get(
-      ['/admin/coins', '/admin/coins/', '/admin/coin-stats', '/admin/coin-stats/'],
+      [
+        '/admin/coins',
+        '/admin/coins/',
+        '/admin/coin-stats',
+        '/admin/coin-stats/',
+      ],
       requireAdminLocalAccess,
       this.handleCoinStatsRedirect.bind(this),
     );
@@ -78,12 +109,53 @@ export class PageController {
     for (const page of this.deps.publicPageRoutes) {
       const routeHandlers = page.route.startsWith('/admin/')
         ? [requireAdminLocalAccess]
-        : [];
+        : KIOSK_ONLY_PAGE_ROUTES.has(page.route)
+          ? [createKioskAccessMiddleware(this.kioskAccess)]
+          : [];
 
-      this.router.get(page.route, ...routeHandlers, (_req: Request, res: Response) => {
-        res.sendFile(page.filePath);
-      });
+      this.router.get(
+        page.route,
+        ...routeHandlers,
+        (_req: Request, res: Response) => {
+          res.sendFile(page.filePath);
+        },
+      );
     }
+  }
+
+  private issueBootstrap(req: Request, res: Response): void {
+    if (!isLoopbackRequest(req)) {
+      res.status(403).json({ error: 'Kiosk bootstrap is loopback-only.' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ credential: this.kioskAccess.issueBootstrapCredential() });
+  }
+
+  private handleBootstrap(req: Request, res: Response): void {
+    if (!isLoopbackRequest(req)) {
+      res.status(403).type('text').send('Kiosk bootstrap is loopback-only.');
+      return;
+    }
+    const credential =
+      typeof req.query.credential === 'string' ? req.query.credential : '';
+    if (
+      !credential ||
+      !this.kioskAccess.consumeBootstrapCredential(credential)
+    ) {
+      res
+        .status(403)
+        .type('text')
+        .send('Kiosk launch credential is invalid, expired, or already used.');
+      return;
+    }
+    res.cookie(KIOSK_COOKIE_NAME, this.kioskAccess.getCookieCredential(), {
+      httpOnly: true,
+      sameSite: 'strict',
+      path: '/',
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.redirect(302, '/loading');
   }
 
   private handleFavicon(_req: Request, res: Response): void {

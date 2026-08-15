@@ -1,40 +1,26 @@
-const os = require('os');
 const { spawn } = require('child_process');
+const port = process.env.PORT || '3000';
+const localBaseUrl = `http://127.0.0.1:${port}`;
 
-function getLocalIPv4() {
-  const interfaces = os.networkInterfaces();
-  const all = [];
-
-  for (const ifaces of Object.values(interfaces)) {
-    for (const iface of ifaces || []) {
-      if (iface.family === 'IPv4' && !iface.internal) all.push(iface.address);
-    }
-  }
-
-  // Prefer hotspot ranges first.
-  const preferred = all.find(
-    ip =>
-      ip.startsWith('192.168.4.') ||
-      ip.startsWith('192.168.5.') ||
-      ip.startsWith('192.168.137.'),
+async function launch() {
+  const response = await fetch(
+    `${localBaseUrl}/api/kiosk/bootstrap-credential`,
+    {
+      method: 'POST',
+    },
   );
-  return preferred ?? all[0] ?? null;
+  if (!response.ok)
+    throw new Error(`Kiosk bootstrap failed (${response.status})`);
+  const payload = await response.json();
+  if (typeof payload.credential !== 'string')
+    throw new Error('Kiosk bootstrap returned no credential');
+  const url = `${localBaseUrl}/kiosk/bootstrap?credential=${encodeURIComponent(payload.credential)}`;
+  const args = ['--kiosk', url, '--edge-kiosk-type=fullscreen'];
+  const child = spawn('msedge.exe', args, { detached: true, stdio: 'ignore' });
+  child.unref();
 }
 
-const networkProvider = (process.env.PRINTBIT_NETWORK_PROVIDER || '')
-  .trim()
-  .toLowerCase();
-const esp32KioskIp = (process.env.PRINTBIT_ESP32_KIOSK_IP || '192.168.4.2').trim();
-const host =
-  networkProvider === 'esp32' ? esp32KioskIp : getLocalIPv4() || 'localhost';
-const port = process.env.PORT || '3000';
-const url = `http://${host}:${port}/loading`;
-const args = ['--kiosk', url, '--edge-kiosk-type=fullscreen'];
-
-// detach so Edge keeps running after this process exits
-const child = spawn('msedge.exe', args, {
-  detached: true,
-  stdio: 'ignore',
+launch().catch((err) => {
+  console.error(err instanceof Error ? err.message : 'Unable to launch kiosk.');
+  process.exitCode = 1;
 });
-
-child.unref();
