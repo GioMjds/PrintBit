@@ -39,13 +39,7 @@ import {
 import { adminService } from '@/services/admin';
 import { financialLedgerService } from '@/services/financial-ledger';
 import { settlementService } from '@/services/settlement';
-import {
-  printFile,
-  type PrintDispatchResult,
-  type PrintJobOptions,
-} from '@/services/printer';
-import { monitorSpoolerJob } from '@/services/print-spooler';
-import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
+import { printFile, type PrintJobOptions } from '@/services/printer';
 import type { SessionStore, UploadedDocument } from '@/services/session';
 import { buildPrintQuote } from '@/services/print-quote';
 import { BLOCKED_STATUSES } from '@/utils';
@@ -65,7 +59,6 @@ import {
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
-import { PrintDispatchError } from '@/services/print-dispatcher';
 import {
   normalizeRotationDeg,
   parseRotationDeg,
@@ -1558,11 +1551,8 @@ export class FinancialService {
       mode === 'print'
         ? await refreshPrinterTelemetry()
         : getPrinterTelemetry();
-    let jobDispatchedAt: string | null = null;
-    let dispatchResult: PrintDispatchResult | null = null;
-    let spoolerMonitorStarted = false;
-    let settlementCompleted = false;
-    let spoolerConfirmedBeforeSettlement = false;
+    const jobDispatchedAt: string | null = null;
+    const spoolerConfirmedBeforeSettlement = false;
 
     const runPostSpoolerConfirmedCallbacks = async (): Promise<void> => {
       try {
@@ -1584,57 +1574,6 @@ export class FinancialService {
     };
 
     let receipt: Record<string, unknown> | null = null;
-    const startSpoolerMonitor = (
-      chargedAmount: number,
-      monitorStartPhase: 'post_dispatch' | 'post_settlement',
-    ): void => {
-      if (mode !== 'print' || !jobDispatchedAt || !telemetry.name) return;
-      if (spoolerMonitorStarted) return;
-
-      const captureReceipt = receipt;
-      spoolerMonitorStarted = true;
-      void monitorSpoolerJob({
-        printerName: telemetry.name,
-        chargedAmount,
-        jobDispatchedAt,
-        spoolerCorrelationKey,
-        io: this.deps.io,
-        jobContext: {
-          transactionId,
-          mode,
-          copies,
-          colorMode: printOptions?.colorMode ?? colorMode,
-          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
-          duplex: printOptions?.duplex ?? false,
-          spoolerCorrelationKey,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          filename: serverFilename ?? null,
-          pageRange: printOptions?.pageRange ?? null,
-          dispatchEngine: null,
-          dispatchMode: null,
-          dispatchRequestedMode: null,
-          dispatchDurationMs: null,
-          dispatchMimeType: null,
-          dispatchExtension: null,
-          dispatchAttempts: null,
-          monitorStartPhase,
-        },
-        onConfirmed: async () => {
-          if (!settlementCompleted) {
-            spoolerConfirmedBeforeSettlement = true;
-            return;
-          }
-          await runPostSpoolerConfirmedCallbacks();
-        },
-        receipt: captureReceipt,
-      }).catch((err) => {
-        console.error(
-          '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
-          err instanceof Error ? err.message : err,
-        );
-      });
-    };
 
     if (mode === 'print' && serverFilename && printOptions) {
       if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -1745,7 +1684,6 @@ export class FinancialService {
       });
       return;
     }
-    settlementCompleted = true;
     if (spoolerConfirmedBeforeSettlement) {
       void runPostSpoolerConfirmedCallbacks().catch((error) => {
         console.error(
@@ -1890,7 +1828,6 @@ export class FinancialService {
       return;
     }
 
-    const settledAmount = settlement.chargedAmount;
     const settledChangeState = settlement.change.state;
     const settledChangeRequested = settlement.change.requested;
     const settledChangeDispensed = settlement.change.dispensed;

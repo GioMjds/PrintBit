@@ -29,7 +29,7 @@ interface ValidationPolicy {
   readonly extensionMimeMap: Record<string, string>;
   readonly magicSignatures: Record<
     string,
-    Array<{ bytes: number[]; offset?: number }>
+    { bytes: number[]; offset?: number }[]
   >;
   readonly surface: UploadSurface;
 }

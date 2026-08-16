@@ -7,8 +7,8 @@ import { ReceiptService } from '@/modules/receipt/receipt.service';
 import {
   checkpointRecoverySession,
   getRecoverySession,
-  persistAndEmitPrintLifecycleState,
-} from '@/services';
+} from './recovery';
+import { persistAndEmitPrintLifecycleState } from './print-lifecycle-state';
 import {
   PendingRefundServiceError,
   upsertSpoolerFailureRefund,

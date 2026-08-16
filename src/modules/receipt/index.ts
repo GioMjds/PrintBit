@@ -1,4 +1,4 @@
-export { registerReceiptModule, type ReceiptModuleDeps } from './receipt.module';
+export { registerReceiptModule } from './receipt.module';
 export { ReceiptController } from './receipt.controller';
 export {
   ReceiptService,

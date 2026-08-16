@@ -1,11 +1,8 @@
 import type { Express } from 'express';
-import type { ModuleContext } from '../module.types';
 import { adminService } from '@/services/admin';
 import type { LogMeta } from '@/services/db';
 import { ReceiptController } from './receipt.controller';
 import { ReceiptService } from './receipt.service';
-
-export interface ReceiptModuleDeps extends ModuleContext {}
 
 type CleanupTrigger = 'startup' | 'interval';
 

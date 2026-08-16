@@ -12,7 +12,7 @@ export interface WirelessSessionModuleDeps extends ModuleContext {
   resolvePublicBaseUrl: (req: Request) => URL;
   convertToPdfPreview: (sourcePath: string) => Promise<string>;
   hopperService?: {
-    dispenseChange: (amount: number) => Promise<any>;
+    dispenseChange: (amount: number) => Promise<unknown>;
   };
 }
 

@@ -44,12 +44,12 @@ const VALID_DPI = new Set([150, 300, 600]);
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_FORMATS = new Set(['pdf', 'jpg', 'png']);
 
-const FORMAT_CONTENT_TYPES: Record<string, string> = {
+const FORMAT_CONTENT_TYPES = {
   pdf: 'application/pdf',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   png: 'image/png',
-};
+} as const satisfies Record<string, string>;
 
 const CHARGED_SCAN_TTL_MS = 30 * 60 * 1000;
 const SCAN_RELEASE_TOKEN_TTL_MS = 45 * 60 * 1000;
@@ -186,7 +186,9 @@ export class ScannerService {
     return null;
   }
 
-  getScanFilePath(filename: string): { filePath: string; filename: string } | null {
+  getScanFilePath(
+    filename: string,
+  ): { filePath: string; filename: string } | null {
     const safeFilename = this.toSafeScanFilename(filename);
     if (!safeFilename) return null;
     const filePath = path.resolve('uploads', 'scans', safeFilename);
@@ -199,9 +201,13 @@ export class ScannerService {
   }
 
   getContentType(ext: string): string {
-    return (
-      FORMAT_CONTENT_TYPES[ext.toLowerCase()] ?? 'application/octet-stream'
-    );
+    const normalized = ext.toLowerCase();
+    if (Object.hasOwn(FORMAT_CONTENT_TYPES, normalized)) {
+      return FORMAT_CONTENT_TYPES[
+        normalized as keyof typeof FORMAT_CONTENT_TYPES
+      ];
+    }
+    return 'application/octet-stream';
   }
 
   private toScanSource(source: ScannerPageSource): 'flatbed' | 'adf' {

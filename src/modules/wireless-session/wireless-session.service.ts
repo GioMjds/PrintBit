@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
-
 import type { Request, RequestHandler } from 'express';
 import type { Server } from 'socket.io';
 import { adminService } from '@/services/admin';
@@ -26,10 +25,8 @@ import { PORT } from '@/config/http.config';
 import { pricingAnalysisCacheStore } from '@/core/database/sqlite-storage';
 import {
   type KioskSessionState,
-  SessionState,
   type SessionMode,
   type PairingRecord,
-  type PairingRequestRecord,
   type ActiveCustomerSession,
   type PairingRequestResult,
   type PairingVerificationResult,
@@ -44,19 +41,19 @@ export interface WirelessSessionServiceDeps {
   resolvePublicBaseUrl: (req: Request) => URL;
   convertToPdfPreview: (sourcePath: string) => Promise<string>;
   hopperService?: {
-    dispenseChange: (amount: number) => Promise<any>;
+    dispenseChange: (amount: number) => Promise<unknown>;
   };
 }
 
 
-const IMAGE_TYPES: Record<string, string> = {
+const IMAGE_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.bmp': 'image/bmp',
   '.gif': 'image/gif',
-};
+} as const satisfies Record<string, string>;
 
 const PDF_CONVERT_EXTENSIONS = new Set(['.doc', '.docx', '.ppt', '.pptx']);
 const POWERPOINT_EXTENSIONS = new Set(['.ppt', '.pptx']);
@@ -792,11 +789,15 @@ export class WirelessSessionService {
         return;
       }
 
-      if (IMAGE_TYPES[extension]) {
-        res.setHeader('Content-Type', IMAGE_TYPES[extension]);
+      const imageContentType = Object.hasOwn(IMAGE_TYPES, extension)
+        ? IMAGE_TYPES[extension as keyof typeof IMAGE_TYPES]
+        : undefined;
+
+      if (imageContentType) {
+        res.setHeader('Content-Type', imageContentType);
         console.log('[preview] serving image file', {
           path: absolutePath,
-          contentType: IMAGE_TYPES[extension],
+          contentType: imageContentType,
           tookMs: Date.now() - startedAt,
         });
         res.sendFile(absolutePath);

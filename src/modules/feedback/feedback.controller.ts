@@ -72,7 +72,11 @@ export class FeedbackController {
 
     // Portal routes (mounted at /feedback)
     this.portalRouter.get('/:token', this.serveFeedbackPortal);
-    this.portalRouter.get('/:token/:asset', feedbackPortalAssetRateLimit, this.serveFeedbackAsset);
+    this.portalRouter.get(
+      '/:token/:asset',
+      feedbackPortalAssetRateLimit,
+      this.serveFeedbackAsset,
+    );
   }
 
   // Public API routes

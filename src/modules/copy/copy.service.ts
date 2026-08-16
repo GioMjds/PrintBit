@@ -44,7 +44,6 @@ import {
   type PrintQuoteResult,
 } from '@/services/print-quote';
 import { monitorSpoolerJob } from '@/services/print-spooler';
-import { PRINT_SPOOLER_MONITOR_WINDOW_MS } from '@/config';
 import {
   buildPrintJobEnqueuePayload,
   getJobProcessor,

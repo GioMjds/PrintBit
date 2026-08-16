@@ -133,7 +133,10 @@ function toSupplyCompositeKey(printerName: string, supplyName: string): string {
   return `${printerName.trim().toLowerCase()}:${supplyName.trim().toLowerCase()}`;
 }
 
-function toInkAlertFingerprint(printerName: string, supplyName: string): string {
+function toInkAlertFingerprint(
+  printerName: string,
+  supplyName: string,
+): string {
   const composite = toSupplyCompositeKey(printerName, supplyName).replace(
     /\s+/g,
     '-',
@@ -254,7 +257,8 @@ export class ConsumablesService {
     const paperFingerprint = 'consumables-forecast:paper';
     const activeRiskFingerprints = new Set<string>();
     const alertsEnabled = db.data!.settings.consumablesForecasting.enabled;
-    const inkLowThresholdPercent = db.data!.settings.inkMonitoring.lowThresholdPercent;
+    const inkLowThresholdPercent =
+      db.data!.settings.inkMonitoring.lowThresholdPercent;
 
     if (
       forecast.paper.status === 'ok' &&
@@ -404,9 +408,13 @@ export class ConsumablesService {
         : 0;
     const usageEventsConsidered = input.usageEvents.length;
     const highConfidenceEvents = input.usageEvents.filter(
-      (event) => event.billingPageDetection === 'high-confidence-page-detection',
+      (event) =>
+        event.billingPageDetection === 'high-confidence-page-detection',
     ).length;
-    const fallbackEvents = Math.max(0, usageEventsConsidered - highConfidenceEvents);
+    const fallbackEvents = Math.max(
+      0,
+      usageEventsConsidered - highConfidenceEvents,
+    );
     const highConfidenceRatio =
       usageEventsConsidered > 0
         ? roundTo(highConfidenceEvents / usageEventsConsidered, 3)
@@ -468,7 +476,8 @@ export class ConsumablesService {
     const results: InkConsumableForecast[] = [];
     for (const { printerName, supplyName } of suppliesByCompositeKey.values()) {
       const printerSnapshots = snapshotsAscending.filter(
-        (snapshot) => normalizePrinterName(snapshot.printerName) === printerName,
+        (snapshot) =>
+          normalizePrinterName(snapshot.printerName) === printerName,
       );
       if (printerSnapshots.length === 0) continue;
       const relevantSnapshots = snapshotsAscending.filter((snapshot) => {

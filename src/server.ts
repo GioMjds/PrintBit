@@ -62,55 +62,69 @@ import {
 } from '@/services/worker-return-pipe';
 import { handleWorkerReturnPrintEvent } from '@/services/worker-print-lifecycle';
 import { getLocalIPv4 } from '@/utils/network';
+import { translateHardwarePrinterError } from '@/utils';
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-type StartupPhase = 'booting' | 'ready' | 'failed';
+type BootingStartupState = {
+  readonly phase: 'booting';
+  readonly startedAt: string;
+  readonly readyAt: null;
+  readonly failedAt: null;
+  readonly message: string | null;
+};
 
-interface StartupReadinessState {
-  phase: StartupPhase;
-  startedAt: string;
-  readyAt: string | null;
-  failedAt: string | null;
-  message: string | null;
-}
+type ReadyStartupState = {
+  readonly phase: 'ready';
+  readonly startedAt: string;
+  readonly readyAt: string;
+  readonly failedAt: null;
+  readonly message: null;
+};
+
+type FailedStartupState = {
+  readonly phase: 'failed';
+  readonly startedAt: string;
+  readonly readyAt: string | null;
+  readonly failedAt: string;
+  readonly message: string;
+};
+
+type StartupReadinessState =
+  | BootingStartupState
+  | ReadyStartupState
+  | FailedStartupState;
 
 const STARTUP_POLL_INTERVAL_MS = 1_500;
 
-const startupReadinessState: StartupReadinessState = {
+let startupReadinessState: StartupReadinessState = {
   phase: 'booting',
   startedAt: new Date().toISOString(),
   readyAt: null,
   failedAt: null,
   message: 'Starting PrintBit services…',
-};
+} as const satisfies StartupReadinessState;
 
 function markStartupReady(): void {
-  startupReadinessState.phase = 'ready';
-  startupReadinessState.readyAt = new Date().toISOString();
-  startupReadinessState.failedAt = null;
-  startupReadinessState.message = null;
+  startupReadinessState = {
+    phase: 'ready',
+    startedAt: startupReadinessState.startedAt,
+    readyAt: new Date().toISOString(),
+    failedAt: null,
+    message: null,
+  };
 }
 
-/**
- * Translates the worker's generic `PrinterError` message into a specific
- * `PrintError` payload that the confirm page can act on. The worker emits a
- * `DetectedErrorState` from WMI (1–11) inside a parenthesised segment of the
- * message, e.g. "(No Paper, code 4)". Without this translation the modal
- * would always render as `PRINTER_HARDWARE_ERROR` (fatal) and never expose
- * the Pause/Resume controls — even when the underlying condition is
- * recoverable (paper-out, paper-jam). Returns a fatal-staff-help payload
- * when the message can't be classified.
- */
-import { translateHardwarePrinterError } from '@/utils';
-
-
 function markStartupFailed(message: string): void {
-  startupReadinessState.phase = 'failed';
-  startupReadinessState.failedAt = new Date().toISOString();
-  startupReadinessState.message = message;
+  startupReadinessState = {
+    phase: 'failed',
+    startedAt: startupReadinessState.startedAt,
+    readyAt: startupReadinessState.readyAt,
+    failedAt: new Date().toISOString(),
+    message,
+  };
 }
 
 function getStartupReadinessSnapshot() {
@@ -271,17 +285,6 @@ async function start() {
           });
         }
 
-        // Hardware errors are distinct from offline/online transitions: the
-        // printer is reachable but WMI reports a non-zero DetectedErrorState
-        // (paper jam, ink empty, door open, etc.).  Emit a dedicated
-        // printerMalfunction so the UI can surface the right message.
-        //
-        // We translate the worker's generic `PrinterError` message into a
-        // more specific code/severity so the confirm page can offer
-        // Pause/Resume for paper-related conditions (the kiosk's primary
-        // recovery action) instead of always showing a fatal-staff-help
-        // modal. The worker formats the message as:
-        //   "Printer hardware error detected (<Description>, code <N>). ..."
         if (evt.type === 'PrinterError' || evt.type === 'JobPaused') {
           const rawMsg = evt.message ?? evt.errorMessage ?? null;
           const translated = translateHardwarePrinterError(rawMsg);
@@ -315,10 +318,6 @@ async function start() {
       },
     });
 
-    // Block until the named pipe is listening.  If the bind fails (e.g. the
-    // pipe is already held by a stale process) this throws and startup is
-    // marked failed — preventing the kiosk from running without a working IPC
-    // channel to the C# hardware service.
     await workerReturnPipe.ready;
 
     const startupMarker = await markRecoveryStartup('server_start');
@@ -453,9 +452,7 @@ async function start() {
     await detectDefaultPrinter();
     await assertPrintDispatcherReady();
     await warmPrintDispatcherProfile();
-    // Prime the persistent PowerShell runspace used by pause/resume/status
-    // calls so the first user-driven operation is fast (sub-50 ms instead of
-    // ~450 ms). Failure is non-fatal — subsequent calls will retry the load.
+
     void warmPrinterEdgeRunspace().catch((error: unknown) => {
       console.error(
         '[SERVER] Failed to warm printer-edge PowerShell runspace.',
