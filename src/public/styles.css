@@ -78,6 +78,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .brand-icon {
@@ -1108,3 +1110,534 @@ body {
 .admin-modal__btn--submit:hover {
   background: #7c82d6;
 }
+
+/* ── Kiosk State Containers ────────────────────────────────── */
+.idle-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 0 24px;
+  min-height: 0;
+  animation: kioskFadeIn 220ms ease;
+}
+
+.active-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 0 20px;
+  min-height: 0;
+  animation: kioskFadeIn 220ms ease;
+}
+
+@keyframes kioskFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── IDLE Pairing Layout ──────────────────────────────────── */
+.idle-pairing-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: clamp(20px, 3vw, 44px);
+  width: 100%;
+  max-width: 1060px;
+  align-items: stretch;
+  margin: auto;
+}
+
+.pairing-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: clamp(24px, 3vw, 36px) clamp(20px, 2.5vw, 32px);
+  background: linear-gradient(
+    145deg,
+    rgba(105, 111, 199, 0.12) 0%,
+    rgba(14, 13, 31, 0.6) 100%
+  );
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  border-radius: 28px;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.pairing-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(105, 111, 199, 0.25);
+  border: 1px solid rgba(167, 170, 225, 0.35);
+  color: var(--lavender);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.pairing-card__title {
+  font-size: clamp(20px, 2.2vw, 28px);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--white);
+  margin: 0 0 8px;
+}
+
+.pairing-card__desc {
+  font-size: clamp(13px, 1.2vw, 15px);
+  color: var(--ink-muted);
+  line-height: 1.5;
+  margin: 0 0 18px;
+  max-width: 360px;
+}
+
+.pairing-card__desc strong {
+  color: var(--white);
+}
+
+/* ── WiFi Card ────────────────────────────────────────────── */
+.wifi-card {
+  justify-content: center;
+}
+
+.wifi-qr-wrap {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+  margin-bottom: 18px;
+}
+
+.wifi-qr-wrap canvas {
+  display: block;
+  border-radius: 8px;
+}
+
+.wifi-details {
+  width: 100%;
+  max-width: 280px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.18);
+  border-radius: 16px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.wifi-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.wifi-detail-label {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.wifi-detail-val {
+  color: var(--white);
+  font-weight: 700;
+  font-family: 'Plus Jakarta Sans', monospace;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* ── PIN Card & Touch Numpad ──────────────────────────────── */
+.pin-card {
+  justify-content: space-between;
+}
+
+.pin-input-container {
+  display: flex;
+  gap: clamp(8px, 1.2vw, 14px);
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.pin-slot {
+  width: clamp(44px, 4.4vw, 56px);
+  height: clamp(52px, 5.2vw, 66px);
+  border-radius: 16px;
+  border: 2px solid rgba(167, 170, 225, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--white);
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pin-slot.active {
+  border-color: var(--indigo);
+  background: rgba(105, 111, 199, 0.18);
+  box-shadow: 0 0 16px rgba(105, 111, 199, 0.4);
+  transform: scale(1.04);
+}
+
+.pin-slot.filled {
+  border-color: rgba(167, 170, 225, 0.6);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--white);
+}
+
+.pin-error-text {
+  min-height: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f87171;
+  margin: 4px 0 12px;
+  text-align: center;
+}
+
+@keyframes pin-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  15%, 45%, 75% {
+    transform: translateX(-10px);
+  }
+  30%, 60%, 90% {
+    transform: translateX(10px);
+  }
+}
+
+.shake-animation {
+  animation: pin-shake 400ms ease-in-out;
+}
+
+.touch-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(8px, 1vw, 12px);
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.numpad-btn {
+  height: clamp(52px, 5.2vw, 64px);
+  min-width: 52px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--white);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: clamp(20px, 2vw, 26px);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 100ms ease,
+    box-shadow 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.numpad-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(167, 170, 225, 0.45);
+}
+
+.numpad-btn:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.numpad-btn--action {
+  font-weight: 800;
+}
+
+.numpad-btn--clear {
+  background: rgba(242, 174, 187, 0.12);
+  border-color: rgba(242, 174, 187, 0.32);
+  color: var(--pink);
+  font-size: 22px;
+}
+
+.numpad-btn--clear:hover {
+  background: rgba(242, 174, 187, 0.24);
+  border-color: rgba(242, 174, 187, 0.6);
+}
+
+.numpad-btn--clear:active {
+  background: rgba(242, 174, 187, 0.35);
+}
+
+.numpad-btn--enter {
+  background: var(--indigo);
+  border-color: rgba(167, 170, 225, 0.55);
+  color: var(--white);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.numpad-btn--enter:hover {
+  background: #7c82d6;
+  border-color: rgba(167, 170, 225, 0.8);
+}
+
+.numpad-btn--enter:active {
+  background: #5d63b8;
+}
+
+.numpad-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Active Session UI ────────────────────────────────────── */
+.active-session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto 8px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(167, 170, 225, 0.2);
+  border-radius: 22px;
+  backdrop-filter: blur(10px);
+}
+
+.active-session-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+.active-pulse-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.8);
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+
+.countdown-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: 999px;
+  background: rgba(105, 111, 199, 0.2);
+  border: 1.5px solid rgba(167, 170, 225, 0.35);
+  color: var(--lavender);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease;
+}
+
+.countdown-pill strong {
+  color: var(--white);
+  font-size: 17px;
+}
+
+.countdown-pill.is-warning {
+  background: rgba(248, 113, 113, 0.2);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fca5a5;
+}
+
+.countdown-pill.is-warning strong {
+  color: #f87171;
+}
+
+.countdown-icon {
+  flex-shrink: 0;
+}
+
+.exit-session-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(242, 174, 187, 0.35);
+  background: rgba(242, 174, 187, 0.12);
+  color: var(--peach);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.exit-session-btn:hover {
+  background: rgba(242, 174, 187, 0.24);
+  border-color: rgba(242, 174, 187, 0.6);
+  transform: translateY(-1px);
+}
+
+.exit-session-btn:active {
+  transform: scale(0.96);
+}
+
+/* ── Session Balance Footer ───────────────────────────────── */
+.session-balance-footer {
+  width: 100%;
+  max-width: 1100px;
+  margin: 8px auto 0;
+}
+
+.balance-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: linear-gradient(
+    135deg,
+    rgba(105, 111, 199, 0.18) 0%,
+    rgba(62, 207, 178, 0.08) 100%
+  );
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.balance-card__label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--lavender);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.balance-card__amount {
+  font-size: 26px;
+  font-weight: 800;
+  color: #4ade80;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-card__sub {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+/* ── Change Notice Toast ──────────────────────────────────── */
+.change-notice-toast {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 32px;
+  background: #1a1829;
+  border: 2px solid #4ade80;
+  border-radius: 22px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.65),
+    0 0 20px rgba(74, 222, 128, 0.35);
+  color: var(--white);
+  animation: toastSlideDown 300ms ease-out;
+}
+
+@keyframes toastSlideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.change-notice-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.change-notice-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #4ade80;
+  margin: 0 0 2px;
+  letter-spacing: -0.3px;
+}
+
+.change-notice-desc {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .idle-pairing-layout {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+    gap: 20px;
+  }
+
+  .active-session-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+    justify-content: center;
+  }
+
+  .balance-card {
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+    padding: 12px 16px;
+  }
+}
+

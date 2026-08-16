@@ -7,21 +7,10 @@ import {
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
+  emit?: (event: string, ...args: unknown[]) => void;
 };
 
 void initKioskLocalization();
-
-const ioFactory = (
-  window as unknown as { io?: (...args: unknown[]) => SocketLike }
-).io;
-
-if (typeof ioFactory === 'function') {
-  const socket = ioFactory();
-  socket.on('balance', (amount: unknown) => {
-    const el = document.getElementById('balance');
-    if (el && typeof amount === 'number') el.textContent = String(amount);
-  });
-}
 
 function navigateTo(path: string) {
   window.location.href = path;
@@ -29,10 +18,46 @@ function navigateTo(path: string) {
 
 const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
 
+// ── State Management ─────────────────────────────────────────────────────────
+
+type KioskState = 'IDLE' | 'ACTIVE';
+let currentKioskState: KioskState = 'IDLE';
+let enteredPin = '';
+const MAX_PIN_LEN = 6;
+let isVerifyingPin = false;
+let currentBalance = 0;
+let sessionTimerHandle: number | null = null;
+let sessionRemainingSeconds = 120;
+const INACTIVITY_TTL_SECONDS = 120;
+let changeToastTimer: number | null = null;
+
+// ── DOM References ───────────────────────────────────────────────────────────
+
+const idleContainer = document.getElementById('idleContainer');
+const activeContainer = document.getElementById('activeContainer');
+const pinInputContainer = document.getElementById('pinInputContainer');
+const pinSlots = document.querySelectorAll<HTMLElement>(
+  '#pinInputContainer .pin-slot',
+);
+const pinErrorText = document.getElementById('pinErrorText');
+const touchNumpad = document.getElementById('touchNumpad');
+const exitSessionBtn = document.getElementById('exitSessionBtn');
+const countdownPill = document.getElementById('countdownPill');
+const sessionTimerText = document.getElementById('sessionTimerText');
+const kioskStatusLabel = document.getElementById('kioskStatusLabel');
+const wifiQrCanvas = document.getElementById(
+  'wifiQrCanvas',
+) as HTMLCanvasElement | null;
+const wifiSsidText = document.getElementById('wifiSsidText');
+const wifiPassText = document.getElementById('wifiPassText');
+const wifiPassRow = document.getElementById('wifiPassRow');
+const changeNoticeToast = document.getElementById('changeNoticeToast');
+const changeNoticeDesc = document.getElementById('changeNoticeDesc');
+const balanceEl = document.getElementById('balance');
+
 const openPrint = document.getElementById('openPrintBtn');
 const openCopy = document.getElementById('openCopyBtn');
 const openScan = document.getElementById('openScanBtn');
-const powerOff = document.getElementById('powerOffBtn');
 
 openPrint?.addEventListener('click', () => {
   sessionStorage.setItem(PRINT_ONBOARDING_TRIGGER_KEY, '1');
@@ -41,10 +66,417 @@ openPrint?.addEventListener('click', () => {
 openCopy?.addEventListener('click', () => navigateTo('/copy'));
 openScan?.addEventListener('click', () => navigateTo('/scan'));
 
-powerOff?.addEventListener('click', () => {
-  const ok = confirm('Power off device?');
-  if (!ok) return;
-  alert('Powering off...');
+// ── PIN Display & Feedback ───────────────────────────────────────────────────
+
+function updatePinSlots(): void {
+  pinSlots.forEach((slot, i) => {
+    if (i < enteredPin.length) {
+      slot.classList.add('filled');
+      slot.classList.remove('active');
+      slot.textContent = enteredPin[i];
+    } else if (i === enteredPin.length) {
+      slot.classList.remove('filled');
+      slot.classList.add('active');
+      slot.textContent = '';
+    } else {
+      slot.classList.remove('filled');
+      slot.classList.remove('active');
+      slot.textContent = '';
+    }
+  });
+
+  if (enteredPin.length > 0 && pinErrorText && pinErrorText.textContent) {
+    pinErrorText.textContent = '';
+  }
+}
+
+function triggerPinShake(): void {
+  if (!pinInputContainer) return;
+  pinInputContainer.classList.remove('shake-animation');
+  // Force layout reflow to restart CSS animation
+  void pinInputContainer.offsetWidth;
+  pinInputContainer.classList.add('shake-animation');
+  window.setTimeout(() => {
+    pinInputContainer.classList.remove('shake-animation');
+  }, 500);
+}
+
+// ── PIN Verification & Submission ───────────────────────────────────────────
+
+interface PairingVerifyResponse {
+  success: boolean;
+  sessionId?: string;
+  sessionToken?: string;
+  error?: string;
+}
+
+async function submitPin(pin: string): Promise<void> {
+  if (isVerifyingPin || pin.length !== MAX_PIN_LEN) return;
+  isVerifyingPin = true;
+
+  if (pinErrorText) {
+    pinErrorText.textContent = 'Verifying PIN\u2026';
+    pinErrorText.style.color = 'var(--lavender)';
+  }
+
+  try {
+    const res = await fetch('/api/pairing/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+
+    const data = (await res.json()) as PairingVerifyResponse;
+
+    if (res.ok && data.success && data.sessionId && data.sessionToken) {
+      sessionStorage.setItem('printbit.sessionId', data.sessionId);
+      sessionStorage.setItem('printbit.sessionToken', data.sessionToken);
+      enteredPin = '';
+      updatePinSlots();
+      if (pinErrorText) pinErrorText.textContent = '';
+      setKioskState('ACTIVE');
+    } else {
+      triggerPinShake();
+      if (pinErrorText) {
+        pinErrorText.textContent =
+          data.error === 'INVALID_PIN'
+            ? 'Invalid or expired PIN. Please try again.'
+            : 'Verification failed. Please try again.';
+        pinErrorText.style.color = '#f87171';
+      }
+      enteredPin = '';
+      window.setTimeout(() => {
+        updatePinSlots();
+      }, 200);
+    }
+  } catch {
+    triggerPinShake();
+    if (pinErrorText) {
+      pinErrorText.textContent = 'Connection error. Please try again.';
+      pinErrorText.style.color = '#f87171';
+    }
+    enteredPin = '';
+    updatePinSlots();
+  } finally {
+    isVerifyingPin = false;
+  }
+}
+
+// ── Numpad Keypad Handling ───────────────────────────────────────────────────
+
+function handleNumpadKey(key: string): void {
+  if (isVerifyingPin) return;
+
+  if (key >= '0' && key <= '9') {
+    if (enteredPin.length < MAX_PIN_LEN) {
+      enteredPin += key;
+      updatePinSlots();
+      if (enteredPin.length === MAX_PIN_LEN) {
+        void submitPin(enteredPin);
+      }
+    }
+    return;
+  }
+
+  if (key === 'clear' || key === 'backspace') {
+    if (enteredPin.length > 0) {
+      enteredPin = enteredPin.slice(0, -1);
+      updatePinSlots();
+    }
+    return;
+  }
+
+  if (key === 'enter') {
+    if (enteredPin.length === MAX_PIN_LEN) {
+      void submitPin(enteredPin);
+    } else {
+      triggerPinShake();
+      if (pinErrorText) {
+        pinErrorText.textContent = 'Please enter all 6 digits.';
+        pinErrorText.style.color = '#f87171';
+      }
+    }
+  }
+}
+
+touchNumpad?.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.numpad-btn');
+  if (!btn || btn.disabled) return;
+  const key = btn.dataset.key;
+  if (key) {
+    handleNumpadKey(key);
+  }
+});
+
+// ── Kiosk State Switching ────────────────────────────────────────────────────
+
+function setKioskState(state: KioskState): void {
+  currentKioskState = state;
+
+  if (idleContainer) {
+    idleContainer.style.display = state === 'IDLE' ? 'flex' : 'none';
+  }
+  if (activeContainer) {
+    activeContainer.style.display = state === 'ACTIVE' ? 'flex' : 'none';
+  }
+  if (kioskStatusLabel) {
+    kioskStatusLabel.textContent = state === 'ACTIVE' ? 'Active' : 'Ready';
+  }
+
+  if (state === 'ACTIVE') {
+    startSessionCountdown();
+    updateBalanceDisplay(currentBalance);
+  } else {
+    stopSessionCountdown();
+    enteredPin = '';
+    updatePinSlots();
+    if (pinErrorText) pinErrorText.textContent = '';
+    sessionStorage.removeItem('printbit.sessionId');
+    sessionStorage.removeItem('printbit.sessionToken');
+  }
+}
+
+// ── Countdown Timer & Activity Reset ─────────────────────────────────────────
+
+function renderSessionCountdown(): void {
+  if (!sessionTimerText) return;
+  const mins = Math.floor(sessionRemainingSeconds / 60);
+  const secs = sessionRemainingSeconds % 60;
+  sessionTimerText.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  if (countdownPill) {
+    countdownPill.classList.toggle('is-warning', sessionRemainingSeconds <= 30);
+  }
+}
+
+function resetActivityTimer(): void {
+  sessionRemainingSeconds = INACTIVITY_TTL_SECONDS;
+  renderSessionCountdown();
+}
+
+function startSessionCountdown(): void {
+  sessionRemainingSeconds = INACTIVITY_TTL_SECONDS;
+  renderSessionCountdown();
+
+  if (sessionTimerHandle !== null) {
+    clearInterval(sessionTimerHandle);
+  }
+
+  sessionTimerHandle = window.setInterval(() => {
+    sessionRemainingSeconds -= 1;
+    if (sessionRemainingSeconds <= 0) {
+      stopSessionCountdown();
+      void endActiveSession('timeout');
+      return;
+    }
+    renderSessionCountdown();
+  }, 1000);
+}
+
+function stopSessionCountdown(): void {
+  if (sessionTimerHandle !== null) {
+    clearInterval(sessionTimerHandle);
+    sessionTimerHandle = null;
+  }
+}
+
+activeContainer?.addEventListener('pointerdown', resetActivityTimer);
+
+// ── Active Session Termination ───────────────────────────────────────────────
+
+function showChangeDispensedToast(amount: number): void {
+  if (!changeNoticeToast) return;
+  if (changeNoticeDesc) {
+    changeNoticeDesc.textContent = `Dispensed ₱${amount.toFixed(2)}. Please collect your coins below.`;
+  }
+  changeNoticeToast.style.display = 'flex';
+  if (changeToastTimer !== null) clearTimeout(changeToastTimer);
+  changeToastTimer = window.setTimeout(() => {
+    changeNoticeToast.style.display = 'none';
+    changeToastTimer = null;
+  }, 6000);
+}
+
+async function endActiveSession(reason = 'user_ended'): Promise<void> {
+  try {
+    const res = await fetch('/api/session/end', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    const data = (await res.json()) as {
+      success: boolean;
+      dispensedChange?: number;
+    };
+    setKioskState('IDLE');
+    if (typeof data.dispensedChange === 'number' && data.dispensedChange > 0) {
+      showChangeDispensedToast(data.dispensedChange);
+    }
+  } catch {
+    setKioskState('IDLE');
+  }
+}
+
+exitSessionBtn?.addEventListener('click', () => {
+  void endActiveSession('user_ended');
+});
+
+// ── Balance Display ──────────────────────────────────────────────────────────
+
+function updateBalanceDisplay(amount: number): void {
+  currentBalance = amount;
+  if (balanceEl) {
+    balanceEl.textContent = String(amount);
+  }
+}
+
+// ── WiFi QR Code Generation ──────────────────────────────────────────────────
+
+interface HotspotConfigResponse {
+  ssid?: string;
+  password?: string;
+  authType?: string;
+}
+
+function escapeWifiValue(value: string): string {
+  return value.replace(/([\\;,:"])/g, '\\$1');
+}
+
+async function loadAndRenderWifiQr(): Promise<void> {
+  let ssid = 'PrintBit';
+  let password = 'printbit123';
+  let authType = 'WPA';
+
+  try {
+    const res = await fetch('/api/config/hotspot');
+    if (res.ok) {
+      const cfg = (await res.json()) as HotspotConfigResponse;
+      if (cfg.ssid && cfg.ssid.trim()) ssid = cfg.ssid.trim();
+      if (cfg.password !== undefined) password = cfg.password;
+      if (cfg.authType) authType = cfg.authType.trim().toUpperCase();
+    }
+  } catch {
+    // Default fallback
+  }
+
+  if (wifiSsidText) wifiSsidText.textContent = ssid;
+  if (wifiPassText) wifiPassText.textContent = password || 'None (Open Network)';
+  if (wifiPassRow && wifiPassText && (!password || authType === 'NOPASS' || authType === 'OPEN')) {
+    wifiPassText.textContent = 'None';
+  }
+
+  if (wifiQrCanvas) {
+    const safeSsid = escapeWifiValue(ssid);
+    const safePass = escapeWifiValue(password);
+    const isOpen = !password || authType === 'NOPASS' || authType === 'OPEN';
+    const wifiPayload = isOpen
+      ? `WIFI:T:nopass;S:${safeSsid};;`
+      : `WIFI:T:WPA;S:${safeSsid};P:${safePass};;`;
+
+    void QRCode.toCanvas(wifiQrCanvas, wifiPayload, {
+      width: 220,
+      margin: 1,
+      color: { dark: '#0e0d1f', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
+  }
+}
+
+void loadAndRenderWifiQr();
+updatePinSlots();
+
+// ── Socket.IO Real-Time Sync ─────────────────────────────────────────────────
+
+const ioFactory = (
+  window as unknown as { io?: (...args: unknown[]) => SocketLike }
+).io;
+
+if (typeof ioFactory === 'function') {
+  const socket = ioFactory();
+
+  socket.on('kiosk:state_changed', (payload: unknown) => {
+    const data = payload as {
+      state?: string;
+      sessionId?: string;
+      sessionToken?: string;
+    };
+    if (data?.state === 'ACTIVE') {
+      if (data.sessionId && data.sessionToken) {
+        sessionStorage.setItem('printbit.sessionId', data.sessionId);
+        sessionStorage.setItem('printbit.sessionToken', data.sessionToken);
+      }
+      setKioskState('ACTIVE');
+    } else if (data?.state === 'IDLE') {
+      setKioskState('IDLE');
+    }
+  });
+
+  socket.on('session:state_changed', (payload: unknown) => {
+    const data = payload as {
+      state?: string;
+      sessionId?: string;
+      sessionToken?: string;
+    };
+    if (data?.state === 'ACTIVE') {
+      if (data.sessionId && data.sessionToken) {
+        sessionStorage.setItem('printbit.sessionId', data.sessionId);
+        sessionStorage.setItem('printbit.sessionToken', data.sessionToken);
+      }
+      setKioskState('ACTIVE');
+    } else if (data?.state === 'IDLE') {
+      setKioskState('IDLE');
+    }
+  });
+
+  socket.on('balance', (amount: unknown) => {
+    if (typeof amount === 'number') {
+      updateBalanceDisplay(amount);
+    }
+  });
+
+  socket.on('session:balance_updated', (payload: unknown) => {
+    const data = payload as { balance?: number };
+    if (typeof data?.balance === 'number') {
+      updateBalanceDisplay(data.balance);
+    }
+  });
+
+  socket.on('session:ended', (payload: unknown) => {
+    const data = payload as { dispensedChange?: number; reason?: string };
+    setKioskState('IDLE');
+    updateBalanceDisplay(0);
+    if (typeof data?.dispensedChange === 'number' && data.dispensedChange > 0) {
+      showChangeDispensedToast(data.dispensedChange);
+    }
+  });
+}
+
+// ── Physical Keyboard Input Support ──────────────────────────────────────────
+
+document.addEventListener('keydown', (event) => {
+  const isOverlayOpen =
+    (guideOverlay && isGuideOverlayVisible()) ||
+    (feedbackOverlay && feedbackOverlay.classList.contains('is-visible')) ||
+    (reportOverlay && reportOverlay.classList.contains('is-visible')) ||
+    (adminOverlay && adminOverlay.classList.contains('is-visible'));
+
+  if (isOverlayOpen) return;
+
+  if (currentKioskState === 'IDLE') {
+    if (event.key >= '0' && event.key <= '9') {
+      event.preventDefault();
+      handleNumpadKey(event.key);
+    } else if (event.key === 'Backspace') {
+      event.preventDefault();
+      handleNumpadKey('backspace');
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      handleNumpadKey('enter');
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      enteredPin = '';
+      updatePinSlots();
+    }
+  }
 });
 
 // ── Homepage clock ─────────────────────────────────────────────────────────────
