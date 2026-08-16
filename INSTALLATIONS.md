@@ -179,7 +179,7 @@ Use this when applying a new PrintBit build on the Windows kiosk/tablet:
 - **Scanner endpoints fail:**
   - Confirm scanner drivers and device permissions.
 - **Hotspot features unavailable:**
-  - Verify MyPublicWiFi installation and local permissions.
+  - Verify ESP32 bridge connection, IP configuration, and network settings.
 
 ## 8) Related docs
 

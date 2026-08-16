@@ -48,7 +48,7 @@ type DeleteDocumentResponse = {
 };
 
 type HotspotConfig = {
-  provider?: 'mypublicwifi' | 'esp32';
+  provider?: 'esp32';
   ssid?: string;
   password?: string;
   authType?: string;

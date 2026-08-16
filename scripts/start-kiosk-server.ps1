@@ -139,7 +139,7 @@ if ([string]::IsNullOrWhiteSpace($env:PRINTBIT_SKIP_EDGE_LAUNCH)) {
 function Get-NetworkProvider {
     $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
     if ([string]::IsNullOrWhiteSpace($raw)) {
-        return "mypublicwifi"
+        return "esp32"
     }
     return $raw.Trim().ToLowerInvariant()
 }

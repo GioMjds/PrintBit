@@ -1381,7 +1381,6 @@ function detectHotspotAddress(): string | null {
       if (iface.family !== 'IPv4' || iface.internal) continue;
 
       const address = iface.address;
-      if (address.startsWith('192.168.5.')) return address;
       if (address.startsWith('192.168.137.')) return address;
       if (!privateFallback && isPrivateIpv4(address)) {
         privateFallback = address;

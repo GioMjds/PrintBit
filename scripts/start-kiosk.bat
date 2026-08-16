@@ -111,7 +111,6 @@ if /I "%NETWORK_PROVIDER%"=="esp32" (
     set "LOCAL_IP=%INITIAL_IP%"
     if not "%NEW_IP%"=="" (
         echo %NEW_IP% | findstr /R "^192\.168\.4\." >nul && set "LOCAL_IP=%NEW_IP%"
-        echo %NEW_IP% | findstr /R "^192\.168\.5\." >nul && set "LOCAL_IP=%NEW_IP%"
         echo %NEW_IP% | findstr /R "^192\.168\.137\." >nul && set "LOCAL_IP=%NEW_IP%"
         if "%LOCAL_IP%"=="" set "LOCAL_IP=%NEW_IP%"
     )
@@ -154,10 +153,6 @@ goto :eof
 :detect_ip
 set "LOCAL_IP="
 for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.4\."') do (
-    for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
-    goto :detect_done
-)
-for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /R "IPv4.*192\.168\.5\."') do (
     for /f "tokens=1 delims= (" %%B in ("%%A") do set "LOCAL_IP=%%B"
     goto :detect_done
 )

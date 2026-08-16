@@ -150,7 +150,7 @@ $NodeExecutablePath = Resolve-NodeExecutablePath
 function Get-NetworkProvider {
     $raw = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
     if ([string]::IsNullOrWhiteSpace($raw)) {
-        return "mypublicwifi"
+        return "esp32"
     }
     return $raw.Trim().ToLowerInvariant()
 }
@@ -215,7 +215,6 @@ function Get-KioskLocalIp {
     $preferred = $ipCandidates |
         Where-Object {
             $_.IPAddress -like "192.168.4.*" -or
-            $_.IPAddress -like "192.168.5.*" -or
             $_.IPAddress -like "192.168.137.*"
         } |
         Select-Object -First 1

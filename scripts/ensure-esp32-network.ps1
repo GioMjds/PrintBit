@@ -198,7 +198,7 @@ function Test-StaticIpProfile {
     return ($null -ne $routeMatch)
 }
 
-$networkProvider = (Get-EnvString -Name "PRINTBIT_NETWORK_PROVIDER" -Default "mypublicwifi").ToLowerInvariant()
+$networkProvider = (Get-EnvString -Name "PRINTBIT_NETWORK_PROVIDER" -Default "esp32").ToLowerInvariant()
 if ($networkProvider -ne "esp32") {
     Write-NetworkLog "Skipping ESP32 static-IP enforcement because PRINTBIT_NETWORK_PROVIDER='$networkProvider'."
     return

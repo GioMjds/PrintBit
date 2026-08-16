@@ -164,7 +164,7 @@ $TaskDescription = if ($kioskUserNormalized) {
 } elseif ($RunAsSystem) {
     "Starts PrintBit kiosk launcher at logon using SYSTEM principal."
 } else {
-    "Starts PrintBit server with MyPublicWiFi hotspot on login."
+    "Starts PrintBit kiosk launcher at logon."
 }
 
 Register-ScheduledTask `

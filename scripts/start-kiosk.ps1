@@ -39,7 +39,7 @@ $kioskLockdown = if ($env:PRINTBIT_KIOSK_LOCKDOWN) { $env:PRINTBIT_KIOSK_LOCKDOW
 $usbExportEnabled = if ($env:PRINTBIT_USB_EXPORT_ENABLED) { $env:PRINTBIT_USB_EXPORT_ENABLED } else { 'false' }
 $networkProvider = [Environment]::GetEnvironmentVariable("PRINTBIT_NETWORK_PROVIDER")
 if ([string]::IsNullOrWhiteSpace($networkProvider)) {
-    $networkProvider = "mypublicwifi"
+    $networkProvider = "esp32"
 }
 $networkProvider = $networkProvider.Trim().ToLowerInvariant()
 $esp32KioskIp = [Environment]::GetEnvironmentVariable("PRINTBIT_ESP32_KIOSK_IP")
@@ -210,13 +210,12 @@ if ($networkProvider -eq "esp32") {
     $localIP = $esp32KioskIp
     Write-Host "[PrintBit] ESP32 mode detected. Using kiosk IP: $localIP" -ForegroundColor Gray
 } else {
-    # Prefer hotspot-style ranges (e.g. 192.168.4.x / 192.168.5.x / 192.168.137.x) so the
+    # Prefer hotspot-style ranges (e.g. 192.168.4.x / 192.168.137.x) so the
     # kiosk URL matches what clients on the Wi‑Fi hotspot can actually reach.
     $ipCandidates = Get-NetIPAddress -AddressFamily IPv4 |
         Where-Object { $_.IPAddress -notmatch "^127\." -and $_.PrefixOrigin -ne "WellKnown" }
     $preferred = $ipCandidates |
         Where-Object {
-            $_.IPAddress -like "192.168.5.*" -or
             $_.IPAddress -like "192.168.137.*" -or
             $_.IPAddress -like "192.168.4.*"
         } |

@@ -147,7 +147,7 @@ printbit.sqlite             # Runtime persisted machine state (SQLite)
 - Optional but expected in production:
   - Coin acceptor serial device
   - Scanner device
-  - MyPublicWiFi installation
+  - ESP32 network bridge
 
 ### Print dispatcher configuration
 
@@ -173,19 +173,17 @@ printbit.sqlite             # Runtime persisted machine state (SQLite)
 - Supported upload formats: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, JPG, PNG
 - Session continuity: upload page refreshes lease periodically and also on app resume (visibility/focus events)
 
-### Network provider modes (migration to ESP32)
+### Network provider (ESP32)
 
-- `PRINTBIT_NETWORK_PROVIDER=mypublicwifi` (default)
-  - Existing behavior using MyPublicWiFi process management on kiosk Windows host.
-- `PRINTBIT_NETWORK_PROVIDER=esp32`
+- `PRINTBIT_NETWORK_PROVIDER=esp32` (default)
   - ESP32 provides AP + captive portal onboarding.
   - PrintBit still serves session/upload endpoints and `/portal` bridge.
-  - `POST /api/hotspot/start` becomes no-op orchestration (no MyPublicWiFi launch).
+  - `POST /api/hotspot/start` registers the kiosk with the ESP32 bridge.
 
 Related env knobs:
 
-- `PRINTBIT_HOTSPOT_SSID` (default `PrintBit` in `esp32` mode, else `PrintBit-Kiosk`)
-- `PRINTBIT_HOTSPOT_PASSWORD` (default empty in `esp32` mode, else `printbit123`)
+- `PRINTBIT_HOTSPOT_SSID` (default `PrintBit`)
+- `PRINTBIT_HOTSPOT_PASSWORD` (default empty)
 - `PRINTBIT_HOTSPOT_AUTH_TYPE` (derived from password by default: `nopass` when empty, `WPA` otherwise)
 - `PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH` (default `/portal`)
 - `PRINTBIT_ESP32_AP_BASE_URL` (default `http://192.168.4.1`) for kiosk registration endpoint

@@ -28,7 +28,7 @@
 2. Printer is installed and has a default printer selected.
 3. Serial coin hardware is connected (if coin mode is used).
 4. Scanner is connected (for copy/scan features).
-5. MyPublicWiFi is installed (if hotspot/captive flow is enabled).
+5. ESP32 bridge is connected and configured (if hotspot/captive flow is enabled).
 6. NAPS2 is installed (`C:\Program Files\NAPS2\NAPS2.Console.exe`) with Epson scanner drivers.
 7. Windows Time (`W32Time`) is running and synced to NTP (`w32tm /query /status`).
 

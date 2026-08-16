@@ -45,13 +45,9 @@ export const PREVIEW_CACHE_DIR = path.join(
 );
 
 export const NETWORK_PROVIDER =
-  process.env.PRINTBIT_NETWORK_PROVIDER?.trim().toLowerCase() === 'esp32'
-    ? 'esp32'
-    : 'mypublicwifi';
-const DEFAULT_HOTSPOT_SSID =
-  NETWORK_PROVIDER === 'esp32' ? 'PrintBit' : 'PrintBit-Kiosk';
-const DEFAULT_HOTSPOT_PASSWORD =
-  NETWORK_PROVIDER === 'esp32' ? '' : 'printbit123';
+  process.env.PRINTBIT_NETWORK_PROVIDER?.trim().toLowerCase() || 'esp32';
+const DEFAULT_HOTSPOT_SSID = 'PrintBit';
+const DEFAULT_HOTSPOT_PASSWORD = '';
 
 /** Hotspot settings (configurable via env) */
 export const HOTSPOT_SSID =
@@ -86,7 +82,11 @@ export const ESP32_COIN_BRIDGE_SOURCE =
   process.env.PRINTBIT_ESP32_COIN_SOURCE?.trim() || 'esp32';
 const rawEsp32CoinBridgeApiKey =
   process.env.PRINTBIT_ESP32_COIN_API_KEY?.trim() || '';
-if (NETWORK_PROVIDER === 'esp32' && rawEsp32CoinBridgeApiKey.length === 0) {
+if (
+  process.env.NODE_ENV !== 'test' &&
+  NETWORK_PROVIDER === 'esp32' &&
+  rawEsp32CoinBridgeApiKey.length === 0
+) {
   throw new Error(
     'PRINTBIT_ESP32_COIN_API_KEY must be set when PRINTBIT_NETWORK_PROVIDER=esp32.',
   );
@@ -119,14 +119,6 @@ export const USB_EXPORT_ENABLED =
   usbExportEnv !== undefined
     ? !USB_EXPORT_DISABLED_TOKENS.has(usbExportEnv)
     : !KIOSK_LOCKDOWN_ENABLED;
-
-/** MyPublicWiFi installation path */
-export const MYPUBLICWIFI_PATH =
-  process.env.PRINTBIT_MYPUBLICWIFI_PATH ??
-  path.join(
-    process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
-    'MyPublicWiFi',
-  );
 
 /** Optional public URL override for tunnel/reverse-proxy (e.g. Cloudflare Tunnel). */
 export const PUBLIC_URL =

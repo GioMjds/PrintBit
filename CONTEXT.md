@@ -59,7 +59,7 @@ printbit/
 │   │   ├── wireless-session/       # Phone upload session lifecycle (single-device ownership)
 │   │   ├── upload-portal/          # /upload/:token page rendering + assets
 │   │   ├── receipt/                # E-Receipt token mint/verify, customer + admin reads
-│   │   ├── hotspot/                # MyPublicWiFi / ESP32 network provider
+│   │   ├── hotspot/                # ESP32 network provider and registration
 │   │   ├── watchdog/               # PrintBit secondary health monitor
 │   │   ├── hopper/                 # Coin hopper HTTP routes (forwarded to ESP32 in esp32 mode)
 │   │   ├── anomaly/                # Anomaly detection / fingerprinting / alerts
@@ -343,10 +343,9 @@ Defaults shown in `[]`. `PRINTBIT_` prefix is the canonical form; a few keys als
 | --------------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
 | `PORT`                            | `3000`                                               | HTTP listen port                                   |
 | `PRINTBIT_NETWORK_PROVIDER`       | `esp32`                                              | `esp32` — selects hotspot/captive flow             |
-| `PRINTBIT_HOTSPOT_SSID`           | `PrintBit` (esp32) / `PrintBit-Kiosk` (mypublicwifi) | Hotspot SSID                                       |
-| `PRINTBIT_HOTSPOT_PASSWORD`       | ``/`printbit123`                                     | Hotspot password; empty → `nopass`, else `WPA`     |
+| `PRINTBIT_HOTSPOT_SSID`           | `PrintBit`                                           | Hotspot SSID                                       |
+| `PRINTBIT_HOTSPOT_PASSWORD`       | ``                                                   | Hotspot password; empty → `nopass`, else `WPA`     |
 | `PRINTBIT_HOTSPOT_AUTH_TYPE`      | derived                                              | Override derived auth type                         |
-| `PRINTBIT_MYPUBLICWIFI_PATH`      | `C:\Program Files (x86)\MyPublicWiFi`                | MyPublicWiFi install path                          |
 | `PRINTBIT_PUBLIC_URL`             | (unset)                                              | Public base URL override (e.g. Cloudflare Tunnel)  |
 | `PRINTBIT_CAPTIVE_PORTAL`         | `true`                                               | Set `false` to disable captive portal middleware   |
 | `PRINTBIT_KIOSK_LOCKDOWN`         | `false`                                              | Enables Windows Assigned Access lockdown policies  |

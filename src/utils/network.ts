@@ -14,10 +14,9 @@ export function getLocalIPv4(): string | null {
     for (const iface of interfaces[name]!) {
       if (iface.family !== 'IPv4' || iface.internal) continue;
 
-      // Prefer hotspot adapter: MyPublicWiFi (192.168.5.x) or Windows Mobile Hotspot (192.168.137.x)
+      // Prefer hotspot adapter: Windows Mobile Hotspot (192.168.137.x)
       const isHotspot =
         /Wi-Fi Direct|Local Area Connection\*/i.test(name) ||
-        iface.address.startsWith('192.168.5.') ||
         iface.address.startsWith('192.168.137.');
       if (isHotspot) return iface.address;
 

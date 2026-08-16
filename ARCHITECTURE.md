@@ -44,7 +44,7 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `pricing-engine.ts`: PH-localized pricing logic with threshold classification, proportional partial-page pricing, blank-page policy, bulk tier discounts, and whole-peso rounding.
 - `print-quote.ts`: quote builder with optional pricing engine breakdown integration.
 - `session.ts`: in-memory wireless upload session domain.
-- `hotspot.ts`: MyPublicWiFi process/config integration.
+- `hotspot.ts`: ESP32 hotspot registration and network integration.
 - `scanner.ts`: scanner adapter integration.
 - `preview.ts`: document preview conversion/HTML generation.
 - `admin.ts`: pricing calculations, logging, stats, reporting helpers.
@@ -153,7 +153,6 @@ Ephemeral (process memory):
 
 ## External dependencies
 
-- MyPublicWiFi (hotspot + captive behavior)
 - PDFtoPrinter, GhostScript, and LibreOffice binaries for print dispatch
 - Optional Sumatra fallback in phased mode
 - Serial device for coin input + coin hopper (shared 115200-baud line via Arduino Uno)

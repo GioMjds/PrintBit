@@ -1,10 +1,6 @@
 import os from 'node:os';
-import fs from 'node:fs';
-import path from 'node:path';
-import { execSync, spawn, ChildProcess } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import {
-  NETWORK_PROVIDER,
-  MYPUBLICWIFI_PATH,
   HOTSPOT_SSID,
   HOTSPOT_PASSWORD,
   HOTSPOT_AUTH_TYPE,
@@ -20,10 +16,6 @@ import {
   setWatchdogComponentState,
 } from './watchdog-health';
 
-const MPWF_EXE = path.join(MYPUBLICWIFI_PATH, 'MyPublicWiFi.exe');
-const MPWF_DB = path.join(MYPUBLICWIFI_PATH, 'Data.db');
-const HOTSPOT_STARTUP_TIMEOUT_MS = 8_000;
-const HOTSPOT_STARTUP_POLL_INTERVAL_MS = 500;
 const ESP32_REGISTER_ROUTE = '/kiosk/register';
 const ESP32_REGISTER_INTERVAL_MS = 15_000;
 const ESP32_REGISTER_TIMEOUT_MS = 2_500;
@@ -53,67 +45,6 @@ function extractEsp32SubnetPrefix(): string | null {
   }
 }
 
-function ipToInt32(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3] | 0;
-}
-
-function configureDatabase(): void {
-  if (!fs.existsSync(MPWF_DB)) {
-    console.warn('⚠ MyPublicWiFi Data.db not found:', MPWF_DB);
-    return;
-  }
-
-  const routerIp = '192.168.5.1';
-  const updates: Record<string, string | number> = {
-    NetworkSSID: HOTSPOT_SSID,
-    NetworkKey: HOTSPOT_PASSWORD,
-    AuthenticationEnabled: 'N',
-    TOCGuestAuthenticationEnabled: 'N',
-    AutoHotspotStartEnabled: 'Y',
-    LocalHostAccessDisabled: 'N',
-    DhcpForceDNS: 'N',
-    DhcpRouterIP: ipToInt32(routerIp),
-    DhcpNetMask: ipToInt32('255.255.255.0'),
-    DhcpStartIP: ipToInt32('192.168.5.2'),
-    DhcpEndIP: ipToInt32('192.168.5.254'),
-  };
-
-  const setClauses = Object.entries(updates)
-    .map(([col, val]) => {
-      const v = typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val;
-      return `${col}=${v}`;
-    })
-    .join(', ');
-
-  const sql = `UPDATE HotspotSettings SET ${setClauses} WHERE ID=1;`;
-
-  const pyScript = path.join(os.tmpdir(), 'printbit-config-mpwf.py');
-  try {
-    fs.writeFileSync(
-      pyScript,
-      [
-        'import sqlite3',
-        `c = sqlite3.connect(r'${MPWF_DB}')`,
-        `c.execute("""${sql}""")`,
-        'c.commit()',
-        'c.close()',
-      ].join('\n'),
-    );
-    execSync(`python "${pyScript}"`, { timeout: 10_000, stdio: 'pipe' });
-    console.log(`[HOTSPOT] ✓ MyPublicWiFi configured: SSID=${HOTSPOT_SSID}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[HOTSPOT] ⚠ Could not configure Data.db:', msg);
-  } finally {
-    try {
-      fs.unlinkSync(pyScript);
-    } catch {
-      /* cleanup */
-    }
-  }
-}
-
 function ensureFirewallRules(): void {
   const rules = [{ name: 'PrintBit-Server-3000', port: 3000, proto: 'TCP' }];
 
@@ -135,22 +66,6 @@ function ensureFirewallRules(): void {
         /* not admin or exists */
       }
     }
-  }
-}
-
-function isMyPublicWifiRunning(): boolean {
-  try {
-    const output = execSync(
-      'tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH',
-      {
-        encoding: 'utf-8',
-        timeout: 5_000,
-        stdio: 'pipe',
-      },
-    );
-    return output.includes('MyPublicWiFi.exe');
-  } catch {
-    return false;
   }
 }
 
@@ -245,7 +160,6 @@ async function registerKioskWithEsp32(): Promise<boolean> {
 
 class HotspotService {
   private running = false;
-  private process: ChildProcess | null = null;
   private esp32RegistrationTimer: NodeJS.Timeout | null = null;
 
   private stopEsp32RegistrationLoop(): void {
@@ -271,183 +185,50 @@ class HotspotService {
   async start(): Promise<void> {
     if (this.running) {
       console.log('[HOTSPOT] Already running — skipping');
-      markWatchdogHeartbeat('hotspot', { running: true });
+      markWatchdogHeartbeat('hotspot', { running: true, provider: 'esp32' });
       setWatchdogComponentState(
         'hotspot',
         'healthy',
         'Hotspot already running.',
         {
           running: true,
-        },
-      );
-      return;
-    }
-
-    if (NETWORK_PROVIDER === 'esp32') {
-      this.running = true;
-      console.log(
-        '[HOTSPOT] ESP32 provider enabled — skipping MyPublicWiFi launch',
-      );
-      await this.startEsp32RegistrationLoop();
-      markWatchdogHeartbeat('hotspot', { running: true, provider: 'esp32' });
-      setWatchdogComponentState(
-        'hotspot',
-        'healthy',
-        'ESP32 provider mode active.',
-        {
-          running: true,
           provider: 'esp32',
         },
       );
       return;
     }
 
-    this.stopEsp32RegistrationLoop();
-
-    if (!fs.existsSync(MPWF_EXE)) {
-      console.warn(
-        '[HOTSPOT] ⚠ MyPublicWiFi not found at:',
-        MYPUBLICWIFI_PATH,
-        '\n[HOTSPOT]   Install from https://mypublicwifi.com or set PRINTBIT_MYPUBLICWIFI_PATH',
-      );
-      setWatchdogComponentState(
-        'hotspot',
-        'degraded',
-        `MyPublicWiFi executable not found at ${MPWF_EXE}.`,
-        {
-          running: false,
-          provider: 'mypublicwifi',
-        },
-      );
-      return;
-    }
-
-    console.log('[HOTSPOT] ── Configuring MyPublicWiFi ──────────────────────');
     ensureFirewallRules();
-    configureDatabase();
-
-    try {
-      if (
-        execSync('tasklist /FI "IMAGENAME eq MyPublicWiFi.exe" /NH', {
-          encoding: 'utf-8',
-          timeout: 5_000,
-          stdio: 'pipe',
-        }).includes('MyPublicWiFi.exe')
-      ) {
-        execSync('taskkill /F /IM MyPublicWiFi.exe', {
-          stdio: 'ignore',
-          timeout: 5_000,
-        });
-      }
-    } catch {
-      /* not running */
-    }
-
-    this.process = spawn('cmd', ['/c', 'start', '', MPWF_EXE], {
-      cwd: MYPUBLICWIFI_PATH,
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false,
-    });
-    this.process.unref();
-    this.process.on('error', (err) => {
-      console.warn('[HOTSPOT] ⚠ Failed to launch MyPublicWiFi:', err.message);
-      this.running = false;
-      setWatchdogComponentState(
-        'hotspot',
-        'degraded',
-        `Failed to launch MyPublicWiFi: ${err.message}`,
-        {
-          running: false,
-          provider: 'mypublicwifi',
-        },
-      );
-    });
-
-    const deadline = Date.now() + HOTSPOT_STARTUP_TIMEOUT_MS;
-    let detectedRunning = false;
-    while (Date.now() < deadline) {
-      if (isMyPublicWifiRunning()) {
-        detectedRunning = true;
-        break;
-      }
-      await new Promise<void>((resolve) =>
-        setTimeout(resolve, HOTSPOT_STARTUP_POLL_INTERVAL_MS),
-      );
-    }
-
-    if (detectedRunning) {
-      this.running = true;
-      console.log('[HOTSPOT] ✓ MyPublicWiFi launched — hotspot starting');
-      markWatchdogHeartbeat('hotspot', {
+    this.running = true;
+    console.log('[HOTSPOT] ESP32 provider enabled');
+    await this.startEsp32RegistrationLoop();
+    markWatchdogHeartbeat('hotspot', { running: true, provider: 'esp32' });
+    setWatchdogComponentState(
+      'hotspot',
+      'healthy',
+      'ESP32 provider mode active.',
+      {
         running: true,
-        provider: 'mypublicwifi',
-      });
-      setWatchdogComponentState(
-        'hotspot',
-        'healthy',
-        'MyPublicWiFi launched successfully.',
-        {
-          running: true,
-          provider: 'mypublicwifi',
-        },
-      );
-      return;
-    }
-
-    this.running = false;
-    const detail =
-      'MyPublicWiFi did not appear in process list after launch attempt.';
-    console.warn(`[HOTSPOT] ⚠ ${detail}`, {
-      processSpawned: this.process ? true : false,
-      executable: MPWF_EXE,
-      workingDirectory: MYPUBLICWIFI_PATH,
-    });
-    setWatchdogComponentState('hotspot', 'degraded', detail, {
-      running: false,
-      provider: 'mypublicwifi',
-      executable: MPWF_EXE,
-    });
+        provider: 'esp32',
+      },
+    );
   }
 
   stop(): void {
     if (!this.running) return;
-    if (NETWORK_PROVIDER === 'esp32') {
-      this.running = false;
-      this.stopEsp32RegistrationLoop();
-      console.log('[HOTSPOT] ESP32 provider stop requested (no-op)');
-      markWatchdogHeartbeat('hotspot', { running: false, provider: 'esp32' });
-      setWatchdogComponentState(
-        'hotspot',
-        'degraded',
-        'ESP32 provider stop requested.',
-        {
-          running: false,
-          provider: 'esp32',
-        },
-      );
-      return;
-    }
-    this.stopEsp32RegistrationLoop();
-    try {
-      execSync('taskkill /F /IM MyPublicWiFi.exe', {
-        stdio: 'ignore',
-        timeout: 5_000,
-      });
-    } catch {
-      /* not running */
-    }
-    this.process = null;
     this.running = false;
-    console.log('[HOTSPOT] ✗ MyPublicWiFi stopped');
-    markWatchdogHeartbeat('hotspot', {
-      running: false,
-      provider: 'mypublicwifi',
-    });
-    setWatchdogComponentState('hotspot', 'degraded', 'MyPublicWiFi stopped.', {
-      running: false,
-      provider: 'mypublicwifi',
-    });
+    this.stopEsp32RegistrationLoop();
+    console.log('[HOTSPOT] ESP32 provider stop requested');
+    markWatchdogHeartbeat('hotspot', { running: false, provider: 'esp32' });
+    setWatchdogComponentState(
+      'hotspot',
+      'degraded',
+      'ESP32 provider stop requested.',
+      {
+        running: false,
+        provider: 'esp32',
+      },
+    );
   }
 }
 
@@ -464,7 +245,7 @@ export function isHotspotRunning(): boolean {
 }
 
 export type HotspotConfigPayload = {
-  provider: 'mypublicwifi' | 'esp32';
+  provider: 'esp32';
   ssid: string;
   password: string;
   authType: string;
@@ -474,11 +255,11 @@ export type HotspotConfigPayload = {
 
 export function getHotspotConfig(): HotspotConfigPayload {
   return {
-    provider: NETWORK_PROVIDER,
+    provider: 'esp32',
     ssid: HOTSPOT_SSID,
     password: HOTSPOT_PASSWORD,
     authType: HOTSPOT_AUTH_TYPE,
     captivePortalPath: ESP32_CAPTIVE_PORTAL_PATH,
-    startsManagedHotspot: NETWORK_PROVIDER !== 'esp32',
+    startsManagedHotspot: false,
   };
 }
