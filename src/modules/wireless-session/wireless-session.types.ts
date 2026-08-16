@@ -1,3 +1,5 @@
+export type KioskSessionState = 'IDLE' | 'PAIRING' | 'ACTIVE' | 'ENDING';
+
 export enum SessionState {
   IDLE = 'IDLE',
   PAIRING = 'PAIRING',
@@ -7,16 +9,20 @@ export enum SessionState {
 
 export type SessionMode = 'IDLE' | 'PRINT' | 'COPY' | 'SCAN';
 
+export type PairingStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+
 export interface PairingRecord {
   pairingId: string;
   pin: string;
   clientIp?: string;
   createdAt: number;
   expiresAt: number;
-  status: 'PENDING' | 'VERIFIED' | 'EXPIRED' | 'CANCELLED';
+  status: PairingStatus;
   sessionId?: string;
   sessionToken?: string;
 }
+
+export type PairingRequestRecord = PairingRecord;
 
 export interface ActiveCustomerSession {
   sessionId: string;
@@ -30,25 +36,19 @@ export interface ActiveCustomerSession {
   spentBalance: number;
 }
 
-export interface PairingRequestResult {
-  success: boolean;
-  pairingId?: string;
-  pin?: string;
-  expiresIn?: number;
-  error?: string;
-  code?: string;
-}
+export type PairingRequestResult =
+  | { pairingId: string; pin: string; expiresIn: number }
+  | { error: 'KIOSK_BUSY' };
 
 export interface PairingVerificationResult {
   success: boolean;
   sessionId?: string;
   sessionToken?: string;
   error?: string;
-  code?: string;
 }
 
 export interface PairingStatusResult {
-  status: SessionState;
+  status: PairingStatus;
   sessionToken?: string;
   portalUrl?: string;
   message?: string;

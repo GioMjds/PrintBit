@@ -25,9 +25,11 @@ import {
 import { PORT } from '@/config/http.config';
 import { pricingAnalysisCacheStore } from '@/core/database/sqlite-storage';
 import {
+  type KioskSessionState,
   SessionState,
   type SessionMode,
   type PairingRecord,
+  type PairingRequestRecord,
   type ActiveCustomerSession,
   type PairingRequestResult,
   type PairingVerificationResult,
@@ -67,7 +69,7 @@ export class WirelessSessionService {
   private static readonly PAIRING_TTL_MS = 120 * 1000;
   private static readonly INACTIVITY_TTL_MS = 120 * 1000;
 
-  private currentState: SessionState = SessionState.IDLE;
+  private currentState: KioskSessionState = 'IDLE';
   private pendingPairings = new Map<string, PairingRecord>();
   private pinToPairingId = new Map<string, string>();
   private activeSession: ActiveCustomerSession | null = null;
@@ -79,11 +81,15 @@ export class WirelessSessionService {
     this.startPairingCleanupTimer();
   }
 
-  getState(): SessionState {
+  getKioskState(): KioskSessionState {
     return this.currentState;
   }
 
-  forceStateForTesting(state: SessionState): void {
+  getState(): KioskSessionState {
+    return this.currentState;
+  }
+
+  forceStateForTesting(state: KioskSessionState): void {
     this.currentState = state;
   }
 
@@ -96,14 +102,12 @@ export class WirelessSessionService {
     return Math.max(0, this.activeSession.depositedBalance - this.activeSession.spentBalance);
   }
 
-  createPairingRequest(clientIp?: string): PairingRequestResult {
+  requestPairing(clientIp?: string): PairingRequestResult {
     this.cleanupExpiredPairings();
 
-    if (this.currentState === SessionState.ACTIVE) {
+    if (this.currentState === 'ACTIVE' || this.currentState === 'ENDING') {
       return {
-        success: false,
-        code: 'KIOSK_BUSY',
-        error: 'PrintBit is currently in use by another customer. Please wait.',
+        error: 'KIOSK_BUSY',
       };
     }
 
@@ -128,19 +132,23 @@ export class WirelessSessionService {
     this.pendingPairings.set(pairingId, record);
     this.pinToPairingId.set(pin, pairingId);
 
-    if (this.currentState === SessionState.IDLE) {
-      this.currentState = SessionState.PAIRING;
+    if (this.currentState === 'IDLE') {
+      this.currentState = 'PAIRING';
     }
 
     this.deps.io.emit('session:state_changed', { state: this.currentState });
+    this.deps.io.emit('kiosk:state_changed', { state: this.currentState });
     this.deps.io.emit('pairing:created', { pairingId, expiresIn: 120 });
 
     return {
-      success: true,
       pairingId,
       pin,
       expiresIn: 120,
     };
+  }
+
+  createPairingRequest(clientIp?: string): PairingRequestResult {
+    return this.requestPairing(clientIp);
   }
 
   verifyPairingPin(pin: string): PairingVerificationResult {
@@ -150,8 +158,7 @@ export class WirelessSessionService {
     if (!pairingId) {
       return {
         success: false,
-        code: 'INVALID_PIN',
-        error: 'Incorrect or expired PIN. Please verify the code on your phone.',
+        error: 'INVALID_PIN',
       };
     }
 
@@ -159,15 +166,14 @@ export class WirelessSessionService {
     if (!record || record.status !== 'PENDING') {
       return {
         success: false,
-        code: 'INVALID_PIN',
-        error: 'Pairing record is no longer pending.',
+        error: 'INVALID_PIN',
       };
     }
 
     const sessionId = `sess_${randomBytes(8).toString('hex')}`;
-    const sessionToken = `sess_tok_${randomBytes(16).toString('hex')}`;
+    const sessionToken = randomBytes(32).toString('hex');
 
-    record.status = 'VERIFIED';
+    record.status = 'ACTIVE';
     record.sessionId = sessionId;
     record.sessionToken = sessionToken;
 
@@ -179,7 +185,7 @@ export class WirelessSessionService {
       }
     }
 
-    this.currentState = SessionState.ACTIVE;
+    this.currentState = 'ACTIVE';
     const now = Date.now();
     this.activeSession = {
       sessionId,
@@ -194,6 +200,11 @@ export class WirelessSessionService {
     };
 
     this.deps.io.emit('session:state_changed', {
+      state: this.currentState,
+      sessionId,
+      sessionToken,
+    });
+    this.deps.io.emit('kiosk:state_changed', {
       state: this.currentState,
       sessionId,
       sessionToken,
@@ -219,41 +230,47 @@ export class WirelessSessionService {
     const record = this.pendingPairings.get(pairingId);
     if (!record) {
       return {
-        status: this.currentState,
+        status: 'EXPIRED',
         message: 'Pairing request not found or expired.',
       };
     }
 
-    if (record.status === 'VERIFIED') {
+    if (record.status === 'ACTIVE') {
       return {
-        status: SessionState.ACTIVE,
+        status: 'ACTIVE',
         sessionToken: record.sessionToken,
         portalUrl: `/portal?token=${record.sessionToken}`,
       };
     }
 
-    if (record.status === 'CANCELLED' || this.currentState === SessionState.ACTIVE) {
+    if (record.status === 'CANCELLED') {
       return {
-        status: SessionState.ACTIVE,
+        status: 'CANCELLED',
         message: 'PrintBit is currently in use by another customer.',
       };
     }
 
+    if (record.status === 'EXPIRED') {
+      return {
+        status: 'EXPIRED',
+        message: 'Pairing code expired.',
+      };
+    }
 
     return {
-      status: SessionState.PAIRING,
+      status: 'PENDING',
     };
   }
 
   validateSessionToken(token: string): boolean {
-    if (!token || this.currentState !== SessionState.ACTIVE || !this.activeSession) {
+    if (!token || typeof token !== 'string' || this.currentState !== 'ACTIVE' || !this.activeSession) {
       return false;
     }
     return this.activeSession.sessionToken === token.trim();
   }
 
   touchActivity(): void {
-    if (this.activeSession && this.currentState === SessionState.ACTIVE) {
+    if (this.activeSession && this.currentState === 'ACTIVE') {
       this.activeSession.lastActivityAt = Date.now();
       this.activeSession.expiresAt = Date.now() + WirelessSessionService.INACTIVITY_TTL_MS;
       this.resetInactivityTimer();
@@ -269,7 +286,7 @@ export class WirelessSessionService {
   }
 
   handleCoinDeposit(amount: number, eventId: string): boolean {
-    if (this.currentState !== SessionState.ACTIVE || !this.activeSession) {
+    if (this.currentState !== 'ACTIVE' || !this.activeSession) {
       console.warn(`[session] Coin deposit rejected: Kiosk is in state ${this.currentState} (eventId: ${eventId})`);
       return false;
     }
@@ -292,8 +309,10 @@ export class WirelessSessionService {
     }
   }
 
-  async endActiveSession(): Promise<{ success: boolean; dispensedChange: number }> {
-    this.currentState = SessionState.ENDING;
+  async endActiveSession(reason = 'user_ended'): Promise<{ success: boolean; dispensedChange: number }> {
+    this.currentState = 'ENDING';
+    this.deps.io.emit('session:state_changed', { state: this.currentState, reason });
+    this.deps.io.emit('kiosk:state_changed', { state: this.currentState, reason });
     this.clearInactivityTimer();
 
     let dispensedChange = 0;
@@ -312,10 +331,11 @@ export class WirelessSessionService {
     this.activeSession = null;
     this.pendingPairings.clear();
     this.pinToPairingId.clear();
-    this.currentState = SessionState.IDLE;
+    this.currentState = 'IDLE';
 
-    this.deps.io.emit('session:state_changed', { state: SessionState.IDLE });
-    this.deps.io.emit('session:ended', { dispensedChange });
+    this.deps.io.emit('session:state_changed', { state: this.currentState, reason });
+    this.deps.io.emit('kiosk:state_changed', { state: this.currentState, reason });
+    this.deps.io.emit('session:ended', { dispensedChange, reason });
     this.deps.io.emit('balance', 0);
 
     return {
@@ -333,13 +353,14 @@ export class WirelessSessionService {
       }
     }
 
-    if (this.currentState === SessionState.PAIRING) {
+    if (this.currentState === 'PAIRING') {
       const hasPending = Array.from(this.pendingPairings.values()).some(
         (r) => r.status === 'PENDING',
       );
       if (!hasPending) {
-        this.currentState = SessionState.IDLE;
-        this.deps.io.emit('session:state_changed', { state: SessionState.IDLE });
+        this.currentState = 'IDLE';
+        this.deps.io.emit('session:state_changed', { state: 'IDLE' });
+        this.deps.io.emit('kiosk:state_changed', { state: 'IDLE' });
       }
     }
   }
@@ -356,9 +377,9 @@ export class WirelessSessionService {
   private resetInactivityTimer(): void {
     this.clearInactivityTimer();
     this.inactivityTimer = setTimeout(() => {
-      if (this.currentState === SessionState.ACTIVE) {
+      if (this.currentState === 'ACTIVE') {
         console.log('[session] Inactivity timeout reached. Ending session automatically.');
-        void this.endActiveSession();
+        void this.endActiveSession('inactivity_timeout');
       }
     }, WirelessSessionService.INACTIVITY_TTL_MS);
     this.inactivityTimer.unref?.();

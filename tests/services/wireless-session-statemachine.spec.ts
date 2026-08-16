@@ -1,78 +1,130 @@
-import { WirelessSessionService } from '@/modules/wireless-session/wireless-session.service';
-import { SessionState } from '@/modules/wireless-session/wireless-session.types';
+import { WirelessSessionService } from '../../src/modules/wireless-session/wireless-session.service';
+import type { Server } from 'socket.io';
 
 describe('WirelessSessionService State Machine & Pairing', () => {
   let service: WirelessSessionService;
-  let mockIo: any;
-  let mockSessionStore: any;
+  let mockIo: Partial<Server>;
+  let mockHopperService: { dispenseChange: jest.Mock };
 
   beforeEach(() => {
-    mockIo = { emit: jest.fn(), to: jest.fn().mockReturnThis() };
-    mockSessionStore = {
-      createSession: jest.fn().mockResolvedValue({ id: 'sess_123' }),
-      destroySession: jest.fn().mockResolvedValue(true),
-      getSessionState: jest.fn().mockReturnValue('active'),
-      tryGetSession: jest.fn().mockReturnValue({ id: 'sess_123', token: 'tok_123' }),
+    mockIo = {
+      emit: jest.fn(),
+      to: jest.fn().mockReturnThis() as any,
+    };
+    mockHopperService = {
+      dispenseChange: jest.fn().mockResolvedValue({ success: true, count: 2 }),
     };
     service = new WirelessSessionService({
-      io: mockIo,
-      sessionStore: mockSessionStore,
+      io: mockIo as Server,
+      sessionStore: {} as any,
       resolvePublicBaseUrl: () => new URL('http://192.168.4.2:3000'),
       convertToPdfPreview: jest.fn(),
+      hopperService: mockHopperService,
     });
   });
 
   afterEach(() => {
-    service.cleanup();
+    service.cleanup?.();
   });
 
-  test('should start in IDLE state', () => {
-    expect(service.getState()).toBe(SessionState.IDLE);
+  it('should start in IDLE state', () => {
+    expect(service.getKioskState()).toBe('IDLE');
   });
 
-  test('should generate a 6-digit PIN on pairing request and transition to PAIRING', () => {
-    const res = service.createPairingRequest('192.168.4.5');
-    expect(res.success).toBe(true);
-    expect(res.pin).toMatch(/^\d{6}$/);
-    expect(res.pairingId).toBeDefined();
-    expect(res.expiresIn).toBe(120);
-    expect(service.getState()).toBe(SessionState.PAIRING);
+  it('should generate a 6-digit PIN on pairing request and transition to PAIRING', () => {
+    const result = service.requestPairing('192.168.4.5');
+    expect('pin' in result).toBe(true);
+    if ('pin' in result) {
+      expect(result.pin).toMatch(/^\d{6}$/);
+      expect(result.expiresIn).toBe(120);
+      expect(service.getKioskState()).toBe('PAIRING');
+    }
+    expect(mockIo.emit).toHaveBeenCalledWith('session:state_changed', { state: 'PAIRING' });
+    expect(mockIo.emit).toHaveBeenCalledWith('kiosk:state_changed', { state: 'PAIRING' });
   });
 
-  test('should reject pairing request when already in ACTIVE state', () => {
-    service.forceStateForTesting(SessionState.ACTIVE);
-    const res = service.createPairingRequest('192.168.4.6');
-    expect(res.success).toBe(false);
-    expect(res.code).toBe('KIOSK_BUSY');
+  it('should reject pairing request when already in ACTIVE state', () => {
+    const req1 = service.requestPairing('192.168.4.5');
+    if ('pin' in req1) {
+      service.verifyPairingPin(req1.pin);
+    }
+    expect(service.getKioskState()).toBe('ACTIVE');
+
+    const req2 = service.requestPairing('192.168.4.6');
+    expect(req2).toEqual({ error: 'KIOSK_BUSY' });
   });
 
-  test('should verify correct PIN and transition to ACTIVE state with signed token', () => {
-    const pairRes = service.createPairingRequest('192.168.4.5');
-    expect(pairRes.pin).toBeDefined();
-    const verifyRes = service.verifyPairingPin(pairRes.pin!);
-    expect(verifyRes.success).toBe(true);
-    expect(verifyRes.sessionToken).toBeDefined();
-    expect(service.getState()).toBe(SessionState.ACTIVE);
-    expect(service.validateSessionToken(verifyRes.sessionToken!)).toBe(true);
+  it('should verify correct PIN and transition to ACTIVE state with signed token', () => {
+    const req = service.requestPairing('192.168.4.5');
+    if ('pin' in req) {
+      const verify = service.verifyPairingPin(req.pin);
+      expect(verify.success).toBe(true);
+      expect(verify.sessionToken).toBeDefined();
+      expect(verify.sessionId).toBeDefined();
+      expect(verify.sessionToken!.length).toBe(64); // 32 bytes hex
+      expect(service.getKioskState()).toBe('ACTIVE');
+      expect(service.validateSessionToken(verify.sessionToken!)).toBe(true);
+    }
   });
 
-  test('should reject invalid PIN and stay in current state', () => {
-    service.createPairingRequest('192.168.4.5');
-    const verifyRes = service.verifyPairingPin('000000');
-    expect(verifyRes.success).toBe(false);
-    expect(verifyRes.code).toBe('INVALID_PIN');
-    expect(service.getState()).toBe(SessionState.PAIRING);
+  it('should reject invalid PIN and stay in current state', () => {
+    service.requestPairing('192.168.4.5');
+    const verify = service.verifyPairingPin('000000');
+    expect(verify.success).toBe(false);
+    expect(verify.error).toBe('INVALID_PIN');
+    expect(service.getKioskState()).toBe('PAIRING');
   });
 
-  test('should return pairing status with portalUrl when active', () => {
-    const pairRes = service.createPairingRequest('192.168.4.5');
-    const statusBefore = service.getPairingStatus(pairRes.pairingId!);
-    expect(statusBefore.status).toBe(SessionState.PAIRING);
+  it('should return pairing status with portalUrl when active', () => {
+    const req = service.requestPairing('192.168.4.5');
+    if ('pin' in req) {
+      service.verifyPairingPin(req.pin);
+      const status = service.getPairingStatus(req.pairingId);
+      expect(status.status).toBe('ACTIVE');
+      expect(status.portalUrl).toContain('/portal?token=');
+    }
+  });
 
-    service.verifyPairingPin(pairRes.pin!);
-    const statusAfter = service.getPairingStatus(pairRes.pairingId!);
-    expect(statusAfter.status).toBe(SessionState.ACTIVE);
-    expect(statusAfter.sessionToken).toBeDefined();
-    expect(statusAfter.portalUrl).toContain('/portal?token=');
+  it('should validate session token correctly', () => {
+    expect(service.validateSessionToken('')).toBe(false);
+    expect(service.validateSessionToken('fake_token')).toBe(false);
+
+    const req = service.requestPairing('192.168.4.5');
+    if ('pin' in req) {
+      const verify = service.verifyPairingPin(req.pin);
+      expect(service.validateSessionToken(verify.sessionToken!)).toBe(true);
+      expect(service.validateSessionToken('other_token')).toBe(false);
+    }
+  });
+
+  it('should end active session, dispense change, and return to IDLE', async () => {
+    const req = service.requestPairing('192.168.4.5');
+    if ('pin' in req) {
+      const verify = service.verifyPairingPin(req.pin);
+      expect(verify.success).toBe(true);
+    }
+
+    // Deposit coins
+    expect(service.handleCoinDeposit(10, 'evt-1')).toBe(true);
+    expect(service.getActiveSessionBalance()).toBe(10);
+
+    // Record expense
+    service.recordExpense(4);
+    expect(service.getActiveSessionBalance()).toBe(6);
+
+    const endResult = await service.endActiveSession('user_completed');
+    expect(endResult.success).toBe(true);
+    expect(endResult.dispensedChange).toBe(6);
+    expect(mockHopperService.dispenseChange).toHaveBeenCalledWith(6);
+    expect(service.getKioskState()).toBe('IDLE');
+    expect(mockIo.emit).toHaveBeenCalledWith('session:ended', { dispensedChange: 6, reason: 'user_completed' });
+    expect(mockIo.emit).toHaveBeenCalledWith('balance', 0);
+  });
+
+  it('should reject coin deposits when kiosk is not in ACTIVE state', () => {
+    expect(service.getKioskState()).toBe('IDLE');
+    const deposited = service.handleCoinDeposit(5, 'evt-idle');
+    expect(deposited).toBe(false);
+    expect(service.getActiveSessionBalance()).toBe(0);
   });
 });
