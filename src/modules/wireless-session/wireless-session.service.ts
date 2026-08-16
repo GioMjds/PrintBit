@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+
 import type { Request, RequestHandler } from 'express';
 import type { Server } from 'socket.io';
 import { adminService } from '@/services/admin';
@@ -23,13 +24,26 @@ import {
 } from '@/services/pricing-analysis-queue';
 import { PORT } from '@/config/http.config';
 import { pricingAnalysisCacheStore } from '@/core/database/sqlite-storage';
+import {
+  SessionState,
+  type SessionMode,
+  type PairingRecord,
+  type ActiveCustomerSession,
+  type PairingRequestResult,
+  type PairingVerificationResult,
+  type PairingStatusResult,
+} from './wireless-session.types';
 
 export interface WirelessSessionServiceDeps {
   io: Server;
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
   convertToPdfPreview: (sourcePath: string) => Promise<string>;
+  hopperService?: {
+    dispenseChange: (amount: number) => Promise<any>;
+  };
 }
+
 
 const IMAGE_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -50,10 +64,321 @@ function isWhitespaceCharacter(value: string): boolean {
 
 export class WirelessSessionService {
   private static pricingAnalysisWorkerInitialized = false;
+  private static readonly PAIRING_TTL_MS = 120 * 1000;
+  private static readonly INACTIVITY_TTL_MS = 120 * 1000;
+
+  private currentState: SessionState = SessionState.IDLE;
+  private pendingPairings = new Map<string, PairingRecord>();
+  private pinToPairingId = new Map<string, string>();
+  private activeSession: ActiveCustomerSession | null = null;
+  private pairingCleanupTimer: NodeJS.Timeout | null = null;
+  private inactivityTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly deps: WirelessSessionServiceDeps) {
     this.ensurePricingAnalysisWorkerStarted();
+    this.startPairingCleanupTimer();
   }
+
+  getState(): SessionState {
+    return this.currentState;
+  }
+
+  forceStateForTesting(state: SessionState): void {
+    this.currentState = state;
+  }
+
+  getActiveCustomerSession(): ActiveCustomerSession | null {
+    return this.activeSession;
+  }
+
+  getActiveSessionBalance(): number {
+    if (!this.activeSession) return 0;
+    return Math.max(0, this.activeSession.depositedBalance - this.activeSession.spentBalance);
+  }
+
+  createPairingRequest(clientIp?: string): PairingRequestResult {
+    this.cleanupExpiredPairings();
+
+    if (this.currentState === SessionState.ACTIVE) {
+      return {
+        success: false,
+        code: 'KIOSK_BUSY',
+        error: 'PrintBit is currently in use by another customer. Please wait.',
+      };
+    }
+
+    let pin: string;
+    let attempts = 0;
+    do {
+      pin = Math.floor(100000 + Math.random() * 900000).toString();
+      attempts++;
+    } while (this.pinToPairingId.has(pin) && attempts < 20);
+
+    const pairingId = `pair_${randomBytes(6).toString('hex')}`;
+    const now = Date.now();
+    const record: PairingRecord = {
+      pairingId,
+      pin,
+      clientIp,
+      createdAt: now,
+      expiresAt: now + WirelessSessionService.PAIRING_TTL_MS,
+      status: 'PENDING',
+    };
+
+    this.pendingPairings.set(pairingId, record);
+    this.pinToPairingId.set(pin, pairingId);
+
+    if (this.currentState === SessionState.IDLE) {
+      this.currentState = SessionState.PAIRING;
+    }
+
+    this.deps.io.emit('session:state_changed', { state: this.currentState });
+    this.deps.io.emit('pairing:created', { pairingId, expiresIn: 120 });
+
+    return {
+      success: true,
+      pairingId,
+      pin,
+      expiresIn: 120,
+    };
+  }
+
+  verifyPairingPin(pin: string): PairingVerificationResult {
+    this.cleanupExpiredPairings();
+
+    const pairingId = this.pinToPairingId.get(pin.trim());
+    if (!pairingId) {
+      return {
+        success: false,
+        code: 'INVALID_PIN',
+        error: 'Incorrect or expired PIN. Please verify the code on your phone.',
+      };
+    }
+
+    const record = this.pendingPairings.get(pairingId);
+    if (!record || record.status !== 'PENDING') {
+      return {
+        success: false,
+        code: 'INVALID_PIN',
+        error: 'Pairing record is no longer pending.',
+      };
+    }
+
+    const sessionId = `sess_${randomBytes(8).toString('hex')}`;
+    const sessionToken = `sess_tok_${randomBytes(16).toString('hex')}`;
+
+    record.status = 'VERIFIED';
+    record.sessionId = sessionId;
+    record.sessionToken = sessionToken;
+
+    // Cancel other pending pairings
+    for (const [otherId, otherRecord] of this.pendingPairings.entries()) {
+      if (otherId !== pairingId && otherRecord.status === 'PENDING') {
+        otherRecord.status = 'CANCELLED';
+        this.pinToPairingId.delete(otherRecord.pin);
+      }
+    }
+
+    this.currentState = SessionState.ACTIVE;
+    const now = Date.now();
+    this.activeSession = {
+      sessionId,
+      sessionToken,
+      clientIp: record.clientIp,
+      startedAt: now,
+      expiresAt: now + WirelessSessionService.INACTIVITY_TTL_MS,
+      lastActivityAt: now,
+      selectedMode: 'IDLE',
+      depositedBalance: 0,
+      spentBalance: 0,
+    };
+
+    this.deps.io.emit('session:state_changed', {
+      state: this.currentState,
+      sessionId,
+      sessionToken,
+    });
+    this.deps.io.emit('pairing:verified', {
+      pairingId,
+      sessionId,
+      sessionToken,
+    });
+
+    this.resetInactivityTimer();
+
+    return {
+      success: true,
+      sessionId,
+      sessionToken,
+    };
+  }
+
+  getPairingStatus(pairingId: string): PairingStatusResult {
+    this.cleanupExpiredPairings();
+
+    const record = this.pendingPairings.get(pairingId);
+    if (!record) {
+      return {
+        status: this.currentState,
+        message: 'Pairing request not found or expired.',
+      };
+    }
+
+    if (record.status === 'VERIFIED') {
+      return {
+        status: SessionState.ACTIVE,
+        sessionToken: record.sessionToken,
+        portalUrl: `/portal?token=${record.sessionToken}`,
+      };
+    }
+
+    if (record.status === 'CANCELLED' || this.currentState === SessionState.ACTIVE) {
+      return {
+        status: SessionState.ACTIVE,
+        message: 'PrintBit is currently in use by another customer.',
+      };
+    }
+
+
+    return {
+      status: SessionState.PAIRING,
+    };
+  }
+
+  validateSessionToken(token: string): boolean {
+    if (!token || this.currentState !== SessionState.ACTIVE || !this.activeSession) {
+      return false;
+    }
+    return this.activeSession.sessionToken === token.trim();
+  }
+
+  touchActivity(): void {
+    if (this.activeSession && this.currentState === SessionState.ACTIVE) {
+      this.activeSession.lastActivityAt = Date.now();
+      this.activeSession.expiresAt = Date.now() + WirelessSessionService.INACTIVITY_TTL_MS;
+      this.resetInactivityTimer();
+    }
+  }
+
+  setSessionMode(mode: SessionMode): void {
+    if (this.activeSession) {
+      this.activeSession.selectedMode = mode;
+      this.touchActivity();
+      this.deps.io.emit('session:mode_changed', { mode });
+    }
+  }
+
+  handleCoinDeposit(amount: number, eventId: string): boolean {
+    if (this.currentState !== SessionState.ACTIVE || !this.activeSession) {
+      console.warn(`[session] Coin deposit rejected: Kiosk is in state ${this.currentState} (eventId: ${eventId})`);
+      return false;
+    }
+
+    this.activeSession.depositedBalance += amount;
+    this.touchActivity();
+    const currentNet = Math.max(0, this.activeSession.depositedBalance - this.activeSession.spentBalance);
+    this.deps.io.emit('balance', currentNet);
+    this.deps.io.emit('session:balance_updated', { balance: currentNet });
+    return true;
+  }
+
+  recordExpense(amount: number): void {
+    if (this.activeSession) {
+      this.activeSession.spentBalance += amount;
+      this.touchActivity();
+      const currentNet = Math.max(0, this.activeSession.depositedBalance - this.activeSession.spentBalance);
+      this.deps.io.emit('balance', currentNet);
+      this.deps.io.emit('session:balance_updated', { balance: currentNet });
+    }
+  }
+
+  async endActiveSession(): Promise<{ success: boolean; dispensedChange: number }> {
+    this.currentState = SessionState.ENDING;
+    this.clearInactivityTimer();
+
+    let dispensedChange = 0;
+    if (this.activeSession) {
+      dispensedChange = Math.max(0, this.activeSession.depositedBalance - this.activeSession.spentBalance);
+    }
+
+    if (dispensedChange > 0 && this.deps.hopperService) {
+      try {
+        await this.deps.hopperService.dispenseChange(dispensedChange);
+      } catch (err) {
+        console.error('[session] Error dispensing change on session end:', err);
+      }
+    }
+
+    this.activeSession = null;
+    this.pendingPairings.clear();
+    this.pinToPairingId.clear();
+    this.currentState = SessionState.IDLE;
+
+    this.deps.io.emit('session:state_changed', { state: SessionState.IDLE });
+    this.deps.io.emit('session:ended', { dispensedChange });
+    this.deps.io.emit('balance', 0);
+
+    return {
+      success: true,
+      dispensedChange,
+    };
+  }
+
+  private cleanupExpiredPairings(): void {
+    const now = Date.now();
+    for (const [id, record] of this.pendingPairings.entries()) {
+      if (record.status === 'PENDING' && now > record.expiresAt) {
+        record.status = 'EXPIRED';
+        this.pinToPairingId.delete(record.pin);
+      }
+    }
+
+    if (this.currentState === SessionState.PAIRING) {
+      const hasPending = Array.from(this.pendingPairings.values()).some(
+        (r) => r.status === 'PENDING',
+      );
+      if (!hasPending) {
+        this.currentState = SessionState.IDLE;
+        this.deps.io.emit('session:state_changed', { state: SessionState.IDLE });
+      }
+    }
+  }
+
+  private startPairingCleanupTimer(): void {
+    if (!this.pairingCleanupTimer) {
+      this.pairingCleanupTimer = setInterval(() => {
+        this.cleanupExpiredPairings();
+      }, 5000);
+      this.pairingCleanupTimer.unref?.();
+    }
+  }
+
+  private resetInactivityTimer(): void {
+    this.clearInactivityTimer();
+    this.inactivityTimer = setTimeout(() => {
+      if (this.currentState === SessionState.ACTIVE) {
+        console.log('[session] Inactivity timeout reached. Ending session automatically.');
+        void this.endActiveSession();
+      }
+    }, WirelessSessionService.INACTIVITY_TTL_MS);
+    this.inactivityTimer.unref?.();
+  }
+
+  private clearInactivityTimer(): void {
+    if (this.inactivityTimer) {
+      clearTimeout(this.inactivityTimer);
+      this.inactivityTimer = null;
+    }
+  }
+
+  cleanup(): void {
+    if (this.pairingCleanupTimer) {
+      clearInterval(this.pairingCleanupTimer);
+      this.pairingCleanupTimer = null;
+    }
+    this.clearInactivityTimer();
+  }
+
 
   extractUploadToken(req: Request): string {
     const queryToken = req.query.token;
