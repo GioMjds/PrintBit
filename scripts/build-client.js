@@ -32,6 +32,7 @@ const builds = [
   'esbuild src/public/config/app.ts --bundle --outfile=src/public/config/app.js',
   'esbuild src/public/confirm/app.ts --bundle --outfile=src/public/confirm/app.js',
   'esbuild src/public/upload/app.ts --bundle --outfile=src/public/upload/app.js',
+  'esbuild src/public/upload/portal.ts --bundle --outfile=src/public/upload/portal.js',
   'esbuild src/public/scan/app.ts --bundle --outfile=src/public/scan/app.js',
   'esbuild src/public/feedback/app.ts --bundle --outfile=src/public/feedback/app.js',
   'esbuild src/public/loading/app.ts --bundle --outfile=src/public/loading/app.js',

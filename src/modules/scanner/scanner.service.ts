@@ -150,6 +150,49 @@ export class ScannerService {
   private readonly chargedScanFiles = new Map<string, number>();
   private readonly releaseTokens = new Map<string, ScanReleaseTokenRecord>();
   private readonly receiptService = new ReceiptService();
+  private latestScan: { filePath: string; filename: string } | null = null;
+
+  setLatestScan(filename: string): void {
+    const safeFilename = this.toSafeScanFilename(filename) ?? filename;
+    const filePath = path.resolve('uploads', 'scans', safeFilename);
+    this.latestScan = { filePath, filename: safeFilename };
+  }
+
+  getLatestScan(): { filePath: string; filename: string } | null {
+    if (this.latestScan && fs.existsSync(this.latestScan.filePath)) {
+      return this.latestScan;
+    }
+    const scansDir = path.resolve('uploads', 'scans');
+    if (fs.existsSync(scansDir)) {
+      try {
+        const files = fs
+          .readdirSync(scansDir)
+          .filter((f) => !f.startsWith('.'))
+          .map((f) => ({
+            name: f,
+            time: fs.statSync(path.join(scansDir, f)).mtimeMs,
+          }))
+          .sort((a, b) => b.time - a.time);
+        if (files.length > 0) {
+          const latestFile = files[0].name;
+          const fullPath = path.join(scansDir, latestFile);
+          this.latestScan = { filePath: fullPath, filename: latestFile };
+          return this.latestScan;
+        }
+      } catch {
+        // Ignore read errors
+      }
+    }
+    return null;
+  }
+
+  getScanFilePath(filename: string): { filePath: string; filename: string } | null {
+    const safeFilename = this.toSafeScanFilename(filename);
+    if (!safeFilename) return null;
+    const filePath = path.resolve('uploads', 'scans', safeFilename);
+    if (!fs.existsSync(filePath)) return null;
+    return { filePath, filename: safeFilename };
+  }
 
   toSafeScanFilename(raw: unknown): string | null {
     return toSafeTransientScanFileName(raw);
@@ -347,6 +390,7 @@ export class ScannerService {
 
     const result = await getAdapter().scan(settings, 'uploads/scans');
     const filename = path.basename(result.outputPath);
+    this.setLatestScan(filename);
     this.clearSoftCopyPaid(filename);
 
     void adminService.appendAdminLog(
@@ -550,6 +594,16 @@ export class ScannerService {
             : String(receiptError),
         filename,
       });
+    }
+
+    this.setLatestScan(filename);
+    try {
+      io.emit('session:scan_ready', {
+        downloadUrl: '/session/download',
+        filename,
+      });
+    } catch {
+      // Best effort emit
     }
 
     return {

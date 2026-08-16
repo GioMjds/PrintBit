@@ -111,6 +111,47 @@ body {
   margin-bottom: 20px;
 }
 
+.header-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  user-select: none;
+}
+
+.balance-pill {
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: #4ade80;
+}
+
+.mode-pill {
+  background: rgba(105, 111, 199, 0.2);
+  border: 1px solid rgba(105, 111, 199, 0.4);
+  color: var(--lavender);
+}
+
+.badge-currency {
+  font-weight: 800;
+}
+
 .brand-mark {
   width: 48px;
   height: 48px;
@@ -758,4 +799,379 @@ body {
 .captive-banner__dismiss:hover {
   background: rgba(255, 255, 255, 0.05);
   color: var(--white);
+}
+
+/* ── Utility ──────────────────────────────────────────────── */
+.hidden {
+  display: none !important;
+}
+
+/* ── Session Strip Timer ──────────────────────────────────── */
+.session-strip__timer {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--peach);
+  padding: 3px 8px;
+  background: rgba(255, 160, 122, 0.15);
+  border: 1px solid rgba(255, 160, 122, 0.3);
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+/* ── Portal Views & Mode Cards ────────────────────────────── */
+.portal-view {
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-card {
+  border-radius: 20px;
+  padding: 24px 20px;
+  margin-bottom: 18px;
+  animation: card-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mode-card {
+  text-align: center;
+  padding: 36px 20px 30px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid rgba(167, 170, 225, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.mode-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--white);
+  margin: 0 0 8px;
+}
+
+.mode-card__desc {
+  font-size: 13px;
+  color: var(--ink-muted);
+  line-height: 1.55;
+  margin: 0 0 20px;
+  max-width: 380px;
+}
+
+.mode-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lavender);
+  background: rgba(105, 111, 199, 0.15);
+  border: 1px solid rgba(105, 111, 199, 0.3);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+.status-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px #4ade80;
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* ── Scanner Visual & Animation ────────────────────────────── */
+.scanner-visual {
+  width: 88px;
+  height: 88px;
+  margin-bottom: 20px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.scanner-glass {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  background: rgba(105, 111, 199, 0.12);
+  border: 1.5px solid rgba(167, 170, 225, 0.25);
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 20px rgba(105, 111, 199, 0.15);
+}
+
+.scanner-sheet {
+  width: 44px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.scanner-laser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #4ade80 20%, #4ade80 80%, transparent);
+  box-shadow: 0 0 10px #4ade80;
+  top: 6px;
+  animation: scan-sweep 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes scan-sweep {
+  0% {
+    top: 6px;
+    opacity: 0.8;
+  }
+  100% {
+    top: 62px;
+    opacity: 1;
+  }
+}
+
+/* ── Copier Visual & Animation ─────────────────────────────── */
+.copy-visual {
+  width: 88px;
+  height: 88px;
+  margin-bottom: 20px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.copier-unit {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  background: rgba(105, 111, 199, 0.12);
+  border: 1.5px solid rgba(167, 170, 225, 0.25);
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.copier-page {
+  position: absolute;
+  width: 38px;
+  height: 46px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.copier-page--1 {
+  background: rgba(255, 255, 255, 0.12);
+  transform: rotate(-6deg);
+}
+
+.copier-page--2 {
+  background: rgba(105, 111, 199, 0.35);
+  transform: rotate(4deg);
+  animation: copy-float 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes copy-float {
+  0% {
+    transform: translateY(0) rotate(4deg);
+  }
+  100% {
+    transform: translateY(-8px) rotate(8deg);
+  }
+}
+
+/* ── Idle Visual & Animation ───────────────────────────────── */
+.idle-visual {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.idle-icon-ring {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(167, 170, 225, 0.08);
+  border: 1.5px dashed rgba(167, 170, 225, 0.3);
+  display: grid;
+  place-items: center;
+  color: var(--lavender);
+  animation: spin-slow 24s linear infinite;
+}
+
+.idle-icon-ring svg {
+  width: 30px;
+  height: 30px;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Scan Ready Notification Card ──────────────────────────── */
+.scan-ready-card {
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.14) 0%, rgba(34, 197, 94, 0.05) 100%);
+  border: 1.5px solid rgba(74, 222, 128, 0.4);
+  box-shadow: 0 8px 32px rgba(74, 222, 128, 0.14);
+}
+
+.scan-ready-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.scan-ready-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: rgba(74, 222, 128, 0.2);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.scan-ready-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.scan-ready-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--white);
+  margin: 0 0 2px;
+}
+
+.scan-ready-sub {
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin: 0;
+  word-break: break-all;
+}
+
+.download-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: #4ade80;
+  color: #0e0d1f;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+  box-shadow: 0 4px 16px rgba(74, 222, 128, 0.35);
+}
+
+.download-btn:hover {
+  background: #86efac;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(74, 222, 128, 0.45);
+}
+
+.download-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.download-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.scan-ready-hint {
+  font-size: 12px;
+  color: var(--ink-muted);
+  text-align: center;
+  margin: 10px 0 0;
+}
+
+/* ── Session Ended / Summary Card ──────────────────────────── */
+.session-ended-card {
+  text-align: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(167, 170, 225, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 20px;
+}
+
+.session-ended-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(74, 222, 128, 0.18);
+  border: 1.5px solid rgba(74, 222, 128, 0.35);
+  color: #4ade80;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+}
+
+.session-ended-icon svg {
+  width: 30px;
+  height: 30px;
+}
+
+.session-ended-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--white);
+  margin: 0 0 6px;
+}
+
+.session-ended-desc {
+  font-size: 13px;
+  color: var(--ink-muted);
+  line-height: 1.55;
+  margin: 0 0 16px;
+}
+
+.change-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 184, 108, 0.12);
+  border: 1px solid rgba(255, 184, 108, 0.3);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffb86c;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.session-ended-actions {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.session-new-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
 }

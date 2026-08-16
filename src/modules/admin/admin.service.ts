@@ -212,7 +212,9 @@ export class AdminService {
       : null;
   }
 
-  private inferTransactionMode(entry: AdminLogEntry): TransactionLogMode | null {
+  private inferTransactionMode(
+    entry: AdminLogEntry,
+  ): TransactionLogMode | null {
     const mode = this.normalizeTransactionMode(entry.meta?.mode);
     if (mode) return mode;
 
@@ -223,7 +225,9 @@ export class AdminService {
     return null;
   }
 
-  private classifyTransactionStatus(entry: AdminLogEntry): TransactionLogStatus | null {
+  private classifyTransactionStatus(
+    entry: AdminLogEntry,
+  ): TransactionLogStatus | null {
     const lowerType = entry.type.toLowerCase();
     const lowerMessage = entry.message.toLowerCase();
     const hasToken = (...tokens: ReadonlyArray<string>): boolean =>
@@ -246,7 +250,8 @@ export class AdminService {
   }
 
   isTransactionLog(entry: AdminLogEntry): boolean {
-    const transactionId = entry.meta?.transactionId ?? entry.meta?.transaction_id;
+    const transactionId =
+      entry.meta?.transactionId ?? entry.meta?.transaction_id;
     if (typeof transactionId === 'string' && transactionId.trim().length > 0) {
       return true;
     }
@@ -287,7 +292,8 @@ export class AdminService {
       if (transactionId) {
         const metaTransactionId = entry.meta?.transactionId;
         const matchedByMeta =
-          typeof metaTransactionId === 'string' && metaTransactionId === transactionId;
+          typeof metaTransactionId === 'string' &&
+          metaTransactionId === transactionId;
         const matchedByMessage = entry.message.includes(transactionId);
         if (!matchedByMeta && !matchedByMessage) return false;
       }
@@ -309,7 +315,8 @@ export class AdminService {
       if (Number.isFinite(dateFromMs) || Number.isFinite(dateToMs)) {
         const timestampMs = Date.parse(entry.timestamp);
         if (!Number.isFinite(timestampMs)) return false;
-        if (Number.isFinite(dateFromMs) && timestampMs < dateFromMs) return false;
+        if (Number.isFinite(dateFromMs) && timestampMs < dateFromMs)
+          return false;
         if (Number.isFinite(dateToMs) && timestampMs > dateToMs) return false;
       }
 
@@ -325,8 +332,14 @@ export class AdminService {
     return this.listAllLogs().filter((entry) => !this.isTransactionLog(entry));
   }
 
-  listTransactionLogs(limit: number, filters: TransactionLogFilters): AdminLogEntry[] {
-    return this.listAllTransactionLogs(filters).slice(0, this.normalizeLimit(limit));
+  listTransactionLogs(
+    limit: number,
+    filters: TransactionLogFilters,
+  ): AdminLogEntry[] {
+    return this.listAllTransactionLogs(filters).slice(
+      0,
+      this.normalizeLimit(limit),
+    );
   }
 
   listAllTransactionLogs(filters: TransactionLogFilters): AdminLogEntry[] {
@@ -366,7 +379,6 @@ export class AdminService {
       (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
     );
   }
-
 
   listLogs(limit: number): AdminLogEntry[] {
     return this.listSystemLogs(limit);
@@ -779,7 +791,9 @@ export class AdminService {
     };
   }
 
-  computeDispatchLatencyMetrics(maxEvents = 5000): DispatchLatencyMetricsResult {
+  computeDispatchLatencyMetrics(
+    maxEvents = 5000,
+  ): DispatchLatencyMetricsResult {
     const safeMaxEvents = Number.isFinite(maxEvents)
       ? Math.max(100, Math.min(20_000, Math.floor(maxEvents)))
       : 5000;
@@ -843,9 +857,13 @@ export class AdminService {
     const mimeSamples = new Map<string, number[]>();
     const engineSamples = new Map<string, number[]>();
 
-    for (const [transactionId, dispatchMeta] of dispatchByTransaction.entries()) {
+    for (const [
+      transactionId,
+      dispatchMeta,
+    ] of dispatchByTransaction.entries()) {
       const terminalAtMs = terminalByTransaction.get(transactionId);
-      if (terminalAtMs === undefined || !Number.isFinite(terminalAtMs)) continue;
+      if (terminalAtMs === undefined || !Number.isFinite(terminalAtMs))
+        continue;
       const latencyMs = terminalAtMs - dispatchMeta.dispatchedAtMs;
       if (!Number.isFinite(latencyMs) || latencyMs < 0) continue;
 
@@ -926,7 +944,10 @@ export class AdminService {
     return { fileCount, bytes };
   }
 
-  async resetInkRefillBaseline(colorPages: number, bwPages: number): Promise<void> {
+  async resetInkRefillBaseline(
+    colorPages: number,
+    bwPages: number,
+  ): Promise<void> {
     const trusted = getTrustedTimestamp();
     db.data!.inkRefillBaseline = {
       colorPages,

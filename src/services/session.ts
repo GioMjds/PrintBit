@@ -228,9 +228,13 @@ export class SessionStore {
     return this.getSessionState(sessionId);
   }
 
-  createSession(baseUrl: URL): Session {
-    const sessionId = randomUUID();
-    const token = randomUUID();
+  createSession(
+    baseUrl: URL,
+    customSessionId?: string,
+    customToken?: string,
+  ): Session {
+    const sessionId = customSessionId ?? randomUUID();
+    const token = customToken ?? randomUUID();
     const uploadUrl = buildUploadUrl(baseUrl, token);
     const publicUploadUrl = buildPublicUploadUrl(token);
     const now = new Date();

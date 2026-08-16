@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireAdminLocalAccess } from '@/middleware/admin-auth';
 import type { SessionStore } from '@/services/session';
 import { db } from '@/services/db';
+import { coinBridgeService } from '@/services/coin-bridge';
 import {
   createKioskAccessMiddleware,
   isLoopbackRequest,
@@ -74,6 +75,12 @@ export class PageController {
 
     // Portal - redirects to active session or shows waiting page
     this.router.get('/portal', this.handlePortal.bind(this));
+    this.router.get('/portal/:token', (req: Request, res: Response) => {
+      const token = Array.isArray(req.params.token)
+        ? req.params.token[0]
+        : String(req.params.token ?? '');
+      res.redirect(302, `/upload/${encodeURIComponent(token)}`);
+    });
 
     // The launcher obtains a one-time credential over loopback, then Edge consumes it.
     this.router.post(
@@ -169,10 +176,25 @@ export class PageController {
     res.redirect(`/upload/${encodeURIComponent(session.token)}`);
   }
 
-  private handlePortal(_req: Request, res: Response): void {
+  private handlePortal(req: Request, res: Response): void {
+    const queryToken =
+      typeof req.query.token === 'string' ? req.query.token.trim() : '';
+    if (queryToken) {
+      res.redirect(302, `/upload/${encodeURIComponent(queryToken)}`);
+      return;
+    }
     const token = this.deps.sessionStore.getActiveSessionToken();
     if (token) {
       res.redirect(302, `/upload/${encodeURIComponent(token)}`);
+      return;
+    }
+    const wirelessService = coinBridgeService.getWirelessSessionService();
+    const activeSession = wirelessService?.getActiveCustomerSession();
+    if (activeSession?.sessionToken) {
+      res.redirect(
+        302,
+        `/upload/${encodeURIComponent(activeSession.sessionToken)}`,
+      );
       return;
     }
     res.type('html').send(PORTAL_WAITING_HTML);

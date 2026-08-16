@@ -6,13 +6,18 @@ void initKioskLocalization();
 declare global {
   interface Window {
     uploadToken?: string;
-    io?: () => SocketClient;
+    io?: (options?: {
+      auth?: { token?: string };
+      transports?: string[];
+      reconnectionDelay?: number;
+    }) => SocketClient;
   }
 }
 
 interface SocketClient {
   on: (event: string, callback: (...args: unknown[]) => void) => void;
   emit: (event: string, ...args: unknown[]) => void;
+  disconnect?: () => void;
 }
 
 type UploadState =
@@ -22,6 +27,7 @@ type UploadState =
   | 'uploading'
   | 'all-done';
 type ItemStatus = 'pending' | 'uploading' | 'done' | 'error';
+type SessionMode = 'PRINT' | 'SCAN' | 'COPY' | 'IDLE';
 
 interface SessionResponse {
   sessionId: string;
@@ -30,6 +36,8 @@ interface SessionResponse {
   remainingSeconds?: number;
   warningThresholdSeconds?: number;
   ttlSeconds?: number;
+  mode?: SessionMode;
+  balance?: number;
 }
 
 interface UploadErrorResponse {
@@ -39,37 +47,70 @@ interface UploadErrorResponse {
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
-const fileInput = document.getElementById('fileInput') as HTMLInputElement;
-const dropZone = document.getElementById('dropZone') as HTMLDivElement;
-const fileQueue = document.getElementById('fileQueue') as HTMLDivElement;
-const uploadButton = document.getElementById(
-  'uploadButton',
-) as HTMLButtonElement;
-const uploadBtnLabel = document.getElementById(
-  'uploadBtnLabel',
-) as HTMLSpanElement;
-const statusBox = document.getElementById('statusBox') as HTMLDivElement;
-const sessionMetaUpload = document.getElementById(
-  'sessionMetaUpload',
-) as HTMLSpanElement;
-const sessionDotUpload = document.getElementById(
-  'sessionDotUpload',
-) as HTMLSpanElement;
-const retrySessionButton = document.getElementById(
-  'retrySessionButton',
-) as HTMLButtonElement;
-const uploadForm = document.getElementById('uploadForm') as HTMLFormElement;
+const fileInput = document.getElementById('fileInput') as HTMLInputElement | null;
+const dropZone = document.getElementById('dropZone') as HTMLDivElement | null;
+const fileQueue = document.getElementById('fileQueue') as HTMLDivElement | null;
+const uploadButton = document.getElementById('uploadButton') as HTMLButtonElement | null;
+const uploadBtnLabel = document.getElementById('uploadBtnLabel') as HTMLSpanElement | null;
+const statusBox = document.getElementById('statusBox') as HTMLDivElement | null;
+const sessionMetaUpload = document.getElementById('sessionMetaUpload') as HTMLSpanElement | null;
+const sessionDotUpload = document.getElementById('sessionDotUpload') as HTMLSpanElement | null;
+const sessionCountdownUpload = document.getElementById('sessionCountdownUpload') as HTMLSpanElement | null;
+const retrySessionButton = document.getElementById('retrySessionButton') as HTMLButtonElement | null;
+const uploadForm = document.getElementById('uploadForm') as HTMLFormElement | null;
+
+// Badges
+const portalBalanceText = document.getElementById('portalBalanceText') as HTMLSpanElement | null;
+const portalModeText = document.getElementById('portalModeText') as HTMLSpanElement | null;
+
+// Mode Views
+const viewPrintMode = document.getElementById('viewPrintMode') as HTMLElement | null;
+const viewScanMode = document.getElementById('viewScanMode') as HTMLElement | null;
+const viewCopyMode = document.getElementById('viewCopyMode') as HTMLElement | null;
+const viewIdleMode = document.getElementById('viewIdleMode') as HTMLElement | null;
+
+// Scan Ready Card
+const viewScanReady = document.getElementById('viewScanReady') as HTMLElement | null;
+const scanReadyFilename = document.getElementById('scanReadyFilename') as HTMLElement | null;
+const scanDownloadButton = document.getElementById('scanDownloadButton') as HTMLAnchorElement | null;
+
+// Session Ended Card
+const viewSessionEnded = document.getElementById('viewSessionEnded') as HTMLElement | null;
+const sessionEndedChange = document.getElementById('sessionEndedChange') as HTMLElement | null;
+const sessionEndedChangeText = document.getElementById('sessionEndedChangeText') as HTMLElement | null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const tokenFromPath = window.location.pathname.split('/')[2];
-const token = window.uploadToken || tokenFromPath;
+function extractToken(): string {
+  if (
+    typeof window.uploadToken === 'string' &&
+    window.uploadToken !== '{{token}}' &&
+    window.uploadToken.trim().length > 0
+  ) {
+    return window.uploadToken.trim();
+  }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const queryToken = urlParams.get('token');
+  if (queryToken && queryToken.trim().length > 0) {
+    return queryToken.trim();
+  }
+
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  if (parts.length >= 2 && (parts[0] === 'upload' || parts[0] === 'portal')) {
+    return parts[1].trim();
+  }
+
+  return '';
+}
+
+const token = extractToken();
 const CLIENT_ID_STORAGE_KEY = 'printbit.uploadClientId';
 const SESSION_MONITOR_INTERVAL_MS = 5000;
-const SESSION_COUNTDOWN_TICK_MS = 1000;
 const DEFAULT_WARNING_SECONDS = 60;
 
 let sessionId: string | null = null;
+let currentMode: SessionMode = 'PRINT';
 let appState: UploadState = 'session-loading';
 let sessionWarningThresholdSeconds = DEFAULT_WARNING_SECONDS;
 let monitorHandle: number | null = null;
@@ -77,6 +118,7 @@ let countdownBaselineSeconds: number | null = null;
 let countdownSyncedAtMs: number | null = null;
 let countdownHandle: number | null = null;
 let isSessionUnavailable = false;
+let socket: SocketClient | null = null;
 
 function getOrCreateUploadClientId(): string {
   const generated =
@@ -106,16 +148,79 @@ interface QueuedFile {
 const queue: QueuedFile[] = [];
 let nextId = 0;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── UI View Helpers ───────────────────────────────────────────────────────────
+
+function setSessionModeView(mode: SessionMode | string): void {
+  const normalized = (mode ?? 'PRINT').toString().toUpperCase() as SessionMode;
+  currentMode = normalized;
+
+  if (portalModeText) {
+    portalModeText.textContent = normalized;
+  }
+
+  if (viewPrintMode) viewPrintMode.classList.toggle('hidden', normalized !== 'PRINT');
+  if (viewScanMode) viewScanMode.classList.toggle('hidden', normalized !== 'SCAN');
+  if (viewCopyMode) viewCopyMode.classList.toggle('hidden', normalized !== 'COPY');
+  if (viewIdleMode) viewIdleMode.classList.toggle('hidden', normalized !== 'IDLE');
+}
+
+function showScanReady(filename?: string): void {
+  const safeFilename = filename && filename.trim() ? filename.trim() : 'PrintBit_Scan.pdf';
+  if (scanReadyFilename) {
+    scanReadyFilename.textContent = safeFilename;
+  }
+
+  if (scanDownloadButton) {
+    const downloadUrl = `/session/download?token=${encodeURIComponent(token)}&filename=${encodeURIComponent(safeFilename)}`;
+    scanDownloadButton.href = downloadUrl;
+  }
+
+  if (viewScanReady) {
+    viewScanReady.classList.remove('hidden');
+  }
+}
+
+function showSessionEnded(dispensedChange?: number, _reason?: string): void {
+  if (viewPrintMode) viewPrintMode.classList.add('hidden');
+  if (viewScanMode) viewScanMode.classList.add('hidden');
+  if (viewCopyMode) viewCopyMode.classList.add('hidden');
+  if (viewIdleMode) viewIdleMode.classList.add('hidden');
+
+  if (viewSessionEnded) {
+    viewSessionEnded.classList.remove('hidden');
+  }
+
+  if (portalBalanceText) {
+    portalBalanceText.textContent = '0.00';
+  }
+
+  if (typeof dispensedChange === 'number' && dispensedChange > 0) {
+    if (sessionEndedChangeText) {
+      sessionEndedChangeText.textContent = `₱${dispensedChange.toFixed(2)} change dispensed at the kiosk. Please collect your coins.`;
+    }
+    if (sessionEndedChange) {
+      sessionEndedChange.classList.remove('hidden');
+    }
+  } else if (sessionEndedChange) {
+    sessionEndedChange.classList.add('hidden');
+  }
+
+  setSessionUI('Session ended', 'idle');
+  stopSessionMonitor();
+  stopSessionCountdownTicker();
+}
 
 function setAppState(s: UploadState): void {
   appState = s;
   const canUpload =
     s === 'session-ready' && queue.some((q) => q.status === 'pending');
-  uploadButton.disabled = !canUpload;
+  if (uploadButton) {
+    uploadButton.disabled = !canUpload;
+  }
 }
 
 function setStatus(msg: string, cls: 'info' | 'ok' | 'error' | ''): void {
+  if (!statusBox) return;
   statusBox.textContent = msg;
   statusBox.className = cls ? `status-box ${cls}` : 'status-box';
 }
@@ -125,9 +230,11 @@ function clearStatus(): void {
 }
 
 function setSessionUI(text: string, dot: 'idle' | 'active' | 'error'): void {
-  sessionMetaUpload.textContent = text;
-  sessionDotUpload.classList.remove('active', 'error');
-  if (dot !== 'idle') sessionDotUpload.classList.add(dot);
+  if (sessionMetaUpload) sessionMetaUpload.textContent = text;
+  if (sessionDotUpload) {
+    sessionDotUpload.classList.remove('active', 'error');
+    if (dot !== 'idle') sessionDotUpload.classList.add(dot);
+  }
 }
 
 function formatBytes(bytes: number): string {
@@ -192,27 +299,20 @@ function mapError(r: UploadErrorResponse): string {
     case 'DUPLICATE_FILE':
       return 'This file was already sent in this session.';
     case 'INVALID_TOKEN':
-      return 'Invalid token. Scan a fresh kiosk QR or reopen the upload link from the kiosk.';
+      return 'Invalid session token. Please scan the QR code again.';
     case 'UNSUPPORTED_TYPE':
-      return 'Unsupported file type.';
     case 'UNSUPPORTED_FILE_TYPE':
-      return 'Unsupported file type.';
+      return 'Unsupported file type. Please upload PDF, Word, Excel, PowerPoint, or image files.';
     case 'FILE_TOO_LARGE':
       return r.error ?? 'File exceeds the 25 MB limit.';
     case 'SESSION_NOT_FOUND':
-      return 'Session not found. Scan a fresh kiosk QR or reopen the upload link from the kiosk.';
+      return 'Session not found. Please start a new session on the kiosk.';
     case 'SESSION_EXPIRED':
-      return 'Session expired. Stay on PrintBit Wi-Fi, then scan a fresh kiosk QR or reopen the latest upload link.';
+      return 'Session expired. Please start a new session on the kiosk.';
     case 'SESSION_OWNED':
-      return 'This session is already active on another phone. Stay on PrintBit Wi-Fi and start a new kiosk session.';
-    case 'MISSING_CLIENT_ID':
-      return 'Upload client identity missing. Reload this page.';
-    case 'INVALID_CLIENT_ID':
-      return 'Upload client identity is invalid. Reload this page and try again.';
-    case 'SESSION_PERSIST_FAILED':
-      return 'Kiosk could not save session changes. Please start a new kiosk session and retry.';
+      return 'This session is currently active on another device.';
     default:
-      return r.error ?? 'Upload failed.';
+      return r.error ?? 'Upload failed. Please try again.';
   }
 }
 
@@ -241,6 +341,10 @@ function resetSessionCountdown(): void {
   stopSessionCountdownTicker();
   countdownBaselineSeconds = null;
   countdownSyncedAtMs = null;
+  if (sessionCountdownUpload) {
+    sessionCountdownUpload.classList.add('hidden');
+    sessionCountdownUpload.textContent = '';
+  }
 }
 
 function getCurrentRemainingSeconds(): number | null {
@@ -248,703 +352,450 @@ function getCurrentRemainingSeconds(): number | null {
     return null;
   }
   const elapsedSeconds = Math.floor((Date.now() - countdownSyncedAtMs) / 1000);
-  return Math.max(countdownBaselineSeconds - elapsedSeconds, 0);
+  return Math.max(0, countdownBaselineSeconds - elapsedSeconds);
 }
 
-function renderSessionCountdown(remainingSeconds: number): void {
-  if (!sessionId) return;
-  const countdown = formatCountdown(remainingSeconds);
-  setSessionUI(`${sessionId}`, 'active');
-
-  if (
-    remainingSeconds <= sessionWarningThresholdSeconds &&
-    appState !== 'all-done'
-  ) {
-    setStatus(`Session expires in ${countdown}. Finish upload soon.`, 'info');
+function renderSessionRemainingTime(): void {
+  const remainingSeconds = getCurrentRemainingSeconds();
+  if (remainingSeconds === null) {
+    if (sessionCountdownUpload) sessionCountdownUpload.classList.add('hidden');
     return;
   }
 
-  const current = statusBox.textContent ?? '';
-  if (current.startsWith('Session expires in ')) {
-    clearStatus();
+  if (sessionCountdownUpload) {
+    sessionCountdownUpload.textContent = formatCountdown(remainingSeconds);
+    sessionCountdownUpload.classList.remove('hidden');
+  }
+
+  if (remainingSeconds <= 0 && !isSessionUnavailable) {
+    handleSessionExpired();
   }
 }
 
 function startSessionCountdownTicker(): void {
-  if (countdownHandle !== null) return;
+  stopSessionCountdownTicker();
   countdownHandle = window.setInterval(() => {
-    if (!sessionId || isSessionUnavailable) {
-      resetSessionCountdown();
-      return;
-    }
-    const remainingSeconds = getCurrentRemainingSeconds();
-    if (remainingSeconds === null) return;
-    renderSessionCountdown(remainingSeconds);
-    if (remainingSeconds === 0) {
-      stopSessionCountdownTicker();
-    }
-  }, SESSION_COUNTDOWN_TICK_MS);
+    renderSessionRemainingTime();
+  }, 1000);
 }
 
-function applySessionCountdown(remainingSeconds: number): void {
-  countdownBaselineSeconds = Math.max(0, Math.floor(remainingSeconds));
+function updateSessionCountdown(remainingSeconds?: number): void {
+  if (
+    typeof remainingSeconds !== 'number' ||
+    !Number.isFinite(remainingSeconds) ||
+    remainingSeconds < 0
+  ) {
+    resetSessionCountdown();
+    return;
+  }
+
+  countdownBaselineSeconds = Math.floor(remainingSeconds);
   countdownSyncedAtMs = Date.now();
-  renderSessionCountdown(countdownBaselineSeconds);
+  renderSessionRemainingTime();
   startSessionCountdownTicker();
 }
 
-function setSessionUnavailable(message: string): void {
+function handleSessionExpired(): void {
   isSessionUnavailable = true;
-  setAppState('session-error');
-  setSessionUI('Session unavailable', 'error');
-  setStatus(message, 'error');
   stopSessionMonitor();
   resetSessionCountdown();
+  setAppState('session-error');
+  setSessionUI('Session expired', 'error');
+  setStatus(
+    'Session expired. Please pair again on the kiosk.',
+    'error',
+  );
 }
 
-async function refreshSessionLease(): Promise<void> {
-  if (!token || isSessionUnavailable) return;
+// ── Socket.IO Real-Time Sync ─────────────────────────────────────────────────
+
+function initSocket(): void {
+  if (!token || typeof window.io !== 'function') return;
+
+  try {
+    socket = window.io({
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      reconnectionDelay: 2000,
+    });
+
+    socket.on('connect', () => {
+      setSessionUI('Connected to kiosk', 'active');
+      if (sessionId) {
+        socket?.emit('joinSession', sessionId);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      setSessionUI('Disconnected from kiosk', 'error');
+    });
+
+    socket.on('session:mode_changed', (payload: unknown) => {
+      const data = payload as { mode?: string };
+      if (data?.mode) {
+        setSessionModeView(data.mode);
+      }
+    });
+
+    socket.on('session:scan_ready', (payload: unknown) => {
+      const data = payload as { filename?: string; downloadUrl?: string };
+      showScanReady(data?.filename);
+    });
+
+    socket.on('session:ended', (payload: unknown) => {
+      const data = payload as { dispensedChange?: number; reason?: string };
+      showSessionEnded(data?.dispensedChange, data?.reason);
+    });
+
+    socket.on('session:balance_updated', (payload: unknown) => {
+      const data = payload as { balance?: number };
+      if (typeof data?.balance === 'number' && portalBalanceText) {
+        portalBalanceText.textContent = data.balance.toFixed(2);
+      }
+    });
+
+    socket.on('balance', (amount: unknown) => {
+      if (typeof amount === 'number' && portalBalanceText) {
+        portalBalanceText.textContent = amount.toFixed(2);
+      }
+    });
+
+    socket.on('coinAccepted', (payload: unknown) => {
+      const data = payload as { balance?: number };
+      if (typeof data?.balance === 'number' && portalBalanceText) {
+        portalBalanceText.textContent = data.balance.toFixed(2);
+      }
+    });
+
+    socket.on('session:state_changed', (payload: unknown) => {
+      const data = payload as { state?: string; reason?: string };
+      if (data?.state === 'ENDING' || data?.state === 'IDLE') {
+        if (data.state === 'IDLE') {
+          setSessionModeView('IDLE');
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('[PORTAL] Socket initialization error:', err);
+  }
+}
+
+// ── Session Polling & Initialization ─────────────────────────────────────────
+
+async function checkSessionStatus(): Promise<void> {
+  if (isSessionUnavailable || !token) return;
 
   try {
     const res = await fetch(
-      `/api/wireless/sessions/by-token/${encodeURIComponent(token)}`,
-      { headers: { 'x-upload-client-id': uploadClientId } },
+      `/api/wireless/sessions/by-token/${encodeURIComponent(token)}?clientId=${encodeURIComponent(uploadClientId)}`,
+      { cache: 'no-store' },
     );
-    if (!res.ok) {
-      let payload: UploadErrorResponse = {};
-      try {
-        payload = (await res.json()) as UploadErrorResponse;
-      } catch {
-        payload = {};
-      }
 
-      if (
-        res.status === 404 ||
-        res.status === 410 ||
-        payload.code === 'SESSION_EXPIRED'
-      ) {
-        setSessionUnavailable(
-          'This session has expired. Stay on PrintBit Wi-Fi, then scan a fresh kiosk QR or reopen the latest upload link.',
-        );
-        return;
-      }
-      if (res.status === 409 || payload.code === 'SESSION_OWNED') {
-        setSessionUnavailable(
-          'This session is active on another phone. Stay on PrintBit Wi-Fi and start a new kiosk session.',
-        );
-        return;
-      }
-      if (
-        res.status === 400 &&
-        (payload.code === 'MISSING_CLIENT_ID' ||
-          payload.code === 'INVALID_CLIENT_ID')
-      ) {
-        setSessionUnavailable(mapError(payload));
-        return;
-      }
-      if (res.status === 500 && payload.code === 'SESSION_PERSIST_FAILED') {
-        setSessionUnavailable(mapError(payload));
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 410) {
+        handleSessionExpired();
       }
       return;
     }
 
-    if (isSessionUnavailable) return;
-    const session = (await res.json()) as SessionResponse;
-    if (isSessionUnavailable) return;
-    sessionId = session.sessionId;
-    sessionWarningThresholdSeconds =
-      session.warningThresholdSeconds ?? DEFAULT_WARNING_SECONDS;
-    if (typeof session.remainingSeconds === 'number') {
-      applySessionCountdown(session.remainingSeconds);
+    const data = (await res.json()) as SessionResponse;
+    sessionId = data.sessionId;
+    if (typeof data.warningThresholdSeconds === 'number') {
+      sessionWarningThresholdSeconds = data.warningThresholdSeconds;
+    }
+    updateSessionCountdown(data.remainingSeconds);
+
+    if (data.mode) {
+      setSessionModeView(data.mode);
+    }
+    if (typeof data.balance === 'number' && portalBalanceText) {
+      portalBalanceText.textContent = data.balance.toFixed(2);
     }
   } catch {
-    // Keep current UI state on transient network errors.
+    // Network retry will handle
   }
 }
-
-function startSessionMonitor(): void {
-  stopSessionMonitor();
-  monitorHandle = window.setInterval(
-    () => void refreshSessionLease(),
-    SESSION_MONITOR_INTERVAL_MS,
-  );
-}
-
-function handleVisibilityResume(): void {
-  if (document.visibilityState === 'visible') {
-    void refreshSessionLease();
-  }
-}
-
-// ── Queue item UI ─────────────────────────────────────────────────────────────
-
-function createQueueItem(qf: QueuedFile): HTMLElement {
-  const ext = extOf(qf.file.name);
-  const size = formatBytes(qf.file.size);
-
-  const li = document.createElement('div');
-  li.className = 'queue-item';
-  li.dataset.qid = qf.id;
-  li.innerHTML = `
-    <div class="queue-item__icon" data-ext="${ext}">${ext.toUpperCase()}</div>
-    <div class="queue-item__info">
-      <p class="queue-item__name" title="${escHtml(qf.file.name)}">${escHtml(qf.file.name)}</p>
-      <span class="queue-item__size">${size}</span>
-    </div>
-    <div class="queue-item__actions">
-      <span class="queue-item__status queue-item__status--pending">Pending</span>
-      <button type="button" class="queue-item__remove" aria-label="Remove ${escHtml(qf.file.name)}">
-        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd"
-          d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414
-          10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586
-          10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-      </button>
-    </div>
-    <div class="queue-item__progress" style="width:0%"></div>
-  `;
-
-  li.querySelector('.queue-item__remove')?.addEventListener('click', () =>
-    removeFromQueue(qf.id),
-  );
-  return li;
-}
-
-function updateItemStatus(
-  qf: QueuedFile,
-  status: ItemStatus,
-  labelOverride?: string,
-): void {
-  qf.status = status;
-  const li = qf.el;
-  li.classList.remove('uploading', 'done', 'error');
-  if (status !== 'pending') li.classList.add(status);
-
-  const badge = li.querySelector('.queue-item__status') as HTMLElement;
-  badge.className = `queue-item__status queue-item__status--${status}`;
-  badge.textContent =
-    labelOverride ??
-    {
-      pending: 'Pending',
-      uploading: 'Uploading…',
-      done: '✓ Sent',
-      error: 'Failed',
-    }[status];
-}
-
-function setItemProgress(qf: QueuedFile, pct: number): void {
-  const bar = qf.el.querySelector('.queue-item__progress') as HTMLElement;
-  if (bar) bar.style.width = `${pct}%`;
-}
-
-function removeFromQueue(id: string): void {
-  const idx = queue.findIndex((q) => q.id === id);
-  if (idx === -1) return;
-  const [qf] = queue.splice(idx, 1);
-  qf.el.remove();
-  refreshUploadBtn();
-  if (queue.length === 0) clearStatus();
-}
-
-function escHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ── Add files to queue ────────────────────────────────────────────────────────
-
-function addFilesToQueue(files: FileList | File[]): void {
-  const arr = Array.from(files);
-  const unsupportedFiles = collectUnsupportedFiles(arr);
-  if (unsupportedFiles.length > 0) {
-    setStatus(
-      `Unsupported file type: ${unsupportedFiles[0]}${unsupportedFiles.length > 1 ? ` (+${unsupportedFiles.length - 1} more)` : ''}.`,
-      'error',
-    );
-  }
-
-  for (const file of arr) {
-    const normalizedMime = normalizeMimeByExtension(file.name, file.type);
-    if (!normalizedMime) continue;
-
-    // Skip duplicates by name+size
-    const isDupe = queue.some(
-      (q) => q.file.name === file.name && q.file.size === file.size,
-    );
-    if (isDupe) continue;
-
-    const qf: QueuedFile = {
-      id: String(nextId++),
-      file,
-      status: 'pending',
-      el: null as unknown as HTMLElement,
-    };
-    const el = createQueueItem(qf);
-    qf.el = el;
-    queue.push(qf);
-    fileQueue.appendChild(el);
-  }
-  refreshUploadBtn();
-  if (unsupportedFiles.length === 0) {
-    clearStatus();
-  }
-}
-
-function refreshUploadBtn(): void {
-  const pendingCount = queue.filter((q) => q.status === 'pending').length;
-  if (appState !== 'session-ready' && appState !== 'all-done') return;
-  uploadButton.disabled = pendingCount === 0;
-  uploadBtnLabel.textContent =
-    pendingCount > 1 ? `Send ${pendingCount} files to Kiosk` : 'Send to Kiosk';
-}
-
-function clearQueueForRetry(): void {
-  queue.splice(0, queue.length);
-  nextId = 0;
-  fileQueue.innerHTML = '';
-  fileInput.value = '';
-  uploadButton.disabled = true;
-  uploadBtnLabel.textContent = 'Send to Kiosk';
-  clearStatus();
-}
-
-// ── Session init ──────────────────────────────────────────────────────────────
 
 async function initSession(): Promise<void> {
-  isSessionUnavailable = false;
-  resetSessionCountdown();
+  if (!token) {
+    setAppState('session-error');
+    setSessionUI('Missing token', 'error');
+    setStatus('No session token provided. Please scan the kiosk QR code.', 'error');
+    return;
+  }
+
   setAppState('session-loading');
   setSessionUI('Connecting to session…', 'idle');
-  setStatus(
-    'Connecting to kiosk session over local network or internet…',
-    'info',
-  );
+  clearStatus();
 
-  if (!token) {
-    setSessionUnavailable(
-      'No upload token found. Please scan a fresh kiosk QR.',
+  try {
+    const res = await fetch(
+      `/api/wireless/sessions/by-token/${encodeURIComponent(token)}?clientId=${encodeURIComponent(uploadClientId)}`,
+      { cache: 'no-store' },
+    );
+
+    if (!res.ok) {
+      const errData = (await res.json().catch(() => ({}))) as UploadErrorResponse;
+      setAppState('session-error');
+      setSessionUI('Session unavailable', 'error');
+      setStatus(mapError(errData), 'error');
+      return;
+    }
+
+    const data = (await res.json()) as SessionResponse;
+    sessionId = data.sessionId;
+    isSessionUnavailable = false;
+
+    if (typeof data.warningThresholdSeconds === 'number') {
+      sessionWarningThresholdSeconds = data.warningThresholdSeconds;
+    }
+    updateSessionCountdown(data.remainingSeconds);
+
+    if (data.mode) {
+      setSessionModeView(data.mode);
+    }
+    if (typeof data.balance === 'number' && portalBalanceText) {
+      portalBalanceText.textContent = data.balance.toFixed(2);
+    }
+
+    setAppState('session-ready');
+    setSessionUI('Ready', 'active');
+    initSocket();
+
+    stopSessionMonitor();
+    monitorHandle = window.setInterval(() => {
+      void checkSessionStatus();
+    }, SESSION_MONITOR_INTERVAL_MS);
+  } catch {
+    setAppState('session-error');
+    setSessionUI('Connection error', 'error');
+    setStatus('Could not connect to kiosk. Please verify Wi-Fi connection.', 'error');
+  }
+}
+
+// ── File Queue & Upload Implementation ───────────────────────────────────────
+
+function renderQueueItem(q: QueuedFile): void {
+  const ext = extOf(q.file.name);
+  const sizeStr = formatBytes(q.file.size);
+
+  q.el.className = 'queue-item';
+  q.el.innerHTML = `
+    <div class="queue-item__icon" data-ext="${ext}">${ext.toUpperCase().slice(0, 4)}</div>
+    <div class="queue-item__info">
+      <div class="queue-item__name" title="${q.file.name}">${q.file.name}</div>
+      <div class="queue-item__size">${sizeStr}</div>
+      <div class="queue-item__progress-bar hidden"><div class="queue-item__progress-fill"></div></div>
+    </div>
+    <div class="queue-item__actions">
+      <span class="queue-item__status">Ready</span>
+      <button type="button" class="queue-item__remove" aria-label="Remove ${q.file.name}">
+        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+      </button>
+    </div>
+  `;
+
+  const removeBtn = q.el.querySelector('.queue-item__remove') as HTMLButtonElement | null;
+  removeBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeQueueItem(q.id);
+  });
+
+  if (fileQueue) {
+    fileQueue.appendChild(q.el);
+  }
+}
+
+function removeQueueItem(id: string): void {
+  const idx = queue.findIndex((item) => item.id === id);
+  if (idx !== -1) {
+    const [removed] = queue.splice(idx, 1);
+    removed.el.remove();
+  }
+
+  if (dropZone) {
+    dropZone.classList.toggle('has-files', queue.length > 0);
+  }
+  setAppState(appState);
+}
+
+function addFiles(files: FileList | File[]): void {
+  const fileArray = Array.from(files);
+  if (fileArray.length === 0) return;
+
+  const unsupported = collectUnsupportedFiles(fileArray);
+  if (unsupported.length > 0) {
+    setStatus(
+      `Unsupported file type: ${unsupported.join(', ')}. Please select PDF, Office, or image files.`,
+      'error',
     );
     return;
   }
 
-  try {
-    const res = await fetch(
-      `/api/wireless/sessions/by-token/${encodeURIComponent(token)}`,
-      { headers: { 'x-upload-client-id': uploadClientId } },
+  for (const file of fileArray) {
+    if (file.size > 25 * 1024 * 1024) {
+      setStatus(`File "${file.name}" exceeds 25 MB limit.`, 'error');
+      continue;
+    }
+
+    const alreadyInQueue = queue.some(
+      (q) => q.file.name === file.name && q.file.size === file.size,
     );
-    if (!res.ok) {
-      let payload: UploadErrorResponse = {};
-      try {
-        payload = (await res.json()) as UploadErrorResponse;
-      } catch {
-        payload = {};
-      }
-      throw new Error(mapError(payload));
-    }
+    if (alreadyInQueue) continue;
 
-    const session = (await res.json()) as SessionResponse;
-    sessionId = session.sessionId;
-    sessionWarningThresholdSeconds =
-      session.warningThresholdSeconds ?? DEFAULT_WARNING_SECONDS;
-
-    attachSocket(sessionId);
-    setAppState('session-ready');
-    if (typeof session.remainingSeconds === 'number') {
-      applySessionCountdown(session.remainingSeconds);
-    } else {
-      resetSessionCountdown();
-      setSessionUI(`Session ${sessionId.slice(0, 8)}…`, 'active');
-    }
-    clearStatus();
-    refreshUploadBtn();
-    startSessionMonitor();
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Could not connect to this session.';
-    setSessionUnavailable(message);
+    const id = `q_${++nextId}`;
+    const el = document.createElement('div');
+    const queuedFile: QueuedFile = { id, file, status: 'pending', el };
+    queue.push(queuedFile);
+    renderQueueItem(queuedFile);
   }
+
+  if (dropZone) {
+    dropZone.classList.toggle('has-files', queue.length > 0);
+  }
+  setAppState(appState);
 }
 
-// ── Socket ────────────────────────────────────────────────────────────────────
+async function uploadSingleFile(q: QueuedFile): Promise<boolean> {
+  if (!sessionId || !token) return false;
 
-function attachSocket(sid: string): void {
-  if (typeof window.io !== 'function') return;
-  const socket = window.io();
-  socket.emit('joinSession', sid);
+  q.status = 'uploading';
+  const statusSpan = q.el.querySelector('.queue-item__status') as HTMLSpanElement | null;
+  const progressBar = q.el.querySelector('.queue-item__progress-bar') as HTMLDivElement | null;
+  const progressFill = q.el.querySelector('.queue-item__progress-fill') as HTMLDivElement | null;
+  const removeBtn = q.el.querySelector('.queue-item__remove') as HTMLButtonElement | null;
 
-  socket.on('UploadCompleted', (info: unknown) => {
-    const name =
-      typeof info === 'object' &&
-      info !== null &&
-      'filename' in info &&
-      typeof (info as { filename: unknown }).filename === 'string'
-        ? (info as { filename: string }).filename
-        : 'file';
-    setStatus(`✓ ${name} received by kiosk.`, 'ok');
-  });
+  if (statusSpan) statusSpan.textContent = 'Uploading…';
+  if (progressBar) progressBar.classList.remove('hidden');
+  if (removeBtn) removeBtn.disabled = true;
 
-  socket.on('UploadFailed', () => {
-    setStatus('Kiosk reported an upload error. Please retry.', 'error');
-  });
+  const formData = new FormData();
+  formData.append('file', q.file);
 
-  socket.on('AnalysisStarted', (info: unknown) => {
-    const name =
-      typeof info === 'object' &&
-      info !== null &&
-      'filename' in info &&
-      typeof (info as { filename: unknown }).filename === 'string'
-        ? (info as { filename: string }).filename
-        : 'file';
-    setStatus(`Analyzing ${name}…`, 'info');
-  });
+  return new Promise<boolean>((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      'POST',
+      `/api/wireless/sessions/${encodeURIComponent(sessionId!)}/upload?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(uploadClientId)}`,
+    );
 
-  socket.on('AnalysisCompleted', (info: unknown) => {
-    const name =
-      typeof info === 'object' &&
-      info !== null &&
-      'filename' in info &&
-      typeof (info as { filename: unknown }).filename === 'string'
-        ? (info as { filename: string }).filename
-        : 'file';
-    setStatus(`✓ ${name} ready for printing at kiosk.`, 'ok');
-  });
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && progressFill) {
+        const pct = Math.round((event.loaded / event.total) * 100);
+        progressFill.style.width = `${pct}%`;
+      }
+    };
 
-  socket.on('AnalysisFailed', (info: unknown) => {
-    const name =
-      typeof info === 'object' &&
-      info !== null &&
-      'filename' in info &&
-      typeof (info as { filename: unknown }).filename === 'string'
-        ? (info as { filename: string }).filename
-        : 'file';
-    // Analysis failure is non-fatal — file can still be printed, just without page count info
-    setStatus(`⚠ ${name} analysis unavailable. Proceed at kiosk.`, 'info');
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        q.status = 'done';
+        if (statusSpan) {
+          statusSpan.textContent = 'Uploaded ✓';
+          statusSpan.className = 'queue-item__status ok';
+        }
+        if (progressBar) progressBar.classList.add('hidden');
+        resolve(true);
+      } else {
+        q.status = 'error';
+        let errMsg = 'Failed';
+        try {
+          const res = JSON.parse(xhr.responseText) as UploadErrorResponse;
+          errMsg = mapError(res);
+        } catch {
+          // ignore
+        }
+        if (statusSpan) {
+          statusSpan.textContent = errMsg;
+          statusSpan.className = 'queue-item__status error';
+        }
+        if (progressBar) progressBar.classList.add('hidden');
+        if (removeBtn) removeBtn.disabled = false;
+        resolve(false);
+      }
+    };
+
+    xhr.onerror = () => {
+      q.status = 'error';
+      if (statusSpan) {
+        statusSpan.textContent = 'Network error';
+        statusSpan.className = 'queue-item__status error';
+      }
+      if (progressBar) progressBar.classList.add('hidden');
+      if (removeBtn) removeBtn.disabled = false;
+      resolve(false);
+    };
+
+    xhr.send(formData);
   });
 }
 
-// ── Upload all pending files sequentially ─────────────────────────────────────
-
-async function uploadPendingFiles(): Promise<void> {
-  if (!sessionId || isSessionUnavailable) return;
+async function handleUploadSubmit(event: Event): Promise<void> {
+  event.preventDefault();
   const pending = queue.filter((q) => q.status === 'pending');
-  if (pending.length === 0) return;
+  if (pending.length === 0 || !sessionId) return;
 
   setAppState('uploading');
-  uploadButton.disabled = true;
+  if (uploadBtnLabel) uploadBtnLabel.textContent = 'Sending to Kiosk…';
   clearStatus();
 
-  let doneCount = 0;
-  let errorCount = 0;
-
-  for (const qf of pending) {
-    if (isSessionUnavailable) break;
-    updateItemStatus(qf, 'uploading');
-    setItemProgress(qf, 20);
-
-    const formData = new FormData();
-    formData.append('file', qf.file);
-
-    try {
-      // Use XHR for upload progress
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open(
-          'POST',
-          `/api/wireless/sessions/${sessionId}/upload?token=${encodeURIComponent(token)}`,
-        );
-        xhr.setRequestHeader('x-upload-client-id', uploadClientId);
-
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            setItemProgress(qf, Math.round((e.loaded / e.total) * 90));
-          }
-        });
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setItemProgress(qf, 100);
-            updateItemStatus(qf, 'done');
-            doneCount++;
-            resolve();
-          } else {
-            try {
-              const errBody = JSON.parse(
-                xhr.responseText,
-              ) as UploadErrorResponse;
-              updateItemStatus(qf, 'error', mapError(errBody));
-              if (
-                errBody.code === 'SESSION_EXPIRED' ||
-                errBody.code === 'SESSION_OWNED'
-              ) {
-                setSessionUnavailable(mapError(errBody));
-              }
-            } catch {
-              updateItemStatus(qf, 'error', 'Upload failed');
-            }
-            errorCount++;
-            resolve(); // continue with next file
-          }
-        });
-
-        xhr.addEventListener('error', () => {
-          updateItemStatus(qf, 'error', 'Network error');
-          errorCount++;
-          reject();
-        });
-
-        xhr.send(formData);
-      }).catch(() => {
-        /* already handled */
-      });
-    } catch {
-      updateItemStatus(qf, 'error', 'Network error');
-      errorCount++;
-    }
+  let successCount = 0;
+  for (const item of pending) {
+    const ok = await uploadSingleFile(item);
+    if (ok) successCount++;
   }
 
-  if (isSessionUnavailable) return;
+  if (uploadBtnLabel) uploadBtnLabel.textContent = 'Send to Kiosk';
 
-  // Final summary
-  if (errorCount === 0 && doneCount > 0) {
-    setStatus(
-      `✓ ${doneCount} file${doneCount > 1 ? 's' : ''} sent successfully. You can continue at the kiosk.`,
-      'ok',
-    );
+  if (successCount === pending.length) {
     setAppState('all-done');
-  } else if (doneCount > 0 && errorCount > 0) {
+    setStatus('All files successfully sent! Please check the kiosk screen.', 'ok');
+  } else if (successCount > 0) {
+    setAppState('session-ready');
     setStatus(
-      `${doneCount} file${doneCount > 1 ? 's' : ''} sent, ${errorCount} failed. You can retry failed items.`,
+      `Uploaded ${successCount} of ${pending.length} files. Please check failed files.`,
       'info',
     );
-    setAppState('session-ready');
-    refreshUploadBtn();
   } else {
-    setStatus(
-      'All uploads failed. Please check your network/internet connection and try again.',
-      'error',
-    );
     setAppState('session-ready');
-    refreshUploadBtn();
+    setStatus('Upload failed. Please check connection and try again.', 'error');
   }
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
+// ── Event Listeners ───────────────────────────────────────────────────────────
 
-// The hidden <input> covers the full drop zone via `position:absolute; inset:0`,
-// so every pointer click already natively activates it. Adding a JS click handler
-// that calls fileInput.click() on top of that opens TWO file dialogs — the second
-// one cancels the first, which is why the first selection was never received.
-// No click handler needed here at all.
-
-dropZone.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    fileInput.click();
+dropZone?.addEventListener('click', () => fileInput?.click());
+fileInput?.addEventListener('change', () => {
+  if (fileInput?.files) {
+    addFiles(fileInput.files);
+    fileInput.value = '';
   }
 });
 
-fileInput.addEventListener('change', () => {
-  if (fileInput.files?.length) {
-    addFilesToQueue(fileInput.files);
-    fileInput.value = ''; // reset so same files can be re-added after removal
-  }
-});
-
-dropZone.addEventListener('dragover', (e) => {
+dropZone?.addEventListener('dragover', (e) => {
   e.preventDefault();
   dropZone.classList.add('drag-over');
 });
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
-});
-dropZone.addEventListener('drop', (e: DragEvent) => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  if (e.dataTransfer?.files.length) addFilesToQueue(e.dataTransfer.files);
+
+dropZone?.addEventListener('dragleave', () => {
+  dropZone?.classList.remove('drag-over');
 });
 
-retrySessionButton.addEventListener('click', () => {
-  clearQueueForRetry();
+dropZone?.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone?.classList.remove('drag-over');
+  if (e.dataTransfer?.files) {
+    addFiles(e.dataTransfer.files);
+  }
+});
+
+uploadForm?.addEventListener('submit', (e) => {
+  void handleUploadSubmit(e);
+});
+
+retrySessionButton?.addEventListener('click', () => {
   void initSession();
 });
 
-uploadForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  if (appState !== 'session-ready') return;
-  void uploadPendingFiles();
-});
-
-document.addEventListener('visibilitychange', handleVisibilityResume);
-window.addEventListener('focus', () => {
-  void refreshSessionLease();
-});
-window.addEventListener('pageshow', () => {
-  void refreshSessionLease();
-});
-
-// ── Captive portal detection ──────────────────────────────────────────────────
-
-/**
- * Detects if we're running inside a captive portal webview.
- * These webviews often restrict file input access.
- */
-function detectCaptivePortalWebview(): boolean {
-  const ua = navigator.userAgent.toLowerCase();
-
-  // Android captive portal browser indicators
-  if (ua.includes('captiveportal') || ua.includes('cna')) return true;
-
-  // iOS CaptiveNetworkSupport
-  if (ua.includes('captivenetworksupport')) return true;
-
-  // Check if running in standalone mode (not a real browser)
-  const isStandalone =
-    'standalone' in navigator &&
-    (navigator as { standalone?: boolean }).standalone === true;
-
-  // Check for limited features typical of captive webviews
-  const hasStorageAccess = (() => {
-    try {
-      return typeof window.localStorage !== 'undefined';
-    } catch {
-      return false;
-    }
-  })();
-  const hasLimitedFeatures =
-    !window.indexedDB || !hasStorageAccess || typeof FileReader === 'undefined';
-
-  // Chrome Custom Tabs and similar can work, but captive webviews often have restrictions
-  // The safest indicator is if file input doesn't work
-  if (isStandalone || hasLimitedFeatures) return true;
-
-  return false;
-}
-
-/**
- * Shows a banner prompting user to open in full browser if in captive webview.
- */
-function showOpenInBrowserBanner(): void {
-  const currentUrl = window.location.href;
-
-  const banner = document.createElement('div');
-  banner.className = 'captive-banner';
-  banner.innerHTML = `
-    <div class="captive-banner__content">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      <div>
-        <strong>File picker may be blocked</strong>
-        <p>Open this page in your browser and stay on PrintBit Wi-Fi to upload reliably.</p>
-      </div>
-    </div>
-    <div class="captive-banner__actions">
-      <button type="button" class="captive-banner__copy" id="copyUrlBtn">
-        Copy Link
-      </button>
-      <button type="button" class="captive-banner__dismiss" id="dismissBannerBtn">
-        Try Anyway
-      </button>
-    </div>
-  `;
-
-  // Insert at top of upload card
-  const uploadCard = document.querySelector('.upload-card');
-  if (uploadCard) {
-    uploadCard.insertBefore(banner, uploadCard.firstChild);
-  }
-
-  // Copy URL button
-  const copyBtn = document.getElementById(
-    'copyUrlBtn',
-  ) as HTMLButtonElement | null;
-  if (copyBtn) {
-    const btn = copyBtn;
-    btn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(currentUrl);
-        btn.textContent = 'Copied!';
-        setTimeout(() => {
-          btn.textContent = 'Copy Link';
-        }, 2000);
-      } catch {
-        // Fallback: select text
-        const textArea = document.createElement('textarea');
-        textArea.value = currentUrl;
-        textArea.style.position = 'fixed';
-        textArea.style.opacity = '0';
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        btn.textContent = 'Copied!';
-        setTimeout(() => {
-          btn.textContent = 'Copy Link';
-        }, 2000);
-      }
-    });
-  }
-
-  // Dismiss button
-  const dismissBtn = document.getElementById('dismissBannerBtn');
-  dismissBtn?.addEventListener('click', () => {
-    banner.remove();
-  });
-}
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
-
-// Check for captive portal and show banner if needed
-if (detectCaptivePortalWebview()) {
-  showOpenInBrowserBanner();
-}
-
-// Detect file picker failure: if user taps drop zone but no file dialog opens
-// (common in captive portal webviews), show the banner after a timeout
-let filePickerOpened = false;
-let filePickerTimeout: number | null = null;
-
-dropZone.addEventListener('click', () => {
-  // When drop zone is clicked, file input should open dialog
-  // Set a timeout - if no blur/focus change happens, dialog probably didn't open
-  filePickerOpened = false;
-
-  if (filePickerTimeout) clearTimeout(filePickerTimeout);
-
-  filePickerTimeout = window.setTimeout(() => {
-    // If no files added and banner not already shown, show it
-    if (
-      !filePickerOpened &&
-      queue.length === 0 &&
-      !document.querySelector('.captive-banner')
-    ) {
-      showOpenInBrowserBanner();
-    }
-  }, 1500); // Give enough time for dialog to appear
-});
-
-// Cancel the timeout if dialog actually opened (file selected or window blurred)
-fileInput.addEventListener('change', () => {
-  filePickerOpened = true;
-  if (filePickerTimeout) {
-    clearTimeout(filePickerTimeout);
-    filePickerTimeout = null;
-  }
-});
-
-window.addEventListener('blur', () => {
-  // Window blur often indicates file dialog opened
-  filePickerOpened = true;
-  if (filePickerTimeout) {
-    clearTimeout(filePickerTimeout);
-    filePickerTimeout = null;
-  }
-});
+// ── Start ─────────────────────────────────────────────────────────────────────
 
 void initSession();

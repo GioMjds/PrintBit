@@ -22,9 +22,8 @@ export const WORKER_FAILED_DIR =
     : undefined;
 export const WORKER_PIPE_NAME =
   process.env.PRINTBIT_WORKER_PIPE_NAME?.trim() || 'printbit-node-errors';
-const rawWorkerPrechecks = process.env.PRINTBIT_WORKER_PRECHECKS_ENABLED
-  ?.trim()
-  .toLowerCase();
+const rawWorkerPrechecks =
+  process.env.PRINTBIT_WORKER_PRECHECKS_ENABLED?.trim().toLowerCase();
 const WORKER_PRECHECKS_DISABLED_TOKENS = new Set(['0', 'false', 'no', 'off']);
 export const WORKER_PRECHECKS_ENABLED =
   rawWorkerPrechecks === undefined
@@ -36,7 +35,12 @@ export const WORKER_RETURN_PIPE_NAME =
 export const WORKER_COMMAND_PIPE_NAME =
   process.env.PRINTBIT_WORKER_COMMAND_PIPE_NAME?.trim() ||
   'printbit-worker-commands';
-export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
+export const PORTAL_ASSETS = new Set([
+  'styles.css',
+  'app.js',
+  'portal.js',
+  'portal.html',
+]);
 export const PORTAL_DIR = path.resolve('src/public/upload');
 export const PUBLIC_DIR = path.resolve('src/public');
 export const PREVIEW_CACHE_DIR = path.join(
@@ -230,7 +234,7 @@ export const PRINT_SPOOLER_QUERY_TIMEOUT_MS = readPositiveIntEnv(
   5_000,
 );
 
-export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
+export const PUBLIC_PAGE_ROUTES = [
   { route: '/', filePath: path.join(PUBLIC_DIR, 'index.html') },
   { route: '/print', filePath: path.join(PUBLIC_DIR, 'print', 'index.html') },
   { route: '/copy', filePath: path.join(PUBLIC_DIR, 'copy', 'index.html') },
@@ -284,5 +288,4 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
     route: '/admin/alerts',
     filePath: path.join(PUBLIC_DIR, 'admin', 'alerts', 'index.html'),
   },
-];
-
+] as const satisfies { route: string; filePath: string }[];

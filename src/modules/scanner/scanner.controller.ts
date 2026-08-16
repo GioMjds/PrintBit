@@ -5,11 +5,14 @@ import type { Server as SocketIOServer } from 'socket.io';
 import { USB_EXPORT_ENABLED } from '@/config';
 import { createRateLimit } from '@/middleware/rate-limit';
 import { adminService } from '@/services/admin';
+import { coinBridgeService } from '@/services/coin-bridge';
+import type { WirelessSessionService } from '@/modules/wireless-session/wireless-session.service';
 import { ScannerService } from './scanner.service';
 
 interface ScannerControllerDeps {
   io: SocketIOServer;
   resolvePublicBaseUrl: (req: Request) => URL;
+  wirelessSessionService?: WirelessSessionService;
 }
 
 type InteractiveScanBody = {
@@ -75,6 +78,8 @@ export class ScannerController {
     this.router.post('/api/scanner/wireless-link', this.createWirelessLink);
     this.router.post('/api/scanner/release', this.releaseScanFile);
     this.router.get('/scan/download/:token', scanDownloadRateLimit, this.downloadByToken);
+    this.router.get('/session/download', scanDownloadRateLimit, this.downloadSessionScan);
+    this.router.get('/api/session/download', scanDownloadRateLimit, this.downloadSessionScan);
 
     this.router.post('/api/scan/jobs', this.createScanJob);
     this.router.get('/api/scan/jobs/:id', this.getScanJob);
@@ -101,6 +106,14 @@ export class ScannerController {
         color: body.color as 'color' | 'grayscale',
         dpi: body.dpi as string | number,
       });
+      try {
+        this.deps.io.emit('session:scan_ready', {
+          downloadUrl: '/session/download',
+          filename: result.filename,
+        });
+      } catch {
+        // Best effort
+      }
       res.json(result);
     } catch (error) {
       const message = this.getErrorMessage(error, 'Unknown scan error');
@@ -352,6 +365,67 @@ export class ScannerController {
       `attachment; filename="${session.filename}"`,
     );
     res.sendFile(path.resolve(session.filePath));
+  };
+
+  private downloadSessionScan = (req: Request, res: Response): void => {
+    const wirelessService =
+      this.deps.wirelessSessionService ??
+      coinBridgeService.getWirelessSessionService();
+
+    const rawAuth = req.header('authorization');
+    const bearerToken =
+      rawAuth && rawAuth.toLowerCase().startsWith('bearer ')
+        ? rawAuth.slice(7).trim()
+        : '';
+
+    const token =
+      (typeof req.query.token === 'string' ? req.query.token.trim() : '') ||
+      req.header('x-session-token')?.trim() ||
+      req.header('x-upload-token')?.trim() ||
+      bearerToken;
+
+    if (
+      !token ||
+      !wirelessService ||
+      !wirelessService.validateSessionToken(token)
+    ) {
+      res.status(401).json({ error: 'UNAUTHORIZED_SESSION' });
+      return;
+    }
+
+    const requestedFilename =
+      typeof req.query.filename === 'string'
+        ? req.query.filename
+        : typeof req.query.file === 'string'
+          ? req.query.file
+          : undefined;
+
+    const safeFilename = requestedFilename
+      ? this.scannerService.toSafeScanFilename(requestedFilename)
+      : null;
+
+    const scanInfo = safeFilename
+      ? this.scannerService.getScanFilePath(safeFilename)
+      : this.scannerService.getLatestScan();
+
+    if (!scanInfo || !fs.existsSync(scanInfo.filePath)) {
+      res
+        .status(404)
+        .json({ error: 'No scan document available for download' });
+      return;
+    }
+
+    const ext = path.extname(scanInfo.filename).slice(1).toLowerCase() || 'pdf';
+    const contentType = this.scannerService.getContentType(ext);
+    const timestamp = Date.now();
+    const downloadFilename = `PrintBit_Scan_${timestamp}.${ext}`;
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${downloadFilename}"`,
+    );
+    fs.createReadStream(scanInfo.filePath).pipe(res);
   };
 
   private createScanJob = async (req: Request, res: Response): Promise<void> => {

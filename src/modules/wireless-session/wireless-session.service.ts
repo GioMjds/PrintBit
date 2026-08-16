@@ -203,6 +203,19 @@ export class WirelessSessionService {
       spentBalance: 0,
     };
 
+    try {
+      if (typeof this.deps.sessionStore?.createSession === 'function') {
+        const publicBaseUrl = new URL(`http://localhost:${PORT}`);
+        this.deps.sessionStore.createSession(
+          publicBaseUrl,
+          sessionId,
+          sessionToken,
+        );
+      }
+    } catch {
+      // Best-effort session registration
+    }
+
     this.deps.io.emit('session:state_changed', {
       state: this.currentState,
       sessionId,
