@@ -146,6 +146,44 @@ type PrintLifecycleStatePayload = {
   printError?: PrintError | null;
 };
 
+type PrinterErrorEventPayload = {
+  printError?: PrintError | null;
+  jobStatus?: string | null;
+  printerName?: string | null;
+  chargedAmount?: number;
+  refundId?: string | null;
+  pagesPrinted?: number;
+  timestamp?: string;
+};
+
+type WorkerPrintEventPayload = {
+  transactionId?: string | null;
+  spoolerCorrelationKey?: string | null;
+  printerName?: string | null;
+  fileName?: string | null;
+  pagesPrinted?: number;
+  totalPages?: number;
+  message?: string | null;
+};
+
+type WorkerPrintFailedPayload = WorkerPrintEventPayload & {
+  failureStage?: string | null;
+  errorType?: string | null;
+  reason?: string | null;
+  printError?: PrintError | null;
+};
+
+type PrinterStatusApiResponse = {
+  ready?: boolean;
+  status?: string;
+  printerName?: string | null;
+};
+
+type ApiErrorResponse = {
+  error?: string;
+  printError?: PrintError;
+};
+
 function normalizeRotationDeg(value: unknown): RotationDeg {
   if (value === 90 || value === 180 || value === 270) {
     return value;
@@ -186,14 +224,23 @@ const printerErrorBlock = document.getElementById('printerErrorBlock');
 const errorTitle = document.getElementById('errorTitle');
 const errorMessage = document.getElementById('errorMessage');
 const errorHint = document.getElementById('errorHint');
-const errorCloseBtn = document.getElementById('errorCloseBtn') as HTMLButtonElement;
+const errorCloseBtn = document.getElementById(
+  'errorCloseBtn',
+) as HTMLButtonElement;
 const errorActions = document.getElementById('errorActions');
-const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElement;
-const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
-const errorSeverityBadge = document.getElementById('errorSeverityBadge');
+const errorPauseBtn = document.getElementById(
+  'errorPauseBtn',
+) as HTMLButtonElement;
+const errorResumeBtn = document.getElementById(
+  'errorResumeBtn',
+) as HTMLButtonElement;
 const errorSeverityText = document.getElementById('errorSeverityText');
-const errorProgressEl = document.getElementById('errorProgress') as HTMLParagraphElement | null;
-const errorCancelRemainingBtn = document.getElementById('errorCancelRemainingBtn') as HTMLButtonElement | null;
+const errorProgressEl = document.getElementById(
+  'errorProgress',
+) as HTMLParagraphElement | null;
+const errorCancelRemainingBtn = document.getElementById(
+  'errorCancelRemainingBtn',
+) as HTMLButtonElement | null;
 
 // Confirmation Modal Elements
 const confirmModal = document.getElementById('confirmModal');
@@ -229,9 +276,7 @@ const printingProgressText = document.getElementById('printingProgressText');
 const printingProgressCurrent = document.getElementById(
   'printingProgressCurrent',
 );
-const printingProgressTotal = document.getElementById(
-  'printingProgressTotal',
-);
+const printingProgressTotal = document.getElementById('printingProgressTotal');
 const printingProgressBar = document.getElementById('printingProgressBar');
 const printingProgressFill = document.getElementById(
   'printingProgressFill',
@@ -300,7 +345,8 @@ function renderPrinterError(err: PrintError): void {
       recoverable: 'Recoverable',
       fatal: 'Fatal Error',
     };
-    errorSeverityText.textContent = severityLabels[err.severity] ?? err.severity;
+    errorSeverityText.textContent =
+      severityLabels[err.severity] ?? err.severity;
   }
 
   if (err.severity === 'warning' || !hasActiveJob()) {
@@ -356,7 +402,8 @@ function clearPrinterError(): void {
   currentPrinterError = null;
   if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
   if (errorProgressEl) errorProgressEl.setAttribute('hidden', '');
-  if (errorCancelRemainingBtn) errorCancelRemainingBtn.setAttribute('hidden', '');
+  if (errorCancelRemainingBtn)
+    errorCancelRemainingBtn.setAttribute('hidden', '');
   applyConfirmGate();
 }
 
@@ -386,7 +433,9 @@ function resetErrorActionButtons(): void {
     'PAPER_TRAY_EMPTY',
     'PAPER_JAM_PRINT',
   ]);
-  const showPauseResume = currentPrinterError && PAUSE_RESUME_ERROR_CODES.has(currentPrinterError.code);
+  const showPauseResume =
+    currentPrinterError &&
+    PAUSE_RESUME_ERROR_CODES.has(currentPrinterError.code);
 
   if (errorPauseBtn) {
     if (showPauseResume) {
@@ -503,7 +552,9 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
     });
 
     if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
+      const errBody = (await response
+        .json()
+        .catch(() => ({}))) as ApiErrorResponse;
       const message =
         (errBody && typeof errBody.error === 'string' && errBody.error) ||
         `Server returned HTTP ${response.status}.`;
@@ -541,9 +592,7 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
   } catch (err) {
     console.error(`[PRINTER-ACTION] Failed to ${action} job:`, err);
     const message =
-      err instanceof Error
-        ? err.message
-        : `Could not ${action} the print job.`;
+      err instanceof Error ? err.message : `Could not ${action} the print job.`;
     // Re-enable both buttons with their default labels.
     const clickedSpanAgain = clickedBtn.querySelector('span');
     if (clickedSpanAgain) clickedSpanAgain.textContent = defaultLabel;
@@ -609,7 +658,9 @@ if (
   config.detectedColorMode = null;
 }
 currentPrintQuote =
-  config.mode === 'scan' ? null : ((config.quote as PrintQuote | undefined) ?? null);
+  config.mode === 'scan'
+    ? null
+    : ((config.quote as PrintQuote | undefined) ?? null);
 
 const currentPaymentFingerprint = JSON.stringify({
   mode: config.mode,
@@ -690,7 +741,10 @@ async function releaseTransientFilesForCurrentMode(
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
-  if ((config.mode === 'print' || config.mode === 'copy') && currentPrintQuote) {
+  if (
+    (config.mode === 'print' || config.mode === 'copy') &&
+    currentPrintQuote
+  ) {
     return currentPrintQuote.effectiveColorMode;
   }
   return config.colorMode;
@@ -801,7 +855,7 @@ function applyLockState(locked: boolean): void {
   if (locked) {
     paymentColEl?.classList.add('payment-col--locked');
     if (padlockIcon) padlockIcon.removeAttribute('hidden'); // was: padlockIcon.style.display = ''
-    if (coinIcon) coinIcon.setAttribute('hidden', '');     // was: coinIcon.style.display = 'none'
+    if (coinIcon) coinIcon.setAttribute('hidden', ''); // was: coinIcon.style.display = 'none'
     if (ctaText) ctaText.textContent = 'Coin slot locked — ready to confirm';
     if (changeReadyAmount) {
       changeReadyAmount.textContent =
@@ -812,7 +866,7 @@ function applyLockState(locked: boolean): void {
     changeReadyBadge?.removeAttribute('hidden');
   } else {
     paymentColEl?.classList.remove('payment-col--locked');
-    if (coinIcon) coinIcon.removeAttribute('hidden');      // was: coinIcon.style.display = ''
+    if (coinIcon) coinIcon.removeAttribute('hidden'); // was: coinIcon.style.display = ''
     if (padlockIcon) padlockIcon.setAttribute('hidden', ''); // was: padlockIcon.style.display = 'none'
     if (ctaText)
       ctaText.textContent = 'Insert coins into the kiosk slot to pay';
@@ -887,13 +941,13 @@ function applyConfirmGate(statusOverride?: string): void {
   if (currentBalance >= totalPrice) {
     confirmBtn.disabled = false;
     confirmBtn.setAttribute('aria-disabled', 'false');
-    confirmBtn.classList.add('is-ready');          // NEW
-    actionCol?.classList.add('is-ready');          // NEW (turns price green)
+    confirmBtn.classList.add('is-ready'); // NEW
+    actionCol?.classList.add('is-ready'); // NEW (turns price green)
     statusMessage.textContent =
       statusOverride ?? 'Sufficient balance detected. You can confirm now.';
   } else {
-    confirmBtn.classList.remove('is-ready');       // NEW
-    actionCol?.classList.remove('is-ready');       // NEW
+    confirmBtn.classList.remove('is-ready'); // NEW
+    actionCol?.classList.remove('is-ready'); // NEW
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
@@ -978,13 +1032,15 @@ function renderPrintProgress(input: {
   totalPages?: number | null;
 }): void {
   const pagesPrinted =
-    typeof input.pagesPrinted === 'number' && Number.isFinite(input.pagesPrinted)
+    typeof input.pagesPrinted === 'number' &&
+    Number.isFinite(input.pagesPrinted)
       ? Math.max(0, Math.floor(input.pagesPrinted))
       : null;
   if (pagesPrinted === null || pagesPrinted <= 0) return;
 
   const totalPages =
-    typeof input.totalPages === 'number' && Number.isFinite(input.totalPages) &&
+    typeof input.totalPages === 'number' &&
+    Number.isFinite(input.totalPages) &&
     input.totalPages > 0
       ? Math.floor(input.totalPages)
       : null;
@@ -993,9 +1049,8 @@ function renderPrintProgress(input: {
     printingProgressCurrent.textContent = String(pagesPrinted);
   }
   if (printingProgressTotal) {
-    printingProgressTotal.textContent = totalPages !== null
-      ? String(totalPages)
-      : '—';
+    printingProgressTotal.textContent =
+      totalPages !== null ? String(totalPages) : '—';
   }
 
   let pct: number | null = null;
@@ -1022,39 +1077,6 @@ function hidePrintProgress(): void {
   }
   if (printingProgressCurrent) printingProgressCurrent.textContent = '0';
   if (printingProgressTotal) printingProgressTotal.textContent = '0';
-}
-
-async function showScanQrOverlay(
-  downloadUrl: string,
-  expiresAt?: string,
-): Promise<void> {
-  const scanQrOverlay = document.getElementById('scanQrOverlay');
-  const scanQrCanvas = document.getElementById(
-    'scanQrCanvas',
-  ) as HTMLCanvasElement | null;
-  const scanQrLinkText = document.getElementById('scanQrLinkText');
-  const scanQrExpiry = document.getElementById('scanQrExpiry');
-
-  if (!scanQrOverlay || !scanQrCanvas) return;
-
-  await QRCode.toCanvas(scanQrCanvas, downloadUrl, {
-    width: 220,
-    margin: 1,
-    color: { dark: '#1a1a2e', light: '#ffffff' },
-    errorCorrectionLevel: 'M',
-  });
-
-  if (scanQrLinkText) scanQrLinkText.textContent = downloadUrl;
-  if (scanQrExpiry && expiresAt) {
-    const expiry = new Date(expiresAt).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    scanQrExpiry.textContent = `Link expires at ${expiry}`;
-  }
-
-  showOverlay(scanQrOverlay);
-  scanQrOverlay.querySelector<HTMLElement>('button')?.focus();
 }
 
 async function fetchInitialBalance(): Promise<void> {
@@ -1088,7 +1110,8 @@ async function loadPricing(): Promise<void> {
           ...(config.mode === 'print'
             ? {
                 sessionId: config.sessionId,
-                documentId: config.documentId ?? uploadedDocumentId ?? undefined,
+                documentId:
+                  config.documentId ?? uploadedDocumentId ?? undefined,
               }
             : {
                 copyPreviewPath: config.copyPreviewPath,
@@ -1186,7 +1209,6 @@ const persistedPaymentIdempotencyKey =
   persistedPaymentIdempotencyKeyRaw?.trim().length
     ? persistedPaymentIdempotencyKeyRaw.trim()
     : null;
-let lastSpoolerCorrelationKey: string | null = persistedSpoolerCorrelationKey;
 let paymentSpoolerCorrelationKey: string | null =
   persistedSpoolerCorrelationKey;
 let paymentIdempotencyKey: string | null = persistedPaymentIdempotencyKey;
@@ -1196,14 +1218,11 @@ if (!persistedFingerprintMatchesCurrent) {
   sessionStorage.removeItem(PENDING_PAYMENT_FINGERPRINT_STORAGE_KEY);
 }
 let latestPrinterStatusLabel = 'Checking...';
-const spoolerTimedOut = false;
 
 const NETWORK_REQUEST_TIMEOUT_MS = 90_000;
 
 let currentTransactionId: string | null = null;
 let currentReceiptUrl: string | null = null;
-let currentReceiptExpiresAt: string | null = null;
-let pendingReceiptData: ReceiptLinkPayload | null = null;
 
 function setTransactionReference(id: string | null): void {
   currentTransactionId = id?.trim().length ? id.trim() : null;
@@ -1217,38 +1236,10 @@ function setTransactionReference(id: string | null): void {
   }
 }
 
-function extractReceiptUrl(
-  payload: ReceiptLinkPayload,
-): { url: string; expiresAt: string | null } | null {
+function extractReceiptUrl(payload: ReceiptLinkPayload): string | null {
   const url =
     payload.receipt?.viewUrl || payload.receiptViewUrl || payload.receipt?.url;
-  if (!url) return null;
-  return {
-    url,
-    expiresAt: payload.receipt?.expiresAt || payload.receiptExpiresAt || null,
-  };
-}
-
-/** For copy mode: poll the copy job endpoint to get receipt data after async settlement. */
-async function pollCopyJobReceipt(jobId: string): Promise<void> {
-  const maxAttempts = 15;
-  const intervalMs = 2000;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
-      if (!res.ok) break;
-      const job = await res.json() as { receipt?: { viewUrl?: string; expiresAt?: string }; transactionId?: string; id?: string };
-      if (job.receipt?.viewUrl) {
-        captureReceiptCta({ receipt: { viewUrl: job.receipt.viewUrl, expiresAt: job.receipt.expiresAt ?? null } });
-        const txId = job.transactionId ?? job.id ?? null;
-        if (txId) setTransactionReference(txId);
-        return;
-      }
-    } catch {
-      // Ignore fetch errors, retry
-    }
-    await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
-  }
+  return url || null;
 }
 
 function renderReceiptCta(): void {
@@ -1264,11 +1255,9 @@ function renderReceiptCta(): void {
 }
 
 function captureReceiptCta(payload: ReceiptLinkPayload): void {
-  const receipt = extractReceiptUrl(payload);
-  if (!receipt) return;
-  currentReceiptUrl = receipt.url;
-  currentReceiptExpiresAt = receipt.expiresAt;
-  pendingReceiptData = payload;
+  const receiptUrl = extractReceiptUrl(payload);
+  if (!receiptUrl) return;
+  currentReceiptUrl = receiptUrl;
   renderReceiptCta();
 }
 
@@ -1286,7 +1275,6 @@ function finalizePrintSuccess(transactionId: string | null): void {
   if (statusMessage)
     statusMessage.textContent = 'Printing complete. Thank you!';
   renderReceiptCta();
-  lastSpoolerCorrelationKey = null;
   isProcessingPayment = false;
 
   if (printAnotherBtn) {
@@ -1341,8 +1329,8 @@ function matchesPendingWorkerEvent(payload: {
   );
   const matchesKey = Boolean(
     paymentSpoolerCorrelationKey &&
-      payloadSpoolerKey &&
-      payloadSpoolerKey === paymentSpoolerCorrelationKey,
+    payloadSpoolerKey &&
+    payloadSpoolerKey === paymentSpoolerCorrelationKey,
   );
   const isMatch = matchesTx || matchesKey;
 
@@ -1416,8 +1404,7 @@ function showModal(): void {
     if (modalCopies) modalCopies.textContent = String(config.copies);
     if (modalPages) {
       if (currentPrintQuote) {
-        modalPages.textContent =
-          `${pageRangeLabel(config.pageRange)} (${currentPrintQuote.selectedPages} of ${currentPrintQuote.totalPages} pages)`;
+        modalPages.textContent = `${pageRangeLabel(config.pageRange)} (${currentPrintQuote.selectedPages} of ${currentPrintQuote.totalPages} pages)`;
       } else {
         modalPages.textContent = pageRangeLabel(config.pageRange);
       }
@@ -1427,7 +1414,8 @@ function showModal(): void {
         config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
     }
     if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
-    if (modalPaper) modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
+    if (modalPaper)
+      modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
   }
 
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
@@ -1512,7 +1500,9 @@ modalConfirmBtn?.addEventListener('click', async () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
+        const errData = (await response
+          .json()
+          .catch(() => ({}))) as ApiErrorResponse;
         throw new Error(errData.error || 'Scan payment failed');
       }
 
@@ -1552,7 +1542,9 @@ modalConfirmBtn?.addEventListener('click', async () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
+        const errData = (await response
+          .json()
+          .catch(() => ({}))) as ApiErrorResponse;
         if (errData.printError) {
           renderPrinterError(errData.printError);
           throw new Error(errData.printError.userMessage);
@@ -1599,14 +1591,16 @@ modalConfirmBtn?.addEventListener('click', async () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
+        const errData = (await response
+          .json()
+          .catch(() => ({}))) as ApiErrorResponse;
         if (errData.printError) {
           renderPrinterError(errData.printError);
           throw new Error(errData.printError.userMessage);
         }
         throw new Error(errData.error || 'Payment failed');
       }
-      
+
       const payload = (await response.json()) as ReceiptLinkPayload & {
         transactionId?: string | null;
       };
@@ -1616,7 +1610,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } catch (error) {
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
-    const message = error instanceof Error ? error.message : 'Error processing payment.';
+    const message =
+      error instanceof Error ? error.message : 'Error processing payment.';
     applyConfirmGate(message);
   }
 });
@@ -1632,7 +1627,7 @@ printAnotherBtn?.addEventListener('click', () => {
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
   sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
-  
+
   if (config.mode === 'print') {
     // Keep sessionId, sessionToken, uploadedFile, etc. for remaining files
     window.location.href = '/print';
@@ -1651,22 +1646,22 @@ printAnotherBtn?.addEventListener('click', () => {
   }
 });
 
-const ioFactory = (window as any).io;
+const ioFactory = (window as unknown as { io?: () => SocketLike }).io;
 if (typeof ioFactory === 'function') {
-  const connectedSocket = ioFactory() as SocketLike;
+  const connectedSocket = ioFactory();
   socket = connectedSocket;
   connectedSocket.on('balance', (amount: unknown) => {
     if (typeof amount === 'number') updateBalanceUI(amount);
   });
 
-  connectedSocket.on('printErrorRaised', (payload: any) => {
+  connectedSocket.on('printErrorRaised', (payload: unknown) => {
     if (!hasActiveJob()) return;
-    const err = payload as PrintError;
-    if (!err) return;
+    const err = payload as PrintError | null;
+    if (!err || typeof err !== 'object') return;
 
     // Filter by correlation key if present, except for warnings
     if (err.severity !== 'warning') {
-      const payloadKey = (payload as any).spoolerCorrelationKey;
+      const payloadKey = err.spoolerCorrelationKey;
       if (payloadKey) {
         if (
           !paymentSpoolerCorrelationKey ||
@@ -1680,7 +1675,7 @@ if (typeof ioFactory === 'function') {
     renderPrinterError(err);
   });
 
-  connectedSocket.on('printLifecycleState', (payload: any) => {
+  connectedSocket.on('printLifecycleState', (payload: unknown) => {
     const lifecycle = payload as PrintLifecycleStatePayload;
     console.log('[CONFIRM-PAGE] Socket event [printLifecycleState]:', {
       state: lifecycle.state,
@@ -1729,7 +1724,10 @@ if (typeof ioFactory === 'function') {
         spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
       })
     ) {
-      console.warn('[CONFIRM-PAGE] Print job paused via printLifecycleState event:', lifecycle);
+      console.warn(
+        '[CONFIRM-PAGE] Print job paused via printLifecycleState event:',
+        lifecycle,
+      );
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
       if (lifecycle.printError) {
@@ -1740,7 +1738,9 @@ if (typeof ioFactory === 'function') {
         renderPrinterError({
           code: 'PAPER_TRAY_EMPTY',
           severity: 'recoverable',
-          userMessage: lifecycle.reason ?? 'Printer Out of Paper. Please load paper and click Resume.',
+          userMessage:
+            lifecycle.reason ??
+            'Printer Out of Paper. Please load paper and click Resume.',
           hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
           timestamp: new Date().toISOString(),
           canRetry: true,
@@ -1757,7 +1757,10 @@ if (typeof ioFactory === 'function') {
         spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
       })
     ) {
-      console.warn('[CONFIRM-PAGE] Print job failed via printLifecycleState event:', lifecycle);
+      console.warn(
+        '[CONFIRM-PAGE] Print job failed via printLifecycleState event:',
+        lifecycle,
+      );
       if (isHardwareError) {
         hideOverlay(printingOverlay);
         isProcessingPayment = false;
@@ -1788,7 +1791,10 @@ if (typeof ioFactory === 'function') {
           transactionId: lifecycle.transactionId ?? null,
           spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
         });
-        console.info('[CONFIRM-PAGE] State is "printed", event match =', matched);
+        console.info(
+          '[CONFIRM-PAGE] State is "printed", event match =',
+          matched,
+        );
         if (matched) {
           clearPrinterError();
           finalizePrintSuccess(lifecycle.transactionId ?? null);
@@ -1800,13 +1806,18 @@ if (typeof ioFactory === 'function') {
   });
 
   // Re-sync on printer malfunction or spooler failure — show error modal
-  connectedSocket.on('printerMalfunction', (payload: any) => {
+  connectedSocket.on('printerMalfunction', (payload: unknown) => {
     console.warn('[CONFIRM-PAGE] Socket event [printerMalfunction]:', payload);
-    if (payload?.printError) renderPrinterError(payload.printError);
+    const data = payload as PrinterErrorEventPayload | null;
+    if (data?.printError) renderPrinterError(data.printError);
   });
-  connectedSocket.on('printerSpoolerFailure', (payload: any) => {
-    console.warn('[CONFIRM-PAGE] Socket event [printerSpoolerFailure]:', payload);
-    if (payload?.printError) renderPrinterError(payload.printError);
+  connectedSocket.on('printerSpoolerFailure', (payload: unknown) => {
+    console.warn(
+      '[CONFIRM-PAGE] Socket event [printerSpoolerFailure]:',
+      payload,
+    );
+    const data = payload as PrinterErrorEventPayload | null;
+    if (data?.printError) renderPrinterError(data.printError);
   });
 
   connectedSocket.on('workerPrinterOnline', () => {
@@ -1816,9 +1827,10 @@ if (typeof ioFactory === 'function') {
     void loadPrinterStatus();
   });
 
-  connectedSocket.on('workerPrintStarted', (payload: any) => {
+  connectedSocket.on('workerPrintStarted', (payload: unknown) => {
     console.log('[CONFIRM-PAGE] Socket event [workerPrintStarted]:', payload);
-    if (!matchesPendingWorkerEvent(payload)) {
+    const event = payload as WorkerPrintEventPayload | null;
+    if (!matchesPendingWorkerEvent(event ?? {})) {
       console.log('[CONFIRM-PAGE] workerPrintStarted ignored: no match.');
       return;
     }
@@ -1831,18 +1843,23 @@ if (typeof ioFactory === 'function') {
     }
   });
 
-  connectedSocket.on('workerPrintSucceeded', (payload: any) => {
-    console.info('[CONFIRM-PAGE] Socket event [workerPrintSucceeded]:', payload);
-    if (!matchesPendingWorkerEvent(payload)) {
+  connectedSocket.on('workerPrintSucceeded', (payload: unknown) => {
+    console.info(
+      '[CONFIRM-PAGE] Socket event [workerPrintSucceeded]:',
+      payload,
+    );
+    const event = payload as WorkerPrintEventPayload | null;
+    if (!matchesPendingWorkerEvent(event ?? {})) {
       console.warn('[CONFIRM-PAGE] workerPrintSucceeded ignored: no match.');
       return;
     }
-    finalizePrintSuccess(payload?.transactionId ?? null);
+    finalizePrintSuccess(event?.transactionId ?? null);
   });
 
-  connectedSocket.on('workerPrintFailed', (payload: any) => {
+  connectedSocket.on('workerPrintFailed', (payload: unknown) => {
     console.error('[CONFIRM-PAGE] Socket event [workerPrintFailed]:', payload);
-    if (!matchesPendingWorkerEvent(payload)) {
+    const event = payload as WorkerPrintFailedPayload | null;
+    if (!matchesPendingWorkerEvent(event ?? {})) {
       console.warn('[CONFIRM-PAGE] workerPrintFailed ignored: no match.');
       return;
     }
@@ -1850,22 +1867,26 @@ if (typeof ioFactory === 'function') {
     // If the worker reports a HardwareError, show the error modal
     // with pause/resume instead of aborting the transaction.
     const isHardwareError =
-      payload?.failureStage === 'HardwareError' ||
-      payload?.failureStage === 'IncompleteOutput' ||
-      payload?.errorType === 'HardwareError' ||
-      payload?.reason === 'HardwareError' ||
-      payload?.printError?.code === 'PAPER_TRAY_EMPTY' ||
-      payload?.printError?.code === 'PAPER_JAM_PRINT';
+      event?.failureStage === 'HardwareError' ||
+      event?.failureStage === 'IncompleteOutput' ||
+      event?.errorType === 'HardwareError' ||
+      event?.reason === 'HardwareError' ||
+      event?.printError?.code === 'PAPER_TRAY_EMPTY' ||
+      event?.printError?.code === 'PAPER_JAM_PRINT';
 
     if (isHardwareError) {
-      console.warn('[CONFIRM-PAGE] Hardware error detected on workerPrintFailed:', payload);
+      console.warn(
+        '[CONFIRM-PAGE] Hardware error detected on workerPrintFailed:',
+        event,
+      );
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
-      const hardwareError: PrintError = payload?.printError ?? {
+      const hardwareError: PrintError = event?.printError ?? {
         code: 'PAPER_TRAY_EMPTY',
         severity: 'recoverable' as PrintErrorSeverity,
         userMessage:
-          payload?.message ?? 'Printer Out of Paper. Please load paper and click Resume.',
+          event?.message ??
+          'Printer Out of Paper. Please load paper and click Resume.',
         hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
         canRetry: true,
       };
@@ -1878,14 +1899,17 @@ if (typeof ioFactory === 'function') {
     }
 
     // Non-hardware failure: abort as before
-    console.error('[CONFIRM-PAGE] Terminal non-hardware failure on workerPrintFailed:', payload);
+    console.error(
+      '[CONFIRM-PAGE] Terminal non-hardware failure on workerPrintFailed:',
+      event,
+    );
     hideOverlay(printingOverlay);
     hidePrintProgress();
     isProcessingPayment = false;
     activeSpoolerCorrelationKey = null;
     clearPendingPaymentSessionState();
     applyConfirmGate(
-      payload?.message ?? 'The worker reported a terminal print failure.',
+      event?.message ?? 'The worker reported a terminal print failure.',
     );
   });
 }
@@ -1906,7 +1930,9 @@ errorResumeBtn?.addEventListener('click', () => {
 errorCancelRemainingBtn?.addEventListener('click', async () => {
   const key = resolveErrorActionCorrelationKey();
   if (!key) {
-    showErrorActionInlineError('No active print job to control. Please try again or contact staff.');
+    showErrorActionInlineError(
+      'No active print job to control. Please try again or contact staff.',
+    );
     return;
   }
 
@@ -1925,7 +1951,9 @@ errorCancelRemainingBtn?.addEventListener('click', async () => {
     });
 
     if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
+      const errBody = (await response
+        .json()
+        .catch(() => ({}))) as ApiErrorResponse;
       const message =
         (errBody && typeof errBody.error === 'string' && errBody.error) ||
         `Server returned HTTP ${response.status}.`;
@@ -1934,7 +1962,8 @@ errorCancelRemainingBtn?.addEventListener('click', async () => {
 
     clearPrinterError();
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not cancel the print job.';
+    const message =
+      err instanceof Error ? err.message : 'Could not cancel the print job.';
     showErrorActionInlineError(message);
     if (errorCancelRemainingBtn) {
       errorCancelRemainingBtn.disabled = false;
@@ -1947,9 +1976,10 @@ errorCancelRemainingBtn?.addEventListener('click', async () => {
 async function loadPrinterStatus(): Promise<void> {
   try {
     const res = await fetch('/api/printer/status');
-    const data = await res.json();
-    printerReady = data.ready;
-    latestPrinterStatusLabel = data.status;
+    const data = (await res.json()) as PrinterStatusApiResponse;
+    printerReady = Boolean(data.ready);
+    latestPrinterStatusLabel =
+      typeof data.status === 'string' ? data.status : 'Unknown';
     if (printerReady && currentPrinterError && !hasActiveJob()) {
       clearPrinterError();
     } else {

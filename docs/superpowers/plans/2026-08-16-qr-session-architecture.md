@@ -9,6 +9,7 @@
 **Tech Stack:** Node.js, Express 5, TypeScript, Socket.IO, SQLite repository pattern, Vanilla HTML/CSS/TS browser bundles (esbuild), Arduino/C++ (ESP32).
 
 ## Global Constraints
+
 - Windows-only kiosk deployment environment.
 - All database operations MUST go through repository methods in `src/core/database/`—never mutate SQLite directly.
 - Every coin pulse carries `x-coin-event-id` for idempotent balance ledger crediting.
@@ -21,11 +22,13 @@
 ### Task 1: Session State Machine & Pairing Lifecycle Store
 
 **Files:**
+
 - Modify: `src/services/session/types.ts`
 - Modify: `src/modules/wireless-session/wireless-session.service.ts`
 - Test: `tests/services/wireless-session-statemachine.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `SessionStore`, `Server` (Socket.IO)
 - Produces:
   - `KioskSessionState = 'IDLE' | 'PAIRING' | 'ACTIVE' | 'ENDING'`
@@ -37,6 +40,7 @@
 - [ ] **Step 1: Write the failing unit tests for state transitions and PIN pairing**
 
 Create `tests/services/wireless-session-statemachine.spec.ts`:
+
 ```typescript
 import { WirelessSessionService } from '../../src/modules/wireless-session/wireless-session.service';
 import type { Server } from 'socket.io';
@@ -121,6 +125,7 @@ Expected: FAIL with missing methods (`getKioskState`, `requestPairing`, `verifyP
 - [ ] **Step 3: Implement the State Machine and Pairing Store logic**
 
 Update `src/services/session/types.ts` and `src/modules/wireless-session/wireless-session.service.ts`:
+
 - Define `KioskSessionState`, `PairingRequestRecord`, `ActiveCustomerSession`.
 - Implement `requestPairing`, `verifyPairingPin`, `getPairingStatus`, `endActiveSession`, `validateSessionToken`.
 - Add cryptographic token generation via `node:crypto` (`randomBytes(32).toString('hex')`).
@@ -143,12 +148,14 @@ git commit -m "feat(session): add kiosk state machine and pairing PIN lifecycle"
 ### Task 2: Pairing & Session HTTP Endpoints and Socket.IO Controller
 
 **Files:**
+
 - Modify: `src/modules/wireless-session/wireless-session.controller.ts`
 - Modify: `src/modules/wireless-session/wireless-session.module.ts`
 - Modify: `src/server.ts`
 - Test: `tests/controllers/pairing-controller.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `WirelessSessionService`
 - Produces:
   - `GET /api/pairing/request`
@@ -160,6 +167,7 @@ git commit -m "feat(session): add kiosk state machine and pairing PIN lifecycle"
 - [ ] **Step 1: Write controller integration tests**
 
 Create `tests/controllers/pairing-controller.spec.ts`:
+
 ```typescript
 import request from 'supertest';
 import express from 'express';
@@ -214,6 +222,7 @@ Expected: FAIL with 404 on `/api/pairing/request`
 - [ ] **Step 3: Implement controller endpoints and router registration**
 
 In `src/modules/wireless-session/wireless-session.controller.ts`:
+
 - Add route handlers for `/pairing/request`, `/pairing/verify`, `/pairing/status/:pairingId`, `/session/mode`, `/session/end`.
 - Add `sessionTokenAuthGuard` middleware protecting `/session/upload`, `/session/mode`, `/session/end`, and `/session/download`.
 
@@ -234,12 +243,14 @@ git commit -m "feat(api): add pairing and session state REST endpoints"
 ### Task 3: Coin Gating & Automatic Change Dispensing on Session Teardown
 
 **Files:**
+
 - Modify: `src/services/coin-bridge.ts`
 - Modify: `src/modules/wireless-session/wireless-session.service.ts`
 - Modify: `src/modules/hopper/hopper.service.ts`
 - Test: `tests/services/session-coin-safety.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `withBalanceLock`, `hopperService.dispenseCoins()`
 - Produces:
   - `handleIncomingCoin(amount: number, eventId: string): { accepted: boolean; newBalance: number }`
@@ -248,6 +259,7 @@ git commit -m "feat(api): add pairing and session state REST endpoints"
 - [ ] **Step 1: Write tests for coin deposit gating and auto-refund**
 
 Create `tests/services/session-coin-safety.spec.ts`:
+
 ```typescript
 import { WirelessSessionService } from '../../src/modules/wireless-session/wireless-session.service';
 
@@ -320,24 +332,28 @@ git commit -m "feat(hardware): enforce session coin gating and auto change dispe
 ### Task 4: Kiosk Touchscreen Frontend Redesign (IDLE vs ACTIVE UI & Touch Numpad)
 
 **Files:**
+
 - Modify: `src/public/index.html`
 - Modify: `src/public/app.ts`
 - Modify: `src/public/styles.css`
 - Modify: `src/public/globals.css`
 
 **Interfaces:**
+
 - Consumes: `/api/pairing/verify`, Socket.IO events (`kiosk:state_changed`, `balance:updated`, `session:ended`)
 - Produces: Touch-interactive UI switching dynamically between `#idleContainer` and `#activeContainer`.
 
 - [ ] **Step 1: Update `src/public/index.html` structure**
 
 Add:
+
 - `#idleContainer`: Single WiFi QR card, 6-digit PIN input slots (`.pin-slot`), on-screen touch numpad (`.touch-numpad` with `0-9`, `Clear`, `Enter`), and instructional header.
 - `#activeContainer`: Session countdown badge, `[Finish / Exit]` button, unlocked Action Cards (Print, Copy, Scan), and deposited balance footer.
 
 - [ ] **Step 2: Update `src/public/styles.css`**
 
 Add styling for:
+
 - `.pin-input-container`, `.pin-slot.active`, `.pin-slot.filled`.
 - `.touch-numpad`, `.numpad-btn`, `.numpad-btn--action`, `.numpad-btn--clear`.
 - `.shake-animation` for invalid PIN entry feedback.
@@ -370,11 +386,13 @@ git commit -m "feat(frontend): implement kiosk idle pairing UI with touch numpad
 ### Task 5: Direct Phone Customer Portal (`/portal`) & Scan Download Flow
 
 **Files:**
+
 - Modify: `src/public/upload/portal.html`
 - Modify: `src/public/upload/portal.ts`
 - Modify: `src/modules/scanner/scanner.controller.ts`
 
 **Interfaces:**
+
 - Consumes: `GET /portal?token=...`, Socket.IO room `session_${token}`
 - Produces: Mobile document upload dropzone, live print configuration, and scan download endpoint (`GET /session/download?token=...`).
 
@@ -412,9 +430,11 @@ git commit -m "feat(portal): implement mobile customer portal with real-time mod
 ### Task 6: ESP32 Captive Portal Firmware Update
 
 **Files:**
+
 - Modify: `esp32-captive-portal.ino`
 
 **Interfaces:**
+
 - Consumes: ESP32 WiFi SoftAP, DNS server (captive portal 302 redirect), HTTPClient
 - Produces: Captive portal displaying pairing PIN fetched from `http://192.168.4.2:3000/api/pairing/request` and auto-redirecting to `http://192.168.4.2:3000/portal?token=...` on `ACTIVE` status.
 
@@ -425,9 +445,9 @@ git commit -m "feat(portal): implement mobile customer portal with real-time mod
   - ESP32 serves lightweight embedded HTML displaying:
     - PrintBit Logo & WiFi connected badge.
     - Large PIN display: `Your Pairing PIN: 483921`.
-    - Instructions: *"Enter this 6-digit PIN on the kiosk touchscreen to start."*
+    - Instructions: _"Enter this 6-digit PIN on the kiosk touchscreen to start."_
     - Polling JavaScript fetching `http://192.168.4.2:3000/api/pairing/status/<pairingId>` every 1500ms.
-    - On `ACTIVE` status: Automatic `window.location.href = data.portalUrl` + visible *"Tap to Open Customer Portal"* button.
+    - On `ACTIVE` status: Automatic `window.location.href = data.portalUrl` + visible _"Tap to Open Customer Portal"_ button.
 
 - [ ] **Step 2: Commit firmware changes**
 
@@ -441,6 +461,7 @@ git commit -m "feat(esp32): update captive portal firmware for 6-digit PIN pairi
 ### Task 7: End-to-End Integration Verification & Documentation Sync
 
 **Files:**
+
 - Modify: `agent_docs/documentation-sync.md`
 - Modify: `agent_docs/hardware-integration.md`
 - Modify: `agent_docs/print-dispatch.md`

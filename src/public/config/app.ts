@@ -149,9 +149,9 @@ interface PDFViewport {
 }
 
 const PAPER_MM: Record<PaperSize, [number, number]> = {
-  A4: [210, 297],       // A4 Bond Paper
-  Letter: [216, 279],   // Short Bond Paper (8.5" × 11")
-  Legal: [216, 356],    // Long Bond Paper (8.5" × 13")
+  A4: [210, 297], // A4 Bond Paper
+  Letter: [216, 279], // Short Bond Paper (8.5" × 11")
+  Legal: [216, 356], // Long Bond Paper (8.5" × 13")
 };
 
 /** Return [widthPx, heightPx] of the paper sheet at 96 dpi,
@@ -388,7 +388,6 @@ class PrintPreview {
     } else {
       this.sheet.removeAttribute('data-gray');
     }
-
   }
 
   async load(sessionId: string, filename?: string): Promise<void> {
@@ -472,7 +471,6 @@ class PrintPreview {
       this.latestImageInfo = null;
       this.showError('Unsupported preview format.');
     }
-
   }
 
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
@@ -544,7 +542,6 @@ class PrintPreview {
         this.showImg(false);
         this.showLoading(false);
         this.setHint(`Page ${pageNum} of ${this.totalPages}`);
-
       } catch (e) {
         console.error('Render error:', e);
         previewLog('renderPage() failed', e);
@@ -1497,11 +1494,6 @@ function schedulePrintQuoteRefresh(): void {
     quoteDebounceHandle = null;
     void refreshPrintQuote();
   }, 120);
-}
-
-function formatPeso(amount: number): string {
-  const rounded = Math.round(amount * 100) / 100;
-  return `₱${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}`;
 }
 
 function updateSummary(): void {
