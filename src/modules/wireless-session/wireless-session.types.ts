@@ -53,3 +53,14 @@ export interface PairingStatusResult {
   portalUrl?: string;
   message?: string;
 }
+
+export interface CoinCreditResult {
+  accepted: boolean;
+  newBalance: number;
+}
+
+export interface SessionRefundResult {
+  refunded: number;
+  success: boolean;
+}
+

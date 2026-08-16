@@ -34,6 +34,8 @@ import {
   type PairingRequestResult,
   type PairingVerificationResult,
   type PairingStatusResult,
+  type CoinCreditResult,
+  type SessionRefundResult,
 } from './wireless-session.types';
 
 export interface WirelessSessionServiceDeps {
@@ -73,6 +75,7 @@ export class WirelessSessionService {
   private pendingPairings = new Map<string, PairingRecord>();
   private pinToPairingId = new Map<string, string>();
   private activeSession: ActiveCustomerSession | null = null;
+  private processedCoinEventIds = new Set<string>();
   private pairingCleanupTimer: NodeJS.Timeout | null = null;
   private inactivityTimer: NodeJS.Timeout | null = null;
 
@@ -186,6 +189,7 @@ export class WirelessSessionService {
     }
 
     this.currentState = 'ACTIVE';
+    this.processedCoinEventIds.clear();
     const now = Date.now();
     this.activeSession = {
       sessionId,
@@ -285,10 +289,26 @@ export class WirelessSessionService {
     }
   }
 
-  handleCoinDeposit(amount: number, eventId: string): boolean {
+  handleIncomingCoin(amount: number, eventId: string): CoinCreditResult {
     if (this.currentState !== 'ACTIVE' || !this.activeSession) {
       console.warn(`[session] Coin deposit rejected: Kiosk is in state ${this.currentState} (eventId: ${eventId})`);
-      return false;
+      return {
+        accepted: false,
+        newBalance: this.getActiveSessionBalance(),
+      };
+    }
+
+    const normalizedEventId = (eventId ?? '').trim();
+    if (normalizedEventId && this.processedCoinEventIds.has(normalizedEventId)) {
+      console.warn(`[session] Duplicate coin deposit rejected: ${normalizedEventId}`);
+      return {
+        accepted: false,
+        newBalance: this.getActiveSessionBalance(),
+      };
+    }
+
+    if (normalizedEventId) {
+      this.processedCoinEventIds.add(normalizedEventId);
     }
 
     this.activeSession.depositedBalance += amount;
@@ -296,7 +316,15 @@ export class WirelessSessionService {
     const currentNet = Math.max(0, this.activeSession.depositedBalance - this.activeSession.spentBalance);
     this.deps.io.emit('balance', currentNet);
     this.deps.io.emit('session:balance_updated', { balance: currentNet });
-    return true;
+    this.deps.io.emit('coinAccepted', { value: amount, balance: currentNet });
+    return {
+      accepted: true,
+      newBalance: currentNet,
+    };
+  }
+
+  handleCoinDeposit(amount: number, eventId: string): boolean {
+    return this.handleIncomingCoin(amount, eventId).accepted;
   }
 
   recordExpense(amount: number): void {
@@ -307,6 +335,28 @@ export class WirelessSessionService {
       this.deps.io.emit('balance', currentNet);
       this.deps.io.emit('session:balance_updated', { balance: currentNet });
     }
+  }
+
+  async teardownSessionAndRefund(sessionId?: string): Promise<SessionRefundResult> {
+    if (sessionId && this.activeSession && this.activeSession.sessionId !== sessionId) {
+      return {
+        refunded: 0,
+        success: false,
+      };
+    }
+
+    if (!this.activeSession && this.currentState === 'IDLE') {
+      return {
+        refunded: 0,
+        success: true,
+      };
+    }
+
+    const endResult = await this.endActiveSession('teardown_refund');
+    return {
+      refunded: endResult.dispensedChange,
+      success: endResult.success,
+    };
   }
 
   async endActiveSession(reason = 'user_ended'): Promise<{ success: boolean; dispensedChange: number }> {
@@ -331,6 +381,7 @@ export class WirelessSessionService {
     this.activeSession = null;
     this.pendingPairings.clear();
     this.pinToPairingId.clear();
+    this.processedCoinEventIds.clear();
     this.currentState = 'IDLE';
 
     this.deps.io.emit('session:state_changed', { state: this.currentState, reason });
@@ -398,6 +449,7 @@ export class WirelessSessionService {
       this.pairingCleanupTimer = null;
     }
     this.clearInactivityTimer();
+    this.processedCoinEventIds.clear();
   }
 
 

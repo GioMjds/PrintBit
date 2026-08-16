@@ -1,5 +1,6 @@
 export { adminService } from './admin';
 export { anomalyService } from './anomaly';
+export * from './coin-bridge';
 export * from './db';
 export * from './color-detection';
 export * from './document-analysis';
