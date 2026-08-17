@@ -58,6 +58,8 @@ _Important: Restart your tablet or reboot after setting these so the changes app
 
 Separate the daily kiosk account from the administrator account to prevent unauthorized access and enable Assigned Access properly.
 
+*(Note: If the `printbit` account already exists, there is no need to recreate it here. Just ensure it has a secure password and is a standard user.)*
+
 Run the following in **Administrator PowerShell**:
 
 ```powershell
