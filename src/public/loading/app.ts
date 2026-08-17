@@ -47,14 +47,14 @@ const poll = async (): Promise<void> => {
 
     if (payload.phase === 'failed') {
       setFailed(payload.message);
-      metaText.textContent = 'Automatic recovery is running. Retrying...';
+      metaText.textContent = 'Automatic recovery is running. Retrying…';
     } else {
       setBooting();
       metaText.textContent = 'Waiting for readiness signal.';
     }
   } catch {
     setBooting();
-    metaText.textContent = 'Network unavailable. Retrying...';
+    metaText.textContent = 'Network unavailable. Retrying…';
     retryAfterMs = Math.max(retryAfterMs, 3000);
   }
 

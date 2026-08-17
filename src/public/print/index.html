@@ -539,14 +539,11 @@
     >
       <div class="idle-warning-modal">
         <div class="idle-warning-content">
-          <div class="idle-warning-icon" aria-hidden="true">⏱️</div>
           <h2 class="idle-warning-title">Session Idle</h2>
-          <p class="idle-warning-message">
-            No activity detected. Your session will close in
-            <span id="idleCountdown">0</span>s
-          </p>
-          <p class="idle-warning-subtitle">
-            Click below to keep your session active.
+          <p class="idle-warning-subtitle">No activity detected</p>
+          <p class="idle-warning-countdown">
+            Your session will expire in
+            <span id="idleCountdown">30</span> seconds
           </p>
           <button id="keepActiveBtn" type="button" class="idle-warning-btn">
             Keep Me Active

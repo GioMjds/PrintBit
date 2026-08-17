@@ -44,7 +44,7 @@ openScan?.addEventListener('click', () => navigateTo('/scan'));
 powerOff?.addEventListener('click', () => {
   const ok = confirm('Power off device?');
   if (!ok) return;
-  alert('Powering off...');
+  alert('Powering off…');
 });
 
 // ── Homepage clock ─────────────────────────────────────────────────────────────

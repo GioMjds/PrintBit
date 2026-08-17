@@ -572,7 +572,7 @@ async function startScan(): Promise<void> {
     'Feeding document…',
     'Scanning page…',
     'Processing image',
-    'Finalising…',
+    'Finalizing…',
   ];
   let progIdx = 0;
   const progTimer = window.setInterval(() => {

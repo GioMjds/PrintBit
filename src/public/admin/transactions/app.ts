@@ -444,7 +444,7 @@ async function clearAllTransactionLogs(): Promise<void> {
 function applyFilters(): void {
   applyFilterStateFromInputs();
   currentPage = 1;
-  setMessage('Applying transaction filters...');
+  setMessage('Applying transaction filters…');
   void loadData()
     .then(() => setMessage('Transaction filters applied.'))
     .catch((error: unknown) =>
@@ -597,7 +597,7 @@ async function openTransactionDrawer(transactionId: string): Promise<void> {
   activeDrawerTransactionId = transactionId;
   openTransactionDrawerShell();
   resetDrawerView();
-  if (txDetailState) txDetailState.textContent = 'Loading transaction context...';
+  if (txDetailState) txDetailState.textContent = 'Loading transaction context…';
 
   try {
     const context = await fetchTransactionContext(transactionId);
@@ -643,7 +643,7 @@ async function submitQuickReport(): Promise<void> {
   }
 
   if (txReportSubmitBtn) txReportSubmitBtn.disabled = true;
-  setMessage('Submitting report...');
+  setMessage('Submitting report…');
   try {
     const transactionId = reportContext.transactionId;
     const response = await apiFetch('/api/admin/report-issues', {
@@ -686,7 +686,7 @@ async function submitQuickReport(): Promise<void> {
 }
 
 refreshBtn.addEventListener('click', () => {
-  setMessage('Refreshing...');
+  setMessage('Refreshing…');
   void loadData()
     .then(() => setMessage('Transaction logs refreshed.'))
     .catch((e: unknown) =>
@@ -695,7 +695,7 @@ refreshBtn.addEventListener('click', () => {
 });
 
 exportLogsBtn.addEventListener('click', () => {
-  setMessage('Preparing transaction logs export...');
+  setMessage('Preparing transaction logs export…');
   const params = buildFilterParams(false);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   void apiFetch(`/api/admin/logs/transactions/export.csv${suffix}`)
