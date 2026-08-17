@@ -173,6 +173,7 @@ const balanceValue = document.getElementById('balanceValue');
 const changeValue = document.getElementById('changeValue');
 const changeRow = document.getElementById('changeRow');
 const statusMessage = document.getElementById('statusMessage');
+const statusBadge = document.getElementById('statusBadge');
 const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
@@ -850,6 +851,7 @@ function applyConfirmGate(statusOverride?: string): void {
   if (isProcessingPayment) {
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
+    if (statusBadge) statusBadge.dataset.state = 'waiting';
     return;
   }
 
@@ -862,6 +864,7 @@ function applyConfirmGate(statusOverride?: string): void {
     confirmBtn.setAttribute('aria-disabled', 'true');
     statusMessage.textContent =
       statusOverride ?? currentPrinterError.userMessage;
+    if (statusBadge) statusBadge.dataset.state = 'error';
     return;
   }
 
@@ -870,6 +873,7 @@ function applyConfirmGate(statusOverride?: string): void {
     confirmBtn.setAttribute('aria-disabled', 'true');
     statusMessage.textContent =
       statusOverride ?? pricingError ?? 'Loading pricing...';
+    if (statusBadge) statusBadge.dataset.state = 'waiting';
     return;
   }
 
@@ -879,6 +883,10 @@ function applyConfirmGate(statusOverride?: string): void {
     statusMessage.textContent =
       statusOverride ??
       `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
+    if (statusBadge) {
+      statusBadge.dataset.state =
+        latestPrinterStatusLabel.startsWith('Checking') ? 'waiting' : 'error';
+    }
     return;
   }
 
@@ -889,6 +897,7 @@ function applyConfirmGate(statusOverride?: string): void {
     actionCol?.classList.add('is-ready');          // NEW (turns price green)
     statusMessage.textContent =
       statusOverride ?? 'Sufficient balance detected. You can confirm now.';
+    if (statusBadge) statusBadge.dataset.state = 'ready';
   } else {
     confirmBtn.classList.remove('is-ready');       // NEW
     actionCol?.classList.remove('is-ready');       // NEW
@@ -897,6 +906,7 @@ function applyConfirmGate(statusOverride?: string): void {
     confirmBtn.setAttribute('aria-disabled', 'true');
     statusMessage.textContent =
       statusOverride ?? `Insert more coins: ₱ ${needed} remaining.`;
+    if (statusBadge) statusBadge.dataset.state = 'waiting';
   }
 }
 
@@ -1725,9 +1735,48 @@ if (typeof ioFactory === 'function') {
     }
   });
 
-  // Re-sync on printer malfunction or spooler failure — only show after job is active
+  connectedSocket.on('connect', () => {
+    void loadPrinterStatus();
+  });
+
+  connectedSocket.on('printerStatusChanged', (payload: any) => {
+    if (payload && typeof payload.connected === 'boolean') {
+      const isBlocked =
+        !payload.connected || BLOCKED_PRINTER_STATUSES.has(payload.status);
+      printerReady = !isBlocked;
+      latestPrinterStatusLabel =
+        payload.status || (payload.connected ? 'Ready' : 'Not Found');
+      applyConfirmGate();
+      if (!printerReady) {
+        void loadPrinterStatus();
+      }
+    } else {
+      void loadPrinterStatus();
+    }
+  });
+
+  connectedSocket.on('printerRecovered', (payload: any) => {
+    printerReady = true;
+    latestPrinterStatusLabel = payload?.status || 'Idle';
+    clearPrinterError();
+    applyConfirmGate();
+  });
+
+  connectedSocket.on('printerStatusRestored', () => {
+    printerReady = true;
+    latestPrinterStatusLabel = 'Ready';
+    clearPrinterError();
+    applyConfirmGate();
+  });
+
+  // Re-sync on printer malfunction or spooler failure
   connectedSocket.on('printerMalfunction', (payload: any) => {
-    if (hasActiveJob() && payload?.printError) renderPrinterError(payload.printError);
+    printerReady = false;
+    latestPrinterStatusLabel = payload?.status || 'Error';
+    if (hasActiveJob() && payload?.printError) {
+      renderPrinterError(payload.printError);
+    }
+    applyConfirmGate();
   });
   connectedSocket.on('printerSpoolerFailure', (payload: any) => {
     if (hasActiveJob() && payload?.printError) renderPrinterError(payload.printError);
@@ -1847,16 +1896,48 @@ errorCancelRemainingBtn?.addEventListener('click', async () => {
   }
 });
 
+const BLOCKED_PRINTER_STATUSES = new Set([
+  'Offline',
+  'Error',
+  'Paper Jam',
+  'Paper Out',
+  'Door Open',
+  'User Intervention Required',
+  'Paused',
+]);
+
+let printerStatusRetryTimer: number | null = null;
+
 async function loadPrinterStatus(): Promise<void> {
+  if (printerStatusRetryTimer !== null) {
+    window.clearTimeout(printerStatusRetryTimer);
+    printerStatusRetryTimer = null;
+  }
+
   try {
     const res = await fetch('/api/printer/status');
     const data = await res.json();
-    printerReady = data.ready;
-    latestPrinterStatusLabel = data.status;
+    printerReady = Boolean(data.ready);
+    latestPrinterStatusLabel =
+      data.status || (printerReady ? 'Ready' : 'Not Found');
     applyConfirmGate();
+
+    // If printer is not ready or still in checking phase, schedule a retry
+    if (
+      !printerReady ||
+      latestPrinterStatusLabel === 'Checking…' ||
+      latestPrinterStatusLabel === 'Checking...'
+    ) {
+      printerStatusRetryTimer = window.setTimeout(() => {
+        void loadPrinterStatus();
+      }, 2500);
+    }
   } catch {
     printerReady = false;
     applyConfirmGate();
+    printerStatusRetryTimer = window.setTimeout(() => {
+      void loadPrinterStatus();
+    }, 3000);
   }
 }
 

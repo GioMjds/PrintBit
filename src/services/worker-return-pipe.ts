@@ -7,7 +7,10 @@ export type WorkerPrintEventType =
   | 'PrintFailed'
   | 'PrinterOffline'
   | 'PrinterOnline'
-  | 'PrinterError';
+  | 'PrinterError'
+  | 'JobPaused'
+  | 'JobResumed'
+  | 'JobCompleted';
 
 export type WorkerTerminalOutcome =
   | 'completed'
@@ -109,7 +112,9 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
   | 'workerPrintFailed'
   | 'workerPrinterOffline'
   | 'workerPrinterOnline'
-  | 'workerPrinterError';
+  | 'workerPrinterError'
+  | 'workerJobPaused'
+  | 'workerJobResumed';
   payload: WorkerPrintEvent;
 } {
   switch (evt.type) {
@@ -127,6 +132,15 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
       return { event: 'workerPrinterOnline', payload: evt };
     case 'PrinterError':
       return { event: 'workerPrinterError', payload: evt };
+    case 'JobPaused':
+      return { event: 'workerJobPaused', payload: evt };
+    case 'JobResumed':
+      return { event: 'workerJobResumed', payload: evt };
+    case 'JobCompleted':
+      return {
+        event: evt.outcome === 'completed' ? 'workerPrintSucceeded' : 'workerPrintFailed',
+        payload: evt,
+      };
     default: {
       // Exhaustiveness check: if a new WorkerPrintEventType variant is added
       // and not mapped here, fail the type system instead of silently

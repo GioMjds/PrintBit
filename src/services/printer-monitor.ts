@@ -112,6 +112,9 @@ class PrinterMonitorService {
         void this.onStartupMalfunction(telemetry, now);
       } else if (!currentConnected) {
         void this.onStartupDisconnected(now);
+      } else {
+        this.emitStatusChanged(telemetry, now);
+        this.emitRecovered(telemetry, now);
       }
       return;
     }

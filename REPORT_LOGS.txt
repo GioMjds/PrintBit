@@ -1,0 +1,19 @@
+info: PrintBit.HardwareService.Services.PrintQueueWatcher[0]
+      Detected print job: C:\Users\Admin\Desktop\printbit-worker\queue\88013ab5-b4b8-4712-b389-dc52c50ec3f0_ed930214-756d-4b89-919d-350b9f932490_1786972832544.pdf
+info: PrintBit.Infrastructure.IPC.WorkerEventPipeClient[0]
+      [PIPE → Node] Sent PrintStarted to printbit-worker-events
+info: PrintBit.Infrastructure.Services.PrintService.PagePrinter[0]
+      Dispatching SumatraPDF for page C:\Users\Admin\Desktop\printbit-worker\queue\.work\88013ab5-b4b8-4712-b389-dc52c50ec3f0_ed930214-756d-4b89-919d-350b9f932490\page-1.pdf on printer EPSON L5290 Series
+info: PrintBit.Infrastructure.Services.PrintService.PagePrinter[0]
+      Job cleared from spooler; running post-clear hardware guard window
+info: PrintBit.Infrastructure.IPC.WorkerEventPipeClient[0]
+      [PIPE → Node] Sent PrintProgress to printbit-worker-events
+info: PrintBit.Infrastructure.IPC.WorkerEventPipeClient[0]
+      [PIPE → Node] Sent JobCompleted to printbit-worker-events
+info: PrintBit.HardwareService.Services.PrintQueueWatcher[0]
+      Print job processed successfully. Cleared sidecars.
+
+[JOB-PROCESSOR] Enqueued job 09642d76-5e2a-4d2f-9a0e-27ee9c158096 for transaction 88013ab5-b4b8-4712-b389-dc52c50ec3f0
+[JOB-PROCESSOR] Picking up pending job 09642d76-5e2a-4d2f-9a0e-27ee9c158096 for transaction 88013ab5-b4b8-4712-b389-dc52c50ec3f0
+[SERIAL] Coin slot unlocked - accepting incoming coins.
+[JOB-PROCESSOR] Job 09642d76-5e2a-4d2f-9a0e-27ee9c158096 completed successfully

@@ -70,7 +70,16 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
       '/api/scanner',
       '/api/scan',
       '/api/copy',
-      '/api/printer',
+      // Write-only printer endpoints require the kiosk cookie.
+      // GET /api/printer/status is intentionally excluded — it is a
+      // read-only probe called by kiosk pages (confirm, print, copy, scan)
+      // on page load, before any coin interaction.  Guarding it causes a 403
+      // on every non-bootstrapped browser, making the UI report "Printer not
+      // ready" even when the printer is perfectly healthy.
+      '/api/printer/preflight',
+      '/api/printer/pause',
+      '/api/printer/resume',
+      '/api/printer/cancel-remaining',
       '/api/confirm-payment',
       '/api/balance/reset',
       '/api/balance/add-test-coin',

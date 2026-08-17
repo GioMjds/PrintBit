@@ -85,6 +85,13 @@ export function createKioskAccessMiddleware(
   service: KioskAccessService = kioskAccessService,
 ): RequestHandler {
   return (req, res, next) => {
+    // The physical kiosk display runs on the same machine — loopback requests
+    // are always authoritative kiosk origins. This mirrors the admin-auth
+    // pattern and avoids requiring the full bootstrap flow for localhost.
+    if (isLoopbackRequest(req)) {
+      next();
+      return;
+    }
     if (service.isKioskRequest(req)) {
       next();
       return;

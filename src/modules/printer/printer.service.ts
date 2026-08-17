@@ -18,7 +18,11 @@ import { financialLedgerService } from '@/services/financial-ledger';
 import { ReceiptService } from '@/modules/receipt/receipt.service';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
-import { getPrinterTelemetry, recordSpoolerLifecycleTransition } from '@/services';
+import {
+  getPrinterTelemetry,
+  refreshPrinterTelemetry,
+  recordSpoolerLifecycleTransition,
+} from '@/services';
 import { BLOCKED_STATUSES } from '@/utils';
 import {
   WORKER_COMMAND_PIPE_NAME,
@@ -114,8 +118,19 @@ export class PrinterService {
     private readonly sessionStore?: SessionStore,
   ) {}
 
-  getStatusResponse(): PrinterStatusResponse {
-    const telemetry = getPrinterTelemetry();
+  async getStatusResponse(): Promise<PrinterStatusResponse> {
+    let telemetry = getPrinterTelemetry();
+    if (
+      telemetry.status === 'Checking…' ||
+      telemetry.status === 'Checking...' ||
+      !telemetry.lastCheckedAt
+    ) {
+      try {
+        telemetry = await refreshPrinterTelemetry();
+      } catch {
+        telemetry = getPrinterTelemetry();
+      }
+    }
     const blocked =
       !telemetry.connected || BLOCKED_STATUSES.has(telemetry.status);
 

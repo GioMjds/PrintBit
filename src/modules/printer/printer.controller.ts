@@ -18,7 +18,7 @@ export class PrinterController {
   }
 
   private getStatus = async (_req: Request, res: Response): Promise<void> => {
-    const response = this.printerService.getStatusResponse();
+    const response = await this.printerService.getStatusResponse();
     res.set('Cache-Control', 'no-store');
     res.json(response);
   };

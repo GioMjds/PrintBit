@@ -14,9 +14,14 @@ import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import { financialLedgerService } from '@/services/financial-ledger';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import { SessionStore } from '@/services/session';
+import { sendWorkerCommand } from '@/services/worker-command-pipe';
 import type { Server as SocketIOServer } from 'socket.io';
 import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
+
+jest.mock('@/services/worker-command-pipe', () => ({
+  sendWorkerCommand: jest.fn().mockResolvedValue(undefined),
+}));
 
 jest.mock('node:child_process', () => ({
   execFile: jest.fn().mockImplementation((cmd, args, opts, callback) => {
