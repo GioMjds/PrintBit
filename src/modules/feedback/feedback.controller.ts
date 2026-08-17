@@ -10,7 +10,7 @@ import { serializeForInlineScript } from '@/utils/helpers';
 import { FeedbackService } from './feedback.service';
 import type { FeedbackStatus } from './feedback.schema';
 
-const FEEDBACK_PORTAL_DIR = path.join(__dirname, '..', '..', 'public', 'feedback');
+const FEEDBACK_PORTAL_DIR = path.resolve('src', 'public', 'feedback');
 const FEEDBACK_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 
 const EXPIRED_HTML = `<!DOCTYPE html>

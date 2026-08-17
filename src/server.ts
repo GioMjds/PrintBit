@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import cookieParser from 'cookie-parser';
 import {
   PORT,
+  PUBLIC_DIR,
   UPLOAD_DIR,
   CAPTIVE_PORTAL_ENABLED,
   SESSION_EXPIRY_ENABLED,
@@ -180,7 +181,7 @@ app.get('/loading', (_req, res) => {
   );
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.sendFile(path.join(__dirname, '..', 'public', 'loading', 'index.html'));
+  res.sendFile(path.resolve(PUBLIC_DIR, 'loading', 'index.html'));
 });
 
 app.get('/api/startup/ready', (_req, res) => {

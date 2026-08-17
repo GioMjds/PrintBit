@@ -36,8 +36,8 @@ export const WORKER_COMMAND_PIPE_NAME =
   process.env.PRINTBIT_WORKER_COMMAND_PIPE_NAME?.trim() ||
   'printbit-worker-commands';
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
-export const PORTAL_DIR = path.join(__dirname, '..', 'public', 'upload');
-export const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+export const PUBLIC_DIR = path.resolve('src', 'public');
+export const PORTAL_DIR = path.resolve(PUBLIC_DIR, 'upload');
 export const PREVIEW_CACHE_DIR = path.join(
   os.tmpdir(),
   'printbit-preview-cache',

@@ -5,15 +5,15 @@ import path from 'node:path';
 export function registerStaticAssets(app: Express) {
   app.use(
     '/assets',
-    express.static(path.join(__dirname, '..', 'src', 'assets')),
+    express.static(path.resolve('src', 'assets')),
   );
   app.use(
     '/assets',
-    express.static(path.join(__dirname, '..', 'dist', 'assets')),
+    express.static(path.resolve('dist', 'assets')),
   );
   app.use(
     '/fonts',
-    express.static(path.join(__dirname, '..', 'src', 'fonts'), {
+    express.static(path.resolve('src', 'fonts'), {
       maxAge: '365d',
       immutable: true,
     }),
@@ -21,7 +21,7 @@ export function registerStaticAssets(app: Express) {
   app.use(
     '/libs/pdfjs',
     express.static(
-      path.join(__dirname, '..', 'node_modules', 'pdfjs-dist', 'build'),
+      path.resolve('node_modules', 'pdfjs-dist', 'build'),
       {
         maxAge: '7d',
         setHeaders(res, filePath) {
@@ -32,6 +32,6 @@ export function registerStaticAssets(app: Express) {
       },
     ),
   );
-  app.use(express.static(path.join(__dirname, '..', 'src', 'public')));
-  app.use(express.static(path.join(__dirname, '..', 'dist', 'public')));
+  app.use(express.static(path.resolve('src', 'public')));
+  app.use(express.static(path.resolve('dist', 'public')));
 }

@@ -11,13 +11,10 @@ import {
 } from '@/services';
 import { serializeForInlineScript } from '@/utils/helpers';
 
-const REPORT_PORTAL_DIR = path.join(__dirname, '..', '..', 'public', 'report');
+const REPORT_PORTAL_DIR = path.resolve('src', 'public', 'report');
 const REPORT_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
-const REPORT_IMAGE_DIR = path.join(__dirname, '..', '..', 'uploads', 'report-issues');
-const REPORT_ATTACHMENT_STAGING_DIR = path.join(
-  __dirname,
-  '..',
-  '..',
+const REPORT_IMAGE_DIR = path.resolve('uploads', 'report-issues');
+const REPORT_ATTACHMENT_STAGING_DIR = path.resolve(
   'uploads',
   'staging',
   'report-issues',
