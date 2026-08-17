@@ -466,6 +466,16 @@ export class PrinterService {
     console.log(
       `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js (lifecycle state: ${lifecyclePages.currentState ?? 'unknown'})`,
     );
+
+    // Attempt to kill the Epson Status Monitor popup if it exists, 
+    // otherwise the physical printer might stay blocked.
+    try {
+      await execFileAsync('taskkill', ['/F', '/IM', 'e_yarnyre.exe'], { timeout: 2000 });
+      console.log(`[PRINTER] Successfully dismissed Epson Status Monitor popup (e_yarnyre.exe)`);
+    } catch (e) {
+      // Ignore errors (process not found, etc.)
+    }
+
     const result = await resumePrintJobViaEdge(printerName, spoolerJobId);
     if (result.success) {
       if (result.alreadyInState && isGenuineUserPause) {

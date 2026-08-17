@@ -1793,6 +1793,29 @@ if (typeof ioFactory === 'function') {
     }
   });
 
+  connectedSocket.on('workerJobPaused', (payload: any) => {
+    if (!matchesPendingWorkerEvent(payload)) return;
+    hideOverlay(printingOverlay);
+    isProcessingPayment = false;
+    renderPrinterError({
+      code: 'WORKER_HARDWARE_ERROR',
+      severity: 'recoverable',
+      userMessage: 'Printer paused due to a hardware issue.',
+      hint: payload?.errorMessage ?? payload?.message ?? 'Please check the printer.',
+      timestamp: new Date().toISOString(),
+      canRetry: true,
+      spoolerCorrelationKey: payload?.spoolerCorrelationKey,
+    });
+  });
+
+  connectedSocket.on('workerJobResumed', (payload: any) => {
+    if (!matchesPendingWorkerEvent(payload)) return;
+    clearPrinterError();
+    setPrintingPhase('printing');
+    isProcessingPayment = true;
+    showOverlay(printingOverlay);
+  });
+
   connectedSocket.on('workerPrintSucceeded', (payload: any) => {
     if (!matchesPendingWorkerEvent(payload)) return;
     finalizePrintSuccess(payload?.transactionId ?? null);
