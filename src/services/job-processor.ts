@@ -101,12 +101,10 @@ export class JobProcessor {
 
           printJobStore.updateJobState(
             job.id,
-            'processing',
+            'printed',
             JSON.stringify(job.data.attempts),
           );
-          console.info(
-            `[JOB-PROCESSOR] Job ${job.id} dispatched to worker queue`,
-          );
+          console.info(`[JOB-PROCESSOR] Job ${job.id} completed successfully`);
         } catch (err) {
           const isRetryable = !String(err).includes('NON_RETRYABLE');
           const attemptCount = job.data.attempts?.length ?? 0;

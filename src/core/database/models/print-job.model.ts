@@ -87,20 +87,6 @@ export class PrintJobSqliteStore {
     }
   }
 
-  updateJobStateByTransactionId(
-    transactionId: string,
-    state: PrintJobState,
-  ): void {
-    const updatedAt = new Date().toISOString();
-    getSqliteDb()
-      .prepare(
-        `UPDATE print_jobs
-         SET state = ?, updated_at = ?
-         WHERE transaction_id = ?`,
-      )
-      .run(state, updatedAt, transactionId);
-  }
-
   listPendingJobs(): PrintJobEntry[] {
     const rows = getSqliteDb()
       .prepare(

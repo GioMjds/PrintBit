@@ -7,7 +7,7 @@ import {
   mapHopperErrorSeverity,
 } from './anomaly';
 import { getTrustedTimestamp } from './time-source';
-import { ESP32_AP_BASE_URL, ESP32_COIN_BRIDGE_API_KEY, NETWORK_PROVIDER } from '@/config';
+import { ESP32_AP_BASE_URL, NETWORK_PROVIDER } from '@/config';
 import { safeAmount } from '@/utils';
 import { getHopperStatus } from './serial';
 import { HopperErrorCode, type HopperErrorCodeValue } from './hopper-protocol';
@@ -211,69 +211,41 @@ class HopperService {
   ): Promise<HopperDispenseResult> {
     const stats = db.data!.hopperStats;
     const requestId = randomUUID();
-    const token = ESP32_COIN_BRIDGE_API_KEY;
 
     try {
-      const url = `/hopper/dispense?token=${encodeURIComponent(token)}&coins=${coins}&requestId=${encodeURIComponent(requestId)}`;
       const res = await this.fetchEsp32(
-        url,
+        '/hopper/dispense',
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-hopper-token': token,
-            'x-coin-api-key': token,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            token,
-            coins,
-            targetCoins: coins,
             requestId,
+            targetCoins: coins,
           }),
         },
         15_000,
       );
 
       if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        throw new Error(`ESP32 returned ${res.status}${errorText ? `: ${errorText}` : ''}`);
+        throw new Error(`ESP32 returned ${res.status}`);
       }
 
-      // ESP32 accepted dispense request (HTTP 202 / 200). Poll status until finished.
-      const pollStartTime = Date.now();
-      const maxPollMs = Math.max(15_000, coins * 3_000 + 5_000);
-      let finalStatus: Esp32HopperStatus | null = null;
+      const body = (await res.json()) as Esp32DispenseAttemptResult;
 
-      while (Date.now() - pollStartTime < maxPollMs) {
-        await new Promise((r) => setTimeout(r, 400));
-        finalStatus = await this.readEsp32HopperStatus(10_000);
-        if (finalStatus && !finalStatus.dispensing) {
-          break;
-        }
-      }
-
-      const dispensedCoins = finalStatus?.dispensedCoins ?? 0;
-      const outcome = finalStatus?.lastOutcome || (dispensedCoins >= coins ? 'done' : 'failed');
-
-      if (outcome === 'done' || dispensedCoins >= coins) {
-        stats.totalDispensed += dispensedCoins;
+      if (body.ok) {
+        stats.totalDispensed += body.dispensedCoins;
         stats.dispenseSuccess += 1;
-        stats.lastDispensedAt = new Date().toISOString();
-        stats.lastError = null;
         await db.write();
         return {
           ok: true,
           requestedCoins: coins,
-          dispensedCoins,
-          message: 'Dispensed successfully via ESP32',
+          dispensedCoins: body.dispensedCoins,
+          message: body.message,
           attempts: 1,
         };
       }
 
-      const failureMessage =
-        finalStatus?.lastError ||
-        `Dispense unfulfilled: ${dispensedCoins}/${coins} coins dispensed`;
-      throw new Error(failureMessage);
+      throw new Error(body.message);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -376,50 +348,29 @@ class HopperService {
     };
   }
 
-  private async readEsp32HopperStatus(
-    timeoutMs: number,
-  ): Promise<Esp32HopperStatus | null> {
-    try {
-      const token = ESP32_COIN_BRIDGE_API_KEY;
-      const res = await this.fetchEsp32(
-        `/hopper/status?token=${encodeURIComponent(token)}`,
-        {
-          method: 'GET',
-          headers: {
-            'x-hopper-token': token,
-            'x-coin-api-key': token,
-          },
-        },
-        timeoutMs,
-      );
-      if (!res.ok) return null;
-      const payload = await res.json();
-      return this.parseEsp32HopperStatus(payload);
-    } catch {
-      return null;
-    }
-  }
-
   private async readEsp32Status(
     timeoutMs: number,
   ): Promise<HopperDispenseResult> {
-    const status = await this.readEsp32HopperStatus(timeoutMs);
-    if (status) {
+    try {
+      const res = await this.fetchEsp32('/hopper/status', { method: 'GET' }, timeoutMs);
+      if (!res.ok) throw new Error(`ESP32 returned ${res.status}`);
+      const body = (await res.json()) as Esp32HopperStatus;
       return {
         ok: true,
         requestedCoins: 0,
-        dispensedCoins: status.dispensedCoins,
-        message: status.lastError ? `Status: ${status.lastError}` : 'Status read',
+        dispensedCoins: body.dispensedCoins,
+        message: 'Status read',
         attempts: 1,
       };
+    } catch (err) {
+      return {
+        ok: false,
+        requestedCoins: 0,
+        dispensedCoins: 0,
+        message: err instanceof Error ? err.message : String(err),
+        attempts: 0,
+      };
     }
-    return {
-      ok: false,
-      requestedCoins: 0,
-      dispensedCoins: 0,
-      message: 'Failed to read ESP32 status',
-      attempts: 0,
-    };
   }
 }
 

@@ -134,7 +134,7 @@ type PrintError = {
 
 type PrintLifecycleStatePayload = {
   mode: 'print' | 'copy' | 'scan';
-  state: 'queued' | 'processing' | 'paused' | 'printed' | 'failed';
+  state: 'queued' | 'processing' | 'printed' | 'failed';
   printerName?: string | null;
   transactionId?: string | null;
   spoolerCorrelationKey?: string | null;
@@ -278,7 +278,6 @@ const COIN_INSERT_GUIDANCE_MESSAGE =
   DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE;
 
 function renderPrinterError(err: PrintError): void {
-  console.error('[CONFIRM-PAGE] renderPrinterError called:', err);
   currentPrinterError = err;
   if (!printerErrorBlock) return;
 
@@ -303,7 +302,7 @@ function renderPrinterError(err: PrintError): void {
     errorSeverityText.textContent = severityLabels[err.severity] ?? err.severity;
   }
 
-  if (err.severity === 'warning' || !hasActiveJob()) {
+  if (err.severity === 'warning') {
     if (errorCloseBtn) errorCloseBtn.removeAttribute('hidden');
   } else {
     if (errorCloseBtn) errorCloseBtn.setAttribute('hidden', '');
@@ -337,7 +336,7 @@ function renderPrinterError(err: PrintError): void {
   }
 
   if (errorActions) {
-    if (showActions || lastKnownPagesPrinted > 0 || !hasActiveJob()) {
+    if (showActions || lastKnownPagesPrinted > 0) {
       errorActions.removeAttribute('hidden');
       // Reset button state every time the modal becomes visible
       resetErrorActionButtons();
@@ -346,7 +345,7 @@ function renderPrinterError(err: PrintError): void {
     }
   }
 
-  if (printerErrorBlock) {
+  if (hasActiveJob()) {
     printerErrorBlock.removeAttribute('hidden');
   }
   applyConfirmGate();
@@ -458,7 +457,6 @@ function clearErrorActionInlineError(): void {
  */
 function resolveErrorActionCorrelationKey(): string | null {
   if (paymentSpoolerCorrelationKey) return paymentSpoolerCorrelationKey;
-  if (activeSpoolerCorrelationKey) return activeSpoolerCorrelationKey;
   if (currentPrinterError?.spoolerCorrelationKey) {
     return currentPrinterError.spoolerCorrelationKey;
   }
@@ -1273,10 +1271,6 @@ function captureReceiptCta(payload: ReceiptLinkPayload): void {
 }
 
 function finalizePrintSuccess(transactionId: string | null): void {
-  console.info(
-    '[CONFIRM-PAGE] finalizePrintSuccess triggered for transactionId:',
-    transactionId ?? currentTransactionId,
-  );
   setTransactionReference(transactionId ?? currentTransactionId);
   hideOverlay(printingOverlay);
   hidePrintProgress();
@@ -1308,10 +1302,6 @@ function finalizePrintSuccess(transactionId: string | null): void {
 }
 
 function enterWorkerPendingState(transactionId: string | null): void {
-  console.info('[CONFIRM-PAGE] enterWorkerPendingState triggered:', {
-    transactionId,
-    paymentSpoolerCorrelationKey,
-  });
   setTransactionReference(transactionId);
   activeSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
   if (statusMessage) {
@@ -1336,27 +1326,15 @@ function matchesPendingWorkerEvent(payload: {
       ? payload.spoolerCorrelationKey
       : null;
 
-  const matchesTx = Boolean(
-    currentTransactionId && payloadTransactionId === currentTransactionId,
-  );
-  const matchesKey = Boolean(
+  if (currentTransactionId && payloadTransactionId === currentTransactionId) {
+    return true;
+  }
+
+  return Boolean(
     paymentSpoolerCorrelationKey &&
       payloadSpoolerKey &&
       payloadSpoolerKey === paymentSpoolerCorrelationKey,
   );
-  const isMatch = matchesTx || matchesKey;
-
-  console.log('[CONFIRM-PAGE] matchesPendingWorkerEvent check:', {
-    payloadTransactionId,
-    payloadSpoolerKey,
-    currentTransactionId,
-    paymentSpoolerCorrelationKey,
-    matchesTx,
-    matchesKey,
-    isMatch,
-  });
-
-  return isMatch;
 }
 
 function syncPendingPaymentSessionState(): void {
@@ -1682,15 +1660,6 @@ if (typeof ioFactory === 'function') {
 
   connectedSocket.on('printLifecycleState', (payload: any) => {
     const lifecycle = payload as PrintLifecycleStatePayload;
-    console.log('[CONFIRM-PAGE] Socket event [printLifecycleState]:', {
-      state: lifecycle.state,
-      transactionId: lifecycle.transactionId,
-      spoolerCorrelationKey: lifecycle.spoolerCorrelationKey,
-      pagesPrinted: lifecycle.pagesPrinted,
-      totalPages: lifecycle.totalPages,
-      reason: lifecycle.reason,
-      printError: lifecycle.printError,
-    });
     if (typeof lifecycle.pagesPrinted === 'number') {
       lastKnownPagesPrinted = lifecycle.pagesPrinted;
     }
@@ -1707,10 +1676,6 @@ if (typeof ioFactory === 'function') {
     // pagesPrinted. PrintStarted emits the same state without pagesPrinted,
     // which is a no-op here and lets the spinner-only copy stand.
     if (lifecycle.state === 'processing') {
-      if (currentPrinterError) {
-        clearPrinterError();
-      }
-      showOverlay(printingOverlay);
       if (
         typeof lifecycle.pagesPrinted === 'number' &&
         lifecycle.pagesPrinted > 0
@@ -1723,41 +1688,12 @@ if (typeof ioFactory === 'function') {
     }
 
     if (
-      lifecycle.state === 'paused' &&
-      matchesPendingWorkerEvent({
-        transactionId: lifecycle.transactionId ?? null,
-        spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
-      })
-    ) {
-      console.warn('[CONFIRM-PAGE] Print job paused via printLifecycleState event:', lifecycle);
-      hideOverlay(printingOverlay);
-      isProcessingPayment = false;
-      if (lifecycle.printError) {
-        renderPrinterError(lifecycle.printError);
-      } else if (currentPrinterError) {
-        renderPrinterError(currentPrinterError);
-      } else {
-        renderPrinterError({
-          code: 'PAPER_TRAY_EMPTY',
-          severity: 'recoverable',
-          userMessage: lifecycle.reason ?? 'Printer Out of Paper. Please load paper and click Resume.',
-          hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
-          timestamp: new Date().toISOString(),
-          canRetry: true,
-          spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
-        });
-      }
-      return;
-    }
-
-    if (
       lifecycle.state === 'failed' &&
       matchesPendingWorkerEvent({
         transactionId: lifecycle.transactionId ?? null,
         spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
       })
     ) {
-      console.warn('[CONFIRM-PAGE] Print job failed via printLifecycleState event:', lifecycle);
       if (isHardwareError) {
         hideOverlay(printingOverlay);
         isProcessingPayment = false;
@@ -1782,46 +1718,23 @@ if (typeof ioFactory === 'function') {
     if (lifecycle.printError) {
       if (hasActiveJob()) renderPrinterError(lifecycle.printError);
     } else if (lifecycle.state === 'printed' || lifecycle.state === 'failed') {
-      if (lifecycle.state === 'printed') {
-        hidePrintProgress();
-        const matched = matchesPendingWorkerEvent({
-          transactionId: lifecycle.transactionId ?? null,
-          spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
-        });
-        console.info('[CONFIRM-PAGE] State is "printed", event match =', matched);
-        if (matched) {
-          clearPrinterError();
-          finalizePrintSuccess(lifecycle.transactionId ?? null);
-        }
-      } else if (!isHardwareError) {
+      if (lifecycle.state === 'printed') hidePrintProgress();
+      if (!isHardwareError) {
         clearPrinterError();
       }
     }
   });
 
-  // Re-sync on printer malfunction or spooler failure — show error modal
+  // Re-sync on printer malfunction or spooler failure — only show after job is active
   connectedSocket.on('printerMalfunction', (payload: any) => {
-    console.warn('[CONFIRM-PAGE] Socket event [printerMalfunction]:', payload);
-    if (payload?.printError) renderPrinterError(payload.printError);
+    if (hasActiveJob() && payload?.printError) renderPrinterError(payload.printError);
   });
   connectedSocket.on('printerSpoolerFailure', (payload: any) => {
-    console.warn('[CONFIRM-PAGE] Socket event [printerSpoolerFailure]:', payload);
-    if (payload?.printError) renderPrinterError(payload.printError);
-  });
-
-  connectedSocket.on('workerPrinterOnline', () => {
-    void loadPrinterStatus();
-  });
-  connectedSocket.on('printerStatusRestored', () => {
-    void loadPrinterStatus();
+    if (hasActiveJob() && payload?.printError) renderPrinterError(payload.printError);
   });
 
   connectedSocket.on('workerPrintStarted', (payload: any) => {
-    console.log('[CONFIRM-PAGE] Socket event [workerPrintStarted]:', payload);
-    if (!matchesPendingWorkerEvent(payload)) {
-      console.log('[CONFIRM-PAGE] workerPrintStarted ignored: no match.');
-      return;
-    }
+    if (!matchesPendingWorkerEvent(payload)) return;
     setPrintingPhase('printing');
     if (statusMessage) {
       statusMessage.textContent =
@@ -1832,20 +1745,12 @@ if (typeof ioFactory === 'function') {
   });
 
   connectedSocket.on('workerPrintSucceeded', (payload: any) => {
-    console.info('[CONFIRM-PAGE] Socket event [workerPrintSucceeded]:', payload);
-    if (!matchesPendingWorkerEvent(payload)) {
-      console.warn('[CONFIRM-PAGE] workerPrintSucceeded ignored: no match.');
-      return;
-    }
+    if (!matchesPendingWorkerEvent(payload)) return;
     finalizePrintSuccess(payload?.transactionId ?? null);
   });
 
   connectedSocket.on('workerPrintFailed', (payload: any) => {
-    console.error('[CONFIRM-PAGE] Socket event [workerPrintFailed]:', payload);
-    if (!matchesPendingWorkerEvent(payload)) {
-      console.warn('[CONFIRM-PAGE] workerPrintFailed ignored: no match.');
-      return;
-    }
+    if (!matchesPendingWorkerEvent(payload)) return;
 
     // If the worker reports a HardwareError, show the error modal
     // with pause/resume instead of aborting the transaction.
@@ -1858,7 +1763,6 @@ if (typeof ioFactory === 'function') {
       payload?.printError?.code === 'PAPER_JAM_PRINT';
 
     if (isHardwareError) {
-      console.warn('[CONFIRM-PAGE] Hardware error detected on workerPrintFailed:', payload);
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
       const hardwareError: PrintError = payload?.printError ?? {
@@ -1878,7 +1782,6 @@ if (typeof ioFactory === 'function') {
     }
 
     // Non-hardware failure: abort as before
-    console.error('[CONFIRM-PAGE] Terminal non-hardware failure on workerPrintFailed:', payload);
     hideOverlay(printingOverlay);
     hidePrintProgress();
     isProcessingPayment = false;
@@ -1950,11 +1853,7 @@ async function loadPrinterStatus(): Promise<void> {
     const data = await res.json();
     printerReady = data.ready;
     latestPrinterStatusLabel = data.status;
-    if (printerReady && currentPrinterError && !hasActiveJob()) {
-      clearPrinterError();
-    } else {
-      applyConfirmGate();
-    }
+    applyConfirmGate();
   } catch {
     printerReady = false;
     applyConfirmGate();
@@ -1967,9 +1866,6 @@ async function boot(): Promise<void> {
     loadPricing(),
     fetchInitialBalance(),
   ]);
-  setInterval(() => {
-    void loadPrinterStatus();
-  }, 5000);
 }
 
 void boot();

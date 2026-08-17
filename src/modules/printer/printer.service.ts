@@ -26,7 +26,6 @@ import {
   WORKER_FAILED_DIR,
 } from '@/config/http.config';
 import { computeResubmitPlan, type ResubmitPlan } from './resubmit-plan';
-import { sendWorkerCommand } from '@/services/worker-command-pipe';
 
 // Re-export so that `printer.service.ts` remains the canonical public
 // surface of this module — callers should not need to know about
@@ -391,20 +390,9 @@ export class PrinterService {
     if (typeof spoolerCorrelationKey !== 'string' || spoolerCorrelationKey.length > 255 || !/^[a-zA-Z0-9-_]+$/.test(spoolerCorrelationKey)) {
       throw new Error('Invalid spoolerCorrelationKey');
     }
-    const { printerName, spoolerJobId, transactionId } = await this.findSpoolerJobDetails(
+    const { printerName, spoolerJobId } = await this.findSpoolerJobDetails(
       spoolerCorrelationKey,
     );
-
-    void sendWorkerCommand({
-      type: 'pause_job',
-      protocolVersion: 2,
-      commandId: randomUUID(),
-      transactionId,
-      spoolerCorrelationKey,
-      reason: 'User paused print job in UI',
-      timestampUtc: new Date().toISOString(),
-    }, { pipeName: WORKER_COMMAND_PIPE_NAME });
-
     console.log(
       `[PRINTER] Pausing job #${spoolerJobId} on ${printerName} via edge-js`,
     );
@@ -443,16 +431,6 @@ export class PrinterService {
     }
     const { printerName, spoolerJobId, transactionId } =
       await this.findSpoolerJobDetails(spoolerCorrelationKey);
-
-    void sendWorkerCommand({
-      type: 'resume_job',
-      protocolVersion: 2,
-      commandId: randomUUID(),
-      transactionId,
-      spoolerCorrelationKey,
-      reason: 'User resumed print job in UI',
-      timestampUtc: new Date().toISOString(),
-    }, { pipeName: WORKER_COMMAND_PIPE_NAME });
 
     const recovery = getRecoverySession(transactionId);
     if (!recovery) {
@@ -887,16 +865,6 @@ export class PrinterService {
 
     try {
       // Instruct spooler/worker to delete the job before financial refund updates
-      void sendWorkerCommand({
-        type: 'cancel_job',
-        protocolVersion: 2,
-        commandId: randomUUID(),
-        transactionId,
-        spoolerCorrelationKey,
-        reason: 'User cancelled remaining pages in UI',
-        timestampUtc: new Date().toISOString(),
-      }, { pipeName: WORKER_COMMAND_PIPE_NAME });
-
       if (printerName && typeof spoolerJobId === 'number') {
         try {
           console.log(`[PRINTER] Cancelling spooler job #${spoolerJobId} on ${printerName} via edge-js`);

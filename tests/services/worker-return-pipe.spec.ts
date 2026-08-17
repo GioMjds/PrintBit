@@ -116,15 +116,4 @@ describe('worker-return-pipe', () => {
 			failureStage: 'SpoolerVerification',
 		});
 	});
-
-	it('maps JobCompleted with completed outcome to workerPrintSucceeded', () => {
-		const mapped = mapWorkerEventToSocket({
-			type: 'JobCompleted',
-			transactionId: 'tx-1',
-			spoolerCorrelationKey: 'spool-1',
-			outcome: 'completed',
-			timestampUtc: '2026-05-25T02:00:00Z',
-		});
-		expect(mapped.event).toBe('workerPrintSucceeded');
-	});
 });

@@ -16,7 +16,6 @@ import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-st
 import { SessionStore } from '@/services/session';
 import type { Server as SocketIOServer } from 'socket.io';
 import fs from 'node:fs/promises';
-import { sendWorkerCommand } from '@/services/worker-command-pipe';
 import { execFile } from 'node:child_process';
 
 jest.mock('node:child_process', () => ({
@@ -77,17 +76,6 @@ jest.mock('node:fs/promises', () => ({
   readFile: jest.fn(),
   writeFile: jest.fn(),
 }));
-
-jest.mock('@/services/worker-command-pipe', () => ({
-  sendWorkerCommand: jest.fn().mockResolvedValue(true),
-}));
-
-jest.mock('@/modules/receipt/receipt.service', () => ({
-  ReceiptService: jest.fn().mockImplementation(() => ({
-    upsertReceiptSnapshot: jest.fn(),
-  })),
-}));
-
 jest.mock('@/config/http.config', () => {
   const actual = jest.requireActual('@/config/http.config');
   return {
@@ -106,13 +94,6 @@ describe('PrinterService.cancelRemaining', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (getRecoverySession as jest.Mock).mockReset();
-    (cancelPrintJobViaEdge as jest.Mock).mockReset();
-    (pausePrintJobViaEdge as jest.Mock).mockReset();
-    (resumePrintJobViaEdge as jest.Mock).mockReset();
-    (deleteTransientScanFile as jest.Mock).mockReset();
-    (financialLedgerService.append as jest.Mock).mockReset();
-    (financialLedgerService.append as jest.Mock).mockResolvedValue({});
-    
     db.data = {
       balance: 0,
       earnings: 100,
@@ -472,9 +453,6 @@ describe('PrinterService.cancelRemaining', () => {
     
     // There should NOT be any subsequent call to checkpointRecoverySession restoring it to job_dispatched
     expect(checkpointRecoverySession).toHaveBeenCalledTimes(1);
-    
-    // Restore default resolved value for subsequent tests
-    (financialLedgerService.append as jest.Mock).mockResolvedValue({});
   });
 });
 
@@ -483,12 +461,6 @@ describe('PrinterService.pauseJob', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (getRecoverySession as jest.Mock).mockReset();
-    (cancelPrintJobViaEdge as jest.Mock).mockReset();
-    (pausePrintJobViaEdge as jest.Mock).mockReset();
-    (resumePrintJobViaEdge as jest.Mock).mockReset();
-    (deleteTransientScanFile as jest.Mock).mockReset();
-    
     db.data = {
       balance: 0,
       earnings: 100,
@@ -566,10 +538,6 @@ describe('PrinterService.resumeJob', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (getRecoverySession as jest.Mock).mockReset();
-    (cancelPrintJobViaEdge as jest.Mock).mockReset();
-    (pausePrintJobViaEdge as jest.Mock).mockReset();
-    (resumePrintJobViaEdge as jest.Mock).mockReset();
-    (deleteTransientScanFile as jest.Mock).mockReset();
 
     const mockRecovery = {
       id: 'tx-123',
@@ -826,13 +794,6 @@ describe('PrinterService.preDispatchCheck', () => {
   let printerService: PrinterService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    (getRecoverySession as jest.Mock).mockReset();
-    (cancelPrintJobViaEdge as jest.Mock).mockReset();
-    (pausePrintJobViaEdge as jest.Mock).mockReset();
-    (resumePrintJobViaEdge as jest.Mock).mockReset();
-    (deleteTransientScanFile as jest.Mock).mockReset();
-    
     printerService = new PrinterService();
   });
 

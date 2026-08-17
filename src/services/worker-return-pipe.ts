@@ -7,10 +7,7 @@ export type WorkerPrintEventType =
   | 'PrintFailed'
   | 'PrinterOffline'
   | 'PrinterOnline'
-  | 'PrinterError'
-  | 'JobPaused'
-  | 'JobResumed'
-  | 'JobCompleted';
+  | 'PrinterError';
 
 export type WorkerTerminalOutcome =
   | 'completed'
@@ -41,14 +38,16 @@ export interface WorkerPrintEvent {
   message?: string;
   errorMessage?: string;
   outcome?: WorkerTerminalOutcome;
+  /**
+   * Pages printed so far, reported by the worker's Win32_PrintJob poller.
+   * Only populated on `PrintProgress` events.
+   */
   pagesPrinted?: number;
+  /**
+   * Total pages in the spooler job. Reported alongside `pagesPrinted` so the
+   * confirm page can render an "N of M" progress indicator.
+   */
   totalPages?: number;
-  completedCount?: number;
-  totalCount?: number;
-  failedPageNumber?: number;
-  failedCopyNumber?: number;
-  resumingPageNumber?: number;
-  resumingCopyNumber?: number;
   timestampUtc: string;
 }
 
@@ -115,19 +114,11 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
 } {
   switch (evt.type) {
     case 'PrintStarted':
-    case 'JobResumed':
       return { event: 'workerPrintStarted', payload: evt };
     case 'PrintProgress':
       return { event: 'workerPrintProgress', payload: evt };
     case 'PrintSucceeded':
       return { event: 'workerPrintSucceeded', payload: evt };
-    case 'JobCompleted':
-      if (evt.outcome === 'completed') {
-        return { event: 'workerPrintSucceeded', payload: evt };
-      }
-      return { event: 'workerPrintFailed', payload: evt };
-    case 'JobPaused':
-      return { event: 'workerPrinterError', payload: evt };
     case 'PrintFailed':
       return { event: 'workerPrintFailed', payload: evt };
     case 'PrinterOffline':
