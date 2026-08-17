@@ -180,7 +180,7 @@ app.get('/loading', (_req, res) => {
   );
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.sendFile(path.resolve('src/public/loading/index.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'loading', 'index.html'));
 });
 
 app.get('/api/startup/ready', (_req, res) => {

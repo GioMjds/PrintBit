@@ -47,7 +47,11 @@ const poll = async (): Promise<void> => {
 
     if (payload.phase === 'failed') {
       setFailed(payload.message);
-      metaText.textContent = 'Automatic recovery is running. Retrying…';
+      // Show more detailed error information for debugging
+      const detailMessage = payload.message
+        ? `Startup failed: ${payload.message}`
+        : 'Startup failed. Check server logs for details.';
+      metaText.textContent = `${detailMessage} Automatic recovery is running. Retrying…`;
     } else {
       setBooting();
       metaText.textContent = 'Waiting for readiness signal.';
