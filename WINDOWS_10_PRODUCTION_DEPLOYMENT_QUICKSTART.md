@@ -29,11 +29,11 @@ Run the following in **Administrator PowerShell** (replace placeholder `<...>` v
 ```powershell
 # Network & Provider Settings
 setx PRINTBIT_NETWORK_PROVIDER esp32 /M
-setx PRINTBIT_ESP32_AP_BASE_URL "http://<esp32-lan-ip>" /M
-setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX "<your-lan-subnet-prefix>" /M
-setx PRINTBIT_ESP32_KIOSK_IP "<kiosk-lan-ip>" /M
+setx PRINTBIT_ESP32_AP_BASE_URL "http://192.168.4.1" /M
+setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX "192.168.4." /M
+setx PRINTBIT_ESP32_KIOSK_IP "192.168.4.2" /M
 setx PRINTBIT_ESP32_STATIC_IP_ENFORCE true /M
-setx PRINTBIT_ESP32_KIOSK_NETMASK "<your-lan-netmask>" /M
+setx PRINTBIT_ESP32_KIOSK_NETMASK "255.255.255.0" /M
 
 # Server Port
 setx PORT 3000 /M
@@ -103,7 +103,7 @@ Lock the device to Microsoft Edge so users cannot access the desktop or settings
 1. Go to **Settings > Accounts > Family & other users > Set up assigned access**.
 2. Select the **`printbit`** local user you created in Step 3.
 3. Select **Microsoft Edge** as the assigned app.
-4. When prompted for the URL, enter: `http://<kiosk-lan-ip>:3000/loading` (Use the exact `<kiosk-lan-ip>` value you set in Step 2).
+4. When prompted for the URL, enter: `http://192.168.4.2:3000/loading` (Use the exact `192.168.4.2` value you set in Step 2).
 
 ## 6. Apply Windows Update & Lockdown Policies (Recommended)
 
