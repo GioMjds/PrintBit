@@ -215,7 +215,11 @@ export function startWorkerReturnPipeServer(input: {
     });
   });
 
-  server.listen(pipePath);
+  server.listen({
+    path: pipePath,
+    readableAll: true,
+    writableAll: true,
+  });
 
   return {
     pipePath,
