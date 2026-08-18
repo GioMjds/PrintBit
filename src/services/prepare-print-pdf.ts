@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { PDFDocument, degrees, rgb } from 'pdf-lib';
-import { GHOSTSCRIPT_PATH } from '@/config/http.config';
+import { GHOSTSCRIPT_PATH, SUMATRA_PATH } from '@/config/http.config';
 import { convertToPdfPreview } from './preview';
 
 const execFileAsync = promisify(execFile);
@@ -234,30 +234,44 @@ async function applyTransforms(input: {
 async function applyGrayscalePdf(input: {
   sourcePdfPath: string;
 }): Promise<{ pdfPath: string; cleanupPaths: string[] }> {
-  if (!GHOSTSCRIPT_PATH) {
-    throw new Error(
-      'Grayscale PDF preparation requires Ghostscript. Set PRINTBIT_GHOSTSCRIPT_PATH.',
-    );
+  // Priority 1: SumatraPDF is available.
+  // Grayscale/monochrome is enforced at the driver level via SumatraPDF's
+  // -print-settings "monochrome" argument. No PDF-level pre-conversion is
+  // needed — skip Ghostscript entirely and pass the source PDF through.
+  if (SUMATRA_PATH && fs.existsSync(SUMATRA_PATH)) {
+    return { pdfPath: input.sourcePdfPath, cleanupPaths: [] };
   }
 
-  await fs.promises.mkdir(PREPARED_PRINT_DIR, { recursive: true });
-  const outputPath = path.join(PREPARED_PRINT_DIR, `${randomUUID()}-gray.pdf`);
-  await execFileAsync(
-    GHOSTSCRIPT_PATH,
-    [
-      '-dBATCH',
-      '-dNOPAUSE',
-      '-dSAFER',
-      '-sDEVICE=pdfwrite',
-      '-sColorConversionStrategy=Gray',
-      '-dProcessColorModel=/DeviceGray',
-      `-sOutputFile=${outputPath}`,
-      input.sourcePdfPath,
-    ],
-    { timeout: 60_000, windowsHide: true },
-  );
+  // Priority 2: Ghostscript is configured and SumatraPDF is not available.
+  // Use Ghostscript to bake the grayscale into the PDF for downstream engines
+  // (PDFtoPrinter, LibreOffice) that cannot enforce monochrome at the driver level.
+  if (GHOSTSCRIPT_PATH) {
+    await fs.promises.mkdir(PREPARED_PRINT_DIR, { recursive: true });
+    const outputPath = path.join(PREPARED_PRINT_DIR, `${randomUUID()}-gray.pdf`);
+    await execFileAsync(
+      GHOSTSCRIPT_PATH,
+      [
+        '-dBATCH',
+        '-dNOPAUSE',
+        '-dSAFER',
+        '-sDEVICE=pdfwrite',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        `-sOutputFile=${outputPath}`,
+        input.sourcePdfPath,
+      ],
+      { timeout: 60_000, windowsHide: true },
+    );
+    return { pdfPath: outputPath, cleanupPaths: [outputPath] };
+  }
 
-  return { pdfPath: outputPath, cleanupPaths: [outputPath] };
+  // Priority 3: Neither SumatraPDF nor Ghostscript is available.
+  // Warn and pass through — the print engine will apply best-effort monochrome.
+  console.warn(
+    '[PREPARE_PRINT_PDF] Neither SumatraPDF nor Ghostscript is available. ' +
+      'Skipping PDF-level grayscale conversion; the print engine will apply monochrome via driver settings.',
+  );
+  return { pdfPath: input.sourcePdfPath, cleanupPaths: [] };
 }
 
 export interface PreparePrintPdfInput {

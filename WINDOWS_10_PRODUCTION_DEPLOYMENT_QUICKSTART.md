@@ -27,29 +27,163 @@ In production, PrintBit relies on **Machine-Wide Environment Variables** rather 
 Run the following in **Administrator PowerShell** (replace placeholder `<...>` values with your actual network IP addresses):
 
 ```powershell
-# Network & Provider Settings
-setx PRINTBIT_NETWORK_PROVIDER esp32 /M
-setx PRINTBIT_ESP32_AP_BASE_URL "http://192.168.4.1" /M
-setx PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX "192.168.4." /M
-setx PRINTBIT_ESP32_KIOSK_IP "192.168.4.2" /M
-setx PRINTBIT_ESP32_STATIC_IP_ENFORCE true /M
-setx PRINTBIT_ESP32_KIOSK_NETMASK "255.255.255.0" /M
+# ============================================================
+# PrintBit - Windows 10 Production
+# ESP32 + Coin Acceptor + Hopper + C# Worker
+# ============================================================
 
-# Server Port
-setx PORT 3000 /M
 
-# Kiosk Lockdown Settings
-setx PRINTBIT_KIOSK_LOCKDOWN true /M
-setx PRINTBIT_USB_EXPORT_ENABLED false /M
-setx PRINTBIT_SKIP_EDGE_LAUNCH true /M
+# ============================================================
+# Runtime
+# ============================================================
 
-# Watchdog Settings
-setx PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS 10000 /M
-setx PRINTBIT_WATCHDOG_UNREACHABLE_RESTART_THRESHOLD 3 /M
+NODE_ENV=production
+PORT=3000
 
-# C# Worker Integration Variables
-setx PRINTBIT_WORKER_QUEUE_DIR "C:\Users\printbit\printbit-worker\queue" /M
-setx PRINTBIT_KIOSK_USER ".\printbit" /M
+
+# ============================================================
+# ESP32 Network
+# ============================================================
+
+PRINTBIT_NETWORK_PROVIDER=esp32
+
+PRINTBIT_HOTSPOT_SSID=PrintBit
+PRINTBIT_HOTSPOT_PASSWORD=printbit123
+PRINTBIT_HOTSPOT_AUTH_TYPE=WPA
+
+PRINTBIT_ESP32_AP_BASE_URL=http://192.168.4.1
+
+# Windows tablet / kiosk address on the ESP32 network
+PRINTBIT_ESP32_KIOSK_IP=192.168.4.2
+PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX=192.168.4.
+PRINTBIT_ESP32_KIOSK_NETMASK=255.255.255.0
+
+# Keep the Windows tablet on 192.168.4.2
+PRINTBIT_ESP32_STATIC_IP_ENFORCE=true
+
+# Optional explicit ESP32 gateway
+PRINTBIT_ESP32_GATEWAY_IP=192.168.4.1
+
+# Captive portal
+PRINTBIT_CAPTIVE_PORTAL=true
+PRINTBIT_ESP32_CAPTIVE_PORTAL_PATH=/portal
+
+
+# ============================================================
+# ESP32 Registration
+#
+# MUST match:
+# const char* kioskRegisterToken
+# in esp32-captive-portal.ino
+# ============================================================
+
+PRINTBIT_ESP32_REGISTER_TOKEN=printbit-register-token
+
+
+# ============================================================
+# Coin Acceptor -> ESP32 -> Node.js HTTP Bridge
+#
+# MUST match:
+# coinBridgeSource
+# coinBridgeApiKey
+# in esp32-captive-portal.ino
+# ============================================================
+
+PRINTBIT_ESP32_COIN_SOURCE=esp32
+PRINTBIT_ESP32_COIN_API_KEY=printbit-coin-bridge-key
+
+# Keep strict authentication enabled
+PRINTBIT_ESP32_COIN_BRIDGE_RELAXED=false
+
+# Physical coins should still be credited while using
+# the ESP32 hardware bridge.
+PRINTBIT_ESP32_ALWAYS_ACCEPT_COINS=true
+
+
+# ============================================================
+# ESP32 USB Serial
+# ============================================================
+
+PRINTBIT_SERIAL_PORT=COM3
+
+# Reconnect behavior
+PRINTBIT_SERIAL_RECONNECT_BASE_MS=2000
+PRINTBIT_SERIAL_RECONNECT_MAX_MS=30000
+
+# 0 = retry indefinitely
+PRINTBIT_SERIAL_RECONNECT_MAX_ATTEMPTS=0
+
+
+# ============================================================
+# Node.js <-> C# Worker
+# ============================================================
+
+PRINTBIT_WORKER_QUEUE_DIR=C:\Users\printbit\printbit-worker\queue
+PRINTBIT_WORKER_FAILED_DIR=C:\Users\printbit\printbit-worker\failed
+
+PRINTBIT_WORKER_PIPE_NAME=printbit-node-errors
+PRINTBIT_WORKER_RETURN_PIPE_NAME=printbit-worker-events
+PRINTBIT_WORKER_COMMAND_PIPE_NAME=printbit-worker-commands
+
+PRINTBIT_WORKER_PRECHECKS_ENABLED=true
+PRINTBIT_WORKER_RETURN_MAX_BYTES=8192
+
+
+# ============================================================
+# Printing Tools
+# ============================================================
+
+PRINTBIT_SUMATRA_PATH=C:\Users\printbit\printbit\bin\SumatraPDF.exe
+
+# Only enable/configure these if actually installed.
+# Not installed — SumatraPDF handles monochrome natively via -print-settings.
+# PRINTBIT_PDFTOPRINTER_PATH=C:\Users\printbit\bin\PDFtoPrinter.exe
+# PRINTBIT_GHOSTSCRIPT_PATH=C:\Program Files\gs\gs10.xx.x\bin\gswin64c.exe
+# PRINTBIT_LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
+
+
+# ============================================================
+# Print Dispatch
+# ============================================================
+
+# Keep legacy until the new C# worker pipeline is intentionally enabled.
+PRINTBIT_PRINT_DISPATCH_MODE=legacy
+
+PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS=60000
+PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS=120000
+
+PRINTBIT_PRINT_SPOOLER_MONITOR_WINDOW_MS=180000
+PRINTBIT_PRINT_SPOOLER_POLL_INTERVAL_MS=1500
+PRINTBIT_PRINT_SPOOLER_LOOKBACK_MINUTES=3
+PRINTBIT_PRINT_SPOOLER_QUERY_TIMEOUT_MS=20000
+
+
+# ============================================================
+# Kiosk Security / Lockdown
+# ============================================================
+
+PRINTBIT_KIOSK_LOCKDOWN=true
+PRINTBIT_USB_EXPORT_ENABLED=false
+
+# Assigned Access launches Edge itself.
+PRINTBIT_SKIP_EDGE_LAUNCH=true
+
+PRINTBIT_KIOSK_USER=.\printbit
+
+
+# ============================================================
+# Session
+# ============================================================
+
+PRINTBIT_SESSION_EXPIRY_ENABLED=true
+
+
+# ============================================================
+# Watchdog
+# ============================================================
+
+PRINTBIT_WATCHDOG_HTTP_TIMEOUT_MS=10000
+PRINTBIT_WATCHDOG_UNREACHABLE_RESTART_THRESHOLD=3
 ```
 
 _Important: Restart your tablet or reboot after setting these so the changes apply system-wide._
