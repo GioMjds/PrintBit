@@ -106,6 +106,7 @@ export interface SoftCopyChargeResult {
     viewUrl: string;
     expiresAt: string;
   };
+  downloadLink?: ScanDownloadLink;
 }
 
 export interface UsbExportResult {
@@ -383,6 +384,15 @@ export class ScannerService {
     const requiredAmount = adminService.getPricingSettings().scanDocument;
 
     if (requiredAmount <= 0 || this.isSoftCopyPaid(filename)) {
+      let downloadLink: ScanDownloadLink | undefined;
+      try {
+        downloadLink = await this.createWirelessLink(
+          filename,
+          new URL(publicBaseUrl),
+        );
+      } catch {
+        // Ignore link creation errors on already-paid path
+      }
       return {
         ok: true,
         charged: false,
@@ -390,6 +400,7 @@ export class ScannerService {
         requiredAmount,
         amount: 0,
         balance: db.data!.balance,
+        downloadLink,
       };
     }
 
@@ -552,6 +563,20 @@ export class ScannerService {
       });
     }
 
+    let downloadLink: ScanDownloadLink | undefined;
+    try {
+      downloadLink = await this.createWirelessLink(
+        filename,
+        new URL(publicBaseUrl),
+      );
+    } catch (linkError) {
+      console.error('[SCAN] Failed to generate download link for scan charge.', {
+        error:
+          linkError instanceof Error ? linkError.message : String(linkError),
+        filename,
+      });
+    }
+
     return {
       ok: true,
       charged: true,
@@ -562,6 +587,7 @@ export class ScannerService {
       transactionId,
       change: settlement.change,
       receipt,
+      downloadLink,
     };
   }
 

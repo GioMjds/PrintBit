@@ -98,6 +98,9 @@ const startupOnboardingOverlay = document.getElementById(
 const startupContinueBtn = document.getElementById(
   'startupContinueBtn',
 ) as HTMLButtonElement | null;
+const showWifiModalBtn = document.getElementById(
+  'showWifiModalBtn',
+) as HTMLButtonElement | null;
 const mobileGuideTextEl = document.getElementById(
   'mobileGuideText',
 ) as HTMLElement | null;
@@ -1104,6 +1107,10 @@ modeInternetBtn?.addEventListener('click', () => {
 
 startupContinueBtn?.addEventListener('click', () => {
   hideStartupOnboardingModal();
+});
+
+showWifiModalBtn?.addEventListener('click', () => {
+  showStartupOnboardingModal();
 });
 
 continueBtn?.addEventListener('click', () => {

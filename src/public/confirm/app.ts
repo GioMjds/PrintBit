@@ -108,6 +108,11 @@ type ReceiptLinkPayload = {
   };
   receiptViewUrl?: string | null;
   receiptExpiresAt?: string | null;
+  downloadLink?: {
+    token?: string | null;
+    downloadUrl?: string | null;
+    expiresAt?: string | null;
+  } | null;
 };
 
 type PrintQuote = {
@@ -260,6 +265,9 @@ const printingProgressFill = document.getElementById(
 
 // Thank You Elements
 const thankYouOverlay = document.getElementById('thankYouOverlay');
+const thankYouModalSheet = document.getElementById('thankYouModalSheet');
+const thankYouTitle = document.getElementById('thankYouTitle');
+const thankYouSubtitle = document.getElementById('thankYouSubtitle');
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
@@ -269,6 +277,22 @@ const printAnotherBtn = document.getElementById(
 const transactionReference = document.getElementById(
   'transactionReference',
 ) as HTMLElement | null;
+
+// Scan Download CTA Elements
+const scanDownloadCtaContainer = document.getElementById(
+  'scanDownloadCtaContainer',
+) as HTMLElement | null;
+const scanDownloadQrCanvas = document.getElementById(
+  'scanDownloadQrCanvas',
+) as HTMLCanvasElement | null;
+const scanDownloadQrLink = document.getElementById(
+  'scanDownloadQrLink',
+) as HTMLElement | null;
+const scanDownloadQrExpiry = document.getElementById(
+  'scanDownloadQrExpiry',
+) as HTMLElement | null;
+
+// Receipt CTA Elements
 const receiptCtaContainer = document.getElementById(
   'receiptCtaContainer',
 ) as HTMLElement | null;
@@ -277,6 +301,9 @@ const receiptQrCanvas = document.getElementById(
 ) as HTMLCanvasElement | null;
 const receiptQrLink = document.getElementById(
   'receiptQrLink',
+) as HTMLElement | null;
+const receiptQrExpiry = document.getElementById(
+  'receiptQrExpiry',
 ) as HTMLElement | null;
 
 let currentPrinterError: PrintError | null = null;
@@ -1230,6 +1257,9 @@ const NETWORK_REQUEST_TIMEOUT_MS = 90_000;
 
 let currentTransactionId: string | null = null;
 let currentReceiptUrl: string | null = null;
+let currentReceiptExpiry: string | null = null;
+let currentScanDownloadUrl: string | null = null;
+let currentScanDownloadExpiry: string | null = null;
 
 function setTransactionReference(id: string | null): void {
   currentTransactionId = id?.trim().length ? id.trim() : null;
@@ -1263,9 +1293,18 @@ async function pollCopyJobReceipt(jobId: string): Promise<void> {
     try {
       const res = await fetch(`/api/copy/jobs/${encodeURIComponent(jobId)}`);
       if (!res.ok) break;
-      const job = await res.json() as { receipt?: { viewUrl?: string; expiresAt?: string }; transactionId?: string; id?: string };
+      const job = (await res.json()) as {
+        receipt?: { viewUrl?: string; expiresAt?: string };
+        transactionId?: string;
+        id?: string;
+      };
       if (job.receipt?.viewUrl) {
-        captureReceiptCta({ receipt: { viewUrl: job.receipt.viewUrl, expiresAt: job.receipt.expiresAt ?? null } });
+        captureReceiptCta({
+          receipt: {
+            viewUrl: job.receipt.viewUrl,
+            expiresAt: job.receipt.expiresAt ?? null,
+          },
+        });
         const txId = job.transactionId ?? job.id ?? null;
         if (txId) setTransactionReference(txId);
         return;
@@ -1280,10 +1319,25 @@ async function pollCopyJobReceipt(jobId: string): Promise<void> {
 function renderReceiptCta(): void {
   if (!receiptCtaContainer || !receiptQrCanvas || !currentReceiptUrl) return;
   receiptCtaContainer.removeAttribute('hidden');
-  if (receiptQrLink) receiptQrLink.setAttribute('href', currentReceiptUrl);
+  if (receiptQrLink) {
+    receiptQrLink.setAttribute('href', currentReceiptUrl);
+    receiptQrLink.textContent = currentReceiptUrl;
+  }
+  if (receiptQrExpiry) {
+    if (currentReceiptExpiry) {
+      try {
+        const expDate = new Date(currentReceiptExpiry);
+        receiptQrExpiry.textContent = `Valid until ${expDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } catch {
+        receiptQrExpiry.textContent = 'Valid for 15 minutes';
+      }
+    } else {
+      receiptQrExpiry.textContent = 'Valid for 15 minutes';
+    }
+  }
 
   QRCode.toCanvas(receiptQrCanvas, currentReceiptUrl, {
-    width: 180,
+    width: 125,
     margin: 1,
     color: { dark: '#1a1a2e', light: '#ffffff' },
   }).catch(console.error);
@@ -1293,19 +1347,92 @@ function captureReceiptCta(payload: ReceiptLinkPayload): void {
   const receipt = extractReceiptUrl(payload);
   if (!receipt) return;
   currentReceiptUrl = receipt.url;
+  currentReceiptExpiry = receipt.expiresAt;
   renderReceiptCta();
+}
+
+function renderScanDownloadCta(): void {
+  if (!scanDownloadCtaContainer || !scanDownloadQrCanvas || !currentScanDownloadUrl) return;
+  scanDownloadCtaContainer.removeAttribute('hidden');
+  if (scanDownloadQrLink) {
+    scanDownloadQrLink.setAttribute('href', currentScanDownloadUrl);
+    scanDownloadQrLink.textContent = currentScanDownloadUrl;
+  }
+  if (scanDownloadQrExpiry) {
+    if (currentScanDownloadExpiry) {
+      try {
+        const expDate = new Date(currentScanDownloadExpiry);
+        scanDownloadQrExpiry.textContent = `Valid until ${expDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      } catch {
+        scanDownloadQrExpiry.textContent = 'Valid for 15 minutes';
+      }
+    } else {
+      scanDownloadQrExpiry.textContent = 'Valid for 15 minutes';
+    }
+  }
+
+  QRCode.toCanvas(scanDownloadQrCanvas, currentScanDownloadUrl, {
+    width: 125,
+    margin: 1,
+    color: { dark: '#1a1a2e', light: '#ffffff' },
+  }).catch(console.error);
+}
+
+function captureScanDownloadCta(link?: {
+  downloadUrl?: string | null;
+  expiresAt?: string | null;
+} | null): void {
+  if (!link?.downloadUrl) return;
+  currentScanDownloadUrl = link.downloadUrl;
+  currentScanDownloadExpiry = link.expiresAt ?? null;
+  renderScanDownloadCta();
 }
 
 function finalizePrintSuccess(transactionId: string | null): void {
   setTransactionReference(transactionId ?? currentTransactionId);
   hideOverlay(printingOverlay);
   hidePrintProgress();
+
+  if (thankYouSubtitle) {
+    if (config.mode === 'copy') {
+      thankYouSubtitle.textContent =
+        'Your document has been copied successfully.';
+    } else if (config.mode === 'scan') {
+      thankYouSubtitle.textContent =
+        'Your document has been scanned successfully.';
+    } else {
+      thankYouSubtitle.textContent =
+        'Your document has been printed successfully.';
+    }
+  }
+
+  if (config.mode === 'scan') {
+    if (thankYouModalSheet) {
+      thankYouModalSheet.classList.add('modal-sheet--dual-qr');
+    }
+    renderScanDownloadCta();
+    renderReceiptCta();
+  } else {
+    if (thankYouModalSheet) {
+      thankYouModalSheet.classList.remove('modal-sheet--dual-qr');
+    }
+    if (scanDownloadCtaContainer) {
+      scanDownloadCtaContainer.setAttribute('hidden', '');
+    }
+    renderReceiptCta();
+  }
+
   showOverlay(thankYouOverlay);
   clearPendingPaymentSessionState();
   activeSpoolerCorrelationKey = null;
-  if (statusMessage)
-    statusMessage.textContent = 'Printing complete. Thank you!';
-  renderReceiptCta();
+  if (statusMessage) {
+    statusMessage.textContent =
+      config.mode === 'scan'
+        ? 'Scan complete. Thank you!'
+        : config.mode === 'copy'
+          ? 'Copy complete. Thank you!'
+          : 'Printing complete. Thank you!';
+  }
   isProcessingPayment = false;
 
   if (printAnotherBtn) {
@@ -1523,9 +1650,33 @@ modalConfirmBtn?.addEventListener('click', async () => {
         transactionId?: string | null;
       };
       captureReceiptCta(payload);
+      captureScanDownloadCta(payload.downloadLink);
+
+      // Fallback: create wireless link if charge response did not include it
+      if (!currentScanDownloadUrl && config.scanFilename) {
+        try {
+          const linkRes = await fetchWithTimeout('/api/scanner/wireless-link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: config.scanFilename,
+              orientation: config.orientation,
+              rotationDeg: config.rotationDeg,
+            }),
+          });
+          if (linkRes.ok) {
+            const linkData = (await linkRes.json()) as {
+              downloadUrl?: string;
+              expiresAt?: string;
+            };
+            captureScanDownloadCta(linkData);
+          }
+        } catch {
+          // Ignore fallback error if failed
+        }
+      }
+
       finalizePrintSuccess(payload.transactionId ?? null);
-      // For scan mode: the receipt data comes in the same response (no async job)
-      // captureReceiptCta above should have set it if available
     } else if (config.mode === 'copy') {
       // Copy (Scan to Print) job creation
       const spoolerCorrelationKey =

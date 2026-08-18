@@ -27,19 +27,124 @@ function navigateTo(path: string) {
   window.location.href = path;
 }
 
-const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
-
 const openPrint = document.getElementById('openPrintBtn');
 const openCopy = document.getElementById('openCopyBtn');
 const openScan = document.getElementById('openScanBtn');
 const powerOff = document.getElementById('powerOffBtn');
 
 openPrint?.addEventListener('click', () => {
-  sessionStorage.setItem(PRINT_ONBOARDING_TRIGGER_KEY, '1');
   navigateTo('/print');
 });
 openCopy?.addEventListener('click', () => navigateTo('/copy'));
 openScan?.addEventListener('click', () => navigateTo('/scan'));
+
+// ── Hotspot Wi-Fi connection modal (Public ESP32 Hotspot) ─────────────────────
+
+type HotspotConfig = {
+  provider?: string;
+  ssid?: string;
+  password?: string;
+  authType?: string;
+  captivePortalPath?: string;
+  startsManagedHotspot?: boolean;
+};
+
+let hotspotConfig: HotspotConfig | null = null;
+
+const wifiOverlay = document.getElementById('wifiOverlay');
+const homeWifiQrCanvas = document.getElementById(
+  'homeWifiQrCanvas',
+) as HTMLCanvasElement | null;
+const openWifiBtn = document.getElementById('openWifiBtn');
+const closeWifiBtn = document.getElementById('closeWifiBtn');
+const wifiSsidVal = document.getElementById('wifiSsidVal');
+const wifiPasswordVal = document.getElementById('wifiPasswordVal');
+
+function escapeWifiQrValue(value: string): string {
+  return value.replace(/([\\;,:"])/g, '\\$1');
+}
+
+function buildWifiQrPayload(
+  ssid: string,
+  password: string,
+  authType?: string,
+): string {
+  const safeSsid = escapeWifiQrValue(ssid);
+  const safePassword = escapeWifiQrValue(password);
+  const normalizedAuth = authType?.trim().toLowerCase() ?? '';
+  const isOpenNetwork =
+    normalizedAuth === 'nopass' ||
+    normalizedAuth === 'open' ||
+    normalizedAuth === 'none' ||
+    safePassword.length === 0;
+
+  if (isOpenNetwork) {
+    return `WIFI:T:nopass;S:${safeSsid};;`;
+  }
+  return `WIFI:T:WPA;S:${safeSsid};P:${safePassword};;`;
+}
+
+function renderHomeWifiQr(): void {
+  const configuredSsid = hotspotConfig?.ssid?.trim() ?? '';
+  const ssid = configuredSsid.length > 0 ? configuredSsid : 'PrintBit';
+  const configuredPassword = hotspotConfig?.password?.trim() ?? '';
+  const authType = hotspotConfig?.authType ?? '';
+
+  if (wifiSsidVal) wifiSsidVal.textContent = ssid;
+  if (wifiPasswordVal) {
+    wifiPasswordVal.textContent =
+      configuredPassword.length > 0
+        ? configuredPassword
+        : 'Open (No password required)';
+  }
+
+  if (homeWifiQrCanvas) {
+    const wifiPayload = buildWifiQrPayload(ssid, configuredPassword, authType);
+    void QRCode.toCanvas(homeWifiQrCanvas, wifiPayload, {
+      width: 220,
+      margin: 1,
+      color: { dark: '#1a1a2e', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
+  }
+}
+
+async function loadHotspotConfig(): Promise<void> {
+  try {
+    const res = await fetch('/api/config/hotspot');
+    if (res.ok) {
+      hotspotConfig = (await res.json()) as HotspotConfig;
+    }
+  } catch {
+    // fallback to default
+  }
+  renderHomeWifiQr();
+}
+
+function openWifiModal(): void {
+  renderHomeWifiQr();
+  wifiOverlay?.classList.add('is-visible');
+  wifiOverlay?.setAttribute('aria-hidden', 'false');
+  closeWifiBtn?.focus();
+}
+
+function closeWifiModal(): void {
+  wifiOverlay?.classList.remove('is-visible');
+  wifiOverlay?.setAttribute('aria-hidden', 'true');
+}
+
+openWifiBtn?.addEventListener('click', openWifiModal);
+closeWifiBtn?.addEventListener('click', closeWifiModal);
+wifiOverlay?.addEventListener('click', (e) => {
+  if (e.target === wifiOverlay) closeWifiModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && wifiOverlay?.classList.contains('is-visible')) {
+    closeWifiModal();
+  }
+});
+
+void loadHotspotConfig();
 
 powerOff?.addEventListener('click', () => {
   const ok = confirm('Power off device?');

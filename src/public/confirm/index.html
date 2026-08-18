@@ -797,7 +797,7 @@
       aria-labelledby="thankYouTitle"
       aria-modal="true"
     >
-      <div class="modal-sheet modal-sheet--status">
+      <div class="modal-sheet modal-sheet--status" id="thankYouModalSheet">
         <div class="status-icon status-icon--check" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
             <circle cx="24" cy="24" r="22" fill="rgba(58,158,82,0.15)" />
@@ -819,11 +819,8 @@
           </svg>
         </div>
         <h2 class="modal-title" id="thankYouTitle">Thank You!</h2>
-        <p class="modal-subtitle">
+        <p class="modal-subtitle" id="thankYouSubtitle">
           Your document has been printed successfully.
-        </p>
-        <p class="modal-subtitle modal-subtitle--brand">
-          Thank you for using PrintBit! 🖨️
         </p>
         <p
           class="modal-subtitle modal-subtitle--reference"
@@ -832,19 +829,55 @@
         >
           Reference ID: —
         </p>
-        <div class="receipt-cta" id="receiptCtaContainer" hidden>
-          <p class="modal-subtitle modal-subtitle--reference">
-            Need an E-Receipt? Scan this QR code.
-          </p>
-          <canvas id="receiptQrCanvas" class="scan-qr-canvas"></canvas>
-          <a
-            class="scan-qr-link"
-            id="receiptQrLink"
-            href="/receipt"
-            target="_blank"
-            rel="noopener noreferrer"
-          ></a>
-          <p class="scan-qr-expiry" id="receiptQrExpiry"></p>
+
+        <!-- QR Codes Grid (Dual QR for scan mode, single centered QR for print/copy) -->
+        <div class="success-qr-grid" id="successQrGrid">
+          <!-- 1. Scanned Document Download CTA -->
+          <div class="qr-card qr-card--download" id="scanDownloadCtaContainer" hidden>
+            <div class="qr-card__header">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Download File</span>
+            </div>
+            <p class="qr-card__hint">Scan to download to your phone</p>
+            <div class="qr-card__canvas-box">
+              <canvas id="scanDownloadQrCanvas" class="scan-qr-canvas"></canvas>
+            </div>
+            <a
+              class="scan-qr-link"
+              id="scanDownloadQrLink"
+              href="#"
+              target="_blank"
+              rel="noopener noreferrer"
+            ></a>
+            <p class="scan-qr-expiry" id="scanDownloadQrExpiry"></p>
+          </div>
+
+          <!-- 2. Transaction E-Receipt CTA -->
+          <div class="qr-card qr-card--receipt" id="receiptCtaContainer" hidden>
+            <div class="qr-card__header">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+                <path d="M16 8h-8M16 12h-8M12 16h-4" />
+              </svg>
+              <span>E-Receipt</span>
+            </div>
+            <p class="qr-card__hint">Scan to view/save official receipt</p>
+            <div class="qr-card__canvas-box">
+              <canvas id="receiptQrCanvas" class="scan-qr-canvas"></canvas>
+            </div>
+            <a
+              class="scan-qr-link"
+              id="receiptQrLink"
+              href="/receipt"
+              target="_blank"
+              rel="noopener noreferrer"
+            ></a>
+            <p class="scan-qr-expiry" id="receiptQrExpiry"></p>
+          </div>
         </div>
 
         <!-- Remaining files continuation prompt (print mode only) -->
@@ -930,53 +963,6 @@
           class="modal-btn modal-btn--alert modal-btn--wide"
         >
           <span>Understood</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Scan QR Download Overlay (scan mode only) — sheet pattern -->
-    <div
-      class="modal modal--sheet"
-      id="scanQrOverlay"
-      aria-hidden="true"
-      role="dialog"
-      aria-labelledby="scanQrTitle"
-      aria-modal="true"
-    >
-      <div class="modal-sheet modal-sheet--qr">
-        <div class="status-icon status-icon--check" aria-hidden="true">
-          <svg viewBox="0 0 48 48" fill="none">
-            <circle cx="24" cy="24" r="22" fill="rgba(58,158,82,0.15)" />
-            <circle
-              cx="24"
-              cy="24"
-              r="22"
-              stroke="#3a9e52"
-              stroke-width="2.5"
-              fill="none"
-            />
-            <path
-              d="M15 24l6 6 12-12"
-              stroke="#6ac47a"
-              stroke-width="3"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </div>
-        <h2 class="modal-title" id="scanQrTitle">Your File is Ready!</h2>
-        <p class="modal-subtitle">
-          Point your phone camera at the QR code to download your scanned
-          document.
-        </p>
-        <canvas id="scanQrCanvas" class="scan-qr-canvas"></canvas>
-        <p class="scan-qr-expiry" id="scanQrExpiry"></p>
-        <button
-          id="scanQrDoneBtn"
-          type="button"
-          class="modal-btn modal-btn--confirm modal-btn--wide"
-        >
-          <span>Done</span>
         </button>
       </div>
     </div>

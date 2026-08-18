@@ -1062,18 +1062,21 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(14, 13, 31, 0.82);
-  backdrop-filter: blur(8px);
+  background: rgba(14, 13, 31, 0.84);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   opacity: 0;
   pointer-events: none;
   transition: opacity 250ms ease;
+  padding: 16px;
+  box-sizing: border-box;
 }
 .modal.is-visible {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* Pattern 1: card (centered) — used by confirmModal, printerErrorBlock */
+/* Pattern 1: card (centered) — used by confirmModal */
 .modal--card {
   /* inherits .modal centering */
 }
@@ -1081,19 +1084,37 @@ body {
 .modal-card {
   width: 560px;
   max-width: 92vw;
+  max-height: min(92vh, 760px);
+  overflow-y: auto;
   background: #181730;
   border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 28px;
-  padding: 44px 40px 36px;
+  border-radius: 26px;
+  padding: 32px 32px 26px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   transform: translateY(16px) scale(0.97);
   transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
 }
 .modal.is-visible .modal-card {
   transform: translateY(0) scale(1);
 }
 
-/* Pattern 2: sheet (centered) — used by printingOverlay, thankYouOverlay, scanQrOverlay */
+.modal-card::-webkit-scrollbar,
+.modal-sheet::-webkit-scrollbar {
+  width: 6px;
+}
+.modal-card::-webkit-scrollbar-track,
+.modal-sheet::-webkit-scrollbar-track {
+  background: rgba(167, 170, 225, 0.05);
+  border-radius: 999px;
+}
+.modal-card::-webkit-scrollbar-thumb,
+.modal-sheet::-webkit-scrollbar-thumb {
+  background: rgba(167, 170, 225, 0.22);
+  border-radius: 999px;
+}
+
+/* Pattern 2: sheet (centered) — used by printingOverlay, thankYouOverlay */
 .modal--sheet {
   align-items: center;
   justify-content: center;
@@ -1102,20 +1123,26 @@ body {
 
 .modal-sheet {
   width: 100%;
-  max-width: 640px;
+  max-width: 560px;
+  max-height: min(92vh, 740px);
+  overflow-y: auto;
   background: #181730;
   border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 28px;
-  padding: 40px 36px 32px;
+  border-radius: 26px;
+  padding: 26px 28px 22px;
   box-shadow: 0 -8px 60px rgba(0, 0, 0, 0.5);
   text-align: center;
-  transform: translateY(100%);
-  transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
-  max-height: 80vh;
-  overflow-y: auto;
+  transform: translateY(20px) scale(0.98);
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), max-width 220ms ease;
+  box-sizing: border-box;
 }
 .modal.is-visible .modal-sheet {
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
+}
+
+/* When 2 QR codes are present (Scan mode), widen the sheet to comfortably fit side-by-side */
+.modal-sheet.modal-sheet--dual-qr {
+  max-width: 680px;
 }
 
 /* Pattern 3: fullscreen — used by jamRefundOverlay, idleWarningModal */
@@ -1127,12 +1154,15 @@ body {
 .modal-fs {
   width: 100%;
   max-width: 480px;
+  max-height: min(92vh, 680px);
+  overflow-y: auto;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
   padding: 0 24px;
+  box-sizing: border-box;
 }
 
 /* Also support the legacy .printer-error-modal-overlay show/hide via hidden attribute */
@@ -1141,18 +1171,18 @@ body {
 }
 
 .modal-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--white);
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   letter-spacing: -0.3px;
 }
 .modal-subtitle {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--ink-muted);
-  margin: 0 0 28px;
-  line-height: 1.55;
+  margin: 0 0 10px;
+  line-height: 1.45;
 }
 
 /* ── Modal summary list ───────────────────────────────────── */
@@ -1160,26 +1190,26 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin: 0 0 24px;
+  margin: 0 0 20px;
   padding: 0;
 }
 .modal-summary__row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 0;
+  padding: 10px 0;
   border-bottom: 1px solid rgba(167, 170, 225, 0.08);
 }
 .modal-summary__row:last-child {
   border-bottom: none;
 }
 .modal-summary__row dt {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--ink-muted);
 }
 .modal-summary__row dd {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--white);
   margin: 0;
@@ -1195,21 +1225,21 @@ body {
   color: var(--lavender);
 }
 .modal-summary__row--total dt {
-  font-size: 17px;
+  font-size: 16px;
   color: var(--white);
 }
 .modal-summary__row--total dd {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--peach);
 }
 .modal-summary__row--change dt {
-  font-size: 17px;
+  font-size: 16px;
   color: #a3e6ac;
   font-weight: 700;
 }
 .modal-summary__row--change dd {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 800;
   color: #6ac47a;
 }
@@ -1227,19 +1257,19 @@ body {
 /* ── Modal actions ────────────────────────────────────────── */
 .modal-actions {
   display: flex;
-  gap: 14px;
+  gap: 12px;
 }
 .modal-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 18px 28px;
+  gap: 8px;
+  padding: 14px 22px;
   border: none;
-  border-radius: 16px;
+  border-radius: 14px;
   font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
   transition:
@@ -1270,8 +1300,8 @@ body {
   box-shadow: 0 8px 24px rgba(58, 158, 82, 0.5);
 }
 .modal-btn--confirm svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 .modal-btn--alert {
   background: #f26e6b;
@@ -1293,9 +1323,12 @@ body {
 }
 
 .status-icon {
-  width: 96px;
-  height: 96px;
-  margin: 0 auto 28px;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .status-icon svg {
   width: 100%;
@@ -1330,22 +1363,24 @@ body {
 }
 
 .modal-subtitle--hint {
-  font-size: 15px;
+  font-size: 14px;
   color: var(--lavender);
-  opacity: 0.5;
-  margin-top: 6px;
+  opacity: 0.55;
+  margin-top: 4px;
+  margin-bottom: 8px;
 }
 
 .modal-subtitle--brand {
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--peach);
-  margin-top: 10px;
+  margin-top: 6px;
+  margin-bottom: 8px;
 }
 
 .modal-subtitle--reference {
-  margin-top: 8px;
-  font-size: 14px;
+  margin: 2px 0 8px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.2px;
   color: var(--lavender);
@@ -1355,72 +1390,139 @@ body {
 
 .modal-btn--wide {
   width: 100%;
-  margin-top: 20px;
+  margin-top: 0;
 }
 
-.receipt-cta {
+/* ── Success QR Grid & QR Cards ───────────────────────────── */
+.success-qr-grid {
   display: grid;
-  justify-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  width: 100%;
+  max-width: 290px;
+  margin: 8px auto 10px;
+  justify-content: center;
 }
 
-.receipt-cta .modal-subtitle {
-  margin: 0;
+/* Dual QR columns when in scan mode */
+.modal-sheet--dual-qr .success-qr-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 600px;
 }
 
-.receipt-cta .scan-qr-canvas {
-  width: 180px;
-  height: 180px;
-}
-
-.receipt-cta .scan-qr-link {
-  max-width: 320px;
-}
-
-.receipt-cta .scan-qr-expiry {
-  opacity: 0.6;
-}
-
-/* ── Scan QR overlay — sheet variant ─────────────────────── */
-.modal-sheet--qr {
+.qr-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1.5px solid rgba(167, 170, 225, 0.14);
+  border-radius: 18px;
+  padding: 12px 10px;
+  box-sizing: border-box;
+  transition: border-color 200ms ease, background 200ms ease;
+}
+
+.qr-card--download {
+  border-color: rgba(105, 111, 199, 0.35);
+  background: rgba(105, 111, 199, 0.06);
+}
+
+.qr-card--receipt {
+  border-color: rgba(106, 196, 122, 0.32);
+  background: rgba(106, 196, 122, 0.05);
+}
+
+.qr-card__header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--white);
+  margin-bottom: 2px;
+}
+
+.qr-card--download .qr-card__header {
+  color: #c5c8f8;
+}
+.qr-card--download .qr-card__header svg {
+  width: 15px;
+  height: 15px;
+  color: var(--indigo);
+}
+
+.qr-card--receipt .qr-card__header {
+  color: #a3e6ac;
+}
+.qr-card--receipt .qr-card__header svg {
+  width: 15px;
+  height: 15px;
+  color: #6ac47a;
+}
+
+.qr-card__hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  margin: 0 0 6px;
+  text-align: center;
+}
+
+.qr-card__canvas-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
 }
 
 .scan-qr-canvas {
-  width: 220px;
-  height: 220px;
-  border-radius: 16px;
+  width: 125px !important;
+  height: 125px !important;
+  border-radius: 12px;
   background: #ffffff;
-  padding: 10px;
+  padding: 5px;
   box-shadow:
     0 0 0 1px rgba(167, 170, 225, 0.2),
-    0 8px 32px rgba(0, 0, 0, 0.4);
+    0 4px 14px rgba(0, 0, 0, 0.35);
   display: block;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .scan-qr-link {
   font-size: 11px;
   font-weight: 600;
   color: var(--lavender);
-  opacity: 0.55;
+  opacity: 0.65;
   word-break: break-all;
-  max-width: 300px;
+  max-width: 220px;
   text-align: center;
-  margin: 0;
+  margin: 2px 0 0;
+  text-decoration: none;
+}
+.scan-qr-link:hover {
+  text-decoration: underline;
+  opacity: 1;
 }
 
 .scan-qr-expiry {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--lavender);
-  opacity: 0.4;
+  opacity: 0.45;
   text-align: center;
-  margin: 0;
+  margin: 2px 0 0;
+}
+
+@media (max-width: 620px) {
+  .modal-sheet.modal-sheet--dual-qr {
+    max-width: 94vw;
+  }
+  .modal-sheet--dual-qr .success-qr-grid {
+    grid-template-columns: 1fr;
+    max-width: 290px;
+  }
 }
 
 /* ── Responsive ───────────────────────────────────────────── */

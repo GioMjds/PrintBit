@@ -10,6 +10,7 @@
  */
 import express from 'express';
 import path from 'node:path';
+// @ts-expect-error supertest is an optional dev package
 import request from 'supertest';
 
 describe('Loading page asset serving', () => {
