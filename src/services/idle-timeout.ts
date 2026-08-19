@@ -105,13 +105,15 @@ export function startPageIdleTimer(): void {
 
     pageIdleState.elapsedSeconds += 0.1;
     
-    // Warning shows in last 20 seconds (min 20s, max timeout-20s)
+    // Warning shows in last 20 seconds (or half of timeout if timeout <= 20s)
     const warningThreshold = Math.max(
-      pageIdleState.timeoutSeconds - 20,
-      20,
+      0,
+      pageIdleState.timeoutSeconds <= 20
+        ? pageIdleState.timeoutSeconds / 2
+        : pageIdleState.timeoutSeconds - 20,
     );
 
-    // Show warning at last 20 seconds threshold (if configured)
+    // Show warning at threshold (if configured)
     if (
       idleConfig.showWarningModal &&
       pageIdleState.warningShownAt === null &&
@@ -125,6 +127,9 @@ export function startPageIdleTimer(): void {
     }
 
     // Update countdown display only when value changes (every ~second)
+    if (!cachedCountdownElement && idleConfig.countdownId) {
+      cachedCountdownElement = document.getElementById(idleConfig.countdownId);
+    }
     if (cachedCountdownElement) {
       const timeRemaining = Math.max(
         0,
@@ -153,6 +158,9 @@ export function resetPageIdleTimer(): void {
 }
 
 export function showPageIdleWarning(): void {
+  if (!cachedModalElement && idleConfig.modalId) {
+    cachedModalElement = document.getElementById(idleConfig.modalId);
+  }
   if (cachedModalElement) {
     cachedModalElement.style.display = 'flex';
   }

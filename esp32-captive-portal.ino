@@ -7,6 +7,19 @@
 #define hopperSensorPin 18
 #define relayPin 33
 
+// RELAY CONFIGURATION
+// Set to 1 if using an Active-HIGH relay (HIGH = motor ON, LOW = motor OFF)
+// Set to 0 if using an Active-LOW relay module (LOW = motor ON, HIGH = motor OFF, standard for most Arduino relay modules)
+#define RELAY_ACTIVE_HIGH 1
+
+#if RELAY_ACTIVE_HIGH
+  #define RELAY_ON  HIGH
+  #define RELAY_OFF LOW
+#else
+  #define RELAY_ON  LOW
+  #define RELAY_OFF HIGH
+#endif
+
 const char* ssid = "PrintBit";
 const char* password = "printbit123";
 
@@ -42,7 +55,7 @@ volatile int coinDispensed = 0;
 int targetCoins = 0;
 
 unsigned long lastCoinTime = 0;
-const unsigned long hopperDebounce = 120;
+const unsigned long hopperDebounce = 50;
 
 bool dispensing = false;
 bool dispenseDone = false;
@@ -98,6 +111,38 @@ String getFormValue(const String& body, const String& key) {
   int end = body.indexOf('&', start);
   if (end < 0) end = body.length();
   return decodeUrlComponent(body.substring(start, end));
+}
+
+String getJsonValue(const String& body, const String& key) {
+  String needle = "\"" + key + "\"";
+  int start = body.indexOf(needle);
+  if (start < 0) return "";
+  start = body.indexOf(':', start + needle.length());
+  if (start < 0) return "";
+  start += 1;
+  while (start < (int)body.length() && (body.charAt(start) == ' ' || body.charAt(start) == '\t' || body.charAt(start) == '\r' || body.charAt(start) == '\n')) {
+    start++;
+  }
+  if (start >= (int)body.length()) return "";
+
+  if (body.charAt(start) == '"') {
+    start += 1;
+    int end = body.indexOf('"', start);
+    if (end < 0) return "";
+    return body.substring(start, end);
+  } else {
+    int end = start;
+    while (end < (int)body.length() && body.charAt(end) != ',' && body.charAt(end) != '}' && body.charAt(end) != ' ' && body.charAt(end) != '\r' && body.charAt(end) != '\n') {
+      end++;
+    }
+    return body.substring(start, end);
+  }
+}
+
+String getPayloadValue(const String& body, const String& key) {
+  String val = getFormValue(body, key);
+  if (val.length() > 0) return val;
+  return getJsonValue(body, key);
 }
 
 String getQueryValue(const String& query, const String& key) {
@@ -176,6 +221,23 @@ void replyPlain(
   client.println("Connection: close");
   client.println();
   client.print(body);
+}
+
+void replyJson(
+  NetworkClient& client,
+  int statusCode,
+  const String& statusText,
+  const String& jsonBody) {
+  client.print("HTTP/1.1 ");
+  client.print(statusCode);
+  client.print(" ");
+  client.println(statusText);
+  client.println("Content-Type: application/json; charset=utf-8");
+  client.print("Content-Length: ");
+  client.println(jsonBody.length());
+  client.println("Connection: close");
+  client.println();
+  client.print(jsonBody);
 }
 
 bool parseRequestLine(const String& requestLine, String& method, String& path) {
@@ -319,10 +381,10 @@ void sendCoinToTablet(int value) {
 }
 
 void handleRegisterRequest(NetworkClient& client, const String& body) {
-  String postedToken = getFormValue(body, "token");
-  String postedIp = getFormValue(body, "ip");
-  String postedPort = getFormValue(body, "port");
-  String postedPath = getFormValue(body, "path");
+  String postedToken = getPayloadValue(body, "token");
+  String postedIp = getPayloadValue(body, "ip");
+  String postedPort = getPayloadValue(body, "port");
+  String postedPath = getPayloadValue(body, "path");
   postedToken.trim();
   postedIp.trim();
   postedPort.trim();
@@ -397,7 +459,7 @@ void handleWifiRequest(NetworkClient& client) {
       String lengthPart = headerLine.substring(colonPos + 1);
       lengthPart.trim();
       contentLength = lengthPart.toInt();
-    } else if (headerKey == "x-hopper-token") {
+    } else if (headerKey == "x-hopper-token" || headerKey == "x-coin-api-key") {
       hopperTokenHeader = headerLine.substring(colonPos + 1);
       hopperTokenHeader.trim();
     }
@@ -426,12 +488,14 @@ void handleWifiRequest(NetworkClient& client) {
   }
 
   if ((method == "POST" || method == "GET") && routePath == "/hopper/dispense") {
-    String postedToken = getFormValue(body, "token");
-    String postedCoins = getFormValue(body, "coins");
-    String postedRequestId = getFormValue(body, "requestId");
+    String postedToken = getPayloadValue(body, "token");
+    String postedCoins = getPayloadValue(body, "coins");
+    if (postedCoins.length() == 0) postedCoins = getPayloadValue(body, "targetCoins");
+    String postedRequestId = getPayloadValue(body, "requestId");
     if (postedToken.length() == 0) postedToken = hopperTokenHeader;
     if (postedToken.length() == 0) postedToken = getQueryValue(query, "token");
     if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "coins");
+    if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "targetCoins");
     if (postedRequestId.length() == 0) postedRequestId = getQueryValue(query, "requestId");
 
     if (postedToken.length() == 0 || postedToken != hopperControlToken) {
@@ -490,7 +554,7 @@ void handleWifiRequest(NetworkClient& client) {
     response += "\",\"lastFinishedAtMs\":";
     response += String(lastDispenseFinishedAt);
     response += "}";
-    replyPlain(client, 200, "OK", response);
+    replyJson(client, 200, "OK", response);
     client.stop();
     return;
   }
@@ -524,7 +588,7 @@ void IRAM_ATTR coinDetected() {
     lastCoinTime = now;
 
     if (dispensing && coinDispensed >= targetCoins) {
-      digitalWrite(relayPin, LOW);
+      digitalWrite(relayPin, RELAY_OFF);
       dispensing = false;
       dispenseDone = true;
     }
@@ -560,7 +624,7 @@ bool startDispense(
   lastDispenseOutcome = "dispensing";
   lastDispenseError = "";
 
-  digitalWrite(relayPin, HIGH);
+  digitalWrite(relayPin, RELAY_ON);
   emitHopperAck(activeDispenseRequestId);
 
   Serial.print("hopper_start:requestId=");
@@ -628,7 +692,7 @@ void setup() {
   pinMode(hopperSensorPin, INPUT_PULLUP);
   pinMode(relayPin, OUTPUT);
 
-  digitalWrite(relayPin, LOW);
+  digitalWrite(relayPin, RELAY_OFF);
 
   Serial.begin(115200);
 
@@ -716,7 +780,7 @@ void loop() {
 
   // HOPPER TIMEOUT
   if (dispensing && millis() - hopperStartTime > hopperMaxRunTime) {
-    digitalWrite(relayPin, LOW);
+    digitalWrite(relayPin, RELAY_OFF);
     dispensing = false;
     dispenseTimedOut = true;
   }

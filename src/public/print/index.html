@@ -435,58 +435,6 @@
       </symbol>
     </svg>
 
-    <!-- Startup onboarding modal -->
-    <div
-      class="onboarding-overlay"
-      id="startupOnboardingOverlay"
-      aria-hidden="true"
-    >
-      <div
-        class="onboarding-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="startupOnboardingTitle"
-        aria-describedby="startupOnboardingDesc"
-      >
-        <div class="step-badge">
-          <span class="step-number" aria-hidden="true">1</span>
-          <span class="step-label">Join PrintBit Wi-Fi</span>
-        </div>
-
-        <h3 class="onboarding-title" id="startupOnboardingTitle">
-          Connect to kiosk Wi-Fi first
-        </h3>
-        <p class="onboarding-subtitle" id="startupOnboardingDesc">
-          Join PrintBit Wi-Fi on your phone before scanning the upload QR.
-        </p>
-
-        <div class="onboarding-grid">
-          <div class="qr-frame">
-            <div class="qr-corner qr-corner--tl"></div>
-            <div class="qr-corner qr-corner--tr"></div>
-            <div class="qr-corner qr-corner--bl"></div>
-            <div class="qr-corner qr-corner--br"></div>
-            <canvas
-              id="startupWifiQrCanvas"
-              width="220"
-              height="220"
-              aria-label="QR code to join kiosk Wi-Fi"
-            ></canvas>
-          </div>
-        </div>
-
-        <div class="onboarding-actions">
-          <button
-            type="button"
-            class="modal-btn modal-btn--primary"
-            id="startupContinueBtn"
-          >
-            Continue to Upload
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- New-session confirmation dialog -->
     <div class="modal-overlay" id="newSessionOverlay" aria-hidden="true">
       <div

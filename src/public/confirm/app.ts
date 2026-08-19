@@ -835,34 +835,23 @@ if (priceValue) priceValue.textContent = 'Loading...';
 
 function applyLockState(locked: boolean): void {
   coinSlotIsLocked = locked;
-  const changeAmount = Math.max(0, currentBalance - totalPrice);
 
   const paymentColEl = document.querySelector<HTMLElement>('.payment-col');
   const coinIcon = document.getElementById('coinIcon');
   const padlockIcon = document.getElementById('padlockIcon');
-  const changeReadyBadge = document.getElementById('changeReadyBadge');
-  const changeReadyAmount = document.getElementById('changeReadyAmount');
   const ctaText = document.querySelector<HTMLElement>('.payment-col__cta');
 
   if (locked) {
     paymentColEl?.classList.add('payment-col--locked');
-    if (padlockIcon) padlockIcon.removeAttribute('hidden'); // was: padlockIcon.style.display = ''
-    if (coinIcon) coinIcon.setAttribute('hidden', '');     // was: coinIcon.style.display = 'none'
+    if (padlockIcon) padlockIcon.removeAttribute('hidden');
+    if (coinIcon) coinIcon.setAttribute('hidden', '');
     if (ctaText) ctaText.textContent = 'Coin slot locked — ready to confirm';
-    if (changeReadyAmount) {
-      changeReadyAmount.textContent =
-        changeAmount > 0
-          ? `₱${changeAmount} change will be dispensed`
-          : 'Exact amount — no change';
-    }
-    changeReadyBadge?.removeAttribute('hidden');
   } else {
     paymentColEl?.classList.remove('payment-col--locked');
-    if (coinIcon) coinIcon.removeAttribute('hidden');      // was: coinIcon.style.display = ''
-    if (padlockIcon) padlockIcon.setAttribute('hidden', ''); // was: padlockIcon.style.display = 'none'
+    if (coinIcon) coinIcon.removeAttribute('hidden');
+    if (padlockIcon) padlockIcon.setAttribute('hidden', '');
     if (ctaText)
       ctaText.textContent = 'Insert coins into the kiosk slot to pay';
-    changeReadyBadge?.setAttribute('hidden', '');
   }
 }
 

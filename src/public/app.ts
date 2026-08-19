@@ -27,12 +27,15 @@ function navigateTo(path: string) {
   window.location.href = path;
 }
 
+const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
+
 const openPrint = document.getElementById('openPrintBtn');
 const openCopy = document.getElementById('openCopyBtn');
 const openScan = document.getElementById('openScanBtn');
 const powerOff = document.getElementById('powerOffBtn');
 
 openPrint?.addEventListener('click', () => {
+  sessionStorage.setItem(PRINT_ONBOARDING_TRIGGER_KEY, '1');
   navigateTo('/print');
 });
 openCopy?.addEventListener('click', () => navigateTo('/copy'));
