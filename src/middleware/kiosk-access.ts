@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Request, RequestHandler } from 'express';
+import { validateAdminSession } from '@/utils/admin-session';
 
 export const KIOSK_COOKIE_NAME = 'printbit_kiosk';
 const BOOTSTRAP_TTL_MS = 30_000;
@@ -93,6 +94,14 @@ export function createKioskAccessMiddleware(
       return;
     }
     if (service.isKioskRequest(req)) {
+      next();
+      return;
+    }
+    const headerToken = req.get('x-admin-token') || undefined;
+    const cookieToken =
+      (req.cookies?.['adminToken'] as string | undefined) || undefined;
+    const token = headerToken ?? cookieToken;
+    if (token && validateAdminSession(token)) {
       next();
       return;
     }

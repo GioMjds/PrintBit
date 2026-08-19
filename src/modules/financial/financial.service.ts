@@ -389,149 +389,11 @@ export class FinancialService {
     `);
   }
 
-  private getPrinterAvailabilityForCoin() {
-    const telemetry = getPrinterTelemetry();
-    const checkedAtMs = Date.parse(telemetry.lastCheckedAt);
-    const telemetryStale =
-      !Number.isFinite(checkedAtMs) ||
-      Date.now() - checkedAtMs > COIN_TELEMETRY_MAX_AGE_MS;
-    const printerStatusBlocked = BLOCKED_STATUSES.has(telemetry.status);
-    const faultLock = getPrinterFaultLock();
-
-    if (faultLock.active) {
-      const recovered =
-        !telemetryStale && telemetry.connected && !printerStatusBlocked;
-      if (recovered) {
-        clearPrinterFaultLock();
-      } else {
-        const reason = faultLock.status
-          ? `Printer fault lock active: ${faultLock.status}`
-          : `Printer fault lock active: ${faultLock.reason ?? 'Unknown fault'}`;
-        return {
-          telemetry,
-          printerBlocked: true,
-          reason,
-          faultLock,
-        };
-      }
-    }
-
-    const printerBlocked =
-      telemetryStale || !telemetry.connected || printerStatusBlocked;
-    const reason = telemetryStale
-      ? 'Printer telemetry is stale'
-      : !telemetry.connected
-        ? 'Printer not connected'
-        : `Printer status: ${telemetry.status}`;
-
-    return {
-      telemetry,
-      printerBlocked,
-      reason,
-      faultLock: null,
-    };
-  }
-
   private async creditCoinBalance(
     coinValue: number,
     source: CoinSource,
     eventId?: string,
   ): Promise<number> {
-    const bypassMachineSafetyChecks =
-      source === 'esp32-http' && ESP32_ALWAYS_ACCEPT_COINS;
-    if (isCoinSlotLocked()) {
-      if (bypassMachineSafetyChecks) {
-        await adminService.appendAdminLog(
-          'coin_accept_override_slot_locked',
-          'ESP32 coin accepted while slot lock is active because always-accept mode is enabled.',
-          {
-            source,
-            coinValue,
-            lockOwnerId: getCoinSlotLockOwnerId(),
-          },
-        );
-      } else {
-        this.deps.io.emit('coinRejected', {
-          value: coinValue,
-          reason: 'slot_locked',
-          printerStatus: null,
-          telemetryLastCheckedAt: null,
-          faultLock: null,
-        });
-        await adminService.appendAdminLog(
-          'coin_rejected_slot_locked',
-          'Coin rejected because coin slot is locked.',
-          {
-            source,
-            coinValue,
-            lockOwnerId: getCoinSlotLockOwnerId(),
-          },
-        );
-        throw new CoinCreditRejectedError('slot_locked', 409, true, {
-          lockOwnerId: getCoinSlotLockOwnerId(),
-        });
-      }
-    }
-
-    const { telemetry, printerBlocked, reason, faultLock } =
-      this.getPrinterAvailabilityForCoin();
-    if (printerBlocked) {
-      if (bypassMachineSafetyChecks) {
-        await adminService.appendAdminLog(
-          'coin_accept_override_printer_unavailable',
-          `ESP32 coin accepted while printer gate is blocked (${reason}) because always-accept mode is enabled.`,
-          {
-            source,
-            coinValue,
-            printerStatus: telemetry.status,
-            printerConnected: telemetry.connected,
-            telemetryLastCheckedAt: telemetry.lastCheckedAt,
-            faultLockSource: faultLock?.source ?? null,
-            faultLockReason: faultLock?.reason ?? null,
-            faultLockStatus: faultLock?.status ?? null,
-          },
-        );
-      } else {
-        this.deps.io.emit('coinRejected', {
-          value: coinValue,
-          reason,
-          printerStatus: telemetry.status,
-          telemetryLastCheckedAt: telemetry.lastCheckedAt,
-          faultLock: faultLock
-            ? {
-                source: faultLock.source,
-                reason: faultLock.reason,
-                status: faultLock.status,
-                lockedAt: faultLock.lockedAt,
-              }
-            : null,
-        });
-        await adminService.appendAdminLog(
-          'coin_rejected_printer_unavailable',
-          `Coin rejected: printer unavailable (${reason}).`,
-          {
-            source,
-            coinValue,
-            printerStatus: telemetry.status,
-            printerConnected: telemetry.connected,
-            telemetryLastCheckedAt: telemetry.lastCheckedAt,
-            faultLockSource: faultLock?.source ?? null,
-            faultLockReason: faultLock?.reason ?? null,
-            faultLockStatus: faultLock?.status ?? null,
-          },
-        );
-        throw new CoinCreditRejectedError('printer_unavailable', 409, true, {
-          printerStatus: telemetry.status,
-          printerConnected: telemetry.connected,
-          telemetryLastCheckedAt: telemetry.lastCheckedAt,
-          faultLockSource: faultLock?.source ?? null,
-          faultLockReason: faultLock?.reason ?? null,
-          faultLockStatus: faultLock?.status ?? null,
-          rejectionReason: reason,
-        });
-      }
-    }
-
     const trustedTime = getTrustedTimeStatus();
     if (
       trustedTime.enforceForFinancial &&
@@ -944,6 +806,7 @@ export class FinancialService {
     const previousBalance = db.data!.balance;
     db.data!.balance = 0;
     await db.write();
+    writeRuntimeState(db.data);
     this.deps.io.emit('balance', 0);
     await adminService.appendAdminLog(
       'balance_reset',

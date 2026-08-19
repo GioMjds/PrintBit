@@ -361,37 +361,89 @@ let messageEl: HTMLElement | null = null;
 
 function resolveVisibleMessageEl(): HTMLElement | null {
   const candidates = Array.from(
-    document.querySelectorAll<HTMLElement>('#adminMessage'),
+    document.querySelectorAll<HTMLElement>(
+      '#adminMessage, #adminAuthError, #messageBanner, .auth-msg, .topbar__msg',
+    ),
   );
   if (candidates.length === 0) return null;
-  const visible = candidates.find(
-    (el) => el.offsetParent !== null && !el.classList.contains('hidden'),
-  );
-  return visible ?? candidates[0];
+
+  const isInsideHidden = (el: HTMLElement): boolean => {
+    let curr: HTMLElement | null = el.parentElement;
+    while (curr && curr !== document.body) {
+      if (curr.classList.contains('hidden')) {
+        return true;
+      }
+      curr = curr.parentElement;
+    }
+    return false;
+  };
+
+  const active = candidates.filter((el) => !isInsideHidden(el));
+  if (active.length > 0) {
+    const unhidden = active.find((el) => !el.classList.contains('hidden'));
+    return unhidden ?? active[0];
+  }
+
+  return candidates[0];
 }
 
 export function setMessage(text: string): void {
   messageEl = resolveVisibleMessageEl();
-  if (messageEl) messageEl.textContent = text;
+  if (messageEl) {
+    messageEl.textContent = text;
+    if (text) {
+      messageEl.classList.remove('hidden');
+    } else if (
+      messageEl.id === 'messageBanner' ||
+      messageEl.id === 'adminAuthError'
+    ) {
+      messageEl.classList.add('hidden');
+    }
+  }
 }
+
+export type InitAuthOptions = {
+  onSuccess: () => void | Promise<void>;
+  formId?: string;
+  errorId?: string;
+  viewId?: string;
+  mainId?: string;
+  logoutId?: string;
+};
+
+export type InitAuthArg = (() => void | Promise<void>) | InitAuthOptions;
 
 /**
  * Initialises the auth gate UI. Call once from each admin sub-page.
  *
- * @param onSuccess – called after a successful unlock; the page should
- *                    start loading its own data inside this callback.
+ * @param arg – either an onSuccess callback or an InitAuthOptions configuration object.
  * @returns a cleanup function that stops the auto-refresh timer.
  */
-export function initAuth(onSuccess: () => void | Promise<void>): () => void {
-  const authView = document.getElementById('adminAuthView') as HTMLElement;
-  const dashboard = document.getElementById('adminDashboard') as HTMLElement;
-  const authForm = document.getElementById('adminAuthForm') as HTMLFormElement;
-  const pinInput = document.getElementById('adminPinInput') as HTMLInputElement;
-  const logoutBtn = document.getElementById('logoutBtn') as HTMLButtonElement;
+export function initAuth(arg: InitAuthArg): () => void {
+  const options: InitAuthOptions =
+    typeof arg === 'function' ? { onSuccess: arg } : arg;
+
+  const authView = document.getElementById(
+    options.viewId ?? 'adminAuthView',
+  ) as HTMLElement | null;
+  const dashboard = document.getElementById(
+    options.mainId ?? 'adminDashboard',
+  ) as HTMLElement | null;
+  const authForm = document.getElementById(
+    options.formId ?? 'adminAuthForm',
+  ) as HTMLFormElement | null;
+  const pinInput =
+    authForm?.querySelector<HTMLInputElement>(
+      'input[type="password"], input[name="pin"], #adminPinInput',
+    ) ??
+    (document.getElementById('adminPinInput') as HTMLInputElement | null);
+  const logoutBtn = document.getElementById(
+    options.logoutId ?? 'logoutBtn',
+  ) as HTMLButtonElement | null;
 
   function showDashboard(visible: boolean): void {
-    authView.classList.toggle('hidden', visible);
-    dashboard.classList.toggle('hidden', !visible);
+    if (authView) authView.classList.toggle('hidden', visible);
+    if (dashboard) dashboard.classList.toggle('hidden', !visible);
   }
 
   async function unlock(pin: string): Promise<void> {
@@ -427,39 +479,43 @@ export function initAuth(onSuccess: () => void | Promise<void>): () => void {
     if (data.sessionToken) setAdminToken(data.sessionToken);
 
     showDashboard(true);
-    await onSuccess();
+    await options.onSuccess();
   }
 
-  authForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const pin = pinInput.value.trim();
-    if (!pin) {
-      setMessage('Please enter admin PIN.');
-      return;
-    }
-    setMessage('Unlocking admin panel...');
-    void unlock(pin)
-      .then(() => setMessage('Admin panel unlocked.'))
-      .catch((err: unknown) => {
-        const msg =
-          err instanceof Error ? err.message : 'Failed to unlock admin panel.';
-        setMessage(msg);
-        showDashboard(false);
-      });
-  });
-
-  logoutBtn.addEventListener('click', () => {
-    const token = getAdminToken();
-    void fetch('/api/admin/logout', {
-      method: 'POST',
-      headers: { 'x-admin-token': token },
-      credentials: 'include',
-    }).finally(() => {
-      clearAdminToken();
-      showDashboard(false);
-      setMessage('Admin panel locked.');
+  if (authForm && pinInput) {
+    authForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const pin = pinInput.value.trim();
+      if (!pin) {
+        setMessage('Please enter admin PIN.');
+        return;
+      }
+      setMessage('Unlocking admin panel...');
+      void unlock(pin)
+        .then(() => setMessage('Admin panel unlocked.'))
+        .catch((err: unknown) => {
+          const msg =
+            err instanceof Error ? err.message : 'Failed to unlock admin panel.';
+          setMessage(msg);
+          showDashboard(false);
+        });
     });
-  });
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      const token = getAdminToken();
+      void fetch('/api/admin/logout', {
+        method: 'POST',
+        headers: { 'x-admin-token': token },
+        credentials: 'include',
+      }).finally(() => {
+        clearAdminToken();
+        showDashboard(false);
+        setMessage('Admin panel locked.');
+      });
+    });
+  }
 
   // On startup, check for an existing valid session (httpOnly cookie sent
   // automatically) and show the dashboard immediately if authenticated.
@@ -467,7 +523,7 @@ export function initAuth(onSuccess: () => void | Promise<void>): () => void {
     .then((authenticated) => {
       if (authenticated) {
         showDashboard(true);
-        return onSuccess();
+        return options.onSuccess();
       }
       showDashboard(false);
     })

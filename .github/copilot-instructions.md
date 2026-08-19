@@ -1,1 +1,1 @@
-Refer to [AGENTS.md](../AGENTS.md) for all repo instructions.
+Refer to [CLAUDE.md](../CLAUDE.md) for all repo instructions.

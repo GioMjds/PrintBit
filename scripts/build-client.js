@@ -36,6 +36,7 @@ const builds = [
   'esbuild src/public/feedback/app.ts --bundle --outfile=src/public/feedback/app.js',
   'esbuild src/public/loading/app.ts --bundle --outfile=src/public/loading/app.js',
   'esbuild src/public/receipt/app.ts --bundle --outfile=src/public/receipt/app.js',
+  'esbuild src/public/scc/app.ts --bundle --outfile=src/public/scc/app.js',
   'esbuild src/public/admin/dashboard/app.ts --bundle --outfile=src/public/admin/dashboard/app.js',
   'esbuild src/public/admin/earnings/app.ts --bundle --outfile=src/public/admin/earnings/app.js',
   'esbuild src/public/admin/system/app.ts --bundle --outfile=src/public/admin/system/app.js',
@@ -60,4 +61,3 @@ try {
   console.error('Build failed:', error);
   process.exit(1);
 }
-

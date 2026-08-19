@@ -283,4 +283,8 @@ export const PUBLIC_PAGE_ROUTES: Array<{ route: string; filePath: string }> = [
     route: '/admin/alerts',
     filePath: path.join(PUBLIC_DIR, 'admin', 'alerts', 'index.html'),
   },
+  {
+    route: '/scc',
+    filePath: path.join(PUBLIC_DIR, 'scc', 'index.html'),
+  },
 ];

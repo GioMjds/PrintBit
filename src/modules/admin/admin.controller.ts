@@ -63,7 +63,7 @@ import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
 import type { AlertSettings } from './admin.schema';
 import { ConsumablesService } from './consumables.service';
 import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
-import { getSqliteDb } from '@/core/database/sqlite-storage';
+import { getSqliteDb, writeRuntimeState } from '@/core/database/sqlite-storage';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -2545,6 +2545,8 @@ export class AdminController {
     const previousBalance = db.data!.balance;
     db.data!.balance = 0;
     await db.write();
+    writeRuntimeState(db.data);
+    this.deps.io.emit('balance', 0);
     await this.adminService.appendAdminLog(
       'admin_balance_reset',
       'Admin reset machine balance.',
