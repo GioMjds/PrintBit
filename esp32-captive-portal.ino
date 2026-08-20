@@ -4,21 +4,8 @@
 #include <HTTPClient.h>
 
 #define coinAcceptorPin 4
-#define hopperSensorPin 18
-#define relayPin 33
-
-// RELAY CONFIGURATION
-// Set to 1 if using an Active-HIGH relay (HIGH = motor ON, LOW = motor OFF)
-// Set to 0 if using an Active-LOW relay module (LOW = motor ON, HIGH = motor OFF, standard for most Arduino relay modules)
-#define RELAY_ACTIVE_HIGH 1
-
-#if RELAY_ACTIVE_HIGH
-  #define RELAY_ON  HIGH
-  #define RELAY_OFF LOW
-#else
-  #define RELAY_ON  LOW
-  #define RELAY_OFF HIGH
-#endif
+#define hopperSensorPin 19
+#define relayPin 32
 
 const char* ssid = "PrintBit";
 const char* password = "printbit123";
@@ -52,10 +39,10 @@ const int maxDispenseCoins = 50;
 
 // HOPPER
 volatile int coinDispensed = 0;
-int targetCoins = 0;
+volatile int targetCoins = 0;
 
-unsigned long lastCoinTime = 0;
-const unsigned long hopperDebounce = 50;
+volatile unsigned long lastCoinTime = 0;
+const unsigned long hopperDebounce = 75000;
 
 bool dispensing = false;
 bool dispenseDone = false;
@@ -65,7 +52,7 @@ int lastProgressReported = -1;
 
 // SAFETY
 unsigned long hopperStartTime = 0;
-const unsigned long hopperMaxRunTime = 10000;
+const unsigned long hopperMaxRunTime = 30000;
 
 unsigned long coinEventCounter = 0;
 String activeDispenseRequestId = "";
@@ -74,6 +61,12 @@ String lastDispenseOutcome = "idle";
 String lastDispenseError = "";
 unsigned long lastDispenseFinishedAt = 0;
 String serialLineBuffer = "";
+
+bool startDispense(
+    int coins,
+    const String& requestId,
+    const String& sourceLabel
+);
 
 String decodeUrlComponent(const String& value) {
   String decoded = "";
@@ -111,38 +104,6 @@ String getFormValue(const String& body, const String& key) {
   int end = body.indexOf('&', start);
   if (end < 0) end = body.length();
   return decodeUrlComponent(body.substring(start, end));
-}
-
-String getJsonValue(const String& body, const String& key) {
-  String needle = "\"" + key + "\"";
-  int start = body.indexOf(needle);
-  if (start < 0) return "";
-  start = body.indexOf(':', start + needle.length());
-  if (start < 0) return "";
-  start += 1;
-  while (start < (int)body.length() && (body.charAt(start) == ' ' || body.charAt(start) == '\t' || body.charAt(start) == '\r' || body.charAt(start) == '\n')) {
-    start++;
-  }
-  if (start >= (int)body.length()) return "";
-
-  if (body.charAt(start) == '"') {
-    start += 1;
-    int end = body.indexOf('"', start);
-    if (end < 0) return "";
-    return body.substring(start, end);
-  } else {
-    int end = start;
-    while (end < (int)body.length() && body.charAt(end) != ',' && body.charAt(end) != '}' && body.charAt(end) != ' ' && body.charAt(end) != '\r' && body.charAt(end) != '\n') {
-      end++;
-    }
-    return body.substring(start, end);
-  }
-}
-
-String getPayloadValue(const String& body, const String& key) {
-  String val = getFormValue(body, key);
-  if (val.length() > 0) return val;
-  return getJsonValue(body, key);
 }
 
 String getQueryValue(const String& query, const String& key) {
@@ -221,23 +182,6 @@ void replyPlain(
   client.println("Connection: close");
   client.println();
   client.print(body);
-}
-
-void replyJson(
-  NetworkClient& client,
-  int statusCode,
-  const String& statusText,
-  const String& jsonBody) {
-  client.print("HTTP/1.1 ");
-  client.print(statusCode);
-  client.print(" ");
-  client.println(statusText);
-  client.println("Content-Type: application/json; charset=utf-8");
-  client.print("Content-Length: ");
-  client.println(jsonBody.length());
-  client.println("Connection: close");
-  client.println();
-  client.print(jsonBody);
 }
 
 bool parseRequestLine(const String& requestLine, String& method, String& path) {
@@ -381,10 +325,10 @@ void sendCoinToTablet(int value) {
 }
 
 void handleRegisterRequest(NetworkClient& client, const String& body) {
-  String postedToken = getPayloadValue(body, "token");
-  String postedIp = getPayloadValue(body, "ip");
-  String postedPort = getPayloadValue(body, "port");
-  String postedPath = getPayloadValue(body, "path");
+  String postedToken = getFormValue(body, "token");
+  String postedIp = getFormValue(body, "ip");
+  String postedPort = getFormValue(body, "port");
+  String postedPath = getFormValue(body, "path");
   postedToken.trim();
   postedIp.trim();
   postedPort.trim();
@@ -459,7 +403,7 @@ void handleWifiRequest(NetworkClient& client) {
       String lengthPart = headerLine.substring(colonPos + 1);
       lengthPart.trim();
       contentLength = lengthPart.toInt();
-    } else if (headerKey == "x-hopper-token" || headerKey == "x-coin-api-key") {
+    } else if (headerKey == "x-hopper-token") {
       hopperTokenHeader = headerLine.substring(colonPos + 1);
       hopperTokenHeader.trim();
     }
@@ -488,22 +432,28 @@ void handleWifiRequest(NetworkClient& client) {
   }
 
   if ((method == "POST" || method == "GET") && routePath == "/hopper/dispense") {
-    String postedToken = getPayloadValue(body, "token");
-    String postedCoins = getPayloadValue(body, "coins");
-    if (postedCoins.length() == 0) postedCoins = getPayloadValue(body, "targetCoins");
-    String postedRequestId = getPayloadValue(body, "requestId");
+    String postedToken = getFormValue(body, "token");
+    String postedCoins = getFormValue(body, "coins");
+    String postedRequestId = getFormValue(body, "requestId");
     if (postedToken.length() == 0) postedToken = hopperTokenHeader;
     if (postedToken.length() == 0) postedToken = getQueryValue(query, "token");
     if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "coins");
-    if (postedCoins.length() == 0) postedCoins = getQueryValue(query, "targetCoins");
     if (postedRequestId.length() == 0) postedRequestId = getQueryValue(query, "requestId");
 
-    if (postedToken.length() == 0 || postedToken != hopperControlToken) {
-      replyPlain(client, 401, "Unauthorized", "Invalid hopper token");
-      Serial.println("hopper_dispense_rejected:unauthorized");
-      client.stop();
-      return;
-    }
+    postedToken.trim();
+if (postedToken.length() == 0 || postedToken != hopperControlToken) {
+  Serial.print("hopper_token_debug: got='");
+  Serial.print(postedToken);
+  Serial.print("' (len=");
+  Serial.print(postedToken.length());
+  Serial.print(") expected='");
+  Serial.print(hopperControlToken);
+  Serial.println("'");
+  replyPlain(client, 401, "Unauthorized", "Invalid hopper token");
+  Serial.println("hopper_dispense_rejected:unauthorized");
+  client.stop();
+  return;
+}
     if (!isNumericString(postedCoins)) {
       replyPlain(client, 400, "Bad Request", "Missing or invalid coins");
       Serial.println("hopper_dispense_rejected:invalid_coins");
@@ -554,7 +504,7 @@ void handleWifiRequest(NetworkClient& client) {
     response += "\",\"lastFinishedAtMs\":";
     response += String(lastDispenseFinishedAt);
     response += "}";
-    replyJson(client, 200, "OK", response);
+    replyPlain(client, 200, "OK", response);
     client.stop();
     return;
   }
@@ -580,7 +530,7 @@ void IRAM_ATTR countPulse() {
 }
 
 void IRAM_ATTR coinDetected() {
-  unsigned long now = millis();
+  unsigned long now = micros();
 
   if (now - lastCoinTime > hopperDebounce) {
     coinDispensed++;
@@ -588,7 +538,7 @@ void IRAM_ATTR coinDetected() {
     lastCoinTime = now;
 
     if (dispensing && coinDispensed >= targetCoins) {
-      digitalWrite(relayPin, RELAY_OFF);
+      digitalWrite(relayPin, LOW);
       dispensing = false;
       dispenseDone = true;
     }
@@ -624,7 +574,7 @@ bool startDispense(
   lastDispenseOutcome = "dispensing";
   lastDispenseError = "";
 
-  digitalWrite(relayPin, RELAY_ON);
+  digitalWrite(relayPin, HIGH);
   emitHopperAck(activeDispenseRequestId);
 
   Serial.print("hopper_start:requestId=");
@@ -688,15 +638,15 @@ void handleSerialCommand(const String& rawLine) {
 
 // SETUP
 void setup() {
-  pinMode(coinAcceptorPin, INPUT_PULLUP);
-  pinMode(hopperSensorPin, INPUT_PULLUP);
+  pinMode(coinAcceptorPin, INPUT);
+  pinMode(hopperSensorPin, INPUT);
   pinMode(relayPin, OUTPUT);
 
-  digitalWrite(relayPin, RELAY_OFF);
+  digitalWrite(relayPin, LOW);
 
   Serial.begin(115200);
 
-  attachInterrupt(coinAcceptorPin, countPulse, FALLING);
+  attachInterrupt(coinAcceptorPin, countPulse, RISING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
 
   refreshTargets();
@@ -780,7 +730,7 @@ void loop() {
 
   // HOPPER TIMEOUT
   if (dispensing && millis() - hopperStartTime > hopperMaxRunTime) {
-    digitalWrite(relayPin, RELAY_OFF);
+    digitalWrite(relayPin, LOW);
     dispensing = false;
     dispenseTimedOut = true;
   }
@@ -802,7 +752,7 @@ void loop() {
     lastDispenseOutcome = "done";
     lastDispenseError = "";
     lastDispenseFinishedAt = millis();
-    emitHopperDone(lastDispenseRequestId, dispensedSnapshot);
+    emitHopperDone(activeDispenseRequestId, dispensedSnapshot);
     Serial.print("hopper_done:requestId=");
     Serial.print(lastDispenseRequestId);
     Serial.print(":dispensed=");

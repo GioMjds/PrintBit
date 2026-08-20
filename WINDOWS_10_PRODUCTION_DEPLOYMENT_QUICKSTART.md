@@ -10,13 +10,13 @@ Open **PowerShell as Administrator** and navigate to the PrintBit directory:
 
 ```powershell
 # 1. Build the Node.js Backend
-cd C:\Users\Admin\Desktop\printbit
+cd C:\Users\printbit\printbit
 pnpm install
 pnpm run build
 pnpm exec tsc --noEmit --ignoreDeprecations 6.0
 
 # 2. Build the C# Hardware Service
-cd C:\Users\Admin\Desktop\printbit-worker\src\PrintBit.HardwareService
+cd C:\Users\printbit\printbit-worker\src\PrintBit.HardwareService
 dotnet publish -c Release -o C:\Users\printbit\printbit-worker-service
 ```
 
@@ -192,13 +192,13 @@ _Important: Restart your tablet or reboot after setting these so the changes app
 
 Separate the daily kiosk account from the administrator account to prevent unauthorized access and enable Assigned Access properly.
 
-*(Note: If the `printbit` account already exists, there is no need to recreate it here. Just ensure it has a secure password and is a standard user.)*
+_(Note: If the `printbit` account already exists, there is no need to recreate it here. Just ensure it has a secure password and is a standard user.)_
 
 Run the following in **Administrator PowerShell**:
 
 ```powershell
-net user printbit "ReplaceWithStrongPassword1!" /add
-net user printbit-admin "ReplaceWithStrongPassword2!" /add
+net user printbit "admin123" /add
+net user printbit-admin "admin123" /add
 net localgroup Administrators printbit-admin /add
 ```
 
@@ -220,7 +220,7 @@ sc.exe start PrintBitHardware
 
 ### 4.2 Register Node.js Startup and Watchdog
 
-Navigate to your PrintBit Node repository root (`C:\Users\Admin\Desktop\printbit`) in an Administrator PowerShell window:
+Navigate to your PrintBit Node repository root (`C:\Users\printbit\printbit`) in an Administrator PowerShell window:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-startup.ps1 -AtStartup
@@ -243,7 +243,7 @@ Lock the device to Microsoft Edge so users cannot access the desktop or settings
 
 To prevent the tablet from forcefully updating during operating hours and to apply further system lockdowns:
 
-From the `C:\Users\Admin\Desktop\printbit` directory (as Admin):
+From the `C:\Users\printbit\printbit` directory (as Admin):
 
 ```powershell
 pnpm run updates:apply
