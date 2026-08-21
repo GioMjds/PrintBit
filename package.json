@@ -17,6 +17,8 @@
     "start": "node dist/server.js",
     "db:reset": "node ./scripts/reset-db.js",
     "kiosk": "node ./scripts/launch-kiosk.js",
+    "install-kiosk": "pnpm run install-startup && pnpm run watchdog:install && pnpm run lockdown:apply",
+    "uninstall-kiosk": "pnpm run uninstall-startup && pnpm run watchdog:uninstall && pnpm run lockdown:revert",
     "ensure-network": "powershell -ExecutionPolicy Bypass -File .\\scripts\\ensure-esp32-network.ps1",
     "install-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1 -AtStartup -MultipleInstances IgnoreNew",
     "uninstall-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1 -Uninstall",

@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import os from 'node:os';
 import type { Request, RequestHandler } from 'express';
 import { validateAdminSession } from '@/utils/admin-session';
 
@@ -10,9 +11,31 @@ function normalizeIp(value: string): string {
   return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
 }
 
+function getLocalMachineIps(): Set<string> {
+  const localIps = new Set<string>(['127.0.0.1', '::1', 'localhost']);
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const ifaceList of Object.values(interfaces)) {
+      if (!ifaceList) continue;
+      for (const iface of ifaceList) {
+        if (iface.address) {
+          localIps.add(normalizeIp(iface.address));
+        }
+      }
+    }
+  } catch {
+    // ignore interface enumeration errors
+  }
+  return localIps;
+}
+
 export function isLoopbackRequest(req: Request): boolean {
   const ip = normalizeIp(req.socket.remoteAddress ?? req.ip ?? '');
-  return ip === '127.0.0.1' || ip === '::1';
+  if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') {
+    return true;
+  }
+  const localIps = getLocalMachineIps();
+  return localIps.has(ip);
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
@@ -86,9 +109,8 @@ export function createKioskAccessMiddleware(
   service: KioskAccessService = kioskAccessService,
 ): RequestHandler {
   return (req, res, next) => {
-    // The physical kiosk display runs on the same machine — loopback requests
-    // are always authoritative kiosk origins. This mirrors the admin-auth
-    // pattern and avoids requiring the full bootstrap flow for localhost.
+    // The physical kiosk display runs on the same machine — loopback and host
+    // interface requests are always authoritative kiosk origins.
     if (isLoopbackRequest(req)) {
       next();
       return;
@@ -105,7 +127,9 @@ export function createKioskAccessMiddleware(
       next();
       return;
     }
-    if (req.accepts('html')) {
+    const isApiRoute =
+      req.path.startsWith('/api') || (req.originalUrl && req.originalUrl.startsWith('/api'));
+    if (!isApiRoute && req.accepts('html')) {
       res.status(403).type('html').send(KIOSK_FORBIDDEN_HTML);
       return;
     }

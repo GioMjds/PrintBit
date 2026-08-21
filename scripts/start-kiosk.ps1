@@ -247,13 +247,13 @@ if (-not [string]::IsNullOrWhiteSpace($configuredKioskUser)) {
 }
 
 if ($isSystemAccount -or $skipEdgeLaunch) {
-    $assignedAccessHost = if ($networkProvider -eq "esp32") { $esp32KioskIp } elseif ($localIP) { $localIP } else { "localhost" }
+    $assignedAccessHost = "localhost"
     if ($isSystemAccount) {
         Write-Host "[PrintBit] Running as SYSTEM. Skipping Edge launch in Session 0." -ForegroundColor Yellow
     } else {
         Write-Host "[PrintBit] Assigned Access kiosk session detected. Skipping managed Edge launch." -ForegroundColor Yellow
     }
-    Write-Host "[PrintBit] Assigned Access should open Edge at http://${assignedAccessHost}:$Port/loading." -ForegroundColor Yellow
+    Write-Host "[PrintBit] Assigned Access should open Edge at http://${assignedAccessHost}:$Port/loading." -ForegroundColor Green
 } else {
     Write-Host "[PrintBit] Launching Edge in kiosk mode..." -ForegroundColor Green
     Start-Process $edgePath -ArgumentList @(

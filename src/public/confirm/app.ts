@@ -1679,6 +1679,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'Idempotency-Key': paymentIdempotencyKey,
         },
         body: JSON.stringify({
@@ -1695,12 +1696,22 @@ modalConfirmBtn?.addEventListener('click', async () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        if (errData.printError) {
-          renderPrinterError(errData.printError);
-          throw new Error(errData.printError.userMessage);
+        const errText = await response.text().catch(() => '');
+        let errData: Record<string, unknown> = {};
+        try {
+          if (errText) errData = JSON.parse(errText);
+        } catch {
+          // Response is non-JSON (e.g. HTML or raw string)
         }
-        throw new Error(errData.error || 'Copy job failed');
+        if (errData.printError) {
+          renderPrinterError(errData.printError as PrintError);
+          throw new Error((errData.printError as PrintError).userMessage || 'Copy job failed');
+        }
+        const errorMsg =
+          (typeof errData.error === 'string' && errData.error.trim()) ||
+          (errText && !errText.startsWith('<') ? errText.slice(0, 150) : null) ||
+          `Copy job failed (${response.status} ${response.statusText || 'Error'})`;
+        throw new Error(errorMsg);
       }
 
       const payload = (await response.json()) as ReceiptLinkPayload & {
@@ -1724,6 +1735,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'Idempotency-Key': paymentIdempotencyKey,
         },
         body: JSON.stringify({
@@ -1742,12 +1754,22 @@ modalConfirmBtn?.addEventListener('click', async () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        if (errData.printError) {
-          renderPrinterError(errData.printError);
-          throw new Error(errData.printError.userMessage);
+        const errText = await response.text().catch(() => '');
+        let errData: Record<string, unknown> = {};
+        try {
+          if (errText) errData = JSON.parse(errText);
+        } catch {
+          // Response is non-JSON (e.g. HTML or raw string)
         }
-        throw new Error(errData.error || 'Payment failed');
+        if (errData.printError) {
+          renderPrinterError(errData.printError as PrintError);
+          throw new Error((errData.printError as PrintError).userMessage || 'Payment failed');
+        }
+        const errorMsg =
+          (typeof errData.error === 'string' && errData.error.trim()) ||
+          (errText && !errText.startsWith('<') ? errText.slice(0, 150) : null) ||
+          `Payment failed (${response.status} ${response.statusText || 'Error'})`;
+        throw new Error(errorMsg);
       }
       
       const payload = (await response.json()) as ReceiptLinkPayload & {
@@ -1800,6 +1822,22 @@ if (typeof ioFactory === 'function') {
   socket = connectedSocket;
   connectedSocket.on('balance', (amount: unknown) => {
     if (typeof amount === 'number') updateBalanceUI(amount);
+  });
+
+  connectedSocket.on('changeDispenseStatus', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return;
+    const data = payload as {
+      state?: 'dispensing' | 'dispensed' | 'failed';
+      amount?: number;
+      dispensed?: number;
+      owedChangeId?: string | null;
+      message?: string;
+    };
+    if (data.state === 'dispensing') {
+      setPrintingPhase('dispensing');
+    } else if (data.state === 'failed' && data.owedChangeId) {
+      setPrintingPhase('failed');
+    }
   });
 
   connectedSocket.on('printErrorRaised', (payload: unknown) => {
