@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-21T10:30:00Z",
+  "title": "Design System: PrintBit",
+  "extensions": {
+    "colorMeta": {
+      "primary-indigo": { "role": "primary", "displayName": "Electric Indigo" },
+      "secondary-lavender": { "role": "secondary", "displayName": "Soft Lavender" },
+      "tertiary-peach": { "role": "tertiary", "displayName": "Warm Peach" },
+      "tertiary-pink": { "role": "tertiary", "displayName": "Neon Pink" },
+      "deep-space-blue": { "role": "neutral", "displayName": "Deep Space Blue" }
+    },
+    "shadows": [
+      { "name": "interactive-glow", "value": "0 8px 32px rgba(0, 0, 0, 0.35)", "purpose": "Base shadow for cards." },
+      { "name": "modal-depth", "value": "0 28px 72px rgba(0, 0, 0, 0.65)", "purpose": "Heavy shadow for floating modals." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Action Card",
+      "kind": "card",
+      "refersTo": "action-card",
+      "description": "Large tactile touch target for main kiosk actions.",
+      "html": "<button class=\"ds-action-card\"><div class=\"ds-icon\"></div><h2 class=\"ds-title\">PRINT</h2><p class=\"ds-sub\">Upload from phone</p></button>",
+      "css": ".ds-action-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 48px 36px; background: linear-gradient(145deg, rgba(105, 111, 199, 0.22) 0%, rgba(105, 111, 199, 0.08) 100%); border: 1.5px solid rgba(167, 170, 225, 0.22); border-radius: 28px; color: #a7aae1; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.07); cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease; font-family: 'Plus Jakarta Sans', sans-serif; } .ds-action-card:hover { transform: translateY(-6px) scale(1.015); box-shadow: 0 20px 56px rgba(105, 111, 199, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1); border-color: rgba(167, 170, 225, 0.5); } .ds-title { font-size: 32px; font-weight: 700; color: #ffffff; margin: 0; } .ds-sub { font-size: 12px; text-transform: uppercase; margin: 0; }"
+    },
+    {
+      "name": "FAB (Floating Action Button)",
+      "kind": "button",
+      "refersTo": "fab",
+      "description": "Floating actions like report or language swap.",
+      "html": "<button class=\"ds-fab\">EN</button>",
+      "css": ".ds-fab { width: 56px; height: 56px; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; background: rgba(14, 13, 31, 0.92); color: #fff; font-size: 24px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35); cursor: pointer; transition: background 150ms; font-family: 'Plus Jakarta Sans', sans-serif; } .ds-fab:hover { background: rgba(255, 255, 255, 0.1); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Midnight Interface",
+    "overview": "Sleek, glassy, high-contrast, and operational. The PrintBit visual system is built for a dark, immersive kiosk environment. It relies on a deep space background contrasted by vibrant, glowing accents and frosted glass components. The UI is designed to be highly legible from a distance while feeling tactile and dimensional up close.",
+    "keyCharacteristics": [
+      "Dark Mode Native: The UI lives entirely in a dark theme, using depth and glow rather than flat colors.",
+      "Glassy & Tactile: Components use semi-transparent backgrounds, inner shadows, and blur effects to feel layered.",
+      "Vibrant Accents: Neon-inspired indigo, pink, and peach guide the user's attention."
+    ],
+    "rules": [
+      {
+        "name": "The Glow-Over-Fill Rule",
+        "body": "Interactive elements prefer semi-transparent fills with vibrant borders and glowing drop shadows over flat, solid backgrounds.",
+        "section": "colors"
+      },
+      {
+        "name": "The Inner Bevel Rule",
+        "body": "Large tactile surfaces include a subtle inner top-border highlight (`inset 0 1px 0 rgba(255, 255, 255, 0.07)`) to catch the light and enhance dimensionality.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use Plus Jakarta Sans for all UI text to maintain the modern, geometric feel.",
+      "Do ensure interactive elements have a minimum touch target size of 44x44px.",
+      "Do use backdrop blur behind floating overlays and modals to maintain context."
+    ],
+    "donts": [
+      "Don't use solid white or light backgrounds for large structural areas; the UI must remain dark-mode native.",
+      "Don't rely on flat shadows; use colored glows that match the element's accent hue."
+    ]
+  }
+}
