@@ -1,5 +1,6 @@
 import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 
 export {};
 
@@ -33,7 +34,7 @@ void initializePageIdleTimeout({
     sessionStorage.removeItem('printbit.uploadedFiles');
     sessionStorage.removeItem('printbit.copyPreviewPath');
     sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
-    window.location.replace('/');
+    navigateWithKioskMotion('/', 'replace');
   },
 });
 type ColorMode = 'colored' | 'grayscale';
@@ -1876,7 +1877,7 @@ continueBtn?.addEventListener('click', () => {
   else sessionStorage.removeItem('printbit.uploadedDocumentId');
   sessionStorage.setItem('printbit.config', JSON.stringify(config));
 
-  window.location.href = '/confirm';
+  navigateWithKioskMotion('/confirm');
 });
 
 void loadPreview();

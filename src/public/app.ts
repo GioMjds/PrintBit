@@ -4,6 +4,7 @@ import {
   KIOSK_LANGUAGE_CHANGED_EVENT,
   translation,
 } from './shared/kiosk-i18n';
+import { navigateWithKioskMotion } from './shared/kiosk-navigation';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
@@ -24,7 +25,7 @@ if (typeof ioFactory === 'function') {
 }
 
 function navigateTo(path: string) {
-  window.location.href = path;
+  navigateWithKioskMotion(path);
 }
 
 const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';

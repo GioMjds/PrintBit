@@ -3,6 +3,7 @@ import {
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 
 export {};
 
@@ -25,7 +26,7 @@ void initializePageIdleTimeout({
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.copyPreviewPath');
     sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
-    window.location.replace('/');
+    navigateWithKioskMotion('/', 'replace');
   },
 });
 
@@ -604,7 +605,7 @@ continueBtn?.addEventListener('click', () => {
   } else {
     sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
   }
-  window.location.href = '/config?mode=copy';
+  navigateWithKioskMotion('/config?mode=copy');
 });
 
 window.addEventListener('beforeunload', clearPreviewImageUrl);

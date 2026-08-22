@@ -4,6 +4,7 @@ import {
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 
 type UploadedFile = {
   documentId?: string;
@@ -1115,11 +1116,12 @@ showWifiModalBtn?.addEventListener('click', () => {
 
 continueBtn?.addEventListener('click', () => {
   if (!activeSessionId || !selectedFilename || !selectedDocumentId) return;
-  window.location.href =
+  const destination =
     `/config?mode=print&sessionId=${encodeURIComponent(activeSessionId)}` +
     `&file=${encodeURIComponent(selectedFilename)}` +
     `&documentId=${encodeURIComponent(selectedDocumentId)}` +
     `&token=${encodeURIComponent(activeSessionToken)}`;
+  navigateWithKioskMotion(destination);
 });
 
 if (shouldShowStartupOnboardingModal()) {
@@ -1156,11 +1158,11 @@ void initializePageIdleTimeout({
     }
     // Redirect to home
     sessionStorage.removeItem('printbit.sessionToken');
-    window.location.replace('/');
+    navigateWithKioskMotion('/', 'replace');
   },
 });
 
 export { navigateTo };
 function navigateTo(path: string) {
-  window.location.href = path;
+  navigateWithKioskMotion(path);
 }

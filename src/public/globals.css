@@ -293,3 +293,367 @@ html[data-high-contrast='true'] body {
 .idle-warning-btn:active {
   transform: translateY(0);
 }
+
+/* ── Customer motion system (enabled only by /shared/motion.js) ────────────── */
+
+html[data-kiosk-motion] {
+  --motion-arrive: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-depart: cubic-bezier(0.4, 0, 1, 1);
+  --motion-fast: 160ms;
+  --motion-routine: 240ms;
+  --motion-focal: 360ms;
+}
+
+html[data-kiosk-motion]
+  :where(
+    .kiosk-shell,
+    .page-shell,
+    .startup-shell,
+    .upload-shell,
+    .fb-shell,
+    .rp-shell,
+    .receipt-shell
+  ) {
+  animation: kiosk-page-feed var(--motion-focal) var(--motion-arrive) both;
+  transform-origin: 50% 42%;
+}
+
+html[data-kiosk-motion][data-kiosk-page-state='leaving']
+  :where(
+    .kiosk-shell,
+    .page-shell,
+    .startup-shell,
+    .upload-shell,
+    .fb-shell,
+    .rp-shell,
+    .receipt-shell
+  ) {
+  animation: kiosk-page-depart var(--motion-fast) var(--motion-depart) both;
+  pointer-events: none;
+}
+
+@keyframes kiosk-page-feed {
+  from {
+    opacity: 0.82;
+    clip-path: inset(0 0 7% 0 round 18px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 0);
+  }
+}
+
+@keyframes kiosk-page-depart {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.995);
+    clip-path: inset(0 0 4% 0 round 12px);
+  }
+}
+
+@keyframes kiosk-page-depart-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+html[data-kiosk-motion]
+  :where(
+    .action-card,
+    .qr-panel,
+    .files-panel,
+    .preview-panel,
+    .steps-panel,
+    .preview-col,
+    .settings-col,
+    .confirm-layout > .panel,
+    .delivery-panel,
+    .startup-card,
+    .upload-card,
+    .fb-card,
+    .rp-card,
+    .receipt-card
+  ) {
+  animation: kiosk-panel-seat 320ms var(--motion-arrive) both;
+}
+
+html[data-kiosk-motion]
+  :where(
+    .action-grid,
+    .print-layout,
+    .copy-layout,
+    .config-layout,
+    .confirm-layout,
+    .scan-layout
+  )
+  > :nth-child(2) {
+  animation-delay: 45ms;
+}
+
+html[data-kiosk-motion]
+  :where(.action-grid, .confirm-layout)
+  > :nth-child(3) {
+  animation-delay: 90ms;
+}
+
+@keyframes kiosk-panel-seat {
+  from {
+    opacity: 0.28;
+    transform: translateY(14px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+html[data-kiosk-motion] .kiosk-state-enter {
+  animation: kiosk-state-exchange var(--motion-routine) var(--motion-arrive) both;
+}
+
+@keyframes kiosk-state-exchange {
+  from {
+    opacity: 0.25;
+    transform: translateY(8px) scale(0.995);
+    clip-path: inset(0 0 8% 0 round 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    clip-path: inset(0 0 0 0 round 0);
+  }
+}
+
+html[data-kiosk-motion] .kiosk-status-change {
+  animation: kiosk-status-acknowledge 260ms var(--motion-arrive) both;
+}
+
+@keyframes kiosk-status-acknowledge {
+  0% {
+    background-color: rgba(105, 111, 199, 0);
+    box-shadow: 0 0 0 rgba(105, 111, 199, 0);
+    transform: translateY(2px);
+  }
+  45% {
+    background-color: rgba(105, 111, 199, 0.14);
+    box-shadow: 0 6px 18px rgba(105, 111, 199, 0.16);
+  }
+  100% {
+    background-color: rgba(105, 111, 199, 0);
+    box-shadow: 0 0 0 rgba(105, 111, 199, 0);
+    transform: translateY(0);
+  }
+}
+
+html[data-kiosk-motion]
+  :where(
+    .guide-overlay,
+    .report-overlay,
+    .feedback-overlay,
+    .wifi-overlay,
+    .admin-overlay,
+    .onboarding-overlay,
+    .modal-overlay,
+    .modal,
+    .scan-overlay
+  ) {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--motion-depart);
+}
+
+html[data-kiosk-motion]
+  :where(
+    .guide-overlay,
+    .report-overlay,
+    .feedback-overlay,
+    .wifi-overlay,
+    .admin-overlay,
+    .onboarding-overlay,
+    .modal-overlay,
+    .modal,
+    .scan-overlay
+  ).is-visible {
+  transition-duration: 220ms;
+  transition-timing-function: ease-out;
+}
+
+html[data-kiosk-motion]
+  :where(
+    .guide-card,
+    .report-modal,
+    .feedback-modal,
+    .wifi-modal,
+    .admin-modal,
+    .onboarding-card,
+    .modal-card,
+    .modal-sheet,
+    .modal-fs,
+    .scan-overlay__card
+  ) {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--motion-depart);
+}
+
+html[data-kiosk-motion]
+  :where(
+    .guide-overlay,
+    .report-overlay,
+    .feedback-overlay,
+    .wifi-overlay,
+    .admin-overlay,
+    .onboarding-overlay,
+    .modal-overlay,
+    .modal,
+    .scan-overlay
+  ).is-visible
+  :where(
+    .guide-card,
+    .report-modal,
+    .feedback-modal,
+    .wifi-modal,
+    .admin-modal,
+    .onboarding-card,
+    .modal-card,
+    .modal-sheet,
+    .modal-fs,
+    .scan-overlay__card
+  ) {
+  transition-duration: 300ms;
+  transition-timing-function: var(--motion-arrive);
+}
+
+html[data-kiosk-motion] .idle-warning-overlay {
+  opacity: 0;
+  transition:
+    opacity var(--motion-fast) var(--motion-depart),
+    display var(--motion-fast) allow-discrete;
+}
+
+html[data-kiosk-motion]
+  .idle-warning-overlay[style*='display: flex'] {
+  opacity: 1;
+  transition-duration: 220ms;
+  transition-timing-function: ease-out;
+}
+
+html[data-kiosk-motion]
+  .idle-warning-overlay[style*='display: flex']
+  .idle-warning-modal {
+  animation: kiosk-modal-arrive 300ms var(--motion-arrive) both;
+}
+
+html[data-kiosk-motion] .scan-overlay__card {
+  animation: none;
+}
+
+html[data-kiosk-motion]
+  .scan-overlay.is-visible
+  .scan-overlay__card {
+  animation: kiosk-modal-arrive 300ms var(--motion-arrive) both;
+}
+
+@starting-style {
+  html[data-kiosk-motion]
+    .idle-warning-overlay[style*='display: flex'] {
+    opacity: 0;
+  }
+}
+
+@keyframes kiosk-modal-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-kiosk-motion]
+    :where(
+      .kiosk-shell,
+      .page-shell,
+      .startup-shell,
+      .upload-shell,
+      .fb-shell,
+      .rp-shell,
+      .receipt-shell,
+      .action-card,
+      .qr-panel,
+      .files-panel,
+      .preview-panel,
+      .steps-panel,
+      .preview-col,
+      .settings-col,
+      .confirm-layout > .panel,
+      .delivery-panel,
+      .startup-card,
+      .upload-card,
+      .fb-card,
+      .rp-card,
+      .receipt-card,
+      .kiosk-state-enter
+    ) {
+    animation: kiosk-motion-fade 120ms ease-out both;
+    animation-delay: 0ms;
+    clip-path: none;
+  }
+
+  html[data-kiosk-motion] .kiosk-status-change {
+    animation: kiosk-status-color 140ms ease-out both;
+  }
+
+  html[data-kiosk-motion][data-kiosk-page-state='leaving']
+    :where(
+      .kiosk-shell,
+      .page-shell,
+      .startup-shell,
+      .upload-shell,
+      .fb-shell,
+      .rp-shell,
+      .receipt-shell
+    ) {
+    animation: kiosk-page-depart-fade 80ms ease-out both;
+    clip-path: none;
+  }
+
+  html[data-kiosk-motion]
+    :where(
+      .guide-card,
+      .report-modal,
+      .feedback-modal,
+      .wifi-modal,
+      .admin-modal,
+      .onboarding-card,
+      .modal-card,
+      .modal-sheet,
+      .modal-fs,
+      .scan-overlay__card
+    ) {
+    transform: none;
+    transition-duration: 90ms;
+  }
+
+  html[data-kiosk-motion]
+    .idle-warning-overlay[style*='display: flex']
+    .idle-warning-modal {
+    animation: kiosk-motion-fade 90ms ease-out both;
+  }
+}
+
+@keyframes kiosk-motion-fade {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kiosk-status-color {
+  50% {
+    background-color: rgba(105, 111, 199, 0.14);
+  }
+}

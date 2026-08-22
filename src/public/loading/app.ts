@@ -1,3 +1,5 @@
+import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
+
 const DEFAULT_RETRY_AFTER_MS = 1_500;
 const REQUEST_TIMEOUT_MS = 5_000;
 
@@ -148,7 +150,10 @@ const poll = async (): Promise<void> => {
 
     if (payload.ready === true || payload.phase === 'ready') {
       setReady();
-      window.location.replace(new URL('/', window.location.origin).toString());
+      navigateWithKioskMotion(
+        new URL('/', window.location.origin).toString(),
+        'replace',
+      );
       return;
     }
 

@@ -26,6 +26,7 @@ function copyFlatpickrCss() {
 }
 
 const builds = [
+  'esbuild src/public/shared/kiosk-motion.ts --bundle --outfile=src/public/shared/motion.js',
   'esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js',
   'esbuild src/public/print/app.ts --bundle --outfile=src/public/print/app.js',
   'esbuild src/public/copy/app.ts --bundle --outfile=src/public/copy/app.js',

@@ -4,6 +4,7 @@ import {
   setupPageIdleWarningButton,
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 
 export {};
 
@@ -40,7 +41,7 @@ void initializePageIdleTimeout({
     sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.sessionToken');
-    window.location.replace('/');
+    navigateWithKioskMotion('/', 'replace');
   },
 });
 
@@ -1788,7 +1789,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
 
 thankYouDoneBtn?.addEventListener('click', () => {
   clearConfirmSessionStorage();
-  window.location.href = '/';
+  navigateWithKioskMotion('/');
 });
 
 printAnotherBtn?.addEventListener('click', () => {
@@ -1800,19 +1801,19 @@ printAnotherBtn?.addEventListener('click', () => {
   
   if (config.mode === 'print') {
     // Keep sessionId, sessionToken, uploadedFile, etc. for remaining files
-    window.location.href = '/print';
+    navigateWithKioskMotion('/print');
   } else if (config.mode === 'copy') {
     sessionStorage.removeItem('printbit.uploadedFile');
     sessionStorage.removeItem('printbit.uploadedDocumentId');
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.sessionToken');
-    window.location.href = '/copy';
+    navigateWithKioskMotion('/copy');
   } else if (config.mode === 'scan') {
     sessionStorage.removeItem('printbit.uploadedFile');
     sessionStorage.removeItem('printbit.uploadedDocumentId');
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.sessionToken');
-    window.location.href = '/scan';
+    navigateWithKioskMotion('/scan');
   }
 });
 

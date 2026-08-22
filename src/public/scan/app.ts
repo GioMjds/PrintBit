@@ -1,5 +1,6 @@
 import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 
 export {};
 
@@ -28,7 +29,7 @@ void initializePageIdleTimeout({
     sessionStorage.removeItem('printbit.config');
     sessionStorage.removeItem('printbit.sessionId');
     sessionStorage.removeItem('printbit.sessionToken');
-    window.location.replace('/');
+    navigateWithKioskMotion('/', 'replace');
   },
 });
 
@@ -686,7 +687,7 @@ proceedBtn.addEventListener('click', () => {
 
   saveScanStateToSession();
   sessionStorage.setItem('printbit.mode', 'scan');
-  window.location.href = '/confirm';
+  navigateWithKioskMotion('/confirm');
 });
 
 async function initializeScanPage(): Promise<void> {
