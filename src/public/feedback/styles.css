@@ -16,14 +16,14 @@ body {
     radial-gradient(ellipse 70% 40% at 8% 0%, rgba(105, 111, 199, 0.12) 0%, transparent 60%),
     radial-gradient(ellipse 55% 55% at 92% 100%, rgba(245, 211, 196, 0.35) 0%, transparent 60%),
     #f5f4ff;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .hidden { display: none !important; }
 
 /* ── State screens ───────────────────────────────────────────── */
 .state-screen {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -108,7 +108,7 @@ body {
 
 /* ── Form shell ──────────────────────────────────────────────── */
 .fb-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }

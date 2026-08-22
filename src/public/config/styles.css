@@ -88,7 +88,7 @@ body {
 .page-shell {
   position: relative;
   z-index: 1;
-  height: calc(100vh - 118px); /* leave room for sticky footer */
+  height: calc(100dvh - 118px); /* leave room for sticky footer */
   display: flex;
   flex-direction: column;
   overflow: hidden;

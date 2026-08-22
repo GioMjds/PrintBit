@@ -81,7 +81,7 @@ body {
 .page-shell {
   position: relative;
   z-index: 1;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 0 32px;
@@ -1320,6 +1320,16 @@ body {
 /* ── Status modal (printing / thank you) — sheet variant ─── */
 .modal-sheet--status {
   /* text-align: center already on .modal-sheet */
+}
+
+.status-animation {
+  width: clamp(180px, 24vw, 220px);
+  aspect-ratio: 1;
+  margin: 0 auto 12px;
+}
+
+.status-animation .status-icon {
+  margin: 0;
 }
 
 .status-icon {

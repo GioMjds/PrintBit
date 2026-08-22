@@ -1,0 +1,53 @@
+.lottie-loading {
+  position: relative;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+.lottie-loading__canvas,
+.lottie-loading__fallback {
+  grid-area: 1 / 1;
+}
+
+.lottie-loading__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.lottie-loading__fallback {
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.lottie-loading.is-lottie-ready .lottie-loading__canvas {
+  opacity: 1;
+}
+
+.lottie-loading.is-lottie-ready .lottie-loading__fallback {
+  opacity: 0;
+}
+
+.lottie-loading.is-lottie-ready .lottie-loading__fallback,
+.lottie-loading.is-lottie-ready .lottie-loading__fallback * {
+  animation-play-state: paused;
+}
+
+.lottie-loading.is-lottie-fallback .lottie-loading__canvas {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lottie-loading__canvas,
+  .lottie-loading__fallback {
+    transition: none;
+  }
+
+  .lottie-loading__fallback,
+  .lottie-loading__fallback * {
+    animation-play-state: paused;
+  }
+}

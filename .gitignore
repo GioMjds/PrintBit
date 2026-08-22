@@ -11,3 +11,5 @@ printbit.sqlite-wal
 *uploads
 bin/
 .claude
+.superpowers
+.pnpm-store

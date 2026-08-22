@@ -1,0 +1,35 @@
+html[data-kiosk-static='true'] body {
+  animation: kiosk-page-arrive 260ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transform-origin: 50% 42%;
+}
+
+html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] body {
+  animation: kiosk-page-depart 170ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+@keyframes kiosk-page-depart {
+  to {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.995);
+  }
+}
+
+@keyframes kiosk-page-arrive {
+  from {
+    opacity: 0.82;
+    transform: translate3d(0, 8px, 0) scale(0.998);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-kiosk-static='true'] body,
+  html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] body {
+    animation: none !important;
+  }
+}

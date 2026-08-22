@@ -25,8 +25,27 @@ function copyFlatpickrCss() {
   }
 }
 
+function copyDotLottieWasm() {
+  const sourcePath = path.resolve(
+    'node_modules',
+    '@lottiefiles',
+    'dotlottie-web',
+    'dist',
+    'dotlottie-player.wasm',
+  );
+  const targetPath = path.resolve(
+    'src',
+    'public',
+    'vendor',
+    'dotlottie',
+    'dotlottie-player.wasm',
+  );
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.copyFileSync(sourcePath, targetPath);
+  console.log(`Copied: ${sourcePath} -> ${targetPath}`);
+}
+
 const builds = [
-  'esbuild src/public/shared/kiosk-motion.ts --bundle --outfile=src/public/shared/motion.js',
   'esbuild src/public/app.ts --bundle --outfile=src/public/bundle.js',
   'esbuild src/public/print/app.ts --bundle --outfile=src/public/print/app.js',
   'esbuild src/public/copy/app.ts --bundle --outfile=src/public/copy/app.js',
@@ -52,6 +71,7 @@ const builds = [
 
 try {
   copyFlatpickrCss();
+  copyDotLottieWasm();
   for (const cmd of builds) {
     const minifiedCmd = `${cmd} --minify`;
     console.log(`Running: ${minifiedCmd}`);

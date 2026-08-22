@@ -1,13 +1,14 @@
 <!doctype html>
-<html lang="en" translate="no">
+<html lang="en" data-kiosk-static="true" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="stylesheet" href="/globals.css" />
+    <link rel="stylesheet" href="/shared/kiosk-transition.css" />
     <title>Copy · PrintBit</title>
     <link rel="stylesheet" href="/copy/styles.css" />
-    <script defer src="/shared/motion.js"></script>
+    <link rel="stylesheet" href="/shared/loading-animation.css" />
   </head>
   <body>
     <div class="kiosk-bg" aria-hidden="true">
@@ -25,8 +26,18 @@
       aria-label="Scanning in progress"
     >
       <div class="scan-overlay__card">
-        <div class="scan-overlay__anim" aria-hidden="true">
-          <div class="scan-overlay__page">
+        <div
+          class="scan-overlay__anim lottie-loading"
+          id="copyLoadingAnimation"
+          aria-hidden="true"
+        >
+          <canvas
+            class="lottie-loading__canvas"
+            id="copyLoadingCanvas"
+            width="512"
+            height="512"
+          ></canvas>
+          <div class="scan-overlay__page lottie-loading__fallback">
             <div class="scan-overlay__beam"></div>
           </div>
         </div>

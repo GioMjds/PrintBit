@@ -86,7 +86,7 @@ body {
 .page-shell {
   position: relative;
   z-index: 1;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 0 32px;
@@ -321,7 +321,7 @@ body {
   inset: 0;
   z-index: 100;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   padding: 24px;
   background: rgba(14, 13, 31, 0.88);
   backdrop-filter: blur(10px);
@@ -343,9 +343,14 @@ body {
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
 }
 
+#stateScanning .scanning-anim {
+  width: clamp(240px, 32vw, 300px);
+  aspect-ratio: 1;
+}
+
 #stateScanning .scanning-anim__page {
-  width: clamp(220px, 30vw, 280px);
-  height: clamp(280px, 40vw, 350px);
+  width: 68%;
+  height: 84%;
   border-radius: 12px;
 }
 
@@ -470,11 +475,13 @@ body {
 /* ── Scanning beam animation ── */
 .scanning-anim {
   flex-shrink: 0;
+  width: 200px;
+  aspect-ratio: 1;
 }
 .scanning-anim__page {
   position: relative;
-  width: 200px;
-  height: 260px;
+  width: 68%;
+  height: 84%;
   background: rgba(255, 255, 255, 0.05);
   border: 1.5px solid rgba(167, 170, 225, 0.2);
   border-radius: 6px;
@@ -525,7 +532,7 @@ body {
 }
 .scanned-result__img {
   max-width: 100%;
-  max-height: calc(100vh - 280px);
+  max-height: calc(100dvh - 280px);
   border-radius: 8px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55);
   display: block;

@@ -59,7 +59,7 @@ body {
 .kiosk-shell {
   position: relative;
   z-index: 1;
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 0 32px 0;

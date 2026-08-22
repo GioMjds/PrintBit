@@ -501,6 +501,21 @@ html[data-startup-state='offline'] .readiness-ring--outer {
   }
 }
 
+@media (max-height: 720px) and (min-width: 761px) {
+  body {
+    overflow-y: auto;
+  }
+
+  .startup-shell {
+    place-items: start center;
+    padding-block: 20px;
+  }
+
+  .startup-layout {
+    padding-block: 32px;
+  }
+}
+
 @media (max-width: 480px) {
   .startup-header {
     align-items: flex-start;

@@ -1,6 +1,7 @@
 import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
+import { mountLoadingAnimation } from '../shared/loading-animation';
 
 export {};
 
@@ -69,6 +70,12 @@ type ScanFailureCause =
 const previewHint = document.getElementById('previewHint') as HTMLElement;
 const stateIdle = document.getElementById('stateIdle') as HTMLElement;
 const stateScanning = document.getElementById('stateScanning') as HTMLElement;
+const scanLoadingAnimation = document.getElementById(
+  'scanLoadingAnimation',
+) as HTMLElement | null;
+const scanLoadingCanvas = document.getElementById(
+  'scanLoadingCanvas',
+) as HTMLCanvasElement | null;
 const stateResult = document.getElementById('stateResult') as HTMLElement;
 const stateError = document.getElementById('stateError') as HTMLElement;
 const scanProgress = document.getElementById('scanProgress') as HTMLElement;
@@ -128,6 +135,19 @@ const errorSubtext = stateError?.querySelector(
 ) as HTMLElement | null;
 
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
+
+const scanLoadingController =
+  scanLoadingAnimation && scanLoadingCanvas
+    ? mountLoadingAnimation({
+        root: scanLoadingAnimation,
+        canvas: scanLoadingCanvas,
+        mode: 'scan',
+      })
+    : null;
+
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) scanLoadingController?.destroy();
+});
 
 const PREVIEW_STATES: Record<
   'idle' | 'scanning' | 'result' | 'error',
@@ -415,6 +435,7 @@ function showPreview(
   name: 'idle' | 'scanning' | 'result' | 'error',
   hint?: string,
 ): void {
+  scanLoadingController?.setActive(name === 'scanning');
   for (const [key, el] of Object.entries(PREVIEW_STATES)) {
     el.classList.toggle('hidden', key !== name);
   }

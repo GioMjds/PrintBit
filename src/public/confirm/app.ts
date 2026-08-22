@@ -5,6 +5,7 @@ import {
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
+import { mountLoadingAnimation } from '../shared/loading-animation';
 
 export {};
 
@@ -213,13 +214,23 @@ const printerErrorBlock = document.getElementById('printerErrorBlock');
 const errorTitle = document.getElementById('errorTitle');
 const errorMessage = document.getElementById('errorMessage');
 const errorHint = document.getElementById('errorHint');
-const errorCloseBtn = document.getElementById('errorCloseBtn') as HTMLButtonElement;
+const errorCloseBtn = document.getElementById(
+  'errorCloseBtn',
+) as HTMLButtonElement;
 const errorActions = document.getElementById('errorActions');
-const errorPauseBtn = document.getElementById('errorPauseBtn') as HTMLButtonElement;
-const errorResumeBtn = document.getElementById('errorResumeBtn') as HTMLButtonElement;
+const errorPauseBtn = document.getElementById(
+  'errorPauseBtn',
+) as HTMLButtonElement;
+const errorResumeBtn = document.getElementById(
+  'errorResumeBtn',
+) as HTMLButtonElement;
 const errorSeverityText = document.getElementById('errorSeverityText');
-const errorProgressEl = document.getElementById('errorProgress') as HTMLParagraphElement | null;
-const errorCancelRemainingBtn = document.getElementById('errorCancelRemainingBtn') as HTMLButtonElement | null;
+const errorProgressEl = document.getElementById(
+  'errorProgress',
+) as HTMLParagraphElement | null;
+const errorCancelRemainingBtn = document.getElementById(
+  'errorCancelRemainingBtn',
+) as HTMLButtonElement | null;
 
 // Confirmation Modal Elements
 const confirmModal = document.getElementById('confirmModal');
@@ -252,13 +263,17 @@ const printingOverlay = document.getElementById('printingOverlay');
 const printingTitle = document.getElementById('printingTitle');
 const printingSubtitle = document.getElementById('printingSubtitle');
 const printingHint = document.getElementById('printingHint');
+const confirmLoadingAnimation = document.getElementById(
+  'confirmLoadingAnimation',
+) as HTMLElement | null;
+const confirmLoadingCanvas = document.getElementById(
+  'confirmLoadingCanvas',
+) as HTMLCanvasElement | null;
 const printingProgressText = document.getElementById('printingProgressText');
 const printingProgressCurrent = document.getElementById(
   'printingProgressCurrent',
 );
-const printingProgressTotal = document.getElementById(
-  'printingProgressTotal',
-);
+const printingProgressTotal = document.getElementById('printingProgressTotal');
 const printingProgressBar = document.getElementById('printingProgressBar');
 const printingProgressFill = document.getElementById(
   'printingProgressFill',
@@ -348,7 +363,8 @@ function renderPrinterError(err: PrintError): void {
       recoverable: 'Recoverable',
       fatal: 'Fatal Error',
     };
-    errorSeverityText.textContent = severityLabels[err.severity] ?? err.severity;
+    errorSeverityText.textContent =
+      severityLabels[err.severity] ?? err.severity;
   }
 
   if (err.severity === 'warning') {
@@ -404,7 +420,8 @@ function clearPrinterError(): void {
   currentPrinterError = null;
   if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
   if (errorProgressEl) errorProgressEl.setAttribute('hidden', '');
-  if (errorCancelRemainingBtn) errorCancelRemainingBtn.setAttribute('hidden', '');
+  if (errorCancelRemainingBtn)
+    errorCancelRemainingBtn.setAttribute('hidden', '');
   applyConfirmGate();
 }
 
@@ -434,7 +451,9 @@ function resetErrorActionButtons(): void {
     'PAPER_TRAY_EMPTY',
     'PAPER_JAM_PRINT',
   ]);
-  const showPauseResume = currentPrinterError && PAUSE_RESUME_ERROR_CODES.has(currentPrinterError.code);
+  const showPauseResume =
+    currentPrinterError &&
+    PAUSE_RESUME_ERROR_CODES.has(currentPrinterError.code);
 
   if (errorPauseBtn) {
     if (showPauseResume) {
@@ -588,9 +607,7 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
   } catch (err) {
     console.error(`[PRINTER-ACTION] Failed to ${action} job:`, err);
     const message =
-      err instanceof Error
-        ? err.message
-        : `Could not ${action} the print job.`;
+      err instanceof Error ? err.message : `Could not ${action} the print job.`;
     // Re-enable both buttons with their default labels.
     const clickedSpanAgain = clickedBtn.querySelector('span');
     if (clickedSpanAgain) clickedSpanAgain.textContent = defaultLabel;
@@ -645,6 +662,19 @@ if (!rawConfig) {
 }
 
 const config = JSON.parse(rawConfig ?? '{}') as ConfirmConfig;
+const confirmLoadingController =
+  confirmLoadingAnimation && confirmLoadingCanvas
+    ? mountLoadingAnimation({
+        root: confirmLoadingAnimation,
+        canvas: confirmLoadingCanvas,
+        mode: config.mode,
+      })
+    : null;
+
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) confirmLoadingController?.destroy();
+});
+
 config.rotationDeg = normalizeRotationDeg(config.rotationDeg);
 if (typeof config.documentId !== 'string') {
   config.documentId = uploadedDocumentId;
@@ -656,7 +686,9 @@ if (
   config.detectedColorMode = null;
 }
 currentPrintQuote =
-  config.mode === 'scan' ? null : ((config.quote as PrintQuote | undefined) ?? null);
+  config.mode === 'scan'
+    ? null
+    : ((config.quote as PrintQuote | undefined) ?? null);
 
 const currentPaymentFingerprint = JSON.stringify({
   mode: config.mode,
@@ -737,7 +769,10 @@ async function releaseTransientFilesForCurrentMode(
 }
 
 function getDisplayColorMode(): 'colored' | 'grayscale' {
-  if ((config.mode === 'print' || config.mode === 'copy') && currentPrintQuote) {
+  if (
+    (config.mode === 'print' || config.mode === 'copy') &&
+    currentPrintQuote
+  ) {
     return currentPrintQuote.effectiveColorMode;
   }
   return config.colorMode;
@@ -921,8 +956,11 @@ function applyConfirmGate(statusOverride?: string): void {
       statusOverride ??
       `Printer not ready (${latestPrinterStatusLabel}). Please wait before inserting coins.`;
     if (statusBadge) {
-      statusBadge.dataset.state =
-        latestPrinterStatusLabel.startsWith('Checking') ? 'waiting' : 'error';
+      statusBadge.dataset.state = latestPrinterStatusLabel.startsWith(
+        'Checking',
+      )
+        ? 'waiting'
+        : 'error';
     }
     return;
   }
@@ -930,14 +968,14 @@ function applyConfirmGate(statusOverride?: string): void {
   if (currentBalance >= totalPrice) {
     confirmBtn.disabled = false;
     confirmBtn.setAttribute('aria-disabled', 'false');
-    confirmBtn.classList.add('is-ready');          // NEW
-    actionCol?.classList.add('is-ready');          // NEW (turns price green)
+    confirmBtn.classList.add('is-ready'); // NEW
+    actionCol?.classList.add('is-ready'); // NEW (turns price green)
     statusMessage.textContent =
       statusOverride ?? 'Sufficient balance detected. You can confirm now.';
     if (statusBadge) statusBadge.dataset.state = 'ready';
   } else {
-    confirmBtn.classList.remove('is-ready');       // NEW
-    actionCol?.classList.remove('is-ready');       // NEW
+    confirmBtn.classList.remove('is-ready'); // NEW
+    actionCol?.classList.remove('is-ready'); // NEW
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
@@ -1039,7 +1077,8 @@ const PHASE_COPY: Record<
 function setPrintingPhase(
   phase: 'printing' | 'dispensing' | 'failed' | 'done' | 'manual-review',
 ): void {
-  const mode = config.mode === 'copy' || config.mode === 'scan' ? config.mode : 'print';
+  const mode =
+    config.mode === 'copy' || config.mode === 'scan' ? config.mode : 'print';
   const copy = PHASE_COPY[mode][phase];
   if (printingSubtitle) printingSubtitle.textContent = copy.subtitle;
   if (printingHint) printingHint.textContent = copy.hint;
@@ -1058,13 +1097,15 @@ function renderPrintProgress(input: {
   totalPages?: number | null;
 }): void {
   const pagesPrinted =
-    typeof input.pagesPrinted === 'number' && Number.isFinite(input.pagesPrinted)
+    typeof input.pagesPrinted === 'number' &&
+    Number.isFinite(input.pagesPrinted)
       ? Math.max(0, Math.floor(input.pagesPrinted))
       : null;
   if (pagesPrinted === null || pagesPrinted <= 0) return;
 
   const totalPages =
-    typeof input.totalPages === 'number' && Number.isFinite(input.totalPages) &&
+    typeof input.totalPages === 'number' &&
+    Number.isFinite(input.totalPages) &&
     input.totalPages > 0
       ? Math.floor(input.totalPages)
       : null;
@@ -1073,9 +1114,8 @@ function renderPrintProgress(input: {
     printingProgressCurrent.textContent = String(pagesPrinted);
   }
   if (printingProgressTotal) {
-    printingProgressTotal.textContent = totalPages !== null
-      ? String(totalPages)
-      : '—';
+    printingProgressTotal.textContent =
+      totalPages !== null ? String(totalPages) : '—';
   }
 
   let pct: number | null = null;
@@ -1135,7 +1175,8 @@ async function loadPricing(): Promise<void> {
           ...(config.mode === 'print'
             ? {
                 sessionId: config.sessionId,
-                documentId: config.documentId ?? uploadedDocumentId ?? undefined,
+                documentId:
+                  config.documentId ?? uploadedDocumentId ?? undefined,
               }
             : {
                 copyPreviewPath: config.copyPreviewPath,
@@ -1302,7 +1343,9 @@ async function pollCopyJobReceipt(jobId: string): Promise<void> {
     } catch {
       // Ignore fetch errors, retry
     }
-    await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
+    await new Promise<void>((resolve) =>
+      window.setTimeout(resolve, intervalMs),
+    );
   }
 }
 
@@ -1342,7 +1385,12 @@ function captureReceiptCta(payload: ReceiptLinkPayload): void {
 }
 
 function renderScanDownloadCta(): void {
-  if (!scanDownloadCtaContainer || !scanDownloadQrCanvas || !currentScanDownloadUrl) return;
+  if (
+    !scanDownloadCtaContainer ||
+    !scanDownloadQrCanvas ||
+    !currentScanDownloadUrl
+  )
+    return;
   scanDownloadCtaContainer.removeAttribute('hidden');
   if (scanDownloadQrLink) {
     scanDownloadQrLink.setAttribute('href', currentScanDownloadUrl);
@@ -1368,10 +1416,12 @@ function renderScanDownloadCta(): void {
   }).catch(console.error);
 }
 
-function captureScanDownloadCta(link?: {
-  downloadUrl?: string | null;
-  expiresAt?: string | null;
-} | null): void {
+function captureScanDownloadCta(
+  link?: {
+    downloadUrl?: string | null;
+    expiresAt?: string | null;
+  } | null,
+): void {
   if (!link?.downloadUrl) return;
   currentScanDownloadUrl = link.downloadUrl;
   currentScanDownloadExpiry = link.expiresAt ?? null;
@@ -1474,8 +1524,8 @@ function matchesPendingWorkerEvent(payload: {
 
   return Boolean(
     paymentSpoolerCorrelationKey &&
-      payloadSpoolerKey &&
-      payloadSpoolerKey === paymentSpoolerCorrelationKey,
+    payloadSpoolerKey &&
+    payloadSpoolerKey === paymentSpoolerCorrelationKey,
   );
 }
 
@@ -1536,8 +1586,7 @@ function showModal(): void {
     if (modalCopies) modalCopies.textContent = String(config.copies);
     if (modalPages) {
       if (currentPrintQuote) {
-        modalPages.textContent =
-          `${pageRangeLabel(config.pageRange)} (${currentPrintQuote.selectedPages} of ${currentPrintQuote.totalPages} pages)`;
+        modalPages.textContent = `${pageRangeLabel(config.pageRange)} (${currentPrintQuote.selectedPages} of ${currentPrintQuote.totalPages} pages)`;
       } else {
         modalPages.textContent = pageRangeLabel(config.pageRange);
       }
@@ -1547,7 +1596,8 @@ function showModal(): void {
         config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
     }
     if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
-    if (modalPaper) modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
+    if (modalPaper)
+      modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
   }
 
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
@@ -1579,12 +1629,14 @@ function hideModal(): void {
 
 function showOverlay(el: HTMLElement | null): void {
   if (!el) return;
+  if (el === printingOverlay) confirmLoadingController?.setActive(true);
   el.classList.add('is-visible');
   el.setAttribute('aria-hidden', 'false');
 }
 
 function hideOverlay(el: HTMLElement | null): void {
   if (!el) return;
+  if (el === printingOverlay) confirmLoadingController?.setActive(false);
   el.classList.remove('is-visible');
   el.setAttribute('aria-hidden', 'true');
 }
@@ -1680,7 +1732,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
           'Idempotency-Key': paymentIdempotencyKey,
         },
         body: JSON.stringify({
@@ -1706,11 +1758,15 @@ modalConfirmBtn?.addEventListener('click', async () => {
         }
         if (errData.printError) {
           renderPrinterError(errData.printError as PrintError);
-          throw new Error((errData.printError as PrintError).userMessage || 'Copy job failed');
+          throw new Error(
+            (errData.printError as PrintError).userMessage || 'Copy job failed',
+          );
         }
         const errorMsg =
           (typeof errData.error === 'string' && errData.error.trim()) ||
-          (errText && !errText.startsWith('<') ? errText.slice(0, 150) : null) ||
+          (errText && !errText.startsWith('<')
+            ? errText.slice(0, 150)
+            : null) ||
           `Copy job failed (${response.status} ${response.statusText || 'Error'})`;
         throw new Error(errorMsg);
       }
@@ -1736,7 +1792,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
           'Idempotency-Key': paymentIdempotencyKey,
         },
         body: JSON.stringify({
@@ -1764,15 +1820,19 @@ modalConfirmBtn?.addEventListener('click', async () => {
         }
         if (errData.printError) {
           renderPrinterError(errData.printError as PrintError);
-          throw new Error((errData.printError as PrintError).userMessage || 'Payment failed');
+          throw new Error(
+            (errData.printError as PrintError).userMessage || 'Payment failed',
+          );
         }
         const errorMsg =
           (typeof errData.error === 'string' && errData.error.trim()) ||
-          (errText && !errText.startsWith('<') ? errText.slice(0, 150) : null) ||
+          (errText && !errText.startsWith('<')
+            ? errText.slice(0, 150)
+            : null) ||
           `Payment failed (${response.status} ${response.statusText || 'Error'})`;
         throw new Error(errorMsg);
       }
-      
+
       const payload = (await response.json()) as ReceiptLinkPayload & {
         transactionId?: string | null;
       };
@@ -1782,7 +1842,8 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } catch (error) {
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
-    const message = error instanceof Error ? error.message : 'Error processing payment.';
+    const message =
+      error instanceof Error ? error.message : 'Error processing payment.';
     applyConfirmGate(message);
   }
 });
@@ -1798,7 +1859,7 @@ printAnotherBtn?.addEventListener('click', () => {
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
   sessionStorage.removeItem('printbit.copyPreviewReleaseToken');
-  
+
   if (config.mode === 'print') {
     // Keep sessionId, sessionToken, uploadedFile, etc. for remaining files
     navigateWithKioskMotion('/print');
@@ -1980,7 +2041,8 @@ if (typeof ioFactory === 'function') {
   });
   connectedSocket.on('printerSpoolerFailure', (payload: unknown) => {
     const status = payload as PrinterStatusPayload | null;
-    if (hasActiveJob() && status?.printError) renderPrinterError(status.printError);
+    if (hasActiveJob() && status?.printError)
+      renderPrinterError(status.printError);
   });
 
   connectedSocket.on('workerPrintStarted', (payload: unknown) => {
@@ -2047,7 +2109,8 @@ if (typeof ioFactory === 'function') {
         code: 'PAPER_TRAY_EMPTY',
         severity: 'recoverable' as PrintErrorSeverity,
         userMessage:
-          job?.message ?? 'Printer Out of Paper. Please load paper and click Resume.',
+          job?.message ??
+          'Printer Out of Paper. Please load paper and click Resume.',
         hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
         canRetry: true,
       };
@@ -2087,7 +2150,9 @@ errorResumeBtn?.addEventListener('click', () => {
 errorCancelRemainingBtn?.addEventListener('click', async () => {
   const key = resolveErrorActionCorrelationKey();
   if (!key) {
-    showErrorActionInlineError('No active print job to control. Please try again or contact staff.');
+    showErrorActionInlineError(
+      'No active print job to control. Please try again or contact staff.',
+    );
     return;
   }
 
@@ -2115,7 +2180,8 @@ errorCancelRemainingBtn?.addEventListener('click', async () => {
 
     clearPrinterError();
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not cancel the print job.';
+    const message =
+      err instanceof Error ? err.message : 'Could not cancel the print job.';
     showErrorActionInlineError(message);
     if (errorCancelRemainingBtn) {
       errorCancelRemainingBtn.disabled = false;
@@ -2202,7 +2268,9 @@ function generateClientUuid(): string {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     // Set variant to 10xx (RFC4122)
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
+      '',
+    );
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
   }
 
@@ -2220,4 +2288,3 @@ function createSpoolerCorrelationKey(): string {
 function createPaymentIdempotencyKey(): string {
   return generateClientUuid();
 }
-

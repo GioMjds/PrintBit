@@ -4,6 +4,7 @@ import {
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
+import { mountLoadingAnimation } from '../shared/loading-animation';
 
 export {};
 
@@ -73,6 +74,12 @@ const checkDocBtn = document.getElementById(
 const scanOverlay = document.getElementById(
   'scanOverlay',
 ) as HTMLElement | null;
+const copyLoadingAnimation = document.getElementById(
+  'copyLoadingAnimation',
+) as HTMLElement | null;
+const copyLoadingCanvas = document.getElementById(
+  'copyLoadingCanvas',
+) as HTMLCanvasElement | null;
 const errorBanner = document.getElementById(
   'errorBanner',
 ) as HTMLElement | null;
@@ -114,6 +121,19 @@ const copyTroubleshootSteps = document.getElementById(
   'copyTroubleshootSteps',
 ) as HTMLOListElement | null;
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
+
+const copyLoadingController =
+  copyLoadingAnimation && copyLoadingCanvas
+    ? mountLoadingAnimation({
+        root: copyLoadingAnimation,
+        canvas: copyLoadingCanvas,
+        mode: 'scan',
+      })
+    : null;
+
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) copyLoadingController?.destroy();
+});
 
 let previewPath: string | null = null;
 let previewReleaseToken: string | null = null;
@@ -373,6 +393,7 @@ function clearPreviewImageUrl(): void {
 
 function showOverlay(show: boolean): void {
   if (!scanOverlay) return;
+  copyLoadingController?.setActive(show);
   if (show) {
     scanOverlay.classList.add('is-visible');
     scanOverlay.setAttribute('aria-hidden', 'false');

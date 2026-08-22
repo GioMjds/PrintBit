@@ -39,6 +39,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
+    "@lottiefiles/dotlottie-web": "^0.79.2",
     "@serialport/parser-readline": "^13.0.0",
     "argon2": "^0.44.0",
     "canvas": "^3.2.1",
