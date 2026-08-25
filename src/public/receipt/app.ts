@@ -25,17 +25,15 @@ type ReceiptLookup =
   | { kind: 'token'; value: string }
   | { kind: 'transaction'; value: string };
 
-declare function html2canvas(
-  element: HTMLElement,
-  options?: Record<string, unknown>,
-): Promise<HTMLCanvasElement>;
-
 /* ── DOM references ─────────────────────────────────────────────── */
 const receiptCard = document.getElementById(
   'receiptCard',
 ) as HTMLElement | null;
 const receiptBody = document.getElementById(
   'receiptBody',
+) as HTMLElement | null;
+const receiptDisclaimer = document.getElementById(
+  'receiptDisclaimer',
 ) as HTMLElement | null;
 const receiptMessage = document.getElementById(
   'receiptMessage',
@@ -230,6 +228,13 @@ function resolveEndpoint(lookup: ReceiptLookup): string {
   return `/api/transactions/${encodeURIComponent(lookup.value)}/receipt`;
 }
 
+function resolvePdfEndpoint(lookup: ReceiptLookup): string {
+  if (lookup.kind === 'token') {
+    return `/api/receipts/by-token/${encodeURIComponent(lookup.value)}/pdf`;
+  }
+  return `/api/admin/transactions/${encodeURIComponent(lookup.value)}/receipt/pdf`;
+}
+
 function resolveTokenErrorMessage(status: number, code: string | null): string {
   if (status === 410 || code === 'RECEIPT_TOKEN_EXPIRED') {
     return 'This E-Receipt link has expired.';
@@ -330,43 +335,60 @@ function renderReceipt(payload: ReceiptPayload): void {
     fields.status.setAttribute('data-status', resolveStatusBadge(payload.status));
   }
 
-  // Show receipt body and actions
+  // Show receipt body, disclaimer, and action buttons
   receiptBody?.removeAttribute('hidden');
+  receiptDisclaimer?.removeAttribute('hidden');
   receiptActions?.removeAttribute('hidden');
 }
 
-/* ── Download as image ──────────────────────────────────────────── */
-async function downloadReceiptAsImage(): Promise<void> {
-  if (!receiptCard || !downloadBtn) return;
+/* ── Download as PDF ────────────────────────────────────────────── */
+async function downloadReceiptAsPdf(): Promise<void> {
+  const lookup = parseLookupFromPath();
+  if (!lookup || !downloadBtn) return;
 
-  const originalText = downloadBtn.textContent ?? 'Save as Image';
+  const originalContent = downloadBtn.innerHTML;
   downloadBtn.classList.add('is-saving');
-  downloadBtn.textContent = 'Saving…';
+  downloadBtn.disabled = true;
+  downloadBtn.innerHTML = `
+    <svg class="spin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+      <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
+      <path d="M12 2a10 10 0 0 1 10 10" />
+    </svg>
+    <span>Generating PDF…</span>
+  `;
+
+  const pdfUrl = resolvePdfEndpoint(lookup);
 
   try {
-    const canvas = await html2canvas(receiptCard, {
-      backgroundColor: '#0e0d1f',
-      scale: 2,
-      useCORS: true,
-      logging: false,
-    });
-
+    const res = await fetch(pdfUrl);
+    if (!res.ok) {
+      throw new Error(`Server returned ${res.status}`);
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.download = `printbit-receipt-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.href = blobUrl;
+    const txId = fields.transactionId?.textContent?.trim() || 'receipt';
+    link.download = `printbit-receipt-${txId}.pdf`;
+    document.body.appendChild(link);
     link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    }, 2000);
   } catch (err) {
-    console.error('[RECEIPT] Failed to capture receipt image:', err);
-    setMessage('Failed to save receipt image. Please try again.', 'error');
+    console.error('[RECEIPT] PDF fetch failed, falling back to direct navigation:', err);
+    window.location.href = pdfUrl;
   } finally {
     downloadBtn.classList.remove('is-saving');
-    downloadBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${originalText}`;
+    downloadBtn.disabled = false;
+    downloadBtn.innerHTML = originalContent;
   }
 }
 
 /* ── Event listeners ────────────────────────────────────────────── */
 downloadBtn?.addEventListener('click', () => {
-  void downloadReceiptAsImage();
+  void downloadReceiptAsPdf();
 });
 
 /* ── Load receipt ───────────────────────────────────────────────── */

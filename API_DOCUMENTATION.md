@@ -280,11 +280,21 @@ Public receipt pages:
 - `/receipt/t/:token` (tokenized customer flow)
 - `/receipt/:transactionId` (legacy compatibility flow)
 
+### `GET /api/receipts/by-token/:token/pdf`
+
+Customer-safe thermal receipt PDF download generated on-the-fly via `pdfkit`.
+Returns `Content-Type: application/pdf` with `Content-Disposition: attachment; filename="printbit-receipt-<transactionId>.pdf"`.
+
 ### `GET /api/admin/transactions/:transactionId/receipt`
 
 Admin-authenticated receipt lookup by transaction context (`requireAdminLocalAccess` + `requireAdminPin`).
 Returns the same safe payload shape as token reads without exposing customer access tokens.
 This is the API used by the Admin Transactions **Open E-Receipt** action.
+
+### `GET /api/admin/transactions/:transactionId/receipt/pdf`
+
+Admin-authenticated thermal receipt PDF download by transaction context (`requireAdminLocalAccess` + `requireAdminPin`).
+Returns `Content-Type: application/pdf` with `Content-Disposition: attachment; filename="printbit-receipt-<transactionId>.pdf"`.
 
 Status responses:
 

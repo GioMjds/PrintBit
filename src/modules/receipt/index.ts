@@ -11,3 +11,7 @@ export {
   type ReceiptCleanupResult,
   type ReceiptPayload,
 } from './receipt.service';
+export {
+  ReceiptPdfService,
+  receiptPdfService,
+} from './receipt-pdf.service';
