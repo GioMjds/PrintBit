@@ -12,6 +12,7 @@ export interface PricingSettings {
   copyPerPage: number;
   scanDocument: number;
   colorSurcharge: number;
+  highQualitySurcharge: number;
 }
 
 export type PricingEngineRoundingMode = 'whole_peso_total_only';
@@ -35,6 +36,7 @@ export interface PricingEngineSettings {
   };
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];
   rounding: PricingEngineRoundingMode;
+  highQualitySurcharge: number;
 }
 
 export type InkTelemetryUnknownPolicy = 'warn_allow' | 'block';

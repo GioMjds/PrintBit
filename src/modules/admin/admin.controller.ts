@@ -1126,6 +1126,7 @@ export class AdminController {
         copyPerPage?: number;
         scanDocument?: number;
         colorSurcharge?: number;
+        highQualitySurcharge?: number;
       };
       idleTimeoutSeconds?: number;
       adminPin?: string;
@@ -1177,6 +1178,7 @@ export class AdminController {
           discountPerPage?: number;
         }>;
         rounding?: 'whole_peso_total_only';
+        highQualitySurcharge?: number;
       };
     };
 
@@ -1184,6 +1186,7 @@ export class AdminController {
     const copyPerPage = body.pricing?.copyPerPage;
     const scanDocument = body.pricing?.scanDocument;
     const colorSurcharge = body.pricing?.colorSurcharge;
+    const highQualitySurcharge = body.pricing?.highQualitySurcharge;
 
     if (
       printPerPage !== undefined &&
@@ -1215,6 +1218,14 @@ export class AdminController {
     ) {
       return res.status(400).json({
         error: 'colorSurcharge must be a whole peso value (no decimals).',
+      });
+    }
+    if (
+      highQualitySurcharge !== undefined &&
+      (!isFiniteNumber(highQualitySurcharge) || !isWholePeso(highQualitySurcharge))
+    ) {
+      return res.status(400).json({
+        error: 'highQualitySurcharge must be a whole peso value (no decimals).',
       });
     }
 
@@ -1260,6 +1271,7 @@ export class AdminController {
             ...entry,
           })),
         rounding: originalSettings.pricingEngine.rounding,
+        highQualitySurcharge: originalSettings.pricingEngine.highQualitySurcharge,
       },
       consumableEstimation: {
         defaultCoefficients: {
@@ -1280,6 +1292,10 @@ export class AdminController {
         nextSettings.pricing.scanDocument = scanDocument;
       if (colorSurcharge !== undefined)
         nextSettings.pricing.colorSurcharge = colorSurcharge;
+      if (highQualitySurcharge !== undefined) {
+        nextSettings.pricing.highQualitySurcharge = highQualitySurcharge;
+        nextSettings.pricingEngine.highQualitySurcharge = highQualitySurcharge;
+      }
     }
 
     if (body.idleTimeoutSeconds !== undefined) {
@@ -1616,6 +1632,7 @@ export class AdminController {
             ...entry,
           })),
         rounding: originalSettings.pricingEngine.rounding,
+        highQualitySurcharge: nextSettings.pricingEngine.highQualitySurcharge,
       };
 
       const removedPricingEngineFields = [
@@ -1776,6 +1793,22 @@ export class AdminController {
           error:
             'pricingEngine.rounding must be "whole_peso_total_only".',
         });
+      }
+
+      if (incoming.highQualitySurcharge !== undefined) {
+        if (
+          !isFiniteNumber(incoming.highQualitySurcharge) ||
+          !isWholePeso(incoming.highQualitySurcharge) ||
+          incoming.highQualitySurcharge < 0
+        ) {
+          return res.status(400).json({
+            error:
+              'pricingEngine.highQualitySurcharge must be a whole peso value >= 0 (no decimals).',
+          });
+        }
+        next.highQualitySurcharge = incoming.highQualitySurcharge;
+        nextSettings.pricing.highQualitySurcharge =
+          incoming.highQualitySurcharge;
       }
 
       nextSettings.pricingEngine = next;

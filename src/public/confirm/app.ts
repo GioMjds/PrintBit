@@ -79,7 +79,9 @@ type PageRangeSelection =
   | { type: 'single'; page: number };
 type RotationDeg = 0 | 90 | 180 | 270;
 
-type ConfirmConfig = {
+export type PrintQuality = 'standard' | 'high';
+
+export interface PrintConfig {
   mode: 'print' | 'copy' | 'scan';
   sessionId: string | null;
   documentId?: string | null;
@@ -89,6 +91,7 @@ type ConfirmConfig = {
   copyPreviewReleaseToken?: string | null;
   detectedColorMode?: 'colored' | 'grayscale' | null;
   colorMode: 'colored' | 'grayscale';
+  quality?: 'standard' | 'high';
   copies: number;
   orientation: 'portrait' | 'landscape';
   rotationDeg?: number;
@@ -96,7 +99,9 @@ type ConfirmConfig = {
   pageRange?: PageRangeSelection;
   totalPages?: number;
   quote?: PrintQuote;
-};
+}
+
+type ConfirmConfig = PrintConfig;
 
 type PricingResponse = {
   scanDocument: number;
@@ -184,6 +189,8 @@ const modeValue = document.getElementById('modeValue');
 const fileValue = document.getElementById('fileValue');
 const colorValue = document.getElementById('colorValue');
 const colorRow = document.getElementById('colorRow');
+const qualityValue = document.getElementById('qualityValue');
+const qualityRow = document.getElementById('qualityRow');
 const copiesValue = document.getElementById('copiesValue');
 const copiesRow = document.getElementById('copiesRow');
 const pagesValue = document.getElementById('pagesValue');
@@ -234,6 +241,10 @@ const errorCancelRemainingBtn = document.getElementById(
 
 // Confirmation Modal Elements
 const confirmModal = document.getElementById('confirmModal');
+const modalTitle = document.getElementById('modalTitle');
+const modalSubtitle = document.getElementById('modalSubtitle');
+const modalPaperAlert = document.getElementById('modalPaperAlert');
+const modalPaperAlertSize = document.getElementById('modalPaperAlertSize');
 const modalCancelBtn = document.getElementById(
   'modalCancelBtn',
 ) as HTMLButtonElement;
@@ -244,6 +255,8 @@ const modalFile = document.getElementById('modalFile');
 const modalMode = document.getElementById('modalMode');
 const modalColor = document.getElementById('modalColor');
 const modalColorRow = document.getElementById('modalColorRow');
+const modalQuality = document.getElementById('modalQuality');
+const modalQualityRow = document.getElementById('modalQualityRow');
 const modalCopies = document.getElementById('modalCopies');
 const modalCopiesRow = document.getElementById('modalCopiesRow');
 const modalPages = document.getElementById('modalPages');
@@ -255,8 +268,24 @@ const modalRotationRow = document.getElementById('modalRotationRow');
 const modalPaper = document.getElementById('modalPaper');
 const modalPaperRow = document.getElementById('modalPaperRow');
 const modalPrice = document.getElementById('modalPrice');
+const modalPaidRow = document.getElementById('modalPaidRow');
+const modalPaid = document.getElementById('modalPaid');
 const modalChangeRow = document.getElementById('modalChangeRow');
 const modalChange = document.getElementById('modalChange');
+
+// Confirmation Modal — Step 1 (Tray Check) Elements
+const modalTrayOkBtn = document.getElementById(
+  'modalTrayOkBtn',
+) as HTMLButtonElement;
+const modalTrayIssueBtn = document.getElementById(
+  'modalTrayIssueBtn',
+) as HTMLButtonElement;
+
+// Tray Issue Overlay Elements
+const trayIssueOverlay = document.getElementById('trayIssueOverlay');
+const trayIssueDoneBtn = document.getElementById(
+  'trayIssueDoneBtn',
+) as HTMLButtonElement;
 
 // Printing In Progress Elements
 const printingOverlay = document.getElementById('printingOverlay');
@@ -823,15 +852,37 @@ const modalConfirmBtnSpan = document.querySelector('#modalConfirmBtn span');
 if (modalConfirmBtnSpan) {
   modalConfirmBtnSpan.textContent =
     config.mode === 'print'
-      ? 'Yes, Print'
+      ? 'PRINT NOW'
       : config.mode === 'copy'
-        ? 'Yes, Copy'
-        : 'Yes, Download';
+        ? 'COPY NOW'
+        : 'DOWNLOAD NOW';
+}
+
+export function populateJobSummary(config: PrintConfig): void {
+  const qualityElem = document.getElementById('qualityValue');
+  const qualityRow = document.getElementById('qualityRow');
+
+  if (config.mode === 'scan') {
+    if (qualityRow) {
+      qualityRow.style.display = 'none';
+      qualityRow.setAttribute('hidden', '');
+    }
+  } else {
+    if (qualityRow) {
+      qualityRow.style.display = '';
+      qualityRow.removeAttribute('hidden');
+    }
+    if (qualityElem) {
+      qualityElem.textContent =
+        config.quality === 'high' ? 'High Quality' : 'Standard';
+    }
+  }
 }
 
 if (config.mode === 'scan') {
   // Hide all scan-irrelevant rows on the main view
   colorRow?.setAttribute('hidden', '');
+  qualityRow?.setAttribute('hidden', '');
   copiesRow?.setAttribute('hidden', '');
   pagesRow?.setAttribute('hidden', '');
   orientationRow?.setAttribute('hidden', '');
@@ -839,7 +890,9 @@ if (config.mode === 'scan') {
   paperRow?.setAttribute('hidden', '');
 
   // Hide all scan-irrelevant rows in the modal
+  modalPaperAlert?.setAttribute('hidden', '');
   modalColorRow?.setAttribute('hidden', '');
+  modalQualityRow?.setAttribute('hidden', '');
   modalCopiesRow?.setAttribute('hidden', '');
   modalPagesRow?.setAttribute('hidden', '');
   modalOrientationRow?.setAttribute('hidden', '');
@@ -848,6 +901,14 @@ if (config.mode === 'scan') {
 } else {
   // Populate main screen values for print/copy
   if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
+  if (qualityValue) {
+    qualityValue.textContent =
+      config.quality === 'high' ? 'High Quality' : 'Standard';
+  }
+  if (modalQuality) {
+    modalQuality.textContent =
+      config.quality === 'high' ? 'High Quality' : 'Standard';
+  }
   if (copiesValue) copiesValue.textContent = String(config.copies);
   if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
   if (orientationValue) {
@@ -858,6 +919,8 @@ if (config.mode === 'scan') {
   if (paperSizeValue)
     paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
 }
+
+populateJobSummary(config);
 
 if (modeValue) modeValue.textContent = config.mode.toUpperCase();
 if (fileValue)
@@ -1168,6 +1231,7 @@ async function loadPricing(): Promise<void> {
         body: JSON.stringify({
           copies: config.copies,
           colorMode: config.colorMode,
+          quality: config.quality,
           orientation: config.orientation,
           rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,
@@ -1572,6 +1636,42 @@ async function fetchWithTimeout(
 
 function showModal(): void {
   if (!confirmModal) return;
+
+  if (modalTitle) {
+    modalTitle.textContent =
+      config.mode === 'print'
+        ? 'Ready to Print?'
+        : config.mode === 'copy'
+          ? 'Ready to Copy?'
+          : 'Ready to Download?';
+  }
+
+  if (modalSubtitle) {
+    modalSubtitle.textContent =
+      config.mode === 'scan'
+        ? 'Please review your scan details before continuing.'
+        : 'Review your settings and total before printing.';
+  }
+
+  if (modalPaperAlert) {
+    if (config.mode === 'scan') {
+      modalPaperAlert.setAttribute('hidden', '');
+    } else {
+      modalPaperAlert.removeAttribute('hidden');
+      if (modalPaperAlertSize) {
+        modalPaperAlertSize.textContent = formatPaperSizeForPricing(
+          config.paperSize,
+        );
+      }
+    }
+  }
+
+  // Scan jobs have no physical paper tray to check — start directly on the
+  // review/pay step. Print and copy jobs start on the tray-check step.
+  if (confirmModal) {
+    confirmModal.dataset.step = config.mode === 'scan' ? 'review' : 'tray';
+  }
+
   if (modalFile)
     modalFile.textContent =
       config.mode === 'print'
@@ -1596,24 +1696,24 @@ function showModal(): void {
         config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
     }
     if (modalRotation) modalRotation.textContent = `${config.rotationDeg}°`;
+    if (modalRotationRow) {
+      if (config.rotationDeg && config.rotationDeg !== 0) {
+        modalRotationRow.removeAttribute('hidden');
+      } else {
+        modalRotationRow.setAttribute('hidden', '');
+      }
+    }
     if (modalPaper)
       modalPaper.textContent = formatPaperSizeForPricing(config.paperSize);
   }
 
   if (modalPrice) modalPrice.textContent = `₱ ${totalPrice}`;
+  if (modalPaid) modalPaid.textContent = `₱ ${currentBalance}`;
 
-  // Show coin change in modal when overpaid
+  // Show coin change in modal
   const modalChangeAmount = Math.max(0, currentBalance - totalPrice);
-  if (modalChangeRow) {
-    if (pricingLoaded && modalChangeAmount > 0) {
-      modalChangeRow.removeAttribute('hidden');
-    } else {
-      modalChangeRow.setAttribute('hidden', '');
-    }
-  }
   if (modalChange) {
-    modalChange.textContent =
-      modalChangeAmount > 0 ? `₱ ${modalChangeAmount}` : '—';
+    modalChange.textContent = `₱ ${modalChangeAmount}`;
   }
 
   confirmModal.classList.add('is-visible');
@@ -1662,7 +1762,33 @@ async function checkRemainingFilesAndPrompt(): Promise<void> {
 }
 
 confirmBtn?.addEventListener('click', () => showModal());
-modalCancelBtn?.addEventListener('click', () => hideModal());
+modalCancelBtn?.addEventListener('click', () => {
+  // On the review step, "Back to Paper Check" steps back rather than closing —
+  // hideModal() stays a full close for everywhere else that calls it
+  // (including modalConfirmBtn's handler below, which depends on that).
+  if (!confirmModal) return;
+  if (confirmModal.dataset.step === 'review') {
+    confirmModal.dataset.step = 'tray';
+    modalTrayOkBtn?.focus();
+  } else {
+    hideModal();
+  }
+});
+
+modalTrayOkBtn?.addEventListener('click', () => {
+  if (!confirmModal) return;
+  confirmModal.dataset.step = 'review';
+  modalCancelBtn?.focus();
+});
+
+modalTrayIssueBtn?.addEventListener('click', () => {
+  hideModal();
+  showOverlay(trayIssueOverlay);
+});
+
+trayIssueDoneBtn?.addEventListener('click', () => {
+  hideOverlay(trayIssueOverlay);
+});
 
 modalConfirmBtn?.addEventListener('click', async () => {
   modalConfirmBtn.disabled = true;
@@ -1802,6 +1928,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           documentId: config.documentId,
           copies: config.copies,
           colorMode: getDisplayColorMode(),
+          quality: config.quality,
           orientation: config.orientation,
           rotationDeg: config.rotationDeg,
           paperSize: config.paperSize,

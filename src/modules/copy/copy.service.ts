@@ -59,6 +59,7 @@ const IDEMPOTENCY_SCOPE = 'POST:/api/copy/jobs';
 export interface CreateCopyJobInput {
   copies?: number;
   colorMode?: string;
+  quality?: string;
   orientation?: string;
   rotationDeg?: number;
   paperSize?: string;
@@ -73,6 +74,7 @@ export interface GetCopyQuoteInput {
   copyPreviewPath?: string;
   copies?: number;
   colorMode?: 'colored' | 'grayscale';
+  quality?: 'standard' | 'high';
   paperSize?: 'A4' | 'Letter' | 'Legal';
   pageRange?: unknown;
   duplex?: boolean;
@@ -110,6 +112,7 @@ interface CreateCopyJobResult extends ServiceResponse {
 interface NormalizedCopyJobInput {
   copies: number;
   colorMode: 'colored' | 'grayscale';
+  quality: 'standard' | 'high';
   orientation: 'portrait' | 'landscape';
   rotationDeg: RotationDeg;
   paperSize: 'A4' | 'Letter' | 'Legal';
@@ -168,6 +171,7 @@ export class CopyService {
     previewFilename: string;
     copies: number;
     colorMode: 'colored' | 'grayscale';
+    quality?: 'standard' | 'high';
     paperSize: 'A4' | 'Letter' | 'Legal';
     pageRange?: unknown;
     duplex: boolean;
@@ -190,6 +194,7 @@ export class CopyService {
         },
         copies: input.copies,
         colorMode: input.colorMode,
+        quality: input.quality ?? 'standard',
         paperSize: input.paperSize,
         pageRange: input.pageRange ?? { type: 'all' },
         duplex: input.duplex,
@@ -260,6 +265,7 @@ export class CopyService {
       previewFilename,
       copies: normalized.copies,
       colorMode: normalized.colorMode,
+      quality: normalized.quality,
       paperSize: normalized.paperSize,
       pageRange: normalized.pageRange,
       duplex: normalized.duplex,
@@ -683,6 +689,7 @@ export class CopyService {
       previewFilename,
       copies: input.copies ?? 1,
       colorMode: input.colorMode ?? 'grayscale',
+      quality: input.quality === 'high' ? 'high' : 'standard',
       paperSize: input.paperSize ?? 'A4',
       pageRange: input.pageRange ?? { type: 'all' },
       duplex: input.duplex === true,
@@ -712,6 +719,8 @@ export class CopyService {
       input.colorMode && VALID_COLOR_MODES.has(input.colorMode)
         ? (input.colorMode as 'colored' | 'grayscale')
         : 'grayscale';
+    const safeQuality: 'standard' | 'high' =
+      input.quality === 'high' ? 'high' : 'standard';
     const safeOrientation =
       input.orientation && VALID_ORIENTATIONS.has(input.orientation)
         ? (input.orientation as 'portrait' | 'landscape')
@@ -729,6 +738,7 @@ export class CopyService {
     return {
       copies: safeCopies,
       colorMode: safeColorMode,
+      quality: safeQuality,
       orientation: safeOrientation,
       rotationDeg: safeRotationDeg,
       paperSize: safePaperSize,

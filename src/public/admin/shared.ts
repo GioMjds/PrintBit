@@ -184,6 +184,7 @@ export type SettingsResponse = {
     copyPerPage: number;
     scanDocument: number;
     colorSurcharge: number;
+    highQualitySurcharge: number;
   };
   pricingEngine: {
     paperProfiles: {
@@ -197,6 +198,7 @@ export type SettingsResponse = {
       discountPerPage: number;
     }>;
     rounding: 'whole_peso_total_only';
+    highQualitySurcharge: number;
   };
   idleTimeoutSeconds: number;
   adminPin: string;

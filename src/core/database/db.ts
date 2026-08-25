@@ -87,7 +87,7 @@ import {
   AnomalyIncidentEntry,
 } from './models/anomaly-incident.model';
 
-import { SupportedLanguage } from './shared.schema';
+import { SupportedLanguage, PrintQuality } from './shared.schema';
 
 export {
   AdminLockout,
@@ -118,7 +118,7 @@ export {
   AnomalyIncidentEntry,
 };
 
-export { SupportedLanguage };
+export { SupportedLanguage, PrintQuality };
 
 export { PrintJobState, PrintJobEntry };
 export {
@@ -254,6 +254,7 @@ const DEFAULT_DATA: Schema = {
       copyPerPage: 3,
       scanDocument: 5,
       colorSurcharge: 2,
+      highQualitySurcharge: 2,
     },
     pricingEngine: {
       paperProfiles: {
@@ -272,6 +273,7 @@ const DEFAULT_DATA: Schema = {
       },
       bulkDiscountTiers: [],
       rounding: 'whole_peso_total_only',
+      highQualitySurcharge: 2,
     },
     idleTimeoutSeconds: 120,
     adminPin:
@@ -1057,6 +1059,12 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             DEFAULT_DATA.settings.pricing.colorSurcharge,
           ),
         ),
+        highQualitySurcharge: wholePeso(
+          finiteOr(
+            pricing?.highQualitySurcharge,
+            DEFAULT_DATA.settings.pricing.highQualitySurcharge,
+          ),
+        ),
       },
       pricingEngine: (() => {
         const defaultPricingEngine = DEFAULT_DATA.settings.pricingEngine;
@@ -1120,6 +1128,12 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
             defaultPricingEngine.bulkDiscountTiers,
           ),
           rounding: 'whole_peso_total_only',
+          highQualitySurcharge: wholePeso(
+            finiteOr(
+              pricingEngine?.highQualitySurcharge,
+              defaultPricingEngine.highQualitySurcharge,
+            ),
+          ),
         };
       })(),
       idleTimeoutSeconds: finiteOr(

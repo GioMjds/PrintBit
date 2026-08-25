@@ -52,6 +52,20 @@ export interface PrintJobCorrelation {
 }
 
 /**
+ * Print job settings configuration
+ */
+export interface PrintJobSettings {
+  quality?: 'standard' | 'high';
+  copies?: number;
+  colorMode?: 'colored' | 'grayscale';
+  orientation?: 'portrait' | 'landscape';
+  rotationDeg?: number;
+  paperSize?: 'A4' | 'Letter' | 'Legal';
+  duplex?: boolean;
+  pageRange?: string | null;
+}
+
+/**
  * Core print job request details
  * Mirrors PrintJobOptions from printer service
  */
@@ -108,6 +122,16 @@ export interface PrintJobRequest {
    * Printer name to target (e.g., "Default" or hardware name)
    */
   printerName: string | null;
+
+  /**
+   * Optional print quality setting
+   */
+  quality?: 'standard' | 'high';
+
+  /**
+   * Optional print settings container
+   */
+  settings?: PrintJobSettings;
 }
 
 /**

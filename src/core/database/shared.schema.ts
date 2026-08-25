@@ -4,6 +4,7 @@
 
 export type PrintMode = 'print' | 'copy' | 'scan';
 export type ColorMode = 'colored' | 'grayscale';
+export type PrintQuality = 'standard' | 'high';
 export type SupportedLanguage = 'en' | 'fil';
 
 export type LogMeta = Record<string, string | number | boolean | null>;

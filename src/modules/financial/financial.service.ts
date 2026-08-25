@@ -756,6 +756,8 @@ export class FinancialService {
       req.body?.colorMode === 'colored' || req.body?.colorMode === 'grayscale'
         ? req.body.colorMode
         : 'grayscale';
+    const requestedQuality: 'standard' | 'high' =
+      req.body?.quality === 'high' ? 'high' : 'standard';
     const duplex = req.body?.duplex === true;
     const requestedPaperSize: 'A4' | 'Letter' | 'Legal' =
       req.body?.paperSize === 'Legal'
@@ -768,6 +770,7 @@ export class FinancialService {
       analysis: target.analysis,
       copies: safeCopies,
       colorMode: requestedColorMode,
+      quality: requestedQuality,
       paperSize: requestedPaperSize,
       pageRange: req.body?.pageRange,
       duplex,
@@ -1203,10 +1206,12 @@ export class FinancialService {
         : req.body?.paperSize === 'Letter'
           ? 'Letter'
           : 'A4';
+    const quality: 'standard' | 'high' =
+      req.body?.quality === 'high' ? 'high' : 'standard';
     const duplex = req.body?.duplex === true;
     let requiredAmount =
       mode === 'copy'
-        ? adminService.calculateJobAmount('copy', colorMode, copies, paperSize)
+        ? adminService.calculateJobAmount('copy', colorMode, copies, paperSize, quality)
         : 0;
 
     let serverFilename: string | null = null;
@@ -1325,6 +1330,7 @@ export class FinancialService {
         analysis: target.analysis,
         copies,
         colorMode,
+        quality,
         paperSize,
         pageRange: req.body?.pageRange,
         duplex,

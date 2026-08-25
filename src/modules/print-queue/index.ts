@@ -11,6 +11,7 @@ export {
   PRINT_JOB_PAYLOAD_VERSION,
   type PrintJobCorrelation,
   type PrintJobRequest,
+  type PrintJobSettings,
   type PrintJobFinancialContext,
   type PrintJobDispatchContext,
   type PrintJobAttempt,

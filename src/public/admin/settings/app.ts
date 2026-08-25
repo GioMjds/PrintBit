@@ -51,6 +51,9 @@ const settingLongBondColorPrice = document.getElementById(
 const settingScanDocument = document.getElementById(
   'settingScanDocument',
 ) as HTMLInputElement | null;
+const settingHighQualitySurcharge = document.getElementById(
+  'settingHighQualitySurcharge',
+) as HTMLInputElement | null;
 
 // ── Optional sections (may be commented out in HTML) ─────────────────────────
 const settingIdleTimeout = document.getElementById(
@@ -204,6 +207,13 @@ function applySettings(settings: SettingsResponse): void {
   if (settingScanDocument) {
     settingScanDocument.value = String(settings.pricing.scanDocument);
   }
+  if (settingHighQualitySurcharge) {
+    settingHighQualitySurcharge.value = String(
+      settings.pricingEngine?.highQualitySurcharge ??
+        settings.pricing?.highQualitySurcharge ??
+        2,
+    );
+  }
 
   // Admin Alerts (optional)
   if (alertSeverityThreshold)
@@ -349,12 +359,24 @@ settingsForm.addEventListener('submit', (e) => {
   const longBondBwPrice = Number(settingLongBondBwPrice?.value ?? 0);
   const longBondColorPrice = Number(settingLongBondColorPrice?.value ?? 0);
   const scanDocumentPrice = Number(settingScanDocument?.value ?? 0);
+  const highQualitySurcharge = Number(settingHighQualitySurcharge?.value ?? 0);
+
+  if (
+    settingHighQualitySurcharge &&
+    (!Number.isFinite(highQualitySurcharge) || highQualitySurcharge < 0)
+  ) {
+    setMessage(
+      'High quality surcharge must be a number greater than or equal to 0.',
+    );
+    return;
+  }
 
   const payload: Record<string, unknown> = {
     pricing: {
       printPerPage: shortBondBwPrice,
       scanDocument: scanDocumentPrice,
       colorSurcharge: shortBondColorPrice - shortBondBwPrice,
+      highQualitySurcharge,
     },
     pricingEngine: {
       paperProfiles: {
@@ -371,6 +393,7 @@ settingsForm.addEventListener('submit', (e) => {
           baseColorPrice: longBondColorPrice,
         },
       },
+      highQualitySurcharge,
     },
     adminLocalOnly: settingAdminLocalOnly
       ? settingAdminLocalOnly.checked

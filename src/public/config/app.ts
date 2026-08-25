@@ -38,6 +38,7 @@ void initializePageIdleTimeout({
   },
 });
 type ColorMode = 'colored' | 'grayscale';
+type PrintQuality = 'standard' | 'high';
 type Orientation = 'portrait' | 'landscape';
 type PaperSize = 'A4' | 'Letter' | 'Legal';
 type RotationDeg = 0 | 90 | 180 | 270;
@@ -59,6 +60,7 @@ interface PrintConfig {
   copyPreviewReleaseToken?: string | null;
   detectedColorMode?: ColorMode | null;
   colorMode: ColorMode;
+  quality: PrintQuality;
   duplex: boolean;
   copies: number;
   orientation: Orientation;
@@ -82,9 +84,11 @@ interface PrintQuote {
   billableBwPages: number;
   requestedColorMode: ColorMode;
   effectiveColorMode: ColorMode;
+  quality: PrintQuality;
   pricing: {
     printPerPage: number;
     colorSurcharge: number;
+    highQualitySurcharge: number;
   };
   analysisConfidence: 'high' | 'medium' | 'low';
   billingPageDetection:
@@ -103,6 +107,7 @@ interface PreviewConfig {
 interface QuoteRequestBody {
   copies: number;
   colorMode: ColorMode;
+  quality: PrintQuality;
   orientation: Orientation;
   rotationDeg: RotationDeg;
   paperSize: PaperSize;
@@ -120,6 +125,7 @@ interface StoredConfigSeed {
   scanReleaseToken?: string | null;
   orientation?: Orientation;
   rotationDeg?: number;
+  quality?: PrintQuality;
 }
 
 // PDF.js types (loaded dynamically from /libs/pdfjs)
@@ -802,6 +808,8 @@ const scanReleaseToken =
     : null;
 const initialOrientation: Orientation =
   storedConfig?.orientation === 'landscape' ? 'landscape' : 'portrait';
+const initialQuality: PrintQuality =
+  storedConfig?.quality === 'high' ? 'high' : 'standard';
 let rotationDeg: RotationDeg =
   normalizeRotationDeg(storedConfig?.rotationDeg) ?? 0;
 
@@ -881,6 +889,9 @@ const singlePageInc = document.getElementById(
 const colorModeGroup = document.getElementById(
   'colorModeGroup',
 ) as HTMLElement | null;
+const qualityGroup = document.getElementById(
+  'qualityGroup',
+) as HTMLElement | null;
 const orientationGroup = document.getElementById(
   'orientationGroup',
 ) as HTMLElement | null;
@@ -901,11 +912,22 @@ const rotateRightBtn = document.getElementById(
 ) as HTMLButtonElement | null;
 const rotationValue = document.getElementById('rotationValue');
 
+const qualityRadios = document.querySelectorAll<HTMLInputElement>(
+  'input[name="printQuality"]',
+);
+
 const initialOrientationInput = document.querySelector<HTMLInputElement>(
   `input[name="orientation"][value="${initialOrientation}"]`,
 );
 if (initialOrientationInput) {
   initialOrientationInput.checked = true;
+}
+
+const initialQualityInput = document.querySelector<HTMLInputElement>(
+  `input[name="printQuality"][value="${initialQuality}"]`,
+);
+if (initialQualityInput) {
+  initialQualityInput.checked = true;
 }
 
 function setContinueEnabled(canContinue: boolean): void {
@@ -939,6 +961,7 @@ if (mode === 'copy' && continueBtn) {
 
 if (mode === 'scan') {
   colorModeGroup?.classList.add('hidden');
+  qualityGroup?.classList.add('hidden');
   orientationGroup?.classList.remove('hidden');
   rotationGroup?.classList.remove('hidden');
   paperSizeGroup?.classList.add('hidden');
@@ -1194,6 +1217,14 @@ function getRadio(name: string): string {
   );
 }
 
+function getSelectedQuality(): PrintQuality {
+  return document.querySelector<HTMLInputElement>(
+    'input[name="printQuality"][value="high"]:checked',
+  )
+    ? 'high'
+    : 'standard';
+}
+
 function getCopies(): number {
   return Math.max(
     1,
@@ -1376,6 +1407,7 @@ async function refreshPrintQuote(): Promise<void> {
     const requestBody: QuoteRequestBody = {
       copies: getCopies(),
       colorMode: cfg.colorMode,
+      quality: getSelectedQuality(),
       orientation: cfg.orientation,
       rotationDeg: cfg.rotationDeg,
       paperSize: cfg.paperSize,
@@ -1553,7 +1585,8 @@ function updateSummary(): void {
     `${n} cop${n === 1 ? 'y' : 'ies'} · ${pageRangeLabel(getPageRange())} · ${cfg.paperSize} · ` +
     `${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
     `Rotate ${cfg.rotationDeg}° · ` +
-    `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}`;
+    `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}` +
+    (getSelectedQuality() === 'high' ? ' · High Quality' : '');
 }
 
 const preview = new PrintPreview();
@@ -1604,6 +1637,13 @@ document
       orientationManuallyAdjustedKeys.add(key);
     });
   });
+
+qualityRadios.forEach((radio) => {
+  radio.addEventListener('change', () => {
+    updateSummary();
+    schedulePrintQuoteRefresh();
+  });
+});
 
 rotateLeftBtn?.addEventListener('click', () => {
   setRotation(rotationDeg - 90);
@@ -1853,6 +1893,7 @@ continueBtn?.addEventListener('click', () => {
     copyPreviewReleaseToken: mode === 'copy' ? copyPreviewReleaseToken : null,
     detectedColorMode: mode === 'print' ? detectedColorMode : null,
     colorMode: cfg.colorMode,
+    quality: getSelectedQuality(),
     duplex: false,
     copies: mode === 'scan' ? 1 : getCopies(),
     orientation: cfg.orientation,

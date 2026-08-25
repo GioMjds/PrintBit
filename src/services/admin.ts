@@ -8,6 +8,7 @@ import {
   type LogMeta,
   type PrintMode,
   type PricingSettings,
+  type PrintQuality,
 } from './db';
 import { getTrustedTimestamp } from './time-source';
 import { adminLogStore } from '@/core/database/sqlite-storage';
@@ -24,6 +25,7 @@ class AdminService {
     colorOrPageCounts: ColorMode | { colorPages: number; bwPages: number },
     copies: number,
     paperSize: 'A4' | 'Letter' | 'Legal' = 'A4',
+    quality: PrintQuality = 'standard',
   ): number {
     const safeCopies = Math.max(1, Math.floor(copies));
     const pricing = this.getPricingSettings();
@@ -50,9 +52,15 @@ class AdminService {
         : colorOrPageCounts;
     const safeColorPages = Math.max(0, Math.floor(colorPages));
     const safeBwPages = Math.max(0, Math.floor(bwPages));
+    const surchargePerPg =
+      quality === 'high'
+        ? (engineCfg?.highQualitySurcharge ?? pricing?.highQualitySurcharge ?? 2)
+        : 0;
+    const totalPages = safeColorPages + safeBwPages;
     const subtotalExact =
       (safeColorPages * profile.baseColorPrice +
-        safeBwPages * profile.baseBwPrice) *
+        safeBwPages * profile.baseBwPrice +
+        totalPages * surchargePerPg) *
       safeCopies;
     return Math.ceil(subtotalExact);
   }
@@ -62,8 +70,9 @@ class AdminService {
     pageCounts: { colorPages: number; bwPages: number },
     copies: number,
     paperSize: 'A4' | 'Letter' | 'Legal' = 'A4',
+    quality: PrintQuality = 'standard',
   ): number {
-    return this.calculateJobAmount(mode, pageCounts, copies, paperSize);
+    return this.calculateJobAmount(mode, pageCounts, copies, paperSize, quality);
   }
 
   async appendAdminLog(

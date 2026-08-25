@@ -64,6 +64,10 @@ export function buildPrintJobEnqueuePayload(context: {
       pageRange: (context.printOptions.pageRange as string | null) ?? null,
       serverFilename: context.serverFilename,
       printerName: context.printerName,
+      quality: context.printOptions.quality ?? 'standard',
+      settings: {
+        quality: context.printOptions.quality ?? 'standard',
+      },
     },
     financial: {
       requiredAmount: context.requiredAmount,

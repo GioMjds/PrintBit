@@ -1,5 +1,5 @@
 import { adminService } from './admin';
-import type { ColorMode } from './db';
+import type { ColorMode, PrintQuality } from './db';
 import type { DocumentAnalysis } from './session';
 
 type PageRangeSelectionPayload =
@@ -25,9 +25,11 @@ export interface PrintQuoteResult {
   billableBwPages: number;
   requestedColorMode: ColorMode;
   effectiveColorMode: ColorMode;
+  quality: PrintQuality;
   pricing: {
     printPerPage: number;
     colorSurcharge: number;
+    highQualitySurcharge: number;
   };
   analysisConfidence: 'high' | 'medium' | 'low';
   billingPageDetection:
@@ -181,6 +183,7 @@ export function buildPrintQuote(input: {
   paperSize?: 'A4' | 'Letter' | 'Legal';
   pageRange?: unknown;
   duplex?: boolean;
+  quality?: PrintQuality;
 }): PrintQuoteComputation {
   const safeCopies = Math.min(30, Math.max(1, Math.floor(input.copies)));
   const parsedRange = parsePageRange(input.pageRange);
@@ -282,6 +285,7 @@ export function buildPrintQuote(input: {
   const billableColorPages =
     effectiveColorMode === 'colored' ? selectedColorPages : 0;
   const billableBwPages = selectedCount - billableColorPages;
+  const quality: PrintQuality = input.quality ?? 'standard';
   const requiredAmount = adminService.calculateDocumentAmount(
     'print',
     {
@@ -290,6 +294,7 @@ export function buildPrintQuote(input: {
     },
     safeCopies,
     input.paperSize ?? 'A4',
+    quality,
   );
 
   const pricing = adminService.getPricingSettings();
@@ -308,9 +313,11 @@ export function buildPrintQuote(input: {
       billableBwPages,
       requestedColorMode: input.colorMode,
       effectiveColorMode,
+      quality,
       pricing: {
         printPerPage: pricing.printPerPage,
         colorSurcharge: pricing.colorSurcharge,
+        highQualitySurcharge: pricing.highQualitySurcharge,
       },
       analysisConfidence: input.analysis.confidence,
       billingPageDetection,

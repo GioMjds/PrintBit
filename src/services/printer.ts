@@ -14,6 +14,11 @@ import {
   preparePrintRotationArtifact,
   type RotationDeg,
 } from './document-rotation';
+import type { PrintQuality } from '@/core/database/shared.schema';
+import {
+  preparePrintPdf,
+  IMAGE_EXTENSIONS,
+} from './prepare-print-pdf';
 
 export type ColorMode = 'colored' | 'grayscale';
 export type Orientation = 'portrait' | 'landscape';
@@ -28,6 +33,7 @@ export interface PrintJobOptions {
   pageRange?: string;
   duplex?: boolean;
   printerName?: string;
+  quality?: PrintQuality;
 }
 
 export class PrinterService {
@@ -142,6 +148,43 @@ export class PrinterService {
     }
 
     const rotationDeg = normalizeRotationDeg(options.rotationDeg, 0);
+    const fileExt = path.extname(filePath).toLowerCase();
+
+    if (IMAGE_EXTENSIONS.has(fileExt)) {
+      const prepared = await preparePrintPdf({
+        sourcePath: filePath,
+        colorMode: options.colorMode,
+        orientation: options.orientation,
+        rotationDeg,
+        paperSize: options.paperSize,
+        pageRange: options.pageRange,
+        duplex: options.duplex,
+        quality: options.quality,
+      });
+      const dispatchOptions: PrintJobOptions = {
+        ...options,
+        rotationDeg: 0,
+      };
+      try {
+        return await printDispatcher.dispatchFile(
+          prepared.pdfPath,
+          dispatchOptions,
+          context,
+        );
+      } finally {
+        for (const cleanupPath of prepared.cleanupPaths) {
+          try {
+            await fs.promises.unlink(cleanupPath);
+          } catch (error) {
+            console.warn('[PRINTER] Failed to clean up prepared image PDF.', {
+              cleanupPath,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+    }
+
     // Bake rotation AND target orientation physically into the PDF artifact.
     // This ensures the page geometry in the output file already matches the
     // requested orientation before the print engine sees it, making landscape

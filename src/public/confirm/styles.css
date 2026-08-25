@@ -357,13 +357,12 @@ body {
 .printer-error-modal {
   width: 480px;
   max-width: 92vw;
-  background:
-    linear-gradient(
-      168deg,
-      rgba(242, 110, 107, 0.06) 0%,
-      rgba(24, 23, 48, 0.98) 38%,
-      rgba(24, 23, 48, 0.98) 100%
-    );
+  background: linear-gradient(
+    168deg,
+    rgba(242, 110, 107, 0.06) 0%,
+    rgba(24, 23, 48, 0.98) 38%,
+    rgba(24, 23, 48, 0.98) 100%
+  );
   border: 1.5px solid rgba(242, 110, 107, 0.22);
   border-radius: 32px;
   padding: 48px 40px 40px;
@@ -425,7 +424,8 @@ body {
 }
 
 @keyframes error-ring-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.2;
     transform: scale(1);
   }
@@ -505,41 +505,48 @@ body {
 }
 
 @keyframes severity-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* Severity variants driven by data-severity on #printerErrorBlock */
-[data-severity="fatal"] .printer-error-modal__severity-badge {
+[data-severity='fatal'] .printer-error-modal__severity-badge {
   background: rgba(242, 110, 107, 0.15);
   border-color: rgba(242, 110, 107, 0.35);
   color: #f87171;
 }
 
-[data-severity="warning"] .printer-error-modal__severity-badge {
+[data-severity='warning'] .printer-error-modal__severity-badge {
   background: rgba(167, 170, 225, 0.1);
   border-color: rgba(167, 170, 225, 0.25);
   color: var(--lavender);
 }
 
-[data-severity="warning"] .printer-error-modal__title {
+[data-severity='warning'] .printer-error-modal__title {
   color: var(--lavender);
 }
 
-[data-severity="warning"] .printer-error-modal__icon-svg circle:not(.error-pulse-ring),
-[data-severity="warning"] .printer-error-modal__icon-svg line,
-[data-severity="warning"] .error-pulse-ring {
+[data-severity='warning']
+  .printer-error-modal__icon-svg
+  circle:not(.error-pulse-ring),
+[data-severity='warning'] .printer-error-modal__icon-svg line,
+[data-severity='warning'] .error-pulse-ring {
   stroke: var(--lavender);
 }
-[data-severity="warning"] .printer-error-modal__icon-svg circle.error-excl-dot {
+[data-severity='warning'] .printer-error-modal__icon-svg circle.error-excl-dot {
   fill: var(--lavender);
 }
 
-[data-severity="fatal"] .printer-error-modal__title {
+[data-severity='fatal'] .printer-error-modal__title {
   color: #f87171;
 }
 
-[data-severity="fatal"] .printer-error-modal {
+[data-severity='fatal'] .printer-error-modal {
   border-color: rgba(242, 110, 107, 0.35);
   box-shadow:
     0 0 0 1px rgba(242, 110, 107, 0.12),
@@ -759,7 +766,6 @@ body {
   text-align: center;
   transition: opacity 300ms;
 }
-
 
 /* ── MIDDLE: summary column ───────────────────────────────── */
 .summary-col {
@@ -1076,24 +1082,24 @@ body {
   pointer-events: auto;
 }
 
-/* Pattern 1: card (centered) — used by confirmModal */
-.modal--card {
-  /* inherits .modal centering */
-}
-
 .modal-card {
-  width: 560px;
-  max-width: 92vw;
-  max-height: min(92vh, 760px);
-  overflow-y: auto;
+  width: 620px;
+  max-width: min(94vw, 640px);
+  max-height: 94vh;
+  overflow: hidden; /* strictly non-scrollable in kiosk mode */
   background: #181730;
-  border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 26px;
-  padding: 32px 32px 26px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  transform: translateY(16px) scale(0.97);
+  border: 1.5px solid rgba(167, 170, 225, 0.2);
+  border-radius: 24px;
+  padding: 24px 26px 20px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+  transform: translateY(14px) scale(0.98);
   transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .modal.is-visible .modal-card {
   transform: translateY(0) scale(1);
@@ -1133,7 +1139,9 @@ body {
   box-shadow: 0 -8px 60px rgba(0, 0, 0, 0.5);
   text-align: center;
   transform: translateY(20px) scale(0.98);
-  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), max-width 220ms ease;
+  transition:
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 220ms ease;
   box-sizing: border-box;
 }
 .modal.is-visible .modal-sheet {
@@ -1165,111 +1173,287 @@ body {
   box-sizing: border-box;
 }
 
-/* Also support the legacy .printer-error-modal-overlay show/hide via hidden attribute */
-.modal--error {
-  /* z-index override applied inline in HTML (200) */
+/* ── Modal Header ─────────────────────────────────────────── */
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
-
+.modal-header__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(105, 111, 199, 0.16);
+  border: 1px solid rgba(105, 111, 199, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--peach);
+  flex-shrink: 0;
+}
+.modal-header__icon svg {
+  width: 24px;
+  height: 24px;
+}
+.modal-header__text {
+  flex: 1;
+  min-width: 0;
+}
 .modal-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 800;
   color: var(--white);
-  margin: 0 0 6px;
+  margin: 0;
   letter-spacing: -0.3px;
+  line-height: 1.2;
 }
 .modal-subtitle {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--ink-muted);
-  margin: 0 0 10px;
-  line-height: 1.45;
+  margin: 3px 0 0;
+  line-height: 1.35;
 }
 
-/* ── Modal summary list ───────────────────────────────────── */
-.modal-summary {
+/* ── Two-step confirm modal: tray check → review & pay ─────
+   #confirmModal carries data-step="tray"|"review"; each
+   .modal-step is shown/hidden purely via CSS so app.js only
+   needs to flip one data attribute — no visibility logic here
+   duplicates whatever open/close/focus-trap code already
+   targets #confirmModal. */
+.modal-step {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  margin: 0 0 20px;
-  padding: 0;
+  gap: 12px;
 }
-.modal-summary__row {
+#confirmModal[data-step='tray'] .modal-step--review,
+#confirmModal[data-step='review'] .modal-step--tray {
+  display: none;
+}
+
+.modal-step--tray {
+  align-items: stretch;
+  text-align: center;
+  padding: 6px 4px 2px;
+}
+.modal-step__badge {
+  align-self: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(105, 111, 199, 0.18);
+  color: var(--lavender);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+.modal-tray-check__icon {
+  align-self: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1.5px solid rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(167, 170, 225, 0.08);
+  justify-content: center;
+  margin-top: 4px;
 }
-.modal-summary__row:last-child {
-  border-bottom: none;
+.modal-tray-check__icon svg {
+  width: 28px;
+  height: 28px;
 }
-.modal-summary__row dt {
-  font-size: 15px;
-  font-weight: 600;
+.modal-step--tray .modal-title {
+  margin-top: 2px;
+}
+.modal-step--tray .modal-paper-alert {
+  text-align: left;
+  margin-top: 4px;
+}
+.modal-actions--tray {
+  margin-top: 8px;
+}
+
+/* ── Modal Paper Tray Alert Callout ───────────────────────── */
+.modal-paper-alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1.5px solid rgba(251, 191, 36, 0.38);
+  border-radius: 14px;
+  padding: 9px 14px;
+  box-sizing: border-box;
+}
+.modal-paper-alert[hidden] {
+  display: none !important;
+}
+.modal-paper-alert__icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-paper-alert__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.modal-paper-alert__content {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.modal-paper-alert__title {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.modal-paper-alert__text strong {
+  color: #fef08a;
+  font-weight: 800;
+}
+
+/* ── Bento Specs Grid (2x2 Grid) ─────────────────────────── */
+.modal-bento-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.modal-bento-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.12);
+  border-radius: 14px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+}
+.modal-bento-card[hidden] {
+  display: none !important;
+}
+.modal-bento-card__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
   color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
 }
-.modal-summary__row dd {
-  font-size: 16px;
+.modal-bento-card__label svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.7;
+}
+.modal-bento-badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  background: rgba(105, 111, 199, 0.25);
+  color: var(--lavender);
+  letter-spacing: 0.5px;
+}
+.modal-bento-card__value {
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--white);
-  margin: 0;
-  text-transform: capitalize;
-}
-#modalFile {
-  text-transform: none;
-  font-size: 14px;
-  max-width: 60%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--lavender);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.modal-summary__row--total dt {
-  font-size: 16px;
-  color: var(--white);
-}
-.modal-summary__row--total dd {
-  font-size: 24px;
-  font-weight: 800;
+.modal-bento-card__value--color {
   color: var(--peach);
 }
-.modal-summary__row--change dt {
-  font-size: 16px;
-  color: #a3e6ac;
+.modal-bento-subvalue {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+.modal-bento-subvalue strong {
+  color: var(--white);
+}
+
+/* ── Financial Bar (3 Columns) ────────────────────────────── */
+.modal-finance-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: center;
+  background: rgba(167, 170, 225, 0.06);
+  border: 1px solid rgba(167, 170, 225, 0.15);
+  border-radius: 16px;
+  padding: 10px 18px;
+  box-sizing: border-box;
+}
+.modal-finance-bar__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.modal-finance-bar__divider {
+  width: 1px;
+  height: 32px;
+  background: rgba(167, 170, 225, 0.15);
+}
+.modal-finance-bar__label {
+  font-size: 11px;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--ink-muted);
 }
-.modal-summary__row--change dd {
-  font-size: 24px;
+.modal-finance-bar__value {
+  font-size: 22px;
   font-weight: 800;
-  color: #6ac47a;
+  line-height: 1.1;
+  color: var(--white);
 }
-.modal-summary__divider {
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(167, 170, 225, 0.2),
-    transparent
-  );
-  margin: 4px 0;
+.modal-finance-bar__col--cost .modal-finance-bar__value {
+  color: var(--peach);
+}
+.modal-finance-bar__col--paid .modal-finance-bar__value {
+  color: #c4c7f7;
+}
+.modal-finance-bar__col--change .modal-finance-bar__value {
+  color: #6ac47a;
 }
 
 /* ── Modal actions ────────────────────────────────────────── */
 .modal-actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  margin-top: 0;
 }
 .modal-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 14px 22px;
+  gap: 7px;
+  padding: 10px 18px;
   border: none;
-  border-radius: 14px;
+  border-radius: 12px;
   font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 16px;
+  font-size: 14.5px;
   font-weight: 700;
   cursor: pointer;
   transition:
@@ -1277,6 +1461,7 @@ body {
     transform 120ms cubic-bezier(0.34, 1.4, 0.64, 1),
     box-shadow 150ms;
   -webkit-tap-highlight-color: transparent;
+  min-height: 42px;
 }
 .modal-btn:active {
   transform: scale(0.97);
@@ -1284,7 +1469,7 @@ body {
 .modal-btn--cancel {
   background: rgba(167, 170, 225, 0.1);
   color: var(--lavender);
-  border: 1.5px solid rgba(167, 170, 225, 0.2);
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
 }
 .modal-btn--cancel:hover {
   background: rgba(167, 170, 225, 0.18);
@@ -1297,11 +1482,11 @@ body {
 }
 .modal-btn--confirm:hover {
   background: #45b560;
-  box-shadow: 0 8px 24px rgba(58, 158, 82, 0.5);
+  box-shadow: 0 6px 20px rgba(58, 158, 82, 0.45);
 }
-.modal-btn--confirm svg {
-  width: 20px;
-  height: 20px;
+.modal-btn svg {
+  width: 17px;
+  height: 17px;
 }
 .modal-btn--alert {
   background: #f26e6b;
@@ -1315,11 +1500,6 @@ body {
 .modal-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* ── Status modal (printing / thank you) — sheet variant ─── */
-.modal-sheet--status {
-  /* text-align: center already on .modal-sheet */
 }
 
 .status-animation {
@@ -1429,7 +1609,9 @@ body {
   border-radius: 18px;
   padding: 12px 10px;
   box-sizing: border-box;
-  transition: border-color 200ms ease, background 200ms ease;
+  transition:
+    border-color 200ms ease,
+    background 200ms ease;
 }
 
 .qr-card--download {
@@ -1608,7 +1790,6 @@ body {
   color: #a3e6ac;
 }
 
-
 /* ── Thank-you continuation prompt ─────────────────────────────── */
 
 .modal-subtitle--remaining {
@@ -1696,4 +1877,3 @@ body {
   border-radius: inherit;
   transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-

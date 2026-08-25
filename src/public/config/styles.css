@@ -215,6 +215,8 @@ body {
   width: auto;
   height: auto;
   object-fit: contain;
+  box-sizing: border-box;
+  padding: 6px;
 }
 
 /* ── iFrame (Word/HTML) ───────────────────────────────────── */

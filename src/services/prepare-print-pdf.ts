@@ -10,12 +10,39 @@ import { convertToPdfPreview } from './preview';
 
 const execFileAsync = promisify(execFile);
 
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
+export const IMAGE_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.bmp',
+  '.gif',
+]);
 const PREPARED_PRINT_DIR = path.resolve('uploads', 'prepared-worker');
 
-type Orientation = 'portrait' | 'landscape';
-type ColorMode = 'colored' | 'grayscale';
-type RotationDeg = 0 | 90 | 180 | 270;
+import type { PrintQuality } from '@/core/database/shared.schema';
+import type { ColorMode, Orientation, PaperSize } from './printer';
+export type RotationDeg = 0 | 90 | 180 | 270;
+
+export const PAPER_DIMENSIONS_PT: Record<PaperSize, [number, number]> = {
+  A4: [595.28, 841.89],
+  Letter: [612.0, 792.0],
+  Legal: [612.0, 1008.0],
+};
+
+export const SAFE_MARGIN_PT = 14.4; // 0.2 inch / 5.08 mm safe margin from physical printer roller borders
+
+export function getPaperSizePoints(
+  paperSize: PaperSize = 'A4',
+  orientation: Orientation = 'portrait',
+): [number, number] {
+  const [w, h] = PAPER_DIMENSIONS_PT[paperSize] ?? PAPER_DIMENSIONS_PT.A4;
+  const portraitW = Math.min(w, h);
+  const portraitH = Math.max(w, h);
+  return orientation === 'landscape'
+    ? [portraitH, portraitW]
+    : [portraitW, portraitH];
+}
 
 function normalizeRotationDeg(value: number | undefined): RotationDeg {
   if (value === 90 || value === 180 || value === 270) {
@@ -131,38 +158,70 @@ function expandPageRange(range: string | null, totalPages: number): number[] {
   return ordered;
 }
 
+async function prepareImagePrintPdf(input: {
+  sourcePath: string;
+  colorMode: ColorMode;
+  orientation: Orientation;
+  rotationDeg: RotationDeg;
+  paperSize: PaperSize;
+  quality?: PrintQuality;
+}): Promise<{ pdfPath: string; cleanupPaths: string[]; pageCount: number }> {
+  await fs.promises.mkdir(PREPARED_PRINT_DIR, { recursive: true });
+  const pdfPath = path.join(PREPARED_PRINT_DIR, `${randomUUID()}.pdf`);
+
+  let imagePipeline = sharp(input.sourcePath).rotate(); // auto-rotate based on EXIF
+  if (input.rotationDeg !== 0) {
+    imagePipeline = imagePipeline.rotate(input.rotationDeg);
+  }
+  if (input.colorMode === 'grayscale') {
+    imagePipeline = imagePipeline.grayscale();
+  }
+
+  // Convert to PNG buffer to preserve quality and embed cleanly
+  const pngOptions =
+    input.quality === 'high'
+      ? { compressionLevel: 6, adaptiveFiltering: true }
+      : {};
+  const { data, info } = await imagePipeline
+    .png(pngOptions)
+    .toBuffer({ resolveWithObject: true });
+
+  const [pageWidth, pageHeight] = getPaperSizePoints(
+    input.paperSize,
+    input.orientation,
+  );
+
+  const maxW = Math.max(10, pageWidth - 2 * SAFE_MARGIN_PT);
+  const maxH = Math.max(10, pageHeight - 2 * SAFE_MARGIN_PT);
+
+  const scale = Math.min(maxW / info.width, maxH / info.height);
+  const drawW = info.width * scale;
+  const drawH = info.height * scale;
+
+  const x = (pageWidth - drawW) / 2;
+  const y = (pageHeight - drawH) / 2;
+
+  const pdf = await PDFDocument.create();
+  const embeddedImage = await pdf.embedPng(data);
+  const page = pdf.addPage([pageWidth, pageHeight]);
+  page.drawImage(embeddedImage, {
+    x,
+    y,
+    width: drawW,
+    height: drawH,
+  });
+
+  await fs.promises.writeFile(pdfPath, await pdf.save());
+  return { pdfPath, cleanupPaths: [pdfPath], pageCount: 1 };
+}
+
 async function ensurePdfSource(
   sourcePath: string,
-  colorMode: ColorMode,
 ): Promise<{ pdfPath: string; cleanupPaths: string[] }> {
   const ext = path.extname(sourcePath).toLowerCase();
 
   if (ext === '.pdf') {
     return { pdfPath: sourcePath, cleanupPaths: [] };
-  }
-
-  if (IMAGE_EXTENSIONS.has(ext)) {
-    await fs.promises.mkdir(PREPARED_PRINT_DIR, { recursive: true });
-    const pdfPath = path.join(PREPARED_PRINT_DIR, `${randomUUID()}.pdf`);
-    const pdf = await PDFDocument.create();
-    const imageBytes =
-      colorMode === 'grayscale'
-        ? await sharp(sourcePath).grayscale().toBuffer()
-        : await fs.promises.readFile(sourcePath);
-    const imageExt = ext === '.png' ? '.png' : '.jpg';
-    const image =
-      imageExt === '.png'
-        ? await pdf.embedPng(imageBytes)
-        : await pdf.embedJpg(imageBytes);
-    const page = pdf.addPage([image.width, image.height]);
-    page.drawImage(image, {
-      x: 0,
-      y: 0,
-      width: image.width,
-      height: image.height,
-    });
-    await fs.promises.writeFile(pdfPath, await pdf.save());
-    return { pdfPath, cleanupPaths: [pdfPath] };
   }
 
   const pdfPath = await convertToPdfPreview(sourcePath);
@@ -279,8 +338,10 @@ export interface PreparePrintPdfInput {
   colorMode: ColorMode;
   orientation: Orientation;
   rotationDeg?: number;
+  paperSize?: PaperSize;
   pageRange?: unknown;
   duplex?: boolean;
+  quality?: PrintQuality;
 }
 
 export async function preparePrintPdf(
@@ -289,9 +350,22 @@ export async function preparePrintPdf(
   const cleanupPaths: string[] = [];
   const normalizedRotation = normalizeRotationDeg(input.rotationDeg);
   const normalizedPageRange = parsePageRange(input.pageRange);
+  const ext = path.extname(input.sourcePath).toLowerCase();
 
   try {
-    const pdfSource = await ensurePdfSource(input.sourcePath, input.colorMode);
+    if (IMAGE_EXTENSIONS.has(ext)) {
+      const imageResult = await prepareImagePrintPdf({
+        sourcePath: input.sourcePath,
+        colorMode: input.colorMode,
+        orientation: input.orientation,
+        rotationDeg: normalizedRotation,
+        paperSize: input.paperSize ?? 'A4',
+        quality: input.quality,
+      });
+      return imageResult;
+    }
+
+    const pdfSource = await ensurePdfSource(input.sourcePath);
     cleanupPaths.push(...pdfSource.cleanupPaths);
 
     const transformed = await applyTransforms({

@@ -26,6 +26,7 @@ export async function handoffToWorker(input: {
     color?: boolean;
     pageRange?: string | null;
     orientation?: string | null;
+    quality?: 'standard' | 'high';
   };
 }): Promise<{ targetPath: string; fileName: string }> {
   if (!input.queueDir || input.queueDir.trim().length === 0) {
@@ -85,6 +86,7 @@ export async function handoffToWorker(input: {
       color: input.printSettings?.color ?? false,
       pageRange: input.printSettings?.pageRange ?? null,
       orientation: input.printSettings?.orientation ?? null,
+      quality: input.printSettings?.quality ?? 'standard',
       schemaVersion: 2,
       transactionId: input.transactionId,
       spoolerCorrelationKey: input.spoolerCorrelationKey,

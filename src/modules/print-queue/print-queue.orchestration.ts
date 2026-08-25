@@ -236,8 +236,10 @@ export async function orchestratePrintJob(
       colorMode: job.data.request.colorMode,
       orientation: job.data.request.orientation,
       rotationDeg: job.data.request.rotationDeg,
+      paperSize: job.data.request.paperSize,
       pageRange: job.data.request.pageRange,
       duplex: job.data.request.duplex,
+      quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
     });
     preparedCleanupPaths = preparedPdf.cleanupPaths;
 
@@ -265,6 +267,7 @@ export async function orchestratePrintJob(
         color: job.data.request.colorMode === 'colored',
         pageRange: job.data.request.pageRange,
         orientation: job.data.request.orientation,
+        quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
       },
     });
 

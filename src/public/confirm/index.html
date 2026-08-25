@@ -632,96 +632,343 @@
       </div>
     </div>
 
-    <!-- Confirmation Modal — card pattern -->
+    <!-- Confirmation Modal — card pattern, two-step: tray check → review & pay -->
     <div
       class="modal modal--card"
       id="confirmModal"
+      data-step="tray"
       aria-hidden="true"
       role="dialog"
       aria-labelledby="modalTitle"
       aria-modal="true"
     >
-      <div class="modal-card">
-        <h2 class="modal-title" id="modalTitle">Confirm Your Print Job</h2>
-        <p class="modal-subtitle">
-          Please review your settings before printing.
-        </p>
+      <div class="modal-card modal-card--kiosk">
+        <!-- ══ STEP 1: Tray Check (physical machine-state gate) ══ -->
+        <div class="modal-step modal-step--tray" id="modalStepTray">
+          <div class="modal-step__badge" aria-hidden="true">Step 1 of 2</div>
 
-        <dl class="modal-summary">
-          <div class="modal-summary__row" id="modalModeRow">
-            <dt>Mode</dt>
-            <dd id="modalMode">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalFileRow">
-            <dt>File</dt>
-            <dd id="modalFile">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalColorRow">
-            <dt>Color</dt>
-            <dd id="modalColor">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalCopiesRow">
-            <dt>Copies</dt>
-            <dd id="modalCopies">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalPagesRow">
-            <dt>Pages</dt>
-            <dd id="modalPages">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalOrientationRow">
-            <dt>Orientation</dt>
-            <dd id="modalOrientation">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalRotationRow">
-            <dt>Rotation</dt>
-            <dd id="modalRotation">—</dd>
-          </div>
-          <div class="modal-summary__row" id="modalPaperRow">
-            <dt>Paper</dt>
-            <dd id="modalPaper">—</dd>
-          </div>
-          <div class="modal-summary__divider" aria-hidden="true"></div>
-          <div class="modal-summary__row modal-summary__row--total">
-            <dt>Total Price</dt>
-            <dd id="modalPrice">—</dd>
-          </div>
-          <div
-            class="modal-summary__row modal-summary__row--change"
-            id="modalChangeRow"
-            hidden
-          >
-            <dt>Coin Change</dt>
-            <dd id="modalChange">—</dd>
-          </div>
-        </dl>
-
-        <div class="modal-actions">
-          <button
-            id="modalCancelBtn"
-            type="button"
-            class="modal-btn modal-btn--cancel"
-          >
-            Cancel
-          </button>
-          <button
-            id="modalConfirmBtn"
-            type="button"
-            class="modal-btn modal-btn--confirm"
-          >
+          <div class="modal-tray-check__icon" aria-hidden="true">
             <svg
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2.5"
+              stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
-              aria-hidden="true"
             >
-              <path d="M20 6L9 17l-5-5" />
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            <span>Yes, Print</span>
-          </button>
+          </div>
+
+          <h2 class="modal-title" id="modalTrayTitle">Check the Paper Tray</h2>
+          <p class="modal-subtitle" id="modalTraySubtitle">
+            Please check the printer tray and ensure your bond paper is properly loaded and aligned before proceeding.
+          </p>
+
+          <!-- Paper Tray Safety Alert -->
+          <div class="modal-paper-alert" id="modalPaperAlert">
+            <div class="modal-paper-alert__icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <div class="modal-paper-alert__content">
+              <span class="modal-paper-alert__title">Paper Reminder:</span>
+              <span class="modal-paper-alert__text" id="modalPaperAlertText">
+                Make sure <strong id="modalPaperAlertSize">A4 Bond Paper</strong> is loaded neatly with enough sheets for your print.
+              </span>
+            </div>
+          </div>
+
+          <!-- Tray-check step actions -->
+          <div class="modal-actions modal-actions--tray">
+            <button
+              id="modalTrayIssueBtn"
+              type="button"
+              class="modal-btn modal-btn--cancel"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>Need Help / Adjust</span>
+            </button>
+            <button
+              id="modalTrayOkBtn"
+              type="button"
+              class="modal-btn modal-btn--confirm"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <span>Paper is Ready</span>
+            </button>
+          </div>
         </div>
+
+        <!-- ══ STEP 2: Review & Pay (unchanged content, existing IDs preserved) ══ -->
+        <div class="modal-step modal-step--review" id="modalStepReview">
+          <!-- Header -->
+          <div class="modal-header">
+            <div class="modal-header__icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"
+                />
+                <path d="M6 14h12v8H6z" />
+              </svg>
+            </div>
+            <div class="modal-header__text">
+              <h2 class="modal-title" id="modalTitle">Ready to Print?</h2>
+              <p class="modal-subtitle" id="modalSubtitle">
+                Review your settings and total before printing.
+              </p>
+            </div>
+          </div>
+
+          <!-- Bento Grid: Job Configuration -->
+          <div class="modal-bento-grid">
+            <!-- Item 1: File & Mode -->
+            <div
+              class="modal-bento-card modal-bento-card--file"
+              id="modalFileRow"
+            >
+              <div class="modal-bento-card__label">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    fill-rule="evenodd"
+                    d="M4 2a2 2 0 012-2h4.586A2 2 0 0112 2.586L14.414 5A2 2 0 0115 6.414V14a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2zm4.5 5.5a.5.5 0 000 1H9v1.5a.5.5 0 001 0V8.5h1.5a.5.5 0 000-1H10V6a.5.5 0 00-1 0v1.5H8.5z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span>Document</span>
+                <span class="modal-bento-badge" id="modalMode">PRINT</span>
+              </div>
+              <div class="modal-bento-card__value" id="modalFile">—</div>
+            </div>
+
+            <!-- Item 2: Color Mode -->
+            <div
+              class="modal-bento-card modal-bento-card--color"
+              id="modalColorRow"
+            >
+              <div class="modal-bento-card__label">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="5" cy="8" r="3" opacity=".6" />
+                  <circle cx="11" cy="8" r="3" opacity=".4" />
+                  <circle cx="8" cy="11" r="3" opacity=".5" />
+                </svg>
+                <span>Color Mode</span>
+              </div>
+              <div
+                class="modal-bento-card__value modal-bento-card__value--color"
+                id="modalColor"
+              >
+                —
+              </div>
+            </div>
+
+            <!-- Item 3: Pages & Copies -->
+            <div
+              class="modal-bento-card modal-bento-card--pages"
+              id="modalPagesRow"
+            >
+              <div class="modal-bento-card__label">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path
+                    d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"
+                  />
+                </svg>
+                <span>Pages &amp; Copies</span>
+              </div>
+              <div class="modal-bento-card__value">
+                <span id="modalPages">—</span>
+                <span class="modal-bento-subvalue" id="modalCopiesRow"
+                  >(<strong id="modalCopies">1</strong> copy)</span
+                >
+              </div>
+            </div>
+
+            <!-- Item 4: Paper & Layout -->
+            <div
+              class="modal-bento-card modal-bento-card--paper"
+              id="modalPaperRow"
+            >
+              <div class="modal-bento-card__label">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <rect
+                    x="3"
+                    y="1"
+                    width="10"
+                    height="14"
+                    rx="1"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                </svg>
+                <span>Paper &amp; Layout</span>
+              </div>
+              <div class="modal-bento-card__value">
+                <span id="modalPaper">A4</span>
+                <span class="modal-bento-subvalue" id="modalOrientationRow"
+                  >• <span id="modalOrientation">Portrait</span></span
+                >
+                <span class="modal-bento-subvalue" id="modalRotationRow" hidden
+                  >(<span id="modalRotation">0°</span>)</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- Financial Breakdown Bar (3-Column Strip) -->
+          <div class="modal-finance-bar">
+            <div class="modal-finance-bar__col modal-finance-bar__col--cost">
+              <span class="modal-finance-bar__label">Total Cost</span>
+              <span class="modal-finance-bar__value" id="modalPrice">₱0</span>
+            </div>
+            <div class="modal-finance-bar__divider" aria-hidden="true"></div>
+            <div
+              class="modal-finance-bar__col modal-finance-bar__col--paid"
+              id="modalPaidRow"
+            >
+              <span class="modal-finance-bar__label">Total Paid</span>
+              <span class="modal-finance-bar__value" id="modalPaid">₱0</span>
+            </div>
+            <div class="modal-finance-bar__divider" aria-hidden="true"></div>
+            <div
+              class="modal-finance-bar__col modal-finance-bar__col--change"
+              id="modalChangeRow"
+            >
+              <span class="modal-finance-bar__label">Change</span>
+              <span class="modal-finance-bar__value" id="modalChange">₱0</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons (Massive touch targets) -->
+          <div class="modal-actions">
+            <button
+              id="modalCancelBtn"
+              type="button"
+              class="modal-btn modal-btn--cancel"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M19 12H5M11 6l-6 6 6 6" />
+              </svg>
+              <span>Back to Paper Check</span>
+            </button>
+            <button
+              id="modalConfirmBtn"
+              type="button"
+              class="modal-btn modal-btn--confirm"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <span>PRINT NOW</span>
+            </button>
+          </div>
+        </div>
+        <!-- /modal-step--review -->
+      </div>
+    </div>
+
+    <!-- Tray Issue Overlay — customer-reported concern, distinct from a system-detected jam.
+         Dead-ends to staff contact without touching jamRefundOverlay's hardware-fault state. -->
+    <div
+      class="modal modal--fs"
+      id="trayIssueOverlay"
+      aria-hidden="true"
+      role="dialog"
+      aria-labelledby="trayIssueTitle"
+      aria-modal="true"
+    >
+      <div class="modal-fs">
+        <div class="status-icon status-icon--error" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none">
+            <circle cx="24" cy="24" r="22" fill="rgba(242,110,107,0.16)" />
+            <circle
+              cx="24"
+              cy="24"
+              r="22"
+              stroke="#f26e6b"
+              stroke-width="2.5"
+              fill="none"
+            />
+            <path
+              d="M24 13v14"
+              stroke="#f26e6b"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <circle cx="24" cy="33" r="2" fill="#f26e6b" />
+          </svg>
+        </div>
+        <h2 class="modal-title" id="trayIssueTitle">Paper Tray Assistance</h2>
+        <p class="modal-subtitle" id="trayIssueMessage">
+          If paper is empty, misaligned, or needs adjusting, please notify staff before starting your print.
+        </p>
+        <p class="modal-subtitle modal-subtitle--hint" id="trayIssueHint">
+          Staff can assist with loading and aligning the correct bond paper.
+        </p>
+        <button
+          id="trayIssueDoneBtn"
+          type="button"
+          class="modal-btn modal-btn--alert modal-btn--wide"
+        >
+          <span>Understood</span>
+        </button>
       </div>
     </div>
 

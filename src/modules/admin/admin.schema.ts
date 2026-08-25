@@ -4,6 +4,7 @@ import type {
   SupportedLanguage,
   PrintMode,
   ColorMode,
+  PrintQuality,
 } from '@/core/database/shared.schema';
 
 export type {
@@ -12,6 +13,7 @@ export type {
   SupportedLanguage,
   PrintMode,
   ColorMode,
+  PrintQuality,
 };
 
 export type AdminLockout = {
@@ -24,6 +26,7 @@ export interface PricingSettings {
   copyPerPage: number;
   scanDocument: number;
   colorSurcharge: number;
+  highQualitySurcharge: number;
 }
 
 export interface PricingEnginePaperProfile {
@@ -45,6 +48,7 @@ export interface PricingEngineSettings {
   };
   bulkDiscountTiers: PricingEngineBulkDiscountTier[];
   rounding: 'whole_peso_total_only';
+  highQualitySurcharge: number;
 }
 
 export type InkTelemetryUnknownPolicy = 'warn_allow' | 'block';
