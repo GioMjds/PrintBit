@@ -1,5 +1,5 @@
 html[data-kiosk-static='true'] body {
-  animation: kiosk-page-arrive 260ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+  animation: kiosk-page-arrive 500ms cubic-bezier(0.16, 1, 0.3, 1) !important;
   transform-origin: 50% 42%;
 }
 

@@ -270,10 +270,7 @@ const DEFAULT_DATA: Schema = {
           baseColorPrice: 20,
         },
       },
-      bulkDiscountTiers: [
-        { minPages: 10, maxPages: 50, discountPerPage: 0.5 },
-        { minPages: 51, discountPerPage: 0.75 },
-      ],
+      bulkDiscountTiers: [],
       rounding: 'whole_peso_total_only',
     },
     idleTimeoutSeconds: 120,
