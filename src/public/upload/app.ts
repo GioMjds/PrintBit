@@ -130,6 +130,10 @@ function setSessionUI(text: string, dot: 'idle' | 'active' | 'error'): void {
   if (dot !== 'idle') sessionDotUpload.classList.add(dot);
 }
 
+function setRetryButtonVisible(visible: boolean): void {
+  retrySessionButton.hidden = !visible;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -297,6 +301,7 @@ function setSessionUnavailable(message: string): void {
   isSessionUnavailable = true;
   setAppState('session-error');
   setSessionUI('Session unavailable', 'error');
+  setRetryButtonVisible(true);
   setStatus(message, 'error');
   stopSessionMonitor();
   resetSessionCountdown();
@@ -516,6 +521,7 @@ async function initSession(): Promise<void> {
   isSessionUnavailable = false;
   resetSessionCountdown();
   setAppState('session-loading');
+  setRetryButtonVisible(false);
   setSessionUI('Connecting to session…', 'idle');
   setStatus(
     'Connecting to kiosk session over local network or internet…',

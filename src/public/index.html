@@ -2,7 +2,10 @@
 <html lang="en" data-kiosk-static="true">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <link rel="stylesheet" href="./globals.css" />
     <link rel="stylesheet" href="/shared/kiosk-transition.css" />
     <title>PrintBit</title>
@@ -29,32 +32,40 @@
           <div class="clock-date" id="clockDate">--- --, ----</div>
         </div>
 
-        <div class="topbar-right">
-          <button
-            class="wifi-pill-btn"
-            id="openWifiBtn"
-            type="button"
-            aria-label="Connect to PrintBit Wi-Fi"
-          >
-            <div class="wifi-pill-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-                <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-                <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-                <line x1="12" y1="20" x2="12.01" y2="20" stroke-width="3" />
-              </svg>
-            </div>
-            <div class="wifi-pill-text">
-              <span class="wifi-pill-title">PrintBit Wi-Fi</span>
-              <span class="wifi-pill-status">Scan QR</span>
-            </div>
-          </button>
-        </div>
+        <div class="topbar-right"></div>
       </header>
 
       <!-- Main Action Area -->
       <main class="action-area" role="main" aria-label="Main actions">
-        <p class="action-hint">Please select a print method</p>
+        <div
+          class="wifi-inline-card"
+          aria-label="Connect to PrintBit Wi-Fi first"
+        >
+          <div class="wifi-inline-card__qr">
+            <div class="qr-frame qr-frame--sm">
+              <canvas
+                id="homeWifiQrCanvas"
+                width="130"
+                height="130"
+                aria-label="QR code to join PrintBit Wi-Fi"
+              ></canvas>
+              <span class="qr-corner qr-corner--tl" aria-hidden="true"></span>
+              <span class="qr-corner qr-corner--tr" aria-hidden="true"></span>
+              <span class="qr-corner qr-corner--bl" aria-hidden="true"></span>
+              <span class="qr-corner qr-corner--br" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="wifi-inline-card__text">
+            <span class="wifi-inline-card__step">Step 1</span>
+            <h2 class="wifi-inline-card__title">Scan to connect Wi-Fi</h2>
+            <p class="wifi-inline-card__sub">
+              Join the kiosk hotspot with your phone camera before printing,
+              copying, or scanning.
+            </p>
+          </div>
+        </div>
+
+        <p class="action-hint">Then select a print method</p>
 
         <div class="action-grid">
           <!-- Print Card -->
@@ -584,56 +595,6 @@
           type="button"
           id="closeFeedbackBtn"
           aria-label="Close feedback modal"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-
-    <!-- Wi-Fi QR Modal — public hotspot connect -->
-    <div class="wifi-overlay" id="wifiOverlay" aria-hidden="true">
-      <div
-        class="wifi-modal"
-        role="dialog"
-        aria-labelledby="wifiModalTitle"
-        aria-describedby="wifiModalDesc"
-        aria-modal="true"
-      >
-        <div class="step-badge">
-          <span class="step-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-              <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-              <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-              <line x1="12" y1="20" x2="12.01" y2="20" stroke-width="3" />
-            </svg>
-          </span>
-          <span class="step-label">Kiosk Wi-Fi Hotspot</span>
-        </div>
-
-        <h3 class="wifi-modal__title" id="wifiModalTitle">
-          Connect to PrintBit Wi-Fi
-        </h3>
-        <p class="wifi-modal__sub" id="wifiModalDesc">
-          Scan this QR code with your phone camera to automatically join the kiosk Wi-Fi.
-        </p>
-
-        <div class="wifi-modal__qr-wrap">
-          <div class="qr-frame">
-            <canvas
-              id="homeWifiQrCanvas"
-              width="220"
-              height="220"
-              aria-label="QR code to join PrintBit Wi-Fi"
-            ></canvas>
-          </div>
-        </div>
-
-        <button
-          class="wifi-modal__close"
-          type="button"
-          id="closeWifiBtn"
-          aria-label="Close Wi-Fi modal"
         >
           Close
         </button>

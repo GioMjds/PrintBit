@@ -111,6 +111,10 @@ body {
   margin-bottom: 20px;
 }
 
+.card-header > div:last-child {
+  min-width: 0;
+}
+
 .brand-mark {
   width: 48px;
   height: 48px;
@@ -141,6 +145,7 @@ body {
   color: var(--ink-muted);
   margin: 0;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 /* ── Divider ──────────────────────────────────────────────── */
@@ -673,6 +678,13 @@ body {
   }
 }
 
+@media (max-height: 600px) {
+  .upload-shell {
+    place-items: start center;
+    padding-block: 16px;
+  }
+}
+
 /* ── Captive portal banner ─────────────────────────────────── */
 .captive-banner {
   background: linear-gradient(135deg, #3b2d5a 0%, #2d1f4a 100%);
@@ -726,11 +738,13 @@ body {
 .captive-banner__actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .captive-banner__copy,
 .captive-banner__dismiss {
   flex: 1;
+  min-width: 0;
   padding: 10px 16px;
   border-radius: 8px;
   font-size: 13px;

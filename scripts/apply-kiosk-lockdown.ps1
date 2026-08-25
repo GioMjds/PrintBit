@@ -54,6 +54,7 @@ function Set-BinaryValue {
 
 $policyExplorer    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
 $policyEdgeUi      = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
+$policyEdgeBrowser = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
 $policySystem      = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
 $legacyExplorer    = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
 $legacySystem      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -69,6 +70,10 @@ Set-DwordValue -Path $policyExplorer -Name 'DisableNotificationCenter' -Value 1
 Set-DwordValue -Path $policyExplorer -Name 'NoTrayContextMenu'         -Value 1
 Set-DwordValue -Path $policyExplorer -Name 'NoTrayItemsDisplay'        -Value 1
 Set-DwordValue -Path $policyEdgeUi   -Name 'AllowEdgeSwipe'            -Value 0
+# NOTE: AllowEdgeSwipe (above) is the legacy Windows *shell* edge-swipe policy
+# (Charms/Action Center era) and does NOT affect Microsoft Edge's own touch
+# back/forward gesture. This is the correct Edge-browser policy for that:
+Set-DwordValue -Path $policyEdgeBrowser -Name 'EdgeSwipeNavigationEnabled' -Value 0
 
 # Settings / shell / shortcut hardening
 Set-DwordValue -Path $legacyExplorer -Name 'NoControlPanel' -Value 1
@@ -105,7 +110,7 @@ if ($DisableWinKeys) {
 Ensure-RegistryKey -Path $printBitState
 Set-DwordValue -Path $printBitState -Name 'Applied' -Value 1
 New-ItemProperty -Path $printBitState -Name 'AppliedAtUtc' -Value ([DateTime]::UtcNow.ToString('o')) -PropertyType String -Force | Out-Null
-New-ItemProperty -Path $printBitState -Name 'Version'      -Value '2' -PropertyType String -Force | Out-Null
+New-ItemProperty -Path $printBitState -Name 'Version'      -Value '3' -PropertyType String -Force | Out-Null
 
 Write-Host ""
 Write-Host "[PrintBit] [OK] Lockdown policies applied."  -ForegroundColor Green
