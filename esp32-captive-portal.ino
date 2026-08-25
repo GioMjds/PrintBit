@@ -42,7 +42,7 @@ volatile int coinDispensed = 0;
 volatile int targetCoins = 0;
 
 volatile unsigned long lastCoinTime = 0;
-const unsigned long hopperDebounce = 75000;
+const unsigned long hopperDebounce = 150000;
 
 bool dispensing = false;
 bool dispenseDone = false;
@@ -486,24 +486,49 @@ if (postedToken.length() == 0 || postedToken != hopperControlToken) {
     dispensedSnapshot = coinDispensed;
     interrupts();
 
+    // Ito yung nabago
+
     String response = "{";
+
     response += "\"dispensing\":";
     response += dispensing ? "true" : "false";
+
     response += ",\"targetCoins\":";
     response += String(targetCoins);
+
     response += ",\"dispensedCoins\":";
     response += String(dispensedSnapshot);
+
     response += ",\"activeRequestId\":\"";
     response += activeDispenseRequestId;
+
     response += "\",\"lastRequestId\":\"";
     response += lastDispenseRequestId;
+
     response += "\",\"lastOutcome\":\"";
     response += lastDispenseOutcome;
+
     response += "\",\"lastError\":\"";
     response += lastDispenseError;
-    response += "\",\"lastFinishedAtMs\":";
+
+    response += "\",\"hopperLow\":";
+    response += (lastDispenseOutcome == "failed" &&
+                lastDispenseError == "MOTOR_TIMEOUT")
+                ? "true"
+                : "false";  
+
+    response += ",\"success\":";
+    response += (!dispensing &&
+                lastDispenseOutcome == "done" &&
+                dispensedSnapshot >= targetCoins)
+                ? "true"
+                : "false";
+
+    response += ",\"lastFinishedAtMs\":";
     response += String(lastDispenseFinishedAt);
+
     response += "}";
+
     replyPlain(client, 200, "OK", response);
     client.stop();
     return;

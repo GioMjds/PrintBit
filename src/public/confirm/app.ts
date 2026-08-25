@@ -323,6 +323,20 @@ const transactionReference = document.getElementById(
   'transactionReference',
 ) as HTMLElement | null;
 
+// Owed Change Alert Elements
+const owedChangeAlert = document.getElementById('owedChangeAlert');
+const owedChangeAmountBadge = document.getElementById('owedChangeAmountBadge');
+const owedChangeAmountText = document.getElementById('owedChangeAmountText');
+const owedChangeRefId = document.getElementById('owedChangeRefId');
+
+interface OwedChangeNotice {
+  amountOwed: number;
+  transactionId: string | null;
+  message?: string;
+}
+
+let pendingOwedChange: OwedChangeNotice | null = null;
+
 // Scan Download CTA Elements
 const scanDownloadCtaContainer = document.getElementById(
   'scanDownloadCtaContainer',
@@ -1493,9 +1507,31 @@ function captureScanDownloadCta(
 }
 
 function finalizePrintSuccess(transactionId: string | null): void {
-  setTransactionReference(transactionId ?? currentTransactionId);
+  const effectiveTxId = transactionId ?? currentTransactionId;
+  setTransactionReference(effectiveTxId);
   hideOverlay(printingOverlay);
   hidePrintProgress();
+
+  if (pendingOwedChange && pendingOwedChange.amountOwed > 0) {
+    const owedRef =
+      effectiveTxId || pendingOwedChange.transactionId || 'Contact Staff';
+    if (owedChangeAmountBadge) {
+      owedChangeAmountBadge.textContent = `₱${pendingOwedChange.amountOwed} Owed`;
+    }
+    if (owedChangeAmountText) {
+      owedChangeAmountText.textContent = String(pendingOwedChange.amountOwed);
+    }
+    if (owedChangeRefId) {
+      owedChangeRefId.textContent = owedRef;
+    }
+    if (owedChangeAlert) {
+      owedChangeAlert.removeAttribute('hidden');
+    }
+  } else {
+    if (owedChangeAlert) {
+      owedChangeAlert.setAttribute('hidden', '');
+    }
+  }
 
   if (thankYouSubtitle) {
     if (config.mode === 'copy') {
@@ -1743,6 +1779,10 @@ function hideOverlay(el: HTMLElement | null): void {
 
 function clearConfirmSessionStorage(): void {
   setTransactionReference(null);
+  pendingOwedChange = null;
+  if (owedChangeAlert) {
+    owedChangeAlert.setAttribute('hidden', '');
+  }
   clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
@@ -1982,6 +2022,10 @@ thankYouDoneBtn?.addEventListener('click', () => {
 
 printAnotherBtn?.addEventListener('click', () => {
   setTransactionReference(null);
+  pendingOwedChange = null;
+  if (owedChangeAlert) {
+    owedChangeAlert.setAttribute('hidden', '');
+  }
   clearPendingPaymentSessionState();
   sessionStorage.removeItem('printbit.config');
   sessionStorage.removeItem('printbit.copyPreviewPath');
@@ -2021,11 +2065,33 @@ if (typeof ioFactory === 'function') {
       dispensed?: number;
       owedChangeId?: string | null;
       message?: string;
+      transactionId?: string | null;
     };
+    if (data.transactionId) {
+      setTransactionReference(data.transactionId);
+    }
     if (data.state === 'dispensing') {
       setPrintingPhase('dispensing');
-    } else if (data.state === 'failed' && data.owedChangeId) {
-      setPrintingPhase('failed');
+    } else if (data.state === 'failed') {
+      const requested =
+        typeof data.amount === 'number' && Number.isFinite(data.amount)
+          ? data.amount
+          : 0;
+      const dispensed =
+        typeof data.dispensed === 'number' && Number.isFinite(data.dispensed)
+          ? data.dispensed
+          : 0;
+      const owed = Math.max(0, requested - dispensed);
+      pendingOwedChange = {
+        amountOwed: owed > 0 ? owed : requested,
+        transactionId: data.transactionId ?? currentTransactionId,
+        message: data.message,
+      };
+      if (data.owedChangeId) {
+        setPrintingPhase('failed');
+      }
+    } else if (data.state === 'dispensed') {
+      pendingOwedChange = null;
     }
   });
 

@@ -1877,3 +1877,97 @@ body {
   border-radius: inherit;
   transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* ── Owed Change Alert (Hopper low/empty warning in Thank You screen) ── */
+.owed-change-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1.5px solid rgba(245, 158, 11, 0.4);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  text-align: left;
+  width: 100%;
+  max-width: 520px;
+  margin: 8px auto 12px;
+}
+
+.owed-change-alert[hidden] {
+  display: none !important;
+}
+
+.owed-change-alert__icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 50%;
+  margin-top: 1px;
+}
+
+.owed-change-alert__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.owed-change-alert__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.owed-change-alert__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.owed-change-alert__title {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.owed-change-alert__badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #fef08a;
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.owed-change-alert__text {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.owed-change-alert__subtext {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.4;
+  margin: 2px 0 0;
+}
+
+.owed-change-alert__ref-id {
+  font-family: var(--font-mono, monospace);
+  color: #fef08a;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  word-break: break-all;
+}

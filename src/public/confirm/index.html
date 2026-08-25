@@ -1088,6 +1088,29 @@
           Reference ID: —
         </p>
 
+        <!-- Owed Change / Low Coin Notice Alert -->
+        <div class="owed-change-alert" id="owedChangeAlert" hidden role="alert">
+          <div class="owed-change-alert__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <div class="owed-change-alert__body">
+            <div class="owed-change-alert__header">
+              <span class="owed-change-alert__title">Coin Change Notice</span>
+              <span class="owed-change-alert__badge" id="owedChangeAmountBadge">₱0 Owed</span>
+            </div>
+            <p class="owed-change-alert__text" id="owedChangeMessage">
+              The coin dispenser has insufficient coins to dispense your ₱<span id="owedChangeAmountText">0</span> change.
+            </p>
+            <p class="owed-change-alert__subtext">
+              Please contact the kiosk admin/staff to claim your refund with Reference ID: <strong class="owed-change-alert__ref-id" id="owedChangeRefId">—</strong>
+            </p>
+          </div>
+        </div>
+
         <!-- QR Codes Grid (Dual QR for scan mode, single centered QR for print/copy) -->
         <div class="success-qr-grid" id="successQrGrid">
           <!-- 1. Scanned Document Download CTA -->
