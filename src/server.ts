@@ -113,7 +113,12 @@ function translateHardwarePrinterError(message: string | null): {
   canDismiss: boolean;
 } {
   const lower = (message ?? '').toLowerCase();
-  if (lower.includes('no paper') || lower.includes('low paper')) {
+  if (
+    lower.includes('no paper') ||
+    lower.includes('low paper') ||
+    lower.includes('paper_out') ||
+    lower.includes('paper out')
+  ) {
     return {
       code: 'PAPER_TRAY_EMPTY',
       severity: 'recoverable',
@@ -123,7 +128,11 @@ function translateHardwarePrinterError(message: string | null): {
       canDismiss: false,
     };
   }
-  if (lower.includes('jammed')) {
+  if (
+    lower.includes('jammed') ||
+    lower.includes('paper_jam') ||
+    lower.includes('paper jam')
+  ) {
     return {
       code: 'PAPER_JAM_PRINT',
       severity: 'recoverable',
@@ -133,12 +142,71 @@ function translateHardwarePrinterError(message: string | null): {
       canDismiss: false,
     };
   }
-  if (lower.includes('no toner') || lower.includes('low toner')) {
+  if (
+    lower.includes('door open') ||
+    lower.includes('door_open') ||
+    lower.includes('cover open')
+  ) {
+    return {
+      code: 'PRINTER_DOOR_OPEN',
+      severity: 'recoverable',
+      userMessage:
+        'Printer door or cover is open. Please close the cover and click Resume.',
+      canRetry: true,
+      canDismiss: false,
+    };
+  }
+  if (
+    lower.includes('paper_problem') ||
+    lower.includes('paper problem')
+  ) {
+    return {
+      code: 'PAPER_INSUFFICIENT_PRE_DISPATCH',
+      severity: 'recoverable',
+      userMessage:
+        'Paper feed problem detected. Please check the paper tray and click Resume.',
+      canRetry: true,
+      canDismiss: false,
+    };
+  }
+  if (
+    lower.includes('output_bin_full') ||
+    lower.includes('output bin full')
+  ) {
+    return {
+      code: 'OUTPUT_BIN_FULL',
+      severity: 'recoverable',
+      userMessage:
+        'The printer output tray is full. Please remove printed pages and click Resume.',
+      canRetry: true,
+      canDismiss: false,
+    };
+  }
+  if (
+    lower.includes('no toner') ||
+    lower.includes('low toner') ||
+    lower.includes('no_toner')
+  ) {
     return {
       code: 'PRINTER_OUT_OF_TONER',
       severity: 'fatal',
       userMessage:
         'The printer is out of toner. Please ask staff to replace the cartridge.',
+      canRetry: false,
+      canDismiss: false,
+    };
+  }
+  if (
+    lower.includes('offline') ||
+    lower.includes('not available') ||
+    lower.includes('stopped printing') ||
+    lower.includes('not found')
+  ) {
+    return {
+      code: 'PRINTER_OFFLINE',
+      severity: 'fatal',
+      userMessage:
+        'The printer is offline or not found. Please check printer power and USB connection.',
       canRetry: false,
       canDismiss: false,
     };

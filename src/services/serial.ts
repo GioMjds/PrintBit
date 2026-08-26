@@ -22,7 +22,19 @@ import {
 } from './hopper-protocol';
 import { getPrinterTelemetry } from './printer-status';
 import { BLOCKED_STATUSES } from '@/utils';
-import { NETWORK_PROVIDER, ESP32_ALWAYS_ACCEPT_COINS } from '@/config/http.config';
+import {
+  NETWORK_PROVIDER,
+  ESP32_ALWAYS_ACCEPT_COINS,
+  PORT,
+  ESP32_CAPTIVE_PORTAL_PATH,
+  ESP32_KIOSK_SUBNET_PREFIX,
+  ESP32_KIOSK_IP,
+} from '@/config/http.config';
+import { getLocalIPv4 } from '@/utils/network';
+import {
+  formatKioskIpCommand,
+  parseSerialTelemetryLine,
+} from './serial-ip-protocol';
 import { getTrustedTimeStatus } from './time-source';
 import {
   markWatchdogHeartbeat,
@@ -48,13 +60,15 @@ const SERIAL_RECONNECT_MAX_ATTEMPTS = readNonNegativeIntEnv(
   0,
 );
 const SERIAL_PORT_HINT = process.env.PRINTBIT_SERIAL_PORT?.trim() || '';
-const SERIAL_IP_LABEL_PATTERN = /^(AP_IP|KIOSK_IP):(\d{1,3}(?:\.\d{1,3}){3})$/;
 
 let serialConnected = false;
 let serialPortPath: string | null = null;
 let serialLastError: string | null = null;
 let serialApIp: string | null = null;
+let serialStaIp: string | null = null;
 let serialKioskIp: string | null = null;
+let serialCoinTarget: string | null = null;
+let serialPortalTarget: string | null = null;
 let activeSerialPort: SerialPort | null = null;
 let socketIo: Server | null = null;
 let coinSlotLocked: boolean = false;
@@ -109,17 +123,6 @@ function isValidIpv4(ip: string): boolean {
     if (!Number.isInteger(value) || value < 0 || value > 255) return false;
   }
   return true;
-}
-
-function parseSerialIpLabel(
-  token: string,
-): { label: 'AP_IP' | 'KIOSK_IP'; ip: string } | null {
-  const match = token.match(SERIAL_IP_LABEL_PATTERN);
-  if (!match) return null;
-  const [, label, ip] = match;
-  if (!isValidIpv4(ip)) return null;
-  if (label !== 'AP_IP' && label !== 'KIOSK_IP') return null;
-  return { label, ip };
 }
 
 function clearSerialReconnectTimer(): void {
@@ -218,8 +221,48 @@ export function getSerialStatus() {
     portPath: serialPortPath,
     lastError: serialLastError,
     apIp: serialApIp,
+    staIp: serialStaIp,
     kioskIp: serialKioskIp,
+    coinTarget: serialCoinTarget,
+    portalTarget: serialPortalTarget,
   };
+}
+
+export function sendKioskIpAnnouncement(
+  kioskIp?: string,
+  port = PORT,
+  portalPath = ESP32_CAPTIVE_PORTAL_PATH,
+): boolean {
+  if (!serialConnected || !activeSerialPort) {
+    return false;
+  }
+  const targetIp =
+    kioskIp?.trim() ||
+    (ESP32_KIOSK_IP && ESP32_KIOSK_IP.trim().length > 0
+      ? ESP32_KIOSK_IP.trim()
+      : getLocalIPv4(ESP32_KIOSK_SUBNET_PREFIX));
+  if (!targetIp) return false;
+
+  const command = formatKioskIpCommand(targetIp, port, portalPath);
+  if (!command) return false;
+
+  try {
+    activeSerialPort.write(command, (err) => {
+      if (err) {
+        console.warn(
+          `[SERIAL] ⚠ Failed to send KIOSK_IP announcement: ${err.message}`,
+        );
+      } else {
+        console.log(
+          `[SERIAL] → KIOSK_IP announced over serial: ${targetIp}:${port}${portalPath}`,
+        );
+      }
+    });
+    return true;
+  } catch (error) {
+    console.warn(`[SERIAL] ⚠ Error writing KIOSK_IP to serial port.`, error);
+    return false;
+  }
 }
 
 export function getHopperStatus() {
@@ -573,10 +616,14 @@ async function attemptSerialConnection(
         serialConnected = true;
         serialLastError = null;
         serialApIp = null;
+        serialStaIp = null;
         serialKioskIp = null;
+        serialCoinTarget = null;
+        serialPortalTarget = null;
         clearSerialReconnectTimer();
         reconnectAttemptCount = 0;
         reconnectReason = null;
+        sendKioskIpAnnouncement();
         markWatchdogHeartbeat('serial', {
           connected: true,
           portPath,
@@ -599,7 +646,10 @@ async function attemptSerialConnection(
         serialConnected = false;
         activeSerialPort = null;
         serialApIp = null;
+        serialStaIp = null;
         serialKioskIp = null;
+        serialCoinTarget = null;
+        serialPortalTarget = null;
         markWatchdogHeartbeat('serial', {
           connected: false,
           portPath: serialPortPath,
@@ -641,7 +691,10 @@ async function attemptSerialConnection(
         serialLastError = error.message;
         activeSerialPort = null;
         serialApIp = null;
+        serialStaIp = null;
         serialKioskIp = null;
+        serialCoinTarget = null;
+        serialPortalTarget = null;
         markWatchdogHeartbeat('serial', {
           connected: false,
           portPath: serialPortPath,
@@ -865,15 +918,44 @@ async function attemptSerialConnection(
         const token = rawLine.trim();
         if (token.length === 0) return;
 
-        const ipLabel = parseSerialIpLabel(token);
-        if (ipLabel) {
-          if (ipLabel.label === 'AP_IP') {
-            serialApIp = ipLabel.ip;
-            console.log(`[SERIAL] ESP32 AP IP detected: ${serialApIp}`);
-          } else {
-            serialKioskIp = ipLabel.ip;
-            console.log(`[SERIAL] ESP32 kiosk IP detected: ${serialKioskIp}`);
+        const telemetry = parseSerialTelemetryLine(token);
+        if (telemetry) {
+          switch (telemetry.type) {
+            case 'AP_IP':
+              serialApIp = telemetry.value;
+              console.log(`[SERIAL] ESP32 AP IP detected: ${serialApIp}`);
+              break;
+            case 'STA_IP':
+              serialStaIp = telemetry.value;
+              console.log(`[SERIAL] ESP32 STA IP detected: ${serialStaIp}`);
+              break;
+            case 'KIOSK_IP':
+              serialKioskIp = telemetry.value;
+              console.log(`[SERIAL] ESP32 kiosk IP confirmed: ${serialKioskIp}`);
+              break;
+            case 'COIN_TARGET':
+              serialCoinTarget = telemetry.value;
+              console.log(`[SERIAL] ESP32 coin target: ${serialCoinTarget}`);
+              break;
+            case 'PORTAL_TARGET':
+              serialPortalTarget = telemetry.value;
+              console.log(`[SERIAL] ESP32 portal target: ${serialPortalTarget}`);
+              break;
+            case 'WIFI_STA_CONNECTED':
+              console.log('[SERIAL] ESP32 STA connected to Wi-Fi.');
+              break;
+            case 'WIFI_STA_DISCONNECTED':
+              serialStaIp = null;
+              console.log('[SERIAL] ESP32 STA disconnected from Wi-Fi.');
+              break;
+            case 'WIFI_STA_CONNECTING':
+              console.log(`[SERIAL] ESP32 connecting to Wi-Fi SSID: ${telemetry.value}`);
+              break;
+            case 'WIFI_SETUP_READY':
+              console.log(`[SERIAL] ESP32 setup portal ready at: ${telemetry.value}`);
+              break;
           }
+          io.emit('serialStatus', getSerialStatus());
           return;
         }
 
@@ -908,7 +990,10 @@ async function attemptSerialConnection(
     serialLastError =
       error instanceof Error ? error.message : 'Unknown serial error.';
     serialApIp = null;
+    serialStaIp = null;
     serialKioskIp = null;
+    serialCoinTarget = null;
+    serialPortalTarget = null;
 
     const isAccessDenied = serialLastError
       .toLowerCase()
@@ -974,6 +1059,10 @@ class SerialService {
 
   getHopperStatus() {
     return getHopperStatus();
+  }
+
+  sendKioskIpAnnouncement(kioskIp?: string, port?: number, path?: string) {
+    return sendKioskIpAnnouncement(kioskIp, port, path);
   }
 
   async sendHopperCommand(

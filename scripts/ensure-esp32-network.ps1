@@ -290,7 +290,13 @@ for ($attempt = 1; $attempt -le [Math]::Max(1, $RetryCount); $attempt++) {
 }
 
 if (-not $applied) {
-    throw "Failed to enforce static IP profile on '$wifiInterface' after $RetryCount attempt(s)."
+    $strict = Get-EnvBool -Name "PRINTBIT_ESP32_STATIC_IP_STRICT" -Default $false
+    if ($strict) {
+        throw "Failed to enforce static IP profile on '$wifiInterface' after $RetryCount attempt(s)."
+    } else {
+        Write-NetworkLog "WARNING: Could not apply static IP ($kioskIp) on '$wifiInterface'. Kiosk will proceed with dynamic IP discovery."
+        return
+    }
 }
 
 Write-NetworkLog "Static IP enforcement successful: $wifiInterface => $kioskIp (gw $gateway)."

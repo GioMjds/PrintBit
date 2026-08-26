@@ -2,13 +2,15 @@
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
+#include <ESPmDNS.h>
+#include <DNSServer.h>
 
 #define coinAcceptorPin 4
 #define hopperSensorPin 19
 #define relayPin 32
 
-const char* ssid = "PrintBit";
-const char* password = "printbit123";
+const byte DNS_PORT = 53;
 
 const char* fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
@@ -18,7 +20,16 @@ const char* coinBridgeSource = "esp32";
 const char* coinBridgeApiKey = "printbit-coin-bridge-key";
 const char* hopperControlToken = "printbit-coin-bridge-key";
 
+Preferences preferences;
+const char* PREFS_NAMESPACE = "printbit-cfg";
+
+DNSServer dnsServer;
 NetworkServer server(80);
+
+String apSsid = "PrintBit";
+String apPass = "printbit123";
+String staSsid = "";
+String staPass = "";
 
 String kioskIp = fallbackKioskIp;
 uint16_t kioskPort = fallbackKioskPort;
@@ -158,6 +169,79 @@ void refreshTargets() {
   tabletServer = "http://" + kioskIp + ":" + String(kioskPort) + "/coin";
 }
 
+void loadNvsConfig() {
+  preferences.begin(PREFS_NAMESPACE, true);
+  apSsid = preferences.getString("ap_ssid", "PrintBit");
+  apPass = preferences.getString("ap_pass", "printbit123");
+  staSsid = preferences.getString("sta_ssid", "");
+  staPass = preferences.getString("sta_pass", "");
+  String savedIp = preferences.getString("kiosk_ip", fallbackKioskIp);
+  uint32_t savedPort = preferences.getUInt("kiosk_port", fallbackKioskPort);
+  String savedPath = preferences.getString("kiosk_path", fallbackKioskPortalPath);
+  preferences.end();
+
+  if (apSsid.length() == 0) apSsid = "PrintBit";
+  if (apPass.length() < 8) apPass = "printbit123";
+
+  if (isValidIpv4Address(savedIp)) {
+    kioskIp = savedIp;
+  } else {
+    kioskIp = fallbackKioskIp;
+  }
+
+  if (savedPort > 0 && savedPort <= 65535) {
+    kioskPort = uint16_t(savedPort);
+  } else {
+    kioskPort = fallbackKioskPort;
+  }
+
+  kioskPortalPath = normalizedPath(savedPath);
+  hasKioskRegistration = true;
+  refreshTargets();
+}
+
+void saveWifiConfigToNvs(const String& newStaSsid, const String& newStaPass, const String& newApPass = "") {
+  preferences.begin(PREFS_NAMESPACE, false);
+  preferences.putString("sta_ssid", newStaSsid);
+  preferences.putString("sta_pass", newStaPass);
+  if (newApPass.length() >= 8) {
+    preferences.putString("ap_pass", newApPass);
+  }
+  preferences.end();
+}
+
+void saveKioskConfigToNvs(const String& newIp, uint16_t newPort, const String& newPath) {
+  preferences.begin(PREFS_NAMESPACE, false);
+  preferences.putString("kiosk_ip", newIp);
+  preferences.putUInt("kiosk_port", (uint32_t)newPort);
+  preferences.putString("kiosk_path", newPath);
+  preferences.end();
+}
+
+bool updateKioskRegistration(const String& newIp, uint16_t newPort, const String& newPath) {
+  if (!isValidIpv4Address(newIp)) return false;
+  uint16_t port = (newPort > 0 && newPort <= 65535) ? newPort : fallbackKioskPort;
+  String path = normalizedPath(newPath);
+
+  bool changed = (kioskIp != newIp || kioskPort != port || kioskPortalPath != path);
+  kioskIp = newIp;
+  kioskPort = port;
+  kioskPortalPath = path;
+  hasKioskRegistration = true;
+  refreshTargets();
+
+  if (changed) {
+    saveKioskConfigToNvs(kioskIp, kioskPort, kioskPortalPath);
+    Serial.println("kiosk_config_saved_to_nvs");
+  }
+
+  Serial.print("kiosk_registered:coin_target=");
+  Serial.println(tabletServer);
+  Serial.print("kiosk_registered:portal_target=");
+  Serial.println(kioskPortalUrl);
+  return true;
+}
+
 void replyRedirect(NetworkClient& client, const String& location) {
   client.println("HTTP/1.1 302 Found");
   client.print("Location: ");
@@ -184,6 +268,23 @@ void replyPlain(
   client.print(body);
 }
 
+void replyHtml(
+  NetworkClient& client,
+  int statusCode,
+  const String& statusText,
+  const String& html) {
+  client.print("HTTP/1.1 ");
+  client.print(statusCode);
+  client.print(" ");
+  client.println(statusText);
+  client.println("Content-Type: text/html; charset=utf-8");
+  client.print("Content-Length: ");
+  client.println(html.length());
+  client.println("Connection: close");
+  client.println();
+  client.print(html);
+}
+
 bool parseRequestLine(const String& requestLine, String& method, String& path) {
   int firstSpace = requestLine.indexOf(' ');
   if (firstSpace <= 0) return false;
@@ -208,7 +309,13 @@ String readRequestBody(NetworkClient& client, int contentLength) {
 }
 
 bool isCaptiveProbePath(const String& path) {
-  return path == "/hotspot-detect.html" || path == "/generate_204" || path == "/ncsi.txt" || path == "/connecttest.txt";
+  return path == "/hotspot-detect.html" ||
+         path == "/generate_204" ||
+         path == "/gen_204" ||
+         path == "/ncsi.txt" ||
+         path == "/connecttest.txt" ||
+         path == "/canonical.html" ||
+         path == "/success.txt";
 }
 
 String buildCoinEventId() {
@@ -265,7 +372,7 @@ void emitHopperError(
 }
 
 void sendCoinToTablet(int value) {
-  if (WiFi.softAPgetStationNum() == 0) {
+  if (WiFi.softAPgetStationNum() == 0 && WiFi.status() != WL_CONNECTED) {
     logCoinSendFailure("network_unreachable_no_station", 0, "");
     return;
   }
@@ -350,18 +457,110 @@ void handleRegisterRequest(NetworkClient& client, const String& body) {
     parsedPort = fallbackKioskPort;
   }
 
-  kioskIp = postedIp;
-  kioskPort = uint16_t(parsedPort);
-  kioskPortalPath = normalizedPath(postedPath);
-  hasKioskRegistration = true;
-  refreshTargets();
-
-  Serial.print("kiosk_registered:coin_target=");
-  Serial.println(tabletServer);
-  Serial.print("kiosk_registered:portal_target=");
-  Serial.println(kioskPortalUrl);
-
+  updateKioskRegistration(postedIp, uint16_t(parsedPort), postedPath);
   replyPlain(client, 200, "OK", "registered");
+}
+
+void handleSetupPage(NetworkClient& client) {
+  int n = WiFi.scanNetworks(false, false);
+  String scanOptions = "";
+  if (n <= 0) {
+    scanOptions = "<option value=\"\">No networks found</option>";
+  } else {
+    for (int i = 0; i < n; ++i) {
+      String ssidName = WiFi.SSID(i);
+      int rssi = WiFi.RSSI(i);
+      String encType = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured";
+      scanOptions += "<option value=\"" + ssidName + "\">" + ssidName + " (" + String(rssi) + " dBm, " + encType + ")</option>";
+    }
+  }
+  WiFi.scanDelete();
+
+  String currentStaStatusStr = (WiFi.status() == WL_CONNECTED)
+    ? ("Connected (" + WiFi.localIP().toString() + ")")
+    : "Disconnected";
+
+  String html = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>PrintBit Setup Portal</title>";
+  html += "<style>";
+  html += "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;margin:0;padding:20px;background:#f3f4f6;color:#1f2937}";
+  html += ".card{max-width:480px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1)}";
+  html += "h1{font-size:1.25rem;font-weight:700;margin-top:0;margin-bottom:16px;color:#111827;display:flex;align-items:center;gap:8px}";
+  html += ".badge{font-size:0.75rem;padding:2px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3}";
+  html += ".info{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;font-size:0.875rem;margin-bottom:20px}";
+  html += ".info p{margin:4px 0}";
+  html += "label{display:block;font-size:0.875rem;font-weight:600;margin-bottom:4px;color:#374151}";
+  html += "select,input[type=text],input[type=password]{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;box-sizing:border-box;margin-bottom:14px}";
+  html += "button{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:1rem;font-weight:600;cursor:pointer}";
+  html += "button:hover{background:#1d4ed8}";
+  html += ".sec{border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px}";
+  html += "</style></head><body>";
+  html += "<div class='card'>";
+  html += "<h1>PrintBit Setup <span class='badge'>Firmware</span></h1>";
+  html += "<div class='info'>";
+  html += "<p><strong>AP IP:</strong> " + WiFi.softAPIP().toString() + " (" + apSsid + ")</p>";
+  html += "<p><strong>STA Status:</strong> " + currentStaStatusStr + "</p>";
+  html += "<p><strong>Kiosk Server:</strong> http://" + kioskIp + ":" + String(kioskPort) + "</p>";
+  html += "</div>";
+  html += "<form method='POST' action='/setup/save'>";
+  html += "<label for='sta_sel'>Select Wi-Fi Network</label>";
+  html += "<select id='sta_sel' onchange=\"if(this.value)document.getElementById('sta_custom').value=this.value\">";
+  html += "<option value=''>-- Select Scanned Network --</option>" + scanOptions;
+  html += "</select>";
+  html += "<label for='sta_custom'>Wi-Fi SSID (or Manual)</label>";
+  html += "<input type='text' id='sta_custom' name='sta_ssid' placeholder='SSID name' value='" + staSsid + "'>";
+  html += "<label for='sta_pass'>Wi-Fi Password</label>";
+  html += "<input type='password' id='sta_pass' name='sta_pass' placeholder='Router password' value='" + staPass + "'>";
+  html += "<div class='sec'>";
+  html += "<label for='ap_pass'>Hotspot AP Password (Optional, min 8 chars)</label>";
+  html += "<input type='password' id='ap_pass' name='ap_pass' placeholder='Keep current password'>";
+  html += "</div>";
+  html += "<button type='submit'>Save & Connect</button>";
+  html += "</form>";
+  html += "</div></body></html>";
+
+  replyHtml(client, 200, "OK", html);
+}
+
+void handleSetupSave(NetworkClient& client, const String& body) {
+  String postedStaSsid = getFormValue(body, "sta_ssid");
+  String postedStaPass = getFormValue(body, "sta_pass");
+  String postedApPass = getFormValue(body, "ap_pass");
+  postedStaSsid.trim();
+  postedStaPass.trim();
+  postedApPass.trim();
+
+  bool staUpdated = false;
+  if (postedStaSsid.length() > 0) {
+    staSsid = postedStaSsid;
+    staPass = postedStaPass;
+    staUpdated = true;
+  }
+
+  bool apUpdated = false;
+  if (postedApPass.length() >= 8) {
+    apPass = postedApPass;
+    apUpdated = true;
+  }
+
+  saveWifiConfigToNvs(staSsid, staPass, apUpdated ? apPass : "");
+
+  if (staUpdated) {
+    WiFi.disconnect();
+    Serial.print("Connecting to Wi-Fi: ");
+    Serial.println(staSsid);
+    Serial.println("WIFI_STA_CONNECTING");
+    WiFi.begin(staSsid.c_str(), staPass.c_str());
+  }
+
+  if (apUpdated) {
+    WiFi.softAP(apSsid.c_str(), apPass.c_str(), 1, 0);
+  }
+
+  String responseHtml = "<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='4;url=/setup'><title>Saved</title>";
+  responseHtml += "<style>body{font-family:sans-serif;padding:24px;text-align:center;background:#f3f4f6;color:#111827}.card{max-width:400px;margin:40px auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1)}a{display:inline-block;margin-top:12px;color:#2563eb;text-decoration:none;font-weight:600}</style></head><body>";
+  responseHtml += "<div class='card'><h2>Credentials Saved!</h2><p>Connecting to external Wi-Fi in background...</p><a href='/setup'>Return to Setup</a></div></body></html>";
+
+  replyHtml(client, 200, "OK", responseHtml);
 }
 
 void handleWifiRequest(NetworkClient& client) {
@@ -410,12 +609,12 @@ void handleWifiRequest(NetworkClient& client) {
   }
 
   String body = "";
-  if (contentLength > 0 && contentLength <= 512) {
+  if (contentLength > 0 && contentLength <= 1024) {
     body = readRequestBody(client, contentLength);
   }
 
   if (method == "POST" && routePath.startsWith("/kiosk/register")) {
-    if (contentLength <= 0 || contentLength > 512) {
+    if (contentLength <= 0 || contentLength > 1024) {
       replyPlain(client, 413, "Payload Too Large", "Invalid payload size");
       client.stop();
       return;
@@ -425,8 +624,33 @@ void handleWifiRequest(NetworkClient& client) {
     return;
   }
 
-  if (method == "GET" && isCaptiveProbePath(routePath)) {
+  // Admin dashboard redirection
+  if (routePath.startsWith("/admin")) {
+    String adminTarget = "http://" + kioskIp + ":" + String(kioskPort) + routePath;
+    if (query.length() > 0) {
+      adminTarget += "?" + query;
+    }
+    replyRedirect(client, adminTarget);
+    client.stop();
+    return;
+  }
+
+  // Captive probe and portal redirection
+  if (method == "GET" && (isCaptiveProbePath(routePath) || routePath == "/portal")) {
     replyRedirect(client, kioskPortalUrl);
+    client.stop();
+    return;
+  }
+
+  // Native setup portal endpoints
+  if (method == "GET" && routePath == "/setup") {
+    handleSetupPage(client);
+    client.stop();
+    return;
+  }
+
+  if (method == "POST" && routePath == "/setup/save") {
+    handleSetupSave(client, body);
     client.stop();
     return;
   }
@@ -441,19 +665,19 @@ void handleWifiRequest(NetworkClient& client) {
     if (postedRequestId.length() == 0) postedRequestId = getQueryValue(query, "requestId");
 
     postedToken.trim();
-if (postedToken.length() == 0 || postedToken != hopperControlToken) {
-  Serial.print("hopper_token_debug: got='");
-  Serial.print(postedToken);
-  Serial.print("' (len=");
-  Serial.print(postedToken.length());
-  Serial.print(") expected='");
-  Serial.print(hopperControlToken);
-  Serial.println("'");
-  replyPlain(client, 401, "Unauthorized", "Invalid hopper token");
-  Serial.println("hopper_dispense_rejected:unauthorized");
-  client.stop();
-  return;
-}
+    if (postedToken.length() == 0 || postedToken != hopperControlToken) {
+      Serial.print("hopper_token_debug: got='");
+      Serial.print(postedToken);
+      Serial.print("' (len=");
+      Serial.print(postedToken.length());
+      Serial.print(") expected='");
+      Serial.print(hopperControlToken);
+      Serial.println("'");
+      replyPlain(client, 401, "Unauthorized", "Invalid hopper token");
+      Serial.println("hopper_dispense_rejected:unauthorized");
+      client.stop();
+      return;
+    }
     if (!isNumericString(postedCoins)) {
       replyPlain(client, 400, "Bad Request", "Missing or invalid coins");
       Serial.println("hopper_dispense_rejected:invalid_coins");
@@ -485,8 +709,6 @@ if (postedToken.length() == 0 || postedToken != hopperControlToken) {
     noInterrupts();
     dispensedSnapshot = coinDispensed;
     interrupts();
-
-    // Ito yung nabago
 
     String response = "{";
 
@@ -653,6 +875,77 @@ void handleSerialCommand(const String& rawLine) {
     return;
   }
 
+  if (line.startsWith("KIOSK_IP") || line.startsWith("kiosk_ip")) {
+    String rest = line.substring(8);
+    rest.trim();
+    if (rest.startsWith(":") || rest.startsWith("=")) {
+      rest = rest.substring(1);
+      rest.trim();
+    }
+
+    char delimiter = (rest.indexOf(' ') >= 0) ? ' ' : ':';
+    int firstDelim = rest.indexOf(delimiter);
+    String ipToken = firstDelim > 0 ? rest.substring(0, firstDelim) : rest;
+    ipToken.trim();
+
+    String portToken = "";
+    String pathToken = "";
+    if (firstDelim > 0) {
+      int secondDelim = rest.indexOf(delimiter, firstDelim + 1);
+      if (secondDelim > 0) {
+        portToken = rest.substring(firstDelim + 1, secondDelim);
+        pathToken = rest.substring(secondDelim + 1);
+      } else {
+        portToken = rest.substring(firstDelim + 1);
+      }
+    }
+    portToken.trim();
+    pathToken.trim();
+
+    if (isValidIpv4Address(ipToken)) {
+      int parsedPort = portToken.toInt();
+      if (parsedPort <= 0 || parsedPort > 65535) parsedPort = fallbackKioskPort;
+      if (pathToken.length() == 0) pathToken = fallbackKioskPortalPath;
+
+      updateKioskRegistration(ipToken, uint16_t(parsedPort), pathToken);
+      Serial.print("KIOSK_IP:");
+      Serial.println(kioskIp);
+      return;
+    } else {
+      Serial.print("kiosk_register_failed:invalid_ip:");
+      Serial.println(ipToken);
+      return;
+    }
+  }
+
+  if (line == "WIFI_DISCONNECT" || line == "wifi_disconnect") {
+    WiFi.disconnect();
+    Serial.println("WIFI_STA_DISCONNECTED");
+    return;
+  }
+
+  if (line == "WIFI_STATUS" || line == "wifi_status") {
+    Serial.print("AP_SSID:");
+    Serial.println(apSsid);
+    Serial.print("AP_IP:");
+    Serial.println(WiFi.softAPIP());
+    Serial.print("STA_SSID:");
+    Serial.println(staSsid);
+    Serial.print("STA_STATUS:");
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("CONNECTED");
+      Serial.print("STA_IP:");
+      Serial.println(WiFi.localIP());
+    } else if (WiFi.status() == WL_DISCONNECTED) {
+      Serial.println("DISCONNECTED");
+    } else {
+      Serial.println("IDLE");
+    }
+    Serial.print("KIOSK_IP:");
+    Serial.println(kioskIp);
+    return;
+  }
+
   if (isNumericString(line)) {
     int command = line.toInt();
     if (command > 0 && command <= maxDispenseCoins) {
@@ -674,12 +967,33 @@ void setup() {
   attachInterrupt(coinAcceptorPin, countPulse, RISING);
   attachInterrupt(hopperSensorPin, coinDetected, FALLING);
 
-  refreshTargets();
-  WiFi.softAP(ssid, password, 1, 0);
+  loadNvsConfig();
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(apSsid.c_str(), apPass.c_str(), 1, 0);
+
+  dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+
+  if (MDNS.begin("printbit")) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println("mDNS responder started: printbit.local");
+  } else {
+    Serial.println("mDNS responder failed to start");
+  }
+
+  if (staSsid.length() > 0) {
+    Serial.print("Connecting to STA Wi-Fi: ");
+    Serial.println(staSsid);
+    Serial.println("WIFI_STA_CONNECTING");
+    WiFi.begin(staSsid.c_str(), staPass.c_str());
+  }
 
   Serial.println("AP Started");
   Serial.print("AP_IP:");
   Serial.println(WiFi.softAPIP());
+  Serial.print("KIOSK_IP:");
+  Serial.println(kioskIp);
   Serial.print("coin_target:");
   Serial.println(tabletServer);
   Serial.print("portal_target:");
@@ -734,6 +1048,9 @@ void loop() {
     }
   }
 
+  // DNS SERVER
+  dnsServer.processNextRequest();
+
   // WIFI REQUEST
   NetworkClient client = server.accept();
   if (client) {
@@ -783,6 +1100,24 @@ void loop() {
     Serial.print(":dispensed=");
     Serial.println(dispensedSnapshot);
     activeDispenseRequestId = "";
+  }
+
+  // NON-BLOCKING STA STATUS TELEMETRY
+  static wl_status_t lastStaStatus = WL_IDLE_STATUS;
+  static unsigned long lastStaCheckAt = 0;
+  if (millis() - lastStaCheckAt >= 1000) {
+    lastStaCheckAt = millis();
+    wl_status_t currentStaStatus = WiFi.status();
+    if (currentStaStatus != lastStaStatus) {
+      if (currentStaStatus == WL_CONNECTED) {
+        Serial.print("STA_IP:");
+        Serial.println(WiFi.localIP());
+        Serial.println("WIFI_STA_CONNECTED");
+      } else if (lastStaStatus == WL_CONNECTED && currentStaStatus != WL_CONNECTED) {
+        Serial.println("WIFI_STA_DISCONNECTED");
+      }
+      lastStaStatus = currentStaStatus;
+    }
   }
 
   static unsigned long lastRegistrationStatusAt = 0;

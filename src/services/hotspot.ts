@@ -12,6 +12,11 @@ import {
   PORT,
 } from '@/config/http.config';
 import {
+  findMatchingIpv4ForSubnet,
+  getLocalIPv4,
+} from '@/utils/network';
+import { sendKioskIpAnnouncement } from './serial';
+import {
   markWatchdogHeartbeat,
   setWatchdogComponentState,
 } from './watchdog-health';
@@ -69,7 +74,13 @@ function ensureFirewallRules(): void {
   }
 }
 
-function detectEsp32KioskIp(): string | null {
+export function detectEsp32KioskIp(
+  customInterfaces?: NodeJS.Dict<os.NetworkInterfaceInfo[]>,
+): string | null {
+  if (ESP32_KIOSK_IP && isValidIpv4Address(ESP32_KIOSK_IP)) {
+    return ESP32_KIOSK_IP.trim();
+  }
+
   const preferredPrefixes: string[] = [];
   if (ESP32_KIOSK_SUBNET_PREFIX.trim().length > 0) {
     preferredPrefixes.push(ESP32_KIOSK_SUBNET_PREFIX.trim());
@@ -79,33 +90,16 @@ function detectEsp32KioskIp(): string | null {
     preferredPrefixes.push(esp32SubnetPrefix);
   }
 
-  let privateFallback: string | null = null;
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] ?? []) {
-      if (iface.family !== 'IPv4' || iface.internal) continue;
-      if (
-        preferredPrefixes.some((prefix) => iface.address.startsWith(prefix))
-      ) {
-        return iface.address;
-      }
-      if (
-        !privateFallback &&
-        /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(iface.address)
-      ) {
-        privateFallback = iface.address;
-      }
-    }
+  for (const prefix of preferredPrefixes) {
+    const match = findMatchingIpv4ForSubnet(prefix, customInterfaces);
+    if (match) return match;
   }
-  return privateFallback;
+
+  return getLocalIPv4(undefined, customInterfaces);
 }
 
-async function registerKioskWithEsp32(): Promise<boolean> {
-  const configuredKioskIp = ESP32_KIOSK_IP?.trim();
-  const kioskIp =
-    configuredKioskIp && isValidIpv4Address(configuredKioskIp)
-      ? configuredKioskIp
-      : detectEsp32KioskIp();
+export async function registerKioskWithEsp32(targetIp?: string): Promise<boolean> {
+  const kioskIp = targetIp?.trim() || detectEsp32KioskIp();
 
   if (!kioskIp) {
     console.warn(
@@ -116,6 +110,9 @@ async function registerKioskWithEsp32(): Promise<boolean> {
     );
     return false;
   }
+
+  // Also announce over serial in parallel if available
+  sendKioskIpAnnouncement(kioskIp, PORT, ESP32_CAPTIVE_PORTAL_PATH);
 
   const requestUrl = new URL(ESP32_REGISTER_ROUTE, `${ESP32_AP_BASE_URL}/`);
   const payload = new URLSearchParams({
@@ -161,6 +158,7 @@ async function registerKioskWithEsp32(): Promise<boolean> {
 class HotspotService {
   private running = false;
   private esp32RegistrationTimer: NodeJS.Timeout | null = null;
+  private lastRegisteredIp: string | null = null;
 
   private stopEsp32RegistrationLoop(): void {
     if (this.esp32RegistrationTimer) {
@@ -172,9 +170,26 @@ class HotspotService {
   private async startEsp32RegistrationLoop(): Promise<void> {
     this.stopEsp32RegistrationLoop();
 
-    await registerKioskWithEsp32();
-    this.esp32RegistrationTimer = setInterval(() => {
-      void registerKioskWithEsp32();
+    const initialIp = detectEsp32KioskIp();
+    const registered = await registerKioskWithEsp32(initialIp ?? undefined);
+    if (registered && initialIp) {
+      this.lastRegisteredIp = initialIp;
+    }
+
+    this.esp32RegistrationTimer = setInterval(async () => {
+      const currentIp = detectEsp32KioskIp();
+      const needsImmediateUpdate =
+        Boolean(currentIp) && currentIp !== this.lastRegisteredIp;
+
+      const success = await registerKioskWithEsp32(currentIp ?? undefined);
+      if (success && currentIp) {
+        if (needsImmediateUpdate) {
+          console.log(
+            `[HOTSPOT] → Kiosk IP changed from ${this.lastRegisteredIp ?? 'none'} to ${currentIp}; ESP32 updated.`,
+          );
+        }
+        this.lastRegisteredIp = currentIp;
+      }
     }, ESP32_REGISTER_INTERVAL_MS);
   }
 

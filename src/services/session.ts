@@ -11,6 +11,8 @@ import {
   ESP32_AP_BASE_URL,
   PORT,
 } from '@/config/http.config';
+import { getLocalIPv4 } from '@/utils/network';
+import { detectEsp32KioskIp } from './hotspot';
 import {
   wirelessSessionStore,
   type WirelessSessionDocumentStorageEntry,
@@ -1373,22 +1375,7 @@ function detectPreferredLocalKioskAddress(requestHost: string): string | null {
 }
 
 function detectHotspotAddress(): string | null {
-  const interfaces = os.networkInterfaces();
-  let privateFallback: string | null = null;
-
-  for (const interfaceName of Object.keys(interfaces)) {
-    for (const iface of interfaces[interfaceName] ?? []) {
-      if (iface.family !== 'IPv4' || iface.internal) continue;
-
-      const address = iface.address;
-      if (address.startsWith('192.168.137.')) return address;
-      if (!privateFallback && isPrivateIpv4(address)) {
-        privateFallback = address;
-      }
-    }
-  }
-
-  return privateFallback;
+  return getLocalIPv4();
 }
 
 function buildUploadUrl(baseUrl: URL, token: string): string {
@@ -1401,36 +1388,7 @@ function buildPublicUploadUrl(token: string): string | undefined {
 }
 
 function detectEsp32KioskAddress(): string | null {
-  if (ESP32_KIOSK_IP && isPrivateIpv4(ESP32_KIOSK_IP)) {
-    return ESP32_KIOSK_IP;
-  }
-
-  const prefixes = new Set<string>();
-  if (ESP32_KIOSK_SUBNET_PREFIX.trim().length > 0) {
-    prefixes.add(ESP32_KIOSK_SUBNET_PREFIX.trim());
-  }
-  const esp32SubnetPrefix = deriveEsp32SubnetPrefix();
-  if (esp32SubnetPrefix) {
-    prefixes.add(esp32SubnetPrefix);
-  }
-
-  let privateFallback: string | null = null;
-  const interfaces = os.networkInterfaces();
-  for (const interfaceName of Object.keys(interfaces)) {
-    for (const iface of interfaces[interfaceName] ?? []) {
-      if (iface.family !== 'IPv4' || iface.internal) continue;
-      if (
-        Array.from(prefixes).some((prefix) => iface.address.startsWith(prefix))
-      ) {
-        return iface.address;
-      }
-      if (!privateFallback && isPrivateIpv4(iface.address)) {
-        privateFallback = iface.address;
-      }
-    }
-  }
-
-  return privateFallback;
+  return detectEsp32KioskIp();
 }
 
 function deriveEsp32SubnetPrefix(): string | null {

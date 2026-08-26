@@ -235,7 +235,120 @@ export async function handleWorkerReturnPrintEvent(input: {
     return;
   }
 
-  if (input.evt.type === 'PrintSucceeded') {
+  if (
+    input.evt.type === 'PrinterOffline' ||
+    input.evt.type === 'PrinterOnline' ||
+    input.evt.type === 'PrinterError'
+  ) {
+    return;
+  }
+
+  if (input.evt.type === 'JobPaused') {
+    const errorText = input.evt.errorMessage ?? input.evt.message ?? '';
+    const lower = errorText.toLowerCase();
+    const isPaperOut =
+      lower.includes('paper') ||
+      lower.includes('no paper') ||
+      lower.includes('out of paper');
+    const isJam = lower.includes('jam');
+    const isDoor = lower.includes('door') || lower.includes('cover');
+
+    let errorCode = 'WORKER_HARDWARE_ERROR';
+    let userMsg = errorText || 'Printer paused due to a hardware issue.';
+    let hint = 'Please check the printer, then click Resume.';
+
+    if (isPaperOut) {
+      errorCode = 'PAPER_TRAY_EMPTY';
+      userMsg = 'Printer Out of Paper. Please load paper and click Resume.';
+      hint = 'Please load paper into the rear tray, then press Resume to retry.';
+    } else if (isJam) {
+      errorCode = 'PAPER_JAM_PRINT';
+      userMsg = 'Paper jam detected in the printer.';
+      hint = 'Please clear the jammed paper, then click Resume.';
+    } else if (isDoor) {
+      errorCode = 'PRINTER_DOOR_OPEN';
+      userMsg = 'Printer door or cover is open.';
+      hint = 'Please close all printer covers, then click Resume.';
+    }
+
+    const printError = {
+      code: errorCode,
+      severity: 'recoverable' as const,
+      userMessage: userMsg,
+      hint,
+      timestamp: new Date().toISOString(),
+      canRetry: true,
+      canDismiss: false,
+    };
+
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'paused',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
+        printerName: input.evt.printerName ?? null,
+        reason: userMsg,
+        pagesPrinted:
+          typeof input.evt.pagesPrinted === 'number' &&
+          Number.isFinite(input.evt.pagesPrinted)
+            ? input.evt.pagesPrinted
+            : undefined,
+        totalPages:
+          typeof input.evt.totalPages === 'number' &&
+          Number.isFinite(input.evt.totalPages) &&
+          input.evt.totalPages > 0
+            ? input.evt.totalPages
+            : undefined,
+        printError,
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+      },
+    );
+    return;
+  }
+
+  if (input.evt.type === 'JobResumed') {
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'processing',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
+        printerName: input.evt.printerName ?? null,
+        reason: input.evt.message ?? 'Job resumed by worker',
+        pagesPrinted:
+          typeof input.evt.pagesPrinted === 'number' &&
+          Number.isFinite(input.evt.pagesPrinted)
+            ? input.evt.pagesPrinted
+            : undefined,
+        totalPages:
+          typeof input.evt.totalPages === 'number' &&
+          Number.isFinite(input.evt.totalPages) &&
+          input.evt.totalPages > 0
+            ? input.evt.totalPages
+            : undefined,
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+      },
+    );
+    return;
+  }
+
+  if (
+    input.evt.type === 'PrintSucceeded' ||
+    (input.evt.type === 'JobCompleted' && input.evt.outcome === 'completed')
+  ) {
     if (mode === 'copy') {
       jobStore.updateJobState(transactionId, 'printed');
     }
