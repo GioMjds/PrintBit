@@ -8,7 +8,7 @@ This guide covers flashing, initial boot, dynamic network configuration, and ove
 
 The PrintBit firmware operates in **Dual AP + STA Mode** (`WIFI_AP_STA`):
 
-```
+```diagram
                                 ESP32 Dual Mode
                                 ┌──────────────┐
                                 │    ESP32     │
@@ -26,6 +26,7 @@ The PrintBit firmware operates in **Dual AP + STA Mode** (`WIFI_AP_STA`):
 ```
 
 ### Key Features
+
 - **Zero Hardcoded Credentials:** Network credentials and IP endpoints are persisted in ESP32 Flash Memory (NVS via `<Preferences.h>`).
 - **mDNS Admin Gateway (`http://printbit.local/admin`):** Admins can open the dashboard from any phone without knowing the kiosk's dynamic IP address.
 - **OTA Wi-Fi Setup Portal (`http://printbit.local/setup`):** Change router credentials or update AP passwords over the air without reflashing firmware.
@@ -36,10 +37,12 @@ The PrintBit firmware operates in **Dual AP + STA Mode** (`WIFI_AP_STA`):
 ## 2. Flashing the Firmware
 
 ### Hardware Requirements
+
 - **Microcontroller:** ESP32 Dev Module (ESP32-WROOM-32 or ESP32-WROVER)
 - **Connection:** Micro-USB / USB-C data cable connected to the Kiosk PC
 
 ### Arduino IDE Configuration
+
 1. Open [`esp32-captive-portal.ino`](file:///C:/Users/printbit/printbit/esp32-captive-portal.ino) in Arduino IDE 2.x.
 2. In **Tools** menu, configure the following:
    - **Board:** `ESP32 Dev Module` (from `esp32` board package by Espressif, version 2.0.x or 3.0.x)
@@ -63,15 +66,15 @@ The PrintBit firmware operates in **Dual AP + STA Mode** (`WIFI_AP_STA`):
 
 On first boot (or after clearing NVS flash), the firmware automatically initializes with these defaults:
 
-| Parameter | Factory Default | Description |
-|---|---|---|
-| **AP SSID** | `PrintBit` | Customer upload & admin Wi-Fi network |
-| **AP Password** | `printbit123` | WPA2-PSK password for kiosk Wi-Fi |
-| **AP Gateway IP** | `192.168.4.1` | Static IP of the ESP32 Access Point |
-| **Kiosk IP** | `192.168.4.2` | Kiosk server IP (auto-updated by Node.js) |
-| **Kiosk Port** | `3000` | Node.js Express server port |
-| **Kiosk Portal Path**| `/portal` | Captive portal landing page |
-| **STA SSID / Pass** | *(empty)* | Unset until configured via `/setup` |
+| Parameter             | Factory Default | Description                               |
+| --------------------- | --------------- | ----------------------------------------- |
+| **AP SSID**           | `PrintBit`      | Customer upload & admin Wi-Fi network     |
+| **AP Password**       | `printbit123`   | WPA2-PSK password for kiosk Wi-Fi         |
+| **AP Gateway IP**     | `192.168.4.1`   | Static IP of the ESP32 Access Point       |
+| **Kiosk IP**          | `192.168.4.2`   | Kiosk server IP (auto-updated by Node.js) |
+| **Kiosk Port**        | `3000`          | Node.js Express server port               |
+| **Kiosk Portal Path** | `/portal`       | Captive portal landing page               |
+| **STA SSID / Pass**   | _(empty)_       | Unset until configured via `/setup`       |
 
 ---
 
@@ -135,6 +138,7 @@ To give the ESP32 access to campus/venue Wi-Fi for time synchronization, remote 
 When connected via USB Serial at **`115200 baud`**, you can issue manual ASCII commands or monitor real-time telemetry:
 
 ### Available Inbound Commands (PC -> ESP32)
+
 - `KIOSK_IP <ip> [port] [path]` — Update the registered kiosk endpoint in NVS flash.
 - `WIFI_STATUS` — Print current AP and STA status, MAC addresses, and IP assignments.
 - `WIFI_DISCONNECT` — Disconnect from external router and clear STA state.
@@ -142,6 +146,7 @@ When connected via USB Serial at **`115200 baud`**, you can issue manual ASCII c
 - `HOPPER_STATUS` — Check hopper readiness, motor state, and optical sensor.
 
 ### Telemetry Events Output by ESP32 (ESP32 -> PC)
+
 - `AP_IP:<ip>` — ESP32 Access Point IP (e.g. `192.168.4.1`).
 - `STA_IP:<ip>` — External router LAN IP assigned to ESP32.
 - `KIOSK_IP:<ip>` — Active kiosk server IP confirmed by ESP32.
@@ -154,9 +159,9 @@ When connected via USB Serial at **`115200 baud`**, you can issue manual ASCII c
 
 ## 8. Troubleshooting Checklist
 
-| Symptom | Cause | Solution |
-|---|---|---|
-| `http://printbit.local/admin` does not resolve on Android | Some older Android versions do not support local mDNS queries in Chrome | Use `http://192.168.4.1/admin` instead. |
-| Port access denied during `pnpm dev` | Arduino IDE Serial Monitor is open on the same COM port | Close Arduino IDE Serial Monitor before starting Node.js. |
-| External Wi-Fi does not connect | 5GHz network selected | ESP32 only supports 2.4GHz Wi-Fi networks (802.11 b/g/n). Select a 2.4GHz SSID in `/setup`. |
-| Kiosk IP mismatch | Kiosk PC joined on a different subnet adapter | Node.js automatically detects the `192.168.4.x` adapter and re-announces over Serial on boot. Verify Wi-Fi is connected to `PrintBit`. |
+| Symptom                                                   | Cause                                                                   | Solution                                                                                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `http://printbit.local/admin` does not resolve on Android | Some older Android versions do not support local mDNS queries in Chrome | Use `http://192.168.4.1/admin` instead.                                                                                                |
+| Port access denied during `pnpm dev`                      | Arduino IDE Serial Monitor is open on the same COM port                 | Close Arduino IDE Serial Monitor before starting Node.js.                                                                              |
+| External Wi-Fi does not connect                           | 5GHz network selected                                                   | ESP32 only supports 2.4GHz Wi-Fi networks (802.11 b/g/n). Select a 2.4GHz SSID in `/setup`.                                            |
+| Kiosk IP mismatch                                         | Kiosk PC joined on a different subnet adapter                           | Node.js automatically detects the `192.168.4.x` adapter and re-announces over Serial on boot. Verify Wi-Fi is connected to `PrintBit`. |
