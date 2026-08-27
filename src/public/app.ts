@@ -210,46 +210,42 @@ interface GuideStep {
   captionFallback: string;
 }
 
-const guides: Record<string, GuideStep[]> = {
+// Guides for print, copy, and scan steps with images and captions. Each guide consists of multiple steps that users can navigate through.
+const guides = {
   print: [
     {
       imageUrl: '/assets/print-steps/step-1.png',
       captionKey: 'print.guide.step1',
-      captionFallback: 'Scan "PrintBit"\'s QR code from your device to connect first.',
+      captionFallback: 'Scan the QR code shown in the kiosk to open the upload page on your device.',
     },
     {
-      imageUrl: '/assets/print-steps/step-2.png',
+      imageUrl: '/assets/print-steps/step-2.jpg',
       captionKey: 'print.guide.step2',
-      captionFallback: 'Scan the QR code shown in the kiosk to open the upload page on your device.',
+      captionFallback: 'Upload your document file(s) from your device.',
     },
     {
       imageUrl: '/assets/print-steps/step-3.jpg',
       captionKey: 'print.guide.step3',
-      captionFallback: 'Upload your document file(s) from your device.',
+      captionFallback: 'Press "Send to Kiosk" to transfer your file(s) to the kiosk.',
     },
     {
       imageUrl: '/assets/print-steps/step-4.jpg',
       captionKey: 'print.guide.step4',
-      captionFallback: 'Press "Send to Kiosk" to transfer your file(s) to the kiosk.',
+      captionFallback: 'Wait for the upload to complete. If it is successful, please check in the kiosk to review your file(s).',
     },
     {
-      imageUrl: '/assets/print-steps/step-5.jpg',
+      imageUrl: '/assets/print-steps/step-5.png',
       captionKey: 'print.guide.step5',
-      captionFallback: 'Wait for the upload to complete. If it is successful, please check in the kiosk to review your file(s).',
+      captionFallback: 'Your uploaded file(s) will appear on the kiosk screen. Review your file(s) and press "Proceed to Config" for the next step.',
     },
     {
       imageUrl: '/assets/print-steps/step-6.png',
       captionKey: 'print.guide.step6',
-      captionFallback: 'Your uploaded file(s) will appear on the kiosk screen. Review your file(s) and press "Proceed to Config" for the next step.',
+      captionFallback: 'Configure your print settings (e.g. number of copies, color or black & white) and then press "Continue" for confirmation step and to insert coins.',
     },
     {
       imageUrl: '/assets/print-steps/step-7.png',
       captionKey: 'print.guide.step7',
-      captionFallback: 'Configure your print settings (e.g. number of copies, color or black & white) and then press "Continue" for confirmation step and to insert coins.',
-    },
-    {
-      imageUrl: '/assets/print-steps/step-8.png',
-      captionKey: 'print.guide.step8',
       captionFallback: 'You may now proceed to insert coins. Press "Confirm & Print" and wait for the printing to start.',
     },
   ],
@@ -312,13 +308,19 @@ const guides: Record<string, GuideStep[]> = {
       captionFallback: 'After confirmation, the kiosk generates the image QR code link to download as soft copy.',
     },
   ],
-};
+} as const satisfies Record<string, GuideStep[]>;
+
+type GuideName = keyof typeof guides;
+
+function isGuideName(name: string): name is GuideName {
+  return Object.hasOwn(guides, name);
+}
 
 const guideOverlay = document.getElementById('guideOverlay');
 const guideCards = guideOverlay?.querySelectorAll<HTMLElement>('.guide-card');
 
-let activeGuide: string | null = null;
-const guideIndices: Record<string, number> = { print: 0, copy: 0, scan: 0 };
+let activeGuide: GuideName | null = null;
+const guideIndices: Record<GuideName, number> = { print: 0, copy: 0, scan: 0 };
 
 const GUIDE_NEXT_KEY = 'guide.next';
 const GUIDE_GOT_IT_KEY = 'guide.got_it';
@@ -329,7 +331,7 @@ function isGuideOverlayVisible(): boolean {
   return guideOverlay?.classList.contains('is-visible') ?? false;
 }
 
-function getGuideElements(name: string) {
+function getGuideElements(name: GuideName) {
   return {
     image: document.getElementById(`${name}GuideImage`) as HTMLImageElement | null,
     counter: document.getElementById(`${name}GuideCounter`),
@@ -339,7 +341,7 @@ function getGuideElements(name: string) {
   };
 }
 
-function renderGuideStep(name: string): void {
+function renderGuideStep(name: GuideName): void {
   const steps = guides[name];
   const elements = getGuideElements(name);
   if (!steps || !steps.length || !elements.image || !elements.counter || !elements.caption || !elements.prevBtn || !elements.nextBtn) {
@@ -373,7 +375,7 @@ function renderGuideStep(name: string): void {
   elements.nextBtn.setAttribute('aria-label', nextAriaLabel);
 }
 
-function setGuideStep(name: string, nextIndex: number): void {
+function setGuideStep(name: GuideName, nextIndex: number): void {
   const steps = guides[name];
   if (!steps || !steps.length) return;
   if (nextIndex < 0) nextIndex = 0;
@@ -384,7 +386,7 @@ function setGuideStep(name: string, nextIndex: number): void {
   renderGuideStep(name);
 }
 
-function openGuide(name: string): void {
+function openGuide(name: GuideName): void {
   if (!guideOverlay || !guideCards) return;
 
   guideCards.forEach((card) => {
@@ -413,7 +415,7 @@ window.addEventListener(KIOSK_LANGUAGE_CHANGED_EVENT, () => {
   }
 });
 
-['print', 'copy', 'scan'].forEach((name) => {
+(['print', 'copy', 'scan'] as const).forEach((name) => {
   const elements = getGuideElements(name);
   if (elements.image) {
     elements.image.addEventListener('load', () => {
@@ -447,7 +449,7 @@ document.querySelectorAll<HTMLElement>('.action-card__help').forEach((btn) => {
     event.preventDefault();
 
     const guideName = btn.dataset.guide;
-    if (!guideName) return;
+    if (!guideName || !isGuideName(guideName)) return;
     openGuide(guideName);
   });
 });

@@ -424,6 +424,58 @@
                     </div>
                   </dl>
                 </article>
+
+                <section class="system-panel printer-selection-panel">
+                  <header class="system-panel__head">
+                    <h3 class="system-panel__title" id="printerSelectionTitle">
+                      Active Printer
+                    </h3>
+                    <p class="system-panel__desc">
+                      Choose the installed device PrintBit uses for jobs and
+                      status monitoring.
+                    </p>
+                  </header>
+                  <div class="system-panel__body">
+                    <label class="printer-selection__label" for="printerSelection">
+                      Print target
+                    </label>
+                    <select
+                      id="printerSelection"
+                      class="printer-selection__select"
+                      aria-describedby="printerSelectionHint"
+                    >
+                      <option value="">Loading installed printers...</option>
+                    </select>
+                    <p
+                      id="printerSelectionHint"
+                      class="printer-selection__hint"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      Loading installed printers...
+                    </p>
+                    <button
+                      id="applyPrinterSelectionBtn"
+                      type="button"
+                      class="ctrl-btn ctrl-btn--indigo"
+                      disabled
+                    >
+                      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path
+                          fill-rule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      <span>
+                        Apply Printer Selection
+                        <span class="ctrl-btn__sub"
+                          >Updates print jobs and telemetry</span
+                        >
+                      </span>
+                    </button>
+                  </div>
+                </section>
               </div>
 
               <aside class="system-side-stack">
