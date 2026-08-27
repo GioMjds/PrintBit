@@ -1,4 +1,8 @@
 import { SummaryResponse, apiFetch, setMessage, initAuth } from '../shared';
+import {
+  buildPrinterSelectionOptions,
+  type PrinterSelectionInput,
+} from './printer-selection';
 
 // ── DOM refs ────────────────────────────────────────
 
@@ -50,6 +54,15 @@ const reDetectBtn = document.getElementById(
 const testPrintBtn = document.getElementById(
   'testPrintBtn',
 ) as HTMLButtonElement | null;
+const printerSelection = document.getElementById(
+  'printerSelection',
+) as HTMLSelectElement | null;
+const applyPrinterSelectionBtn = document.getElementById(
+  'applyPrinterSelectionBtn',
+) as HTMLButtonElement | null;
+const printerSelectionHint = document.getElementById(
+  'printerSelectionHint',
+) as HTMLElement | null;
 
 // ── Spooler alert refs ────────────────────────────────────────────────────────
 
@@ -86,6 +99,11 @@ interface PrinterTelemetryExt {
   ink?: Array<{ name: string; level: number | null; status: string }>;
   targetPrinterName?: string | null;
   targetIsDefault?: boolean;
+}
+
+interface PrinterListResponse {
+  printers: PrinterSelectionInput[];
+  targetPrinterName: string | null;
 }
 
 type PrinterTelemetryPatch = Partial<PrinterTelemetryExt>;
@@ -272,15 +290,138 @@ async function loadData(): Promise<void> {
   applySystem(summary);
 }
 
+function updatePrinterSelectionHint(): void {
+  if (!printerSelection || !printerSelectionHint) return;
+  const selectedOption = printerSelection.selectedOptions[0];
+  if (!selectedOption) {
+    printerSelectionHint.textContent = 'Choose an installed printer.';
+    return;
+  }
+
+  const isDirty = printerSelection.dataset.dirty === 'true';
+  const details = selectedOption.dataset.details ?? '';
+  printerSelectionHint.textContent = isDirty
+    ? `Unsaved change · ${details}`
+    : details;
+}
+
+function renderPrinterSelection(
+  printers: PrinterSelectionInput[],
+  targetPrinterName: string | null,
+): void {
+  if (!printerSelection) return;
+
+  const options = buildPrinterSelectionOptions(printers, targetPrinterName);
+  printerSelection.replaceChildren();
+
+  for (const option of options) {
+    const element = document.createElement('option');
+    element.value = option.value;
+    element.textContent = option.isAutomatic
+      ? option.label
+      : option.available && option.isDefault
+        ? `${option.label} — Windows default`
+        : option.label;
+    element.dataset.details = option.details;
+    element.selected = option.selected;
+    element.disabled = !option.available;
+    printerSelection.append(element);
+  }
+
+  printerSelection.dataset.dirty = 'false';
+  printerSelection.disabled = false;
+  if (applyPrinterSelectionBtn) applyPrinterSelectionBtn.disabled = true;
+  updatePrinterSelectionHint();
+}
+
+async function loadPrinterSelection(): Promise<void> {
+  if (!printerSelection) return;
+
+  printerSelection.disabled = true;
+  if (applyPrinterSelectionBtn) applyPrinterSelectionBtn.disabled = true;
+  if (printerSelectionHint) {
+    printerSelectionHint.textContent = 'Loading installed printers...';
+  }
+
+  try {
+    const response = await apiFetch('/api/admin/printer/list');
+    if (!response.ok) throw new Error('Failed to load installed printers.');
+    const body = (await response.json()) as PrinterListResponse;
+    renderPrinterSelection(body.printers ?? [], body.targetPrinterName ?? null);
+  } catch (error: unknown) {
+    printerSelection.replaceChildren();
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'Unable to load installed printers';
+    printerSelection.append(option);
+    if (printerSelectionHint) {
+      printerSelectionHint.textContent =
+        error instanceof Error
+          ? error.message
+          : 'Unable to load installed printers.';
+    }
+  } finally {
+    printerSelection.disabled = false;
+  }
+}
+
+async function savePrinterSelection(): Promise<void> {
+  if (!printerSelection) return;
+
+  const targetPrinterName = printerSelection.value.trim() || null;
+  printerSelection.disabled = true;
+  if (applyPrinterSelectionBtn) applyPrinterSelectionBtn.disabled = true;
+  setMessage('Saving printer selection...');
+
+  try {
+    const response = await apiFetch('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        inkMonitoring: { targetPrinterName },
+      }),
+    });
+    const body = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      throw new Error(body.error ?? 'Failed to save printer selection.');
+    }
+
+    printerSelection.dataset.dirty = 'false';
+    await Promise.all([loadData(), loadPrinterSelection()]);
+    setMessage(
+      targetPrinterName
+        ? `Print target set to ${targetPrinterName}.`
+        : 'Print target set to Automatic.',
+    );
+  } catch (error: unknown) {
+    setMessage(
+      error instanceof Error
+        ? error.message
+        : 'Failed to save printer selection.',
+    );
+    printerSelection.disabled = false;
+    if (applyPrinterSelectionBtn) applyPrinterSelectionBtn.disabled = false;
+  }
+}
+
 // ── Action handlers ─────────────────────────────────────────────────────────────
 
 refreshBtn.addEventListener('click', () => {
   setMessage('Refreshing...');
-  void loadData()
+  void Promise.all([loadData(), loadPrinterSelection()])
     .then(() => setMessage('System refreshed.'))
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
     );
+});
+
+printerSelection?.addEventListener('change', () => {
+  printerSelection.dataset.dirty = 'true';
+  if (applyPrinterSelectionBtn) applyPrinterSelectionBtn.disabled = false;
+  updatePrinterSelectionHint();
+});
+
+applyPrinterSelectionBtn?.addEventListener('click', () => {
+  void savePrinterSelection();
 });
 
 // ── New: Re-detect Printer ────────────────────────────────────────────────────
@@ -464,6 +605,7 @@ function connectSocket(): void {
 
 initAuth(async () => {
   await loadData();
+  await loadPrinterSelection();
   connectSocket();
 
   if (refreshTimer !== null) window.clearInterval(refreshTimer);

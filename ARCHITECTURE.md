@@ -39,7 +39,10 @@ The backend serves pages, exposes APIs, and coordinates print/copy/scan/payment 
 - `hopper-protocol.ts`: Arduino hopper serial protocol contract (command builders, response parser, error codes).
 - `settlement.ts`: shared payment settlement logic (charge balance + dispense change) used by print and copy flows.
 - `printer.ts` + `print-dispatcher.ts`: mode-based print dispatch orchestration
-  (`legacy`, `phased`, `new-only`) with engine adapters.
+  (`legacy`, `phased`, `new-only`) with engine adapters. Customer-selected
+  print quality is carried in `PrintJobOptions`; the deployed C# worker must
+  map it to a Windows printer queue whose driver preferences define Standard
+  or High.
 - `document-analysis.ts`: per-page coverage analysis for PDFs and images (pixel sampling for images, operator-based estimation for PDFs); returns classification (blank/bw/partial/full_color) and coverage (0.0-1.0).
 - `pricing-engine.ts`: PH-localized pricing logic with threshold classification, proportional partial-page pricing, blank-page policy, bulk tier discounts, and whole-peso rounding.
 - `print-quote.ts`: quote builder with optional pricing engine breakdown integration.
@@ -98,8 +101,9 @@ Ephemeral (process memory):
    - `legacy` mode: original pricing logic only.
    - `shadow` mode: both legacy and pricing engine breakdown (for validation).
    - `live` mode: pricing engine as billing source.
-6. User selects print settings.
-7. Confirm endpoint validates funds using quote-consistent amounts and dispatches print.
+6. User selects print settings, including Standard or High quality.
+7. Confirm endpoint validates funds using quote-consistent amounts and queues
+   the print with the selected quality in the worker sidecar.
 8. Settlement: balance zeroed, earnings updated, change dispensed via coin hopper.
 9. Socket.IO emits balance update and change dispense status events.
 

@@ -264,6 +264,52 @@
   gap: 10px;
 }
 
+.printer-selection-panel {
+  overflow: visible;
+}
+
+.printer-selection__label {
+  color: rgba(225, 227, 252, 0.86);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.35px;
+}
+
+.printer-selection__select {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1.5px solid rgba(167, 170, 225, 0.25);
+  border-radius: 10px;
+  background: rgba(11, 10, 26, 0.82);
+  color: var(--white);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.printer-selection__select:focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 2px;
+}
+
+.printer-selection__select:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.printer-selection__select option {
+  background: #15132d;
+  color: var(--white);
+}
+
+.printer-selection__hint {
+  margin: -2px 0 0;
+  color: rgba(225, 227, 252, 0.66);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .ctrl-btn {
   width: 100%;
   display: flex;
@@ -327,6 +373,17 @@
 .ctrl-btn--green:not(:disabled):hover {
   background: rgba(74, 222, 128, 0.16);
   border-color: rgba(74, 222, 128, 0.36);
+}
+
+.ctrl-btn--indigo {
+  color: #cfd3ff;
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(129, 140, 248, 0.3);
+}
+
+.ctrl-btn--indigo:not(:disabled):hover {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: rgba(129, 140, 248, 0.46);
 }
 
 .sop-list {

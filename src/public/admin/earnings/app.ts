@@ -9,12 +9,17 @@ import {
   initAuth,
   peso,
 } from '../shared';
+import { loadEarningsAnalyticsPair } from './analytics-pair';
+import {
+  getEarningsAnalyticsRequestKey,
+  isCurrentEarningsAnalyticsRequest,
+} from './analytics-request';
+import {
+  canNavigateToNextEarningsPeriod,
+  createEarningsViewModel,
+  shiftEarningsAnchor,
+} from './earnings-view-model';
 
-const earningsToday = document.getElementById('earningsToday') as HTMLElement;
-const earningsWeek = document.getElementById('earningsWeek') as HTMLElement;
-const earningsAll = document.getElementById('earningsAll') as HTMLElement;
-const eBarToday = document.getElementById('eBarToday') as HTMLElement | null;
-const eBarWeek = document.getElementById('eBarWeek') as HTMLElement | null;
 const openAlertBadge = document.getElementById(
   'openAlertBadge',
 ) as HTMLElement | null;
@@ -25,9 +30,6 @@ const openAlertBadgeMob = document.getElementById(
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 const periodLabel = document.getElementById('periodLabel') as HTMLElement;
 const trendGrid = document.getElementById('trendGrid') as HTMLElement;
-const methodPrint = document.getElementById('methodPrint') as HTMLElement;
-const methodCopy = document.getElementById('methodCopy') as HTMLElement;
-const methodScan = document.getElementById('methodScan') as HTMLElement;
 const topMethod = document.getElementById('topMethod') as HTMLElement;
 const viewSwitch = document.getElementById('viewSwitch') as HTMLElement;
 const prevAnchorBtn = document.getElementById(
@@ -42,6 +44,14 @@ const anchorDateInput = document.getElementById(
 const calendarToggleBtn = document.getElementById(
   'calendarToggleBtn',
 ) as HTMLButtonElement;
+
+const earningsDeck = document.querySelector<HTMLElement>('.earnings-deck')!;
+const selectedPeriodAmount = document.getElementById('selectedPeriodAmount')!;
+const comparisonText = document.getElementById('comparisonText')!;
+const emptyPeriodMessage = document.getElementById('emptyPeriodMessage')!;
+const servicePrint = document.getElementById('servicePrint')!;
+const serviceCopy = document.getElementById('serviceCopy')!;
+const serviceScan = document.getElementById('serviceScan')!;
 
 const viewButtons = Array.from(
   viewSwitch.querySelectorAll<HTMLButtonElement>('.view-switch__btn'),
@@ -67,11 +77,7 @@ function initCalendar(): void {
     onChange(selectedDates) {
       if (!selectedDates[0]) return;
       anchorDate = selectedDates[0];
-      void loadAnalyticsData().catch((e: unknown) =>
-        setMessage(
-          e instanceof Error ? e.message : 'Failed to load analytics.',
-        ),
-      );
+      void loadAnalyticsData().catch(showEarningsError);
     },
   });
 }
@@ -93,6 +99,7 @@ function isAnalyticsView(value: unknown): value is EarningsAnalyticsView {
 function setActiveViewButton(view: EarningsAnalyticsView): void {
   viewButtons.forEach((btn) => {
     btn.classList.toggle('view-switch__btn--active', btn.dataset.view === view);
+    btn.setAttribute('aria-pressed', String(btn.dataset.view === view));
   });
 }
 
@@ -107,62 +114,83 @@ function resolveInitialView(): EarningsAnalyticsView {
 }
 
 function applyEarnings(summary: SummaryResponse): void {
-  earningsToday.textContent = peso(summary.earnings.today);
-  earningsWeek.textContent = peso(summary.earnings.week);
-  earningsAll.textContent = peso(summary.earnings.allTime);
   const openCount =
     summary.anomalyStats.openCount > 0
       ? String(summary.anomalyStats.openCount)
       : '';
   if (openAlertBadge) openAlertBadge.textContent = openCount;
   if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
-
-  const maxE = summary.earnings.allTime || 1;
-  if (eBarToday)
-    eBarToday.style.width = `${Math.min(100, Math.round((summary.earnings.today / maxE) * 100))}%`;
-  if (eBarWeek)
-    eBarWeek.style.width = `${Math.min(100, Math.round((summary.earnings.week / maxE) * 100))}%`;
-}
-
-function shiftAnchorDate(view: EarningsAnalyticsView, step: number): void {
-  const next = new Date(anchorDate);
-  if (view === 'daily') next.setDate(next.getDate() + step);
-  if (view === 'weekly') next.setDate(next.getDate() + step * 7);
-  if (view === 'monthly') next.setMonth(next.getMonth() + step);
-  if (view === 'yearly') next.setFullYear(next.getFullYear() + step);
-  anchorDate = next;
-  // Keep Flatpickr in sync
-  picker?.setDate(anchorDate, false);
-}
-
-function renderTrend(analytics: EarningsAnalyticsResponse): void {
-  currentView = analytics.view;
-  setActiveViewButton(analytics.view);
-  periodLabel.textContent = `${analytics.view.toUpperCase()} · ${analytics.period.label}`;
-  trendGrid.replaceChildren();
-  for (const bucket of analytics.buckets) {
-    const cell = document.createElement('div');
-    cell.className = 'trend-cell';
-    const labelDiv = document.createElement('div');
-    labelDiv.className = 'trend-cell__label';
-    labelDiv.textContent = bucket.label;
-    const amountDiv = document.createElement('div');
-    amountDiv.className = 'trend-cell__amount';
-    amountDiv.textContent = peso(bucket.amount);
-    cell.append(labelDiv, amountDiv);
-    trendGrid.appendChild(cell);
+  if (
+    currentView === 'daily' &&
+    !canNavigateToNextEarningsPeriod('daily', anchorDate)
+  ) {
+    selectedPeriodAmount.textContent = peso(summary.earnings.today);
   }
+}
 
-  methodPrint.textContent = peso(analytics.methods.print);
-  methodCopy.textContent = peso(analytics.methods.copy);
-  methodScan.textContent = peso(analytics.methods.scan);
-  topMethod.textContent = analytics.methods.topMode
-    ? analytics.methods.topMode.toUpperCase()
-    : 'N/A';
+function renderAnalytics(
+  current: EarningsAnalyticsResponse,
+  previous: EarningsAnalyticsResponse,
+): void {
+  const model = createEarningsViewModel(current, previous);
+  currentView = current.view;
+  setActiveViewButton(current.view);
+  periodLabel.textContent = model.periodLabel;
+  selectedPeriodAmount.textContent = peso(model.total);
+  comparisonText.dataset.direction = model.direction;
+  comparisonText.textContent =
+    model.direction === 'flat'
+      ? `Matches ${model.referenceLabel}`
+      : `${model.direction === 'up' ? '↑' : '↓'} ${peso(Math.abs(model.delta))} ${model.direction === 'up' ? 'more' : 'less'} than ${model.referenceLabel}`;
+  emptyPeriodMessage.hidden = !model.empty;
+  servicePrint.textContent = peso(model.services[0].amount);
+  serviceCopy.textContent = peso(model.services[1].amount);
+  serviceScan.textContent = peso(model.services[2].amount);
+  topMethod.textContent = `Top service: ${model.topService ?? '—'}`;
+  nextAnchorBtn.disabled = !canNavigateToNextEarningsPeriod(
+    currentView,
+    anchorDate,
+  );
+  renderTrendBuckets(current.buckets);
 }
 
 function getAnalyticsRequestKey(): string {
-  return `${currentView}:${anchorDate.toISOString()}`;
+  return getEarningsAnalyticsRequestKey(currentView, anchorDate);
+}
+
+function showEarningsError(error: unknown): void {
+  const detail =
+    error instanceof Error ? error.message : 'Failed to load earnings.';
+  setMessage(`${detail} Use Refresh to retry.`);
+}
+
+function renderTrendBuckets(
+  buckets: EarningsAnalyticsResponse['buckets'],
+): void {
+  const maxAmount = Math.max(...buckets.map(({ amount }) => amount), 1);
+  trendGrid.replaceChildren();
+  for (const bucket of buckets) {
+    const cell = document.createElement('div');
+    cell.className = 'trend-cell';
+    cell.setAttribute('role', 'listitem');
+
+    const amount = document.createElement('div');
+    amount.className = 'trend-cell__amount';
+    amount.textContent = peso(bucket.amount);
+
+    const bar = document.createElement('div');
+    bar.className = 'trend-cell__bar';
+    bar.style.setProperty(
+      '--trend-height',
+      `${Math.max(8, Math.round((bucket.amount / maxAmount) * 100))}%`,
+    );
+
+    const label = document.createElement('div');
+    label.className = 'trend-cell__label';
+    label.textContent = bucket.label;
+    cell.append(amount, bar, label);
+    trendGrid.append(cell);
+  }
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────
@@ -182,31 +210,49 @@ async function loadSummaryData(): Promise<void> {
   return summaryInFlight;
 }
 
+async function loadOneAnalytics(
+  view: EarningsAnalyticsView,
+  anchor: Date,
+): Promise<EarningsAnalyticsResponse> {
+  const analyticsRes = await apiFetch(
+    `/api/admin/earnings/analytics?view=${encodeURIComponent(view)}&anchor=${encodeURIComponent(anchor.toISOString())}`,
+  );
+  if (!analyticsRes.ok) {
+    if (analyticsRes.status === 401) throw new Error('Invalid admin PIN.');
+    throw new Error('Failed to load earnings analytics.');
+  }
+  return analyticsRes.json() as Promise<EarningsAnalyticsResponse>;
+}
+
 async function loadAnalyticsData(): Promise<void> {
   const requestKey = getAnalyticsRequestKey();
-  if (analyticsInFlight && analyticsInFlightKey === requestKey) {
+  if (analyticsInFlight && analyticsInFlightKey === requestKey)
     return analyticsInFlight;
-  }
   const requestSeq = ++analyticsRequestSeq;
-
-  const requestPromise: Promise<void> = (async () => {
-    const analyticsRes = await apiFetch(
-      `/api/admin/earnings/analytics?view=${encodeURIComponent(currentView)}&anchor=${encodeURIComponent(anchorDate.toISOString())}`,
-    );
-    if (!analyticsRes.ok) {
-      if (analyticsRes.status === 401) throw new Error('Invalid admin PIN.');
-      throw new Error('Failed to load earnings analytics.');
-    }
-    const analytics = (await analyticsRes.json()) as EarningsAnalyticsResponse;
-    // Drop stale responses when users change view/date quickly.
-    if (requestSeq !== analyticsRequestSeq) return;
-    renderTrend(analytics);
-  })().finally(() => {
-    if (analyticsInFlight === requestPromise) {
-      analyticsInFlight = null;
-      analyticsInFlightKey = null;
-    }
-  });
+  earningsDeck.setAttribute('aria-busy', 'true');
+  const requestPromise = loadEarningsAnalyticsPair(
+    loadOneAnalytics,
+    currentView,
+    anchorDate,
+  )
+    .then((pair) => {
+      if (
+        requestSeq <= analyticsRequestSeq &&
+        isCurrentEarningsAnalyticsRequest(
+          requestKey,
+          currentView,
+          anchorDate,
+        )
+      )
+        renderAnalytics(pair.current, pair.previous);
+    })
+    .finally(() => {
+      if (analyticsInFlight === requestPromise) {
+        analyticsInFlight = null;
+        analyticsInFlightKey = null;
+        earningsDeck.setAttribute('aria-busy', 'false');
+      }
+    });
 
   analyticsInFlight = requestPromise;
   analyticsInFlightKey = requestKey;
@@ -222,34 +268,31 @@ refreshBtn.addEventListener('click', () => {
   setMessage('Refreshing...');
   void loadData()
     .then(() => setMessage('Earnings refreshed.'))
-    .catch((e: unknown) =>
-      setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
-    );
+    .catch(showEarningsError);
 });
 
 viewButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     if (!isAnalyticsView(btn.dataset.view)) return;
     currentView = btn.dataset.view;
+    anchorDate = new Date();
+    picker?.setDate(anchorDate, false);
     setActiveViewButton(currentView);
-    void loadAnalyticsData().catch((e: unknown) =>
-      setMessage(e instanceof Error ? e.message : 'Failed to load analytics.'),
-    );
+    void loadAnalyticsData().catch(showEarningsError);
   });
 });
 
 prevAnchorBtn.addEventListener('click', () => {
-  shiftAnchorDate(currentView, -1);
-  void loadAnalyticsData().catch((e: unknown) =>
-    setMessage(e instanceof Error ? e.message : 'Failed to load analytics.'),
-  );
+  anchorDate = shiftEarningsAnchor(currentView, anchorDate, -1);
+  picker?.setDate(anchorDate, false);
+  void loadAnalyticsData().catch(showEarningsError);
 });
 
 nextAnchorBtn.addEventListener('click', () => {
-  shiftAnchorDate(currentView, 1);
-  void loadAnalyticsData().catch((e: unknown) =>
-    setMessage(e instanceof Error ? e.message : 'Failed to load analytics.'),
-  );
+  if (!canNavigateToNextEarningsPeriod(currentView, anchorDate)) return;
+  anchorDate = shiftEarningsAnchor(currentView, anchorDate, 1);
+  picker?.setDate(anchorDate, false);
+  void loadAnalyticsData().catch(showEarningsError);
 });
 
 initAuth(async () => {
@@ -257,16 +300,16 @@ initAuth(async () => {
   setActiveViewButton(currentView);
   initCalendar();
   picker?.setDate(anchorDate, false);
-  await loadData();
+  await loadData().catch(showEarningsError);
   if (summaryRefreshTimer !== null) window.clearInterval(summaryRefreshTimer);
   if (analyticsRefreshTimer !== null)
     window.clearInterval(analyticsRefreshTimer);
   summaryRefreshTimer = window.setInterval(
-    () => void loadSummaryData(),
+    () => void loadSummaryData().catch(showEarningsError),
     10_000,
   );
   analyticsRefreshTimer = window.setInterval(
-    () => void loadAnalyticsData(),
+    () => void loadAnalyticsData().catch(showEarningsError),
     60_000,
   );
 });

@@ -44,6 +44,7 @@ import {
   type PrintDispatchResult,
   type PrintJobOptions,
 } from '@/services/printer';
+import { withPrintQuality } from '@/services/print-job-options';
 import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
@@ -1364,15 +1365,18 @@ export class FinancialService {
 
       serverFilename = path.basename(target.filePath);
       targetDocumentId = target.documentId;
-      printOptions = {
-        copies: quoteComputation.quote.copies,
-        colorMode: quoteComputation.quote.effectiveColorMode,
-        orientation,
-        rotationDeg,
-        paperSize,
-        pageRange: quoteComputation.quote.pageRange ?? undefined,
-        duplex: quoteComputation.quote.duplex,
-      };
+      printOptions = withPrintQuality(
+        {
+          copies: quoteComputation.quote.copies,
+          colorMode: quoteComputation.quote.effectiveColorMode,
+          orientation,
+          rotationDeg,
+          paperSize,
+          pageRange: quoteComputation.quote.pageRange ?? undefined,
+          duplex: quoteComputation.quote.duplex,
+        },
+        quality,
+      );
     }
 
     await checkpointRecoverySession({
