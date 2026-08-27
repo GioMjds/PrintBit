@@ -84,13 +84,17 @@ On first boot (or after clearing NVS flash), the firmware automatically initiali
    - Plug the ESP32 into a USB port on the Kiosk PC.
    - Connect the Kiosk PC's Wi-Fi adapter to the SSID **`PrintBit`** (password: **`printbit123`**).
 2. **Start the PrintBit Node.js Server:**
+
    ```bash
    pnpm dev
    ```
+
    Or in production:
+
    ```bash
    pnpm start
    ```
+
 3. **Automatic Synchronization:**
    - Node.js detects the serial port and automatically sends:
      `KIOSK_IP <your-local-ip> 3000 /portal`
