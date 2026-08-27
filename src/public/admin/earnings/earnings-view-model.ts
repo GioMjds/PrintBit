@@ -56,8 +56,9 @@ export function canNavigateToNextEarningsPeriod(
   now = new Date(),
 ): boolean {
   const next = shiftEarningsAnchor(view, anchor, 1);
+  const nextDay = new Date(next.getFullYear(), next.getMonth(), next.getDate());
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return next <= today;
+  return nextDay <= today;
 }
 
 export function getComparisonReferenceLabel(

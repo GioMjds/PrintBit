@@ -11,6 +11,10 @@ import {
 } from '../shared';
 import { loadEarningsAnalyticsPair } from './analytics-pair';
 import {
+  getEarningsAnalyticsRequestKey,
+  isCurrentEarningsAnalyticsRequest,
+} from './analytics-request';
+import {
   canNavigateToNextEarningsPeriod,
   createEarningsViewModel,
   shiftEarningsAnchor,
@@ -151,7 +155,7 @@ function renderAnalytics(
 }
 
 function getAnalyticsRequestKey(): string {
-  return `${currentView}:${anchorDate.toISOString()}`;
+  return getEarningsAnalyticsRequestKey(currentView, anchorDate);
 }
 
 function showEarningsError(error: unknown): void {
@@ -232,16 +236,23 @@ async function loadAnalyticsData(): Promise<void> {
     anchorDate,
   )
     .then((pair) => {
-      if (requestSeq === analyticsRequestSeq)
+      if (
+        requestSeq <= analyticsRequestSeq &&
+        isCurrentEarningsAnalyticsRequest(
+          requestKey,
+          currentView,
+          anchorDate,
+        )
+      )
         renderAnalytics(pair.current, pair.previous);
     })
     .finally(() => {
-    if (analyticsInFlight === requestPromise) {
-      analyticsInFlight = null;
-      analyticsInFlightKey = null;
-      earningsDeck.setAttribute('aria-busy', 'false');
-    }
-  });
+      if (analyticsInFlight === requestPromise) {
+        analyticsInFlight = null;
+        analyticsInFlightKey = null;
+        earningsDeck.setAttribute('aria-busy', 'false');
+      }
+    });
 
   analyticsInFlight = requestPromise;
   analyticsInFlightKey = requestKey;
