@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Earnings · Admin · PrintBit</title>
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
@@ -289,160 +292,164 @@
         </header>
 
         <div class="content">
-          <section class="page">
-            <section class="admin-page-hero">
-              <p class="admin-page-hero__kicker">Finance</p>
-              <h3 class="admin-page-hero__title">Revenue Intelligence</h3>
-              <p class="admin-page-hero__desc">
-                Track earnings velocity by period, visualize trends, and compare
-                contribution by service mode.
+          <section
+            class="earnings-deck"
+            aria-labelledby="earningsDeckTitle"
+            aria-busy="true"
+          >
+            <div class="earnings-deck__summary">
+              <div class="earnings-deck__heading">
+                <p class="earnings-deck__kicker">Machine earnings</p>
+                <h3 id="earningsDeckTitle" class="earnings-deck__title">
+                  Earnings
+                </h3>
+              </div>
+              <p id="periodLabel" class="earnings-deck__period">Today</p>
+              <p id="selectedPeriodAmount" class="earnings-deck__amount">
+                ₱ 0.00
               </p>
+              <p
+                id="comparisonText"
+                class="earnings-deck__comparison"
+                data-direction="flat"
+                aria-live="polite"
+              >
+                Matching yesterday
+              </p>
+              <p id="emptyPeriodMessage" class="earnings-deck__empty" hidden>
+                No earnings in this period.
+              </p>
+            </div>
+            <div
+              class="view-switch"
+              id="viewSwitch"
+              aria-label="Earnings period"
+            >
+              <button
+                class="view-switch__btn view-switch__btn--active"
+                type="button"
+                data-view="daily"
+                aria-pressed="true"
+              >
+                Today
+              </button>
+              <button
+                class="view-switch__btn"
+                type="button"
+                data-view="weekly"
+                aria-pressed="false"
+              >
+                Week
+              </button>
+              <button
+                class="view-switch__btn"
+                type="button"
+                data-view="monthly"
+                aria-pressed="false"
+              >
+                Month
+              </button>
+              <button
+                class="view-switch__btn"
+                type="button"
+                data-view="yearly"
+                aria-pressed="false"
+              >
+                Year
+              </button>
+            </div>
+            <section class="service-mix" aria-labelledby="serviceMixTitle">
+              <div class="service-mix__header">
+                <h4 id="serviceMixTitle">By service</h4>
+                <p id="topMethod">Top service: —</p>
+              </div>
+              <div class="service-mix__item">
+                <span>Print</span><strong id="servicePrint">₱ 0.00</strong>
+              </div>
+              <div class="service-mix__item">
+                <span>Copy</span><strong id="serviceCopy">₱ 0.00</strong>
+              </div>
+              <div class="service-mix__item">
+                <span>Scan</span><strong id="serviceScan">₱ 0.00</strong>
+              </div>
             </section>
+          </section>
 
-            <div class="earnings-row">
-              <div class="earning-card earning-card--today">
-                <div class="earning-card__period">Today</div>
-                <div class="earning-card__amount" id="earningsToday">
-                  ₱ 0.00
-                </div>
-                <div class="earning-card__track">
-                  <div
-                    class="earning-card__fill earning-card__fill--today"
-                    id="eBarToday"
-                    style="width: 0%"
-                  ></div>
-                </div>
+          <section class="earnings-trend" aria-labelledby="trendTitle">
+            <div class="earnings-trend__header">
+              <div>
+                <p class="earnings-deck__kicker">Period detail</p>
+                <h3 id="trendTitle">Earnings trend</h3>
               </div>
-              <div class="earning-card earning-card--week">
-                <div class="earning-card__period">This Week</div>
-                <div class="earning-card__amount" id="earningsWeek">₱ 0.00</div>
-                <div class="earning-card__track">
-                  <div
-                    class="earning-card__fill earning-card__fill--week"
-                    id="eBarWeek"
-                    style="width: 100%"
-                  ></div>
-                </div>
-              </div>
-              <div class="earning-card earning-card--all">
-                <div class="earning-card__period">All Time</div>
-                <div class="earning-card__amount" id="earningsAll">₱ 0.00</div>
-                <div class="earning-card__track">
-                  <div
-                    class="earning-card__fill earning-card__fill--all"
-                    style="width: 100%"
-                  ></div>
-                </div>
+              <div class="anchor-controls">
+                <button
+                  id="prevAnchorBtn"
+                  class="anchor-btn"
+                  type="button"
+                  aria-label="View previous earnings period"
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"
+                    />
+                  </svg>
+                </button>
+                <input
+                  id="anchorDateInput"
+                  class="anchor-input"
+                  type="text"
+                  readonly
+                  aria-label="Select earnings period anchor date"
+                />
+                <button
+                  id="calendarToggleBtn"
+                  class="anchor-btn anchor-btn--calendar"
+                  type="button"
+                  aria-label="Choose a historical earnings date"
+                >
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 011-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                </button>
+                <button
+                  id="nextAnchorBtn"
+                  class="anchor-btn"
+                  type="button"
+                  aria-label="View next earnings period"
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
+                    />
+                  </svg>
+                </button>
               </div>
             </div>
-
-            <div class="earnings-panel">
-              <div class="earnings-controls">
-                <div class="view-switch" id="viewSwitch">
-                  <button
-                    class="view-switch__btn view-switch__btn--active"
-                    data-view="daily"
-                  >
-                    Daily
-                  </button>
-                  <button class="view-switch__btn" data-view="weekly">
-                    Weekly
-                  </button>
-                  <button class="view-switch__btn" data-view="monthly">
-                    Monthly
-                  </button>
-                  <button class="view-switch__btn" data-view="yearly">
-                    Yearly
-                  </button>
-                </div>
-                <div class="anchor-controls">
-                  <button
-                    id="prevAnchorBtn"
-                    class="anchor-btn"
-                    aria-label="Previous period"
-                  >
-                    <svg
-                      viewBox="0 0 16 16"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"
-                      />
-                    </svg>
-                  </button>
-
-                  <!-- Hidden input Flatpickr attaches to -->
-                  <input
-                    id="anchorDateInput"
-                    class="anchor-input"
-                    type="text"
-                    readonly
-                    placeholder="Pick date"
-                    aria-label="Select anchor date"
-                  />
-
-                  <!-- Visible calendar icon trigger -->
-                  <button
-                    id="calendarToggleBtn"
-                    class="anchor-btn anchor-btn--calendar"
-                    aria-label="Open calendar"
-                  >
-                    <svg
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
-                        clip-rule="evenodd"
-                      />
-                    </svg>
-                  </button>
-
-                  <button
-                    id="nextAnchorBtn"
-                    class="anchor-btn"
-                    aria-label="Next period"
-                  >
-                    <svg
-                      viewBox="0 0 16 16"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fill-rule="evenodd"
-                        d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <p class="earnings-period-label" id="periodLabel">
-                Current Period
-              </p>
-              <div class="trend-grid" id="trendGrid"></div>
-            </div>
-
-            <div class="methods-row">
-              <div class="method-card">
-                <div class="method-card__label">Print</div>
-                <div class="method-card__amount" id="methodPrint">₱ 0.00</div>
-              </div>
-              <div class="method-card">
-                <div class="method-card__label">Copy</div>
-                <div class="method-card__amount" id="methodCopy">₱ 0.00</div>
-              </div>
-              <div class="method-card">
-                <div class="method-card__label">Scan</div>
-                <div class="method-card__amount" id="methodScan">₱ 0.00</div>
-              </div>
-              <div class="method-card method-card--top">
-                <div class="method-card__label">Top Earner</div>
-                <div class="method-card__top" id="topMethod">—</div>
-              </div>
+            <div class="earnings-trend__viewport">
+              <div
+                id="trendGrid"
+                class="trend-grid"
+                role="list"
+                aria-label="Earnings trend buckets"
+              ></div>
             </div>
           </section>
         </div>

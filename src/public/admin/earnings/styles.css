@@ -1,20 +1,4 @@
 /* ─── Earnings cards ───────────────────────────────────────────────────────── */
-.earnings-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-}
-
-.earning-card {
-  padding: 20px 18px;
-  border-radius: 16px;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .earning-card__period {
   font-size: 11px;
   font-weight: 700;
@@ -62,13 +46,6 @@
 }
 
 /* ─── Analytics panel ──────────────────────────────────────────────────────── */
-.earnings-panel {
-  margin-top: 14px;
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
-}
 
 .earnings-controls {
   display: flex;
@@ -224,19 +201,6 @@
 }
 
 /* ─── Method cards ─────────────────────────────────────────────────────────── */
-.methods-row {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-}
-
-.method-card {
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-}
 
 .method-card__label {
   font-size: 11px;
@@ -436,8 +400,11 @@ span.flatpickr-weekday {
 .earning-card,
 .earnings-panel,
 .method-card {
-  background:
-    linear-gradient(165deg, rgba(17, 20, 47, 0.9), rgba(11, 10, 26, 0.95));
+  background: linear-gradient(
+    165deg,
+    rgba(17, 20, 47, 0.9),
+    rgba(11, 10, 26, 0.95)
+  );
   border-color: rgba(125, 211, 252, 0.2);
   box-shadow:
     0 14px 32px rgba(0, 0, 0, 0.3),
@@ -447,4 +414,232 @@ span.flatpickr-weekday {
 .view-switch,
 .anchor-btn {
   border-color: rgba(125, 211, 252, 0.24);
+}
+
+.earnings-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(15rem, 0.85fr);
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 1rem;
+  background: linear-gradient(
+    165deg,
+    rgba(17, 20, 47, 0.9),
+    rgba(11, 10, 26, 0.95)
+  );
+}
+.earnings-deck__summary {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.earnings-deck__kicker {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.earnings-deck__title,
+.earnings-trend h3 {
+  margin: 0.25rem 0 0;
+  color: var(--white);
+  font-size: 1rem;
+}
+.earnings-deck__period {
+  margin: 1rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+}
+.earnings-deck__amount {
+  margin: 0.25rem 0 0;
+  color: var(--green);
+  font-size: clamp(2.25rem, 6vw, 4rem);
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+.earnings-deck__comparison {
+  display: inline-flex;
+  margin: 0.75rem 0 0;
+  padding: 0.375rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(110, 231, 183, 0.12);
+  color: var(--green);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.earnings-deck__comparison[data-direction='down'] {
+  background: rgba(251, 146, 60, 0.12);
+  color: var(--peach);
+}
+.earnings-deck__comparison[data-direction='flat'] {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-muted);
+}
+.earnings-deck__empty {
+  margin: 0.5rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+}
+.view-switch {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-column: 1 / -1;
+  grid-row: 2;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid rgba(125, 211, 252, 0.24);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+.view-switch__btn {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.view-switch__btn--active {
+  background: rgba(105, 111, 199, 0.32);
+  color: var(--white);
+}
+.view-switch__btn:focus-visible,
+.anchor-btn:focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 2px;
+}
+.service-mix {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  gap: 0.5rem;
+  align-content: start;
+  padding: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+.service-mix__header,
+.service-mix__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.service-mix__header h4,
+.service-mix__header p {
+  margin: 0;
+  font-size: 0.75rem;
+}
+.service-mix__header p,
+.service-mix__item span {
+  color: var(--ink-muted);
+}
+.service-mix__item strong {
+  color: var(--white);
+  font-size: 0.9375rem;
+}
+.earnings-trend {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 1rem;
+  background: linear-gradient(
+    165deg,
+    rgba(17, 20, 47, 0.9),
+    rgba(11, 10, 26, 0.95)
+  );
+}
+.earnings-trend__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.earnings-trend__viewport {
+  margin-top: 1rem;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.earnings-deck[aria-busy='true'] .earnings-deck__amount {
+  opacity: 0.72;
+  transition: opacity 150ms;
+}
+.anchor-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.trend-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(4.5rem, 1fr);
+  gap: 0.5rem;
+  min-width: max-content;
+}
+.trend-cell {
+  display: grid;
+  gap: 0.5rem;
+  min-height: 7.5rem;
+  padding: 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+.trend-cell__bar {
+  align-self: end;
+  min-height: 0.25rem;
+  height: var(--trend-height);
+  border-radius: 0.25rem 0.25rem 0 0;
+  background: var(--indigo);
+}
+.trend-cell__label,
+.trend-cell__amount {
+  font-size: 0.75rem;
+}
+.trend-cell__label {
+  color: var(--ink-muted);
+}
+.trend-cell__amount {
+  color: var(--white);
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .earnings-deck {
+    grid-template-columns: 1fr;
+    padding: 0.875rem;
+    gap: 0.875rem;
+  }
+  .earnings-deck__summary {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .view-switch {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .service-mix {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .earnings-deck__amount {
+    font-size: 2.5rem;
+  }
+  .earnings-trend {
+    padding: 0.875rem;
+  }
+  .earnings-trend__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .anchor-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
