@@ -5,7 +5,11 @@ import type { Server } from 'socket.io';
 import type { Request } from 'express';
 import { PrintDispatchError } from '@/services/print-dispatcher';
 import { jobStore } from '@/services/job-store';
-import { printFile, type PrintJobOptions } from '@/services/printer';
+import {
+  printFile,
+  type PrintJobOptions,
+} from '@/services/printer';
+import { withPrintQuality } from '@/services/print-job-options';
 import {
   db,
   type ReceiptRecordStatus,
@@ -872,16 +876,19 @@ export class CopyService {
           return;
         }
 
-        const printOptions: PrintJobOptions = {
-          copies: quote.copies,
-          colorMode: quote.effectiveColorMode,
-          orientation: normalized.orientation,
-          rotationDeg: normalized.rotationDeg,
-          paperSize: normalized.paperSize,
-          pageRange: quote.pageRange ?? undefined,
-          duplex: quote.duplex,
-          printerName: telemetry.name ?? undefined,
-        };
+        const printOptions: PrintJobOptions = withPrintQuality(
+          {
+            copies: quote.copies,
+            colorMode: quote.effectiveColorMode,
+            orientation: normalized.orientation,
+            rotationDeg: normalized.rotationDeg,
+            paperSize: normalized.paperSize,
+            pageRange: quote.pageRange ?? undefined,
+            duplex: quote.duplex,
+            printerName: telemetry.name ?? undefined,
+          },
+          normalized.quality,
+        );
         const relPath = path.join('scans', previewFilename);
         await financialLedgerService.append({
           eventType: 'job_started',
