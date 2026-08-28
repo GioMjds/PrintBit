@@ -47,6 +47,14 @@ export type SummaryResponse = {
     totalCount: number;
     openCount: number;
   };
+  feedbackStats?: {
+    totalCount: number;
+    openCount: number;
+  };
+  reportStats?: {
+    totalCount: number;
+    openCount: number;
+  };
   recoveryStats?: {
     bootCount: number;
     unexpectedRestartCount: number;
@@ -404,6 +412,24 @@ export function setMessage(text: string): void {
   }
 }
 
+export function updateSidebarBadges(summary: SummaryResponse): void {
+  const openFeedback = summary.feedbackStats?.openCount ?? 0;
+  const openReports = summary.reportStats?.openCount ?? 0;
+  const openAlerts = summary.anomalyStats?.openCount ?? 0;
+
+  const setBadge = (id: string, count: number) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = count > 0 ? String(count) : '';
+  };
+
+  setBadge('openBadge', openFeedback);
+  setBadge('openBadgeMob', openFeedback);
+  setBadge('openReportBadge', openReports);
+  setBadge('openReportBadgeMob', openReports);
+  setBadge('openAlertBadge', openAlerts);
+  setBadge('openAlertBadgeMob', openAlerts);
+}
+
 export type InitAuthOptions = {
   onSuccess: () => void | Promise<void>;
   formId?: string;
@@ -444,6 +470,11 @@ export function initAuth(arg: InitAuthArg): () => void {
   ) as HTMLButtonElement | null;
 
   function showDashboard(visible: boolean): void {
+    if (visible) {
+      document.documentElement.classList.add('admin-session-active');
+    } else {
+      document.documentElement.classList.remove('admin-session-active');
+    }
     if (authView) authView.classList.toggle('hidden', visible);
     if (dashboard) dashboard.classList.toggle('hidden', !visible);
   }
@@ -519,6 +550,11 @@ export function initAuth(arg: InitAuthArg): () => void {
     });
   }
 
+  // Pre-unhide dashboard if an active session token exists in sessionStorage
+  if (getAdminToken()) {
+    showDashboard(true);
+  }
+
   // On startup, check for an existing valid session (httpOnly cookie sent
   // automatically) and show the dashboard immediately if authenticated.
   void ensureAuth()
@@ -527,9 +563,11 @@ export function initAuth(arg: InitAuthArg): () => void {
         showDashboard(true);
         return options.onSuccess();
       }
+      clearAdminToken();
       showDashboard(false);
     })
     .catch(() => {
+      clearAdminToken();
       showDashboard(false);
     });
 

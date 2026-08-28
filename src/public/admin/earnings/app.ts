@@ -8,6 +8,7 @@ import {
   setMessage,
   initAuth,
   peso,
+  updateSidebarBadges,
 } from '../shared';
 import { loadEarningsAnalyticsPair } from './analytics-pair';
 import {
@@ -204,6 +205,7 @@ async function loadSummaryData(): Promise<void> {
     }
     const summary = (await summaryRes.json()) as SummaryResponse;
     applyEarnings(summary);
+    updateSidebarBadges(summary);
   })().finally(() => {
     summaryInFlight = null;
   });

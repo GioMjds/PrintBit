@@ -1,9 +1,11 @@
 import {
   SettingsResponse,
+  SummaryResponse,
   apiFetch,
   setMessage,
   initAuth,
   setAdminPin,
+  updateSidebarBadges,
 } from '../shared';
 
 const settingsForm = document.getElementById('settingsForm') as HTMLFormElement;
@@ -263,16 +265,10 @@ function buildAlertPayload(): {
 }
 
 async function loadAlertStats(): Promise<void> {
-  if (!openAlertBadge) return; // section is hidden, skip entirely
-  const res = await apiFetch('/api/admin/anomaly-incidents?limit=1');
+  const res = await apiFetch('/api/admin/summary');
   if (!res.ok) return;
-  const payload = (await res.json()) as { openCount?: number };
-  const openCount =
-    typeof payload.openCount === 'number' && payload.openCount > 0
-      ? String(payload.openCount)
-      : '';
-  openAlertBadge.textContent = openCount;
-  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
+  const summary = (await res.json()) as SummaryResponse;
+  updateSidebarBadges(summary);
 }
 
 async function loadData(): Promise<void> {
