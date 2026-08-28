@@ -8,6 +8,7 @@
     />
     <link rel="stylesheet" href="./globals.css" />
     <link rel="stylesheet" href="/shared/kiosk-transition.css" />
+    <link rel="stylesheet" href="/shared/loading-animation.css" />
     <title>PrintBit</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -57,7 +58,7 @@
           </div>
           <div class="wifi-inline-card__text">
             <span class="wifi-inline-card__step">Step 1</span>
-            <h2 class="wifi-inline-card__title">Scan to connect Wi-Fi</h2>
+            <h2 class="wifi-inline-card__title">Scan to connect to PrintBit</h2>
             <p class="wifi-inline-card__sub">Join the kiosk hotspot with your phone camera before printing, copying, or scanning.</p>
           </div>
         </div>
@@ -74,9 +75,19 @@
               >?</span
             >
             <div class="action-card__glow"></div>
-            <div class="action-card__icon-wrap">
+            <div
+              class="action-card__icon-wrap lottie-loading"
+              id="homePrintAnimation"
+              aria-hidden="true"
+            >
+              <canvas
+                class="lottie-loading__canvas"
+                id="homePrintCanvas"
+                width="256"
+                height="256"
+              ></canvas>
               <svg
-                class="action-card__icon"
+                class="action-card__icon lottie-loading__fallback"
                 viewBox="0 0 64 64"
                 aria-hidden="true"
               >
@@ -156,9 +167,19 @@
               >?</span
             >
             <div class="action-card__glow"></div>
-            <div class="action-card__icon-wrap">
+            <div
+              class="action-card__icon-wrap lottie-loading"
+              id="homeCopyAnimation"
+              aria-hidden="true"
+            >
+              <canvas
+                class="lottie-loading__canvas"
+                id="homeCopyCanvas"
+                width="256"
+                height="256"
+              ></canvas>
               <svg
-                class="action-card__icon"
+                class="action-card__icon lottie-loading__fallback"
                 viewBox="0 0 64 64"
                 aria-hidden="true"
               >
@@ -229,9 +250,19 @@
               >?</span
             >
             <div class="action-card__glow"></div>
-            <div class="action-card__icon-wrap">
+            <div
+              class="action-card__icon-wrap lottie-loading"
+              id="homeScanAnimation"
+              aria-hidden="true"
+            >
+              <canvas
+                class="lottie-loading__canvas"
+                id="homeScanCanvas"
+                width="256"
+                height="256"
+              ></canvas>
               <svg
-                class="action-card__icon"
+                class="action-card__icon lottie-loading__fallback"
                 viewBox="0 0 64 64"
                 aria-hidden="true"
               >

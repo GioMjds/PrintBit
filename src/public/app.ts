@@ -5,6 +5,7 @@ import {
   translation,
 } from './shared/kiosk-i18n';
 import { navigateWithKioskMotion } from './shared/kiosk-navigation';
+import { mountLoadingAnimation } from './shared/loading-animation';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
@@ -34,6 +35,59 @@ const openPrint = document.getElementById('openPrintBtn');
 const openCopy = document.getElementById('openCopyBtn');
 const openScan = document.getElementById('openScanBtn');
 const powerOff = document.getElementById('powerOffBtn');
+
+const homePrintAnimation = document.getElementById('homePrintAnimation');
+const homePrintCanvas = document.getElementById(
+  'homePrintCanvas',
+) as HTMLCanvasElement | null;
+
+const homeCopyAnimation = document.getElementById('homeCopyAnimation');
+const homeCopyCanvas = document.getElementById(
+  'homeCopyCanvas',
+) as HTMLCanvasElement | null;
+
+const homeScanAnimation = document.getElementById('homeScanAnimation');
+const homeScanCanvas = document.getElementById(
+  'homeScanCanvas',
+) as HTMLCanvasElement | null;
+
+const homePrintController =
+  homePrintAnimation && homePrintCanvas
+    ? mountLoadingAnimation({
+        root: homePrintAnimation,
+        canvas: homePrintCanvas,
+        mode: 'print',
+        active: true,
+      })
+    : null;
+
+const homeCopyController =
+  homeCopyAnimation && homeCopyCanvas
+    ? mountLoadingAnimation({
+        root: homeCopyAnimation,
+        canvas: homeCopyCanvas,
+        mode: 'copy',
+        active: true,
+      })
+    : null;
+
+const homeScanController =
+  homeScanAnimation && homeScanCanvas
+    ? mountLoadingAnimation({
+        root: homeScanAnimation,
+        canvas: homeScanCanvas,
+        mode: 'scan',
+        active: true,
+      })
+    : null;
+
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) {
+    homePrintController?.destroy();
+    homeCopyController?.destroy();
+    homeScanController?.destroy();
+  }
+});
 
 openPrint?.addEventListener('click', () => {
   sessionStorage.setItem(PRINT_ONBOARDING_TRIGGER_KEY, '1');
@@ -581,7 +635,7 @@ async function loadFeedbackSession(): Promise<void> {
       color: { dark: '#000000', light: '#ffffff' },
     });
 
-    setFeedbackStatus(data.feedbackUrl);
+    setFeedbackStatus('');
     startExpiryCountdown(data.expiresAt);
   } catch {
     setFeedbackStatus('Could not generate QR code. Please try again.');
@@ -679,7 +733,7 @@ async function loadReportSession(): Promise<void> {
       color: { dark: '#000000', light: '#ffffff' },
     });
 
-    setReportStatus(data.reportUrl);
+    setReportStatus('');
     startReportExpiry(data.expiresAt);
   } catch {
     setReportStatus('Could not generate QR code. Please try again.');

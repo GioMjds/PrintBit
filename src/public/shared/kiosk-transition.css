@@ -1,19 +1,63 @@
 /* ── Kiosk page transition animations ─────────────────────────────────────── */
 /*
- * Arrive: leisurely spring fade-in — pages feel like they settle into place.
- * Depart: quick but not abrupt exit — screen clears before the next page loads.
- * Both use very small translate/scale deltas so the kiosk screen never feels
- * like it's flying around; just a gentle, purposeful movement.
+ * Arrive: leisurely spring fade-in — UI interfaces settle gracefully into place.
+ * Depart: quick exit — buttons, cards, and UI controls clear smoothly before next page loads.
+ * Background remains fixed and static (no flickering or shifting of background).
  */
 
 html[data-kiosk-static='true'] body {
-  animation: kiosk-page-arrive 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  transform-origin: 50% 46%;
+  animation: none !important;
+  transform: none !important;
 }
 
-html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] body {
-  animation: kiosk-page-depart 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  pointer-events: none;
+/* Background layers remain completely static and stable */
+html[data-kiosk-static='true'] :where(.kiosk-bg, .receipt-bg, .startup-backdrop) {
+  animation: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+/* Animate the main interface containers, interactive shells & floating action buttons */
+html[data-kiosk-static='true'] :where(
+  .kiosk-shell,
+  .page-shell,
+  .upload-shell,
+  .receipt-shell,
+  .startup-shell,
+  .rp-shell,
+  .state-screen,
+  .coin-console-main,
+  .printbit-language-fab,
+  .report-fab,
+  .feedback-fab,
+  #printbitLanguageFab,
+  #openReportBtn,
+  #openFeedbackBtn
+) {
+  animation: kiosk-page-arrive 680ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  transform-origin: 50% 46%;
+  will-change: transform, opacity;
+}
+
+/* Exit transition for UI elements when leaving page */
+html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] :where(
+  .kiosk-shell,
+  .page-shell,
+  .upload-shell,
+  .receipt-shell,
+  .startup-shell,
+  .rp-shell,
+  .state-screen,
+  .coin-console-main,
+  .printbit-language-fab,
+  .report-fab,
+  .feedback-fab,
+  #printbitLanguageFab,
+  #openReportBtn,
+  #openFeedbackBtn
+) {
+  animation: kiosk-page-depart 260ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none !important;
 }
 
 @keyframes kiosk-page-depart {
@@ -38,14 +82,45 @@ html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] body {
   }
 }
 
-/* Cross-fade between depart and arrive via a brief dim on the page root */
-html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] {
-  background-color: #080810; /* avoids white flash during navigation gap */
+/* Keep page root background consistent without flash */
+html[data-kiosk-static='true'] {
+  background-color: #080810;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-kiosk-static='true'] body,
-  html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] body {
+  html[data-kiosk-static='true'] :where(
+    .kiosk-shell,
+    .page-shell,
+    .upload-shell,
+    .receipt-shell,
+    .startup-shell,
+    .rp-shell,
+    .state-screen,
+    .coin-console-main,
+    .printbit-language-fab,
+    .report-fab,
+    .feedback-fab,
+    #printbitLanguageFab,
+    #openReportBtn,
+    #openFeedbackBtn
+  ),
+  html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] :where(
+    .kiosk-shell,
+    .page-shell,
+    .upload-shell,
+    .receipt-shell,
+    .startup-shell,
+    .rp-shell,
+    .state-screen,
+    .coin-console-main,
+    .printbit-language-fab,
+    .report-fab,
+    .feedback-fab,
+    #printbitLanguageFab,
+    #openReportBtn,
+    #openFeedbackBtn
+  ) {
     animation: none !important;
+    transform: none !important;
   }
 }

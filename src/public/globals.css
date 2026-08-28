@@ -206,49 +206,55 @@ html[data-high-contrast='true'] body {
   border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
-/* ── Idle Warning Modal (Shared) ────────────────────────────────────────────── */
+/* ── Idle Warning Overlay (Pure Typography Fullscreen) ────────────────────── */
 
 .idle-warning-overlay {
   position: fixed;
   inset: 0;
-  /* Deep darkening backdrop — the core screen-darkens effect */
-  background: rgba(0, 0, 0, 0.82);
+  background: rgba(6, 6, 12, 0.88);
   display: none;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  backdrop-filter: blur(6px) brightness(0.6);
-  -webkit-backdrop-filter: blur(6px) brightness(0.6);
-  animation: idleOverlayIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
-  cursor: pointer; /* Tap anywhere to dismiss */
+  backdrop-filter: blur(12px) brightness(0.5);
+  -webkit-backdrop-filter: blur(12px) brightness(0.5);
+  animation: idleFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  padding: 24px;
 }
 
-/* Prevent card clicks propagating to overlay */
-.idle-warning-modal {
-  cursor: default;
-  background: #0f0e17;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 52px 44px 44px;
-  max-width: 400px;
-  width: 88%;
+.idle-warning-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  animation: idleCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  max-width: 540px;
+  width: 100%;
+  pointer-events: none; /* Allows taps to pass through to the overlay container */
+  animation: idleContentIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes idleOverlayIn {
+@keyframes idleFadeIn {
   from {
     opacity: 0;
+    backdrop-filter: blur(0px) brightness(1);
+    -webkit-backdrop-filter: blur(0px) brightness(1);
   }
   to {
     opacity: 1;
+    backdrop-filter: blur(12px) brightness(0.5);
+    -webkit-backdrop-filter: blur(12px) brightness(0.5);
   }
 }
 
-@keyframes idleCardIn {
+@keyframes idleContentIn {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.97);
+    transform: translateY(24px) scale(0.96);
   }
   to {
     opacity: 1;
@@ -256,67 +262,79 @@ html[data-high-contrast='true'] body {
   }
 }
 
-/* Exit animations applied via JS */
+/* Exit animations applied via JS when dismissed */
 .idle-warning-overlay.is-leaving {
-  animation: idleOverlayOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: idleFadeOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-.idle-warning-overlay.is-leaving .idle-warning-modal {
-  animation: idleCardOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+.idle-warning-overlay.is-leaving .idle-warning-content {
+  animation: idleContentOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-@keyframes idleOverlayOut {
-  to { opacity: 0; }
-}
-
-@keyframes idleCardOut {
+@keyframes idleFadeOut {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(12px) brightness(0.5);
+    -webkit-backdrop-filter: blur(12px) brightness(0.5);
+  }
   to {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    backdrop-filter: blur(0px) brightness(1);
+    -webkit-backdrop-filter: blur(0px) brightness(1);
   }
 }
 
-.idle-warning-content {
-  text-align: center;
+@keyframes idleContentOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.98);
+  }
 }
 
-/* Large lightweight countdown number — the visual anchor */
+/* Large lightweight countdown number — clear visual anchor */
 .idle-warning-countdown-number {
-  font-size: 72px;
+  font-size: clamp(80px, 14vw, 120px);
   font-weight: 200;
-  letter-spacing: -2px;
+  letter-spacing: -3px;
   color: #ffffff;
   line-height: 1;
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
 }
 
 .idle-warning-countdown-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.45);
   margin: 0 0 32px;
 }
 
 .idle-warning-title {
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  margin: 0 0 8px;
-  color: rgba(255, 255, 255, 0.92);
+  font-size: clamp(24px, 4vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  color: #ffffff;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
 }
 
 .idle-warning-subtitle {
-  font-size: 14px;
+  font-size: clamp(15px, 2.2vw, 17px);
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.4);
-  margin: 0 0 36px;
-  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0 0 40px;
+  line-height: 1.6;
+  max-width: 420px;
 }
 
-/* Legacy countdown element (for pages that use inline countdown text) */
+/* Legacy countdown element */
 .idle-warning-countdown {
   font-size: 16px;
   color: rgba(255, 255, 255, 0.75);
@@ -329,45 +347,42 @@ html[data-high-contrast='true'] body {
   color: rgba(255, 255, 255, 0.95);
 }
 
-/* Pulsing tap-anywhere hint */
+/* Clean, glowing tap anywhere hint badge */
 .idle-warning-tap-hint {
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.25);
-  margin: 24px 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 12px 24px;
+  border-radius: 999px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   animation: idleHintPulse 2.4s ease-in-out infinite;
 }
 
+.idle-warning-tap-hint::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38ef7d;
+  box-shadow: 0 0 10px #38ef7d;
+}
+
 @keyframes idleHintPulse {
-  0%, 100% { opacity: 0.4; }
-  50%       { opacity: 0.9; }
-}
-
-.idle-warning-btn {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 14px 32px;
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-  width: 100%;
-}
-
-.idle-warning-btn:hover,
-.idle-warning-btn:focus-visible {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.24);
-  color: #ffffff;
-  outline: none;
-}
-
-.idle-warning-btn:active {
-  background: rgba(255, 255, 255, 0.08);
+  0%, 100% {
+    opacity: 0.8;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
 }
 
 /* ── Static customer kiosk presentation ───────────────────────────────────── */
@@ -384,6 +399,29 @@ html[data-kiosk-static='true'] *::after {
   scroll-behavior: auto !important;
   transition: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Idle timeout overlay — re-enable its fade & blur animations in kiosk mode */
+html[data-kiosk-static='true'] .idle-warning-overlay {
+  animation: idleFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+  backdrop-filter: blur(12px) brightness(0.5) !important;
+  -webkit-backdrop-filter: blur(12px) brightness(0.5) !important;
+}
+
+html[data-kiosk-static='true'] .idle-warning-overlay.is-leaving {
+  animation: idleFadeOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+html[data-kiosk-static='true'] .idle-warning-content {
+  animation: idleContentIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+
+html[data-kiosk-static='true'] .idle-warning-overlay.is-leaving .idle-warning-content {
+  animation: idleContentOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+html[data-kiosk-static='true'] .idle-warning-tap-hint {
+  animation: idleHintPulse 2.4s ease-in-out infinite !important;
 }
 
 html[data-kiosk-static='true'] :where(.kiosk-bg, .receipt-bg) {

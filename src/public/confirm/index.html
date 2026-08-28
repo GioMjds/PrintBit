@@ -1139,13 +1139,6 @@
             <div class="qr-card__canvas-box">
               <canvas id="scanDownloadQrCanvas" class="scan-qr-canvas"></canvas>
             </div>
-            <a
-              class="scan-qr-link"
-              id="scanDownloadQrLink"
-              href="#"
-              target="_blank"
-              rel="noopener noreferrer"
-            ></a>
             <p class="scan-qr-expiry" id="scanDownloadQrExpiry"></p>
           </div>
 
@@ -1162,7 +1155,7 @@
                 aria-hidden="true"
               >
                 <path
-                  d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"
+                  d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"
                 />
                 <path d="M16 8h-8M16 12h-8M12 16h-4" />
               </svg>
@@ -1172,13 +1165,7 @@
             <div class="qr-card__canvas-box">
               <canvas id="receiptQrCanvas" class="scan-qr-canvas"></canvas>
             </div>
-            <a
-              class="scan-qr-link"
-              id="receiptQrLink"
-              href="/receipt"
-              target="_blank"
-              rel="noopener noreferrer"
-            ></a>
+            <p class="scan-qr-expiry" id="receiptQrExpiry"></p>
           </div>
         </div>
 
@@ -1272,7 +1259,7 @@
     <script src="/socket.io/socket.io.js"></script>
 
 
-    <!-- Idle Warning Modal -->
+    <!-- Idle Warning Overlay (Pure Typography Fullscreen) -->
     <div
       id="idleWarningModal"
       class="idle-warning-overlay"
@@ -1281,17 +1268,12 @@
       aria-modal="true"
       aria-labelledby="idleWarningTitle"
     >
-      <div class="idle-warning-modal">
-        <div class="idle-warning-content">
-          <div class="idle-warning-countdown-number" id="idleCountdown">20</div>
-          <div class="idle-warning-countdown-label">seconds remaining</div>
-          <h2 id="idleWarningTitle" class="idle-warning-title">Session Timeout</h2>
-          <p class="idle-warning-subtitle">No activity detected. Your session will close soon.</p>
-          <button id="keepActiveBtn" type="button" class="idle-warning-btn">
-            Keep Session Active
-          </button>
-          <p class="idle-warning-tap-hint">or tap anywhere to continue</p>
-        </div>
+      <div class="idle-warning-content">
+        <div class="idle-warning-countdown-number" id="idleCountdown">20</div>
+        <div class="idle-warning-countdown-label">seconds remaining</div>
+        <h2 id="idleWarningTitle" class="idle-warning-title">Session Timeout</h2>
+        <p class="idle-warning-subtitle">No activity detected. Your session will close soon.</p>
+        <div class="idle-warning-tap-hint">Tap anywhere to continue</div>
       </div>
     </div>
 

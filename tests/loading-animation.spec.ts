@@ -238,4 +238,22 @@ describe('loading animation controller', () => {
     controller.destroy();
     expect(player.destroyed).toBe(true);
   });
+
+  it('provides valid homepage markup for print, copy, and scan lottie animations', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const indexHtml = fs.readFileSync(
+      path.resolve(__dirname, '../src/public/index.html'),
+      'utf8',
+    );
+
+    expect(indexHtml).toContain('<link rel="stylesheet" href="/shared/loading-animation.css" />');
+    expect(indexHtml).toContain('id="homePrintAnimation"');
+    expect(indexHtml).toContain('id="homePrintCanvas"');
+    expect(indexHtml).toContain('id="homeCopyAnimation"');
+    expect(indexHtml).toContain('id="homeCopyCanvas"');
+    expect(indexHtml).toContain('id="homeScanAnimation"');
+    expect(indexHtml).toContain('id="homeScanCanvas"');
+    expect(indexHtml).toContain('class="action-card__icon lottie-loading__fallback"');
+  });
 });

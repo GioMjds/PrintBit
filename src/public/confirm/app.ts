@@ -344,9 +344,6 @@ const scanDownloadCtaContainer = document.getElementById(
 const scanDownloadQrCanvas = document.getElementById(
   'scanDownloadQrCanvas',
 ) as HTMLCanvasElement | null;
-const scanDownloadQrLink = document.getElementById(
-  'scanDownloadQrLink',
-) as HTMLElement | null;
 const scanDownloadQrExpiry = document.getElementById(
   'scanDownloadQrExpiry',
 ) as HTMLElement | null;
@@ -358,9 +355,6 @@ const receiptCtaContainer = document.getElementById(
 const receiptQrCanvas = document.getElementById(
   'receiptQrCanvas',
 ) as HTMLCanvasElement | null;
-const receiptQrLink = document.getElementById(
-  'receiptQrLink',
-) as HTMLElement | null;
 const receiptQrExpiry = document.getElementById(
   'receiptQrExpiry',
 ) as HTMLElement | null;
@@ -1430,10 +1424,6 @@ async function pollCopyJobReceipt(jobId: string): Promise<void> {
 function renderReceiptCta(): void {
   if (!receiptCtaContainer || !receiptQrCanvas || !currentReceiptUrl) return;
   receiptCtaContainer.removeAttribute('hidden');
-  if (receiptQrLink) {
-    receiptQrLink.setAttribute('href', currentReceiptUrl);
-    receiptQrLink.textContent = currentReceiptUrl;
-  }
   if (receiptQrExpiry) {
     if (currentReceiptExpiry) {
       try {
@@ -1470,10 +1460,6 @@ function renderScanDownloadCta(): void {
   )
     return;
   scanDownloadCtaContainer.removeAttribute('hidden');
-  if (scanDownloadQrLink) {
-    scanDownloadQrLink.setAttribute('href', currentScanDownloadUrl);
-    scanDownloadQrLink.textContent = currentScanDownloadUrl;
-  }
   if (scanDownloadQrExpiry) {
     if (currentScanDownloadExpiry) {
       try {

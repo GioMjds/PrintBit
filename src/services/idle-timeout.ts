@@ -174,11 +174,14 @@ export function startPageIdleTimer(): void {
   }, 100);
 }
 
+let isLeavingTimeout: number | null = null;
+
 function handleUserActivity(): void {
   if (!pageIdleState.enabled) return;
 
-  // When warning modal is actively displayed, modal buttons and backdrop handle dismissal
+  // When warning is actively displayed, tapping screen triggers exit transition
   if (pageIdleState.warningShownAt !== null) {
+    dismissPageIdleWarning();
     return;
   }
 
@@ -197,7 +200,11 @@ export function showPageIdleWarning(): void {
     cachedModalElement = document.getElementById(idleConfig.modalId);
   }
   if (cachedModalElement) {
-    // Remove any lingering exit class and make visible
+    if (isLeavingTimeout !== null) {
+      window.clearTimeout(isLeavingTimeout);
+      isLeavingTimeout = null;
+    }
+    // Remove any lingering exit class and make visible with fade-in
     cachedModalElement.classList.remove('is-leaving');
     cachedModalElement.style.display = 'flex';
 
@@ -208,9 +215,15 @@ export function showPageIdleWarning(): void {
 }
 
 /** Animate the overlay out, then hide it once the animation completes */
-export function hidePageIdleWarning(): void {
+export function hidePageIdleWarning(onComplete?: () => void): void {
   if (!cachedModalElement) {
     if (idleConfig.onWarningHidden) idleConfig.onWarningHidden();
+    if (onComplete) onComplete();
+    return;
+  }
+
+  // Prevent duplicate trigger if already exiting
+  if (cachedModalElement.classList?.contains?.('is-leaving')) {
     return;
   }
 
@@ -220,31 +233,40 @@ export function hidePageIdleWarning(): void {
   // Trigger CSS exit animation
   cachedModalElement.classList.add('is-leaving');
 
-  // After the animation completes (280ms), hide and clean up
+  if (isLeavingTimeout !== null) {
+    window.clearTimeout(isLeavingTimeout);
+  }
+
+  // After the animation completes (300ms), hide and clean up
   const el = cachedModalElement;
-  window.setTimeout(() => {
+  isLeavingTimeout = window.setTimeout(() => {
     el.style.display = 'none';
     el.classList.remove('is-leaving');
+    isLeavingTimeout = null;
+    if (idleConfig.onWarningHidden) {
+      idleConfig.onWarningHidden();
+    }
+    if (onComplete) {
+      onComplete();
+    }
   }, 300);
-
-  if (idleConfig.onWarningHidden) {
-    idleConfig.onWarningHidden();
-  }
 }
 
 /**
- * Dismiss the warning when the user taps/clicks anywhere on the dark overlay
- * (but NOT when the click is inside the modal card itself).
+ * Dismiss the warning with smooth exit transition when the user taps anywhere on screen.
  */
-function handleOverlayClick(event: Event): void {
-  const modalCard = cachedModalElement?.querySelector('.idle-warning-modal');
-  if (modalCard && modalCard.contains(event.target as Node)) {
-    // Click was inside the card — don't dismiss
-    return;
+function dismissPageIdleWarning(): void {
+  console.log('[PAGE IDLE] User tapped screen to dismiss timeout warning');
+  hidePageIdleWarning(() => {
+    resetPageIdleTimer();
+  });
+}
+
+function handleOverlayClick(event?: Event): void {
+  if (event) {
+    event.stopPropagation();
   }
-  console.log('[PAGE IDLE] User tapped overlay to dismiss timeout warning');
-  hidePageIdleWarning();
-  resetPageIdleTimer();
+  dismissPageIdleWarning();
 }
 
 export function setupPageIdleWarningButton(): void {
@@ -261,10 +283,11 @@ export function setupPageIdleWarningButton(): void {
 }
 
 function handleKeepActiveClick(event?: Event): void {
-  event?.stopPropagation();
+  if (event) {
+    event.stopPropagation();
+  }
   console.log('[PAGE IDLE] User dismissed timeout warning via button');
-  hidePageIdleWarning();
-  resetPageIdleTimer();
+  dismissPageIdleWarning();
 }
 
 async function handlePageIdleTimeout(): Promise<void> {

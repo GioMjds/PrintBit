@@ -21,12 +21,14 @@ describe('kiosk idle-timeout service', () => {
     jest.setSystemTime(new Date('2026-08-28T12:00:00.000Z'));
 
     // Setup DOM mock
+    const classSet = new Set<string>();
     modalEl = {
       id: 'idleWarningModal',
       style: { display: 'none' } as CSSStyleDeclaration,
       classList: {
-        remove: jest.fn(),
-        add: jest.fn(),
+        remove: jest.fn((c: string) => classSet.delete(c)),
+        add: jest.fn((c: string) => classSet.add(c)),
+        contains: jest.fn((c: string) => classSet.has(c)),
       } as unknown as DOMTokenList,
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
@@ -196,5 +198,29 @@ describe('kiosk idle-timeout service', () => {
     // Advance 30 more seconds — total real time 60s, but only 30s since reset so warning not shown yet
     jest.advanceTimersByTime(30_000);
     expect(modalEl.style.display).toBe('none');
+  });
+
+  it('applies exit transition animation when tapping anywhere while warning is displayed', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ idleTimeoutSeconds: 60 }),
+    });
+
+    await initializePageIdleTimeout({
+      showWarningModal: true,
+    });
+
+    // Advance to 40s to trigger warning
+    jest.advanceTimersByTime(40_000);
+    expect(modalEl.style.display).toBe('flex');
+
+    // Simulate tap/click anywhere to dismiss
+    hidePageIdleWarning();
+    expect(modalEl.classList.add).toHaveBeenCalledWith('is-leaving');
+
+    // Advance 300ms for exit animation
+    jest.advanceTimersByTime(300);
+    expect(modalEl.style.display).toBe('none');
+    expect(modalEl.classList.remove).toHaveBeenCalledWith('is-leaving');
   });
 });

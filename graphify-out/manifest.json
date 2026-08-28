@@ -1098,10 +1098,10 @@
     "semantic_hash": "7f4d153ef5ab49f4d15e81029acd4343"
   },
   "src/public/app.ts": {
-    "mtime": 1787916589.1230142,
-    "seen": 1787917920.4967482,
-    "ast_hash": "09d7429f63da2dc6cec6af60b55186f2",
-    "semantic_hash": "09d7429f63da2dc6cec6af60b55186f2"
+    "mtime": 1787923993.3732433,
+    "seen": 1787924212.5567844,
+    "ast_hash": "e28f539abfa5292018fef1173dabc854",
+    "semantic_hash": ""
   },
   "src/public/assets/lottie/copying.json": {
     "mtime": 1787367827.9008472,
@@ -1134,10 +1134,10 @@
     "semantic_hash": "1ce2733d85cf2ef569b8d7561b2fc76c"
   },
   "src/public/confirm/app.ts": {
-    "mtime": 1787669015.5649135,
-    "seen": 1787917920.496757,
-    "ast_hash": "cc8b74a2a62515d99b9903affbc185f5",
-    "semantic_hash": "cc8b74a2a62515d99b9903affbc185f5"
+    "mtime": 1787924074.8197734,
+    "seen": 1787924212.5568094,
+    "ast_hash": "e810149a33c51a363d126feef8b2009e",
+    "semantic_hash": ""
   },
   "src/public/copy/app.ts": {
     "mtime": 1787369666.1416397,
@@ -1308,9 +1308,9 @@
     "semantic_hash": "36d69b0fe741e74789993369b9c99017"
   },
   "src/services/idle-timeout.ts": {
-    "mtime": 1787921235.594403,
-    "seen": 1787921371.9600346,
-    "ast_hash": "ba4790834b562bfd04f4c0eb827ee814",
+    "mtime": 1787922096.2687411,
+    "seen": 1787922240.9228237,
+    "ast_hash": "0265b72121c8e5235d7d635cc56df215",
     "semantic_hash": ""
   },
   "src/services/index.ts": {
@@ -1638,10 +1638,10 @@
     "semantic_hash": "12b32c0cc935c87238995cbab4e6de3f"
   },
   "tests/loading-animation.spec.ts": {
-    "mtime": 1787369602.107576,
-    "seen": 1787917920.4968593,
-    "ast_hash": "071a6b81b662d56786f8c189deb35879",
-    "semantic_hash": "071a6b81b662d56786f8c189deb35879"
+    "mtime": 1787924061.1891675,
+    "seen": 1787924212.5571358,
+    "ast_hash": "1d9dc19d2f80913ef6c4f05bc3b81e8e",
+    "semantic_hash": ""
   },
   "tests/loading-page-repro.spec.ts": {
     "mtime": 1787026571.6911304,
@@ -2094,21 +2094,21 @@
     "semantic_hash": "b7ad46aae8c747201bdbd89cf0632765"
   },
   "src/public/config/index.html": {
-    "mtime": 1787919937.148041,
-    "seen": 1787920003.9562902,
-    "ast_hash": "de64c9a9cfe7237a6a38e5b2340612b6",
+    "mtime": 1787921997.2336285,
+    "seen": 1787922240.9231606,
+    "ast_hash": "0b1eda2f0e2a1aafda94413ba4147ea1",
     "semantic_hash": ""
   },
   "src/public/confirm/index.html": {
-    "mtime": 1787919952.271878,
-    "seen": 1787920003.9562926,
-    "ast_hash": "9941cf01897b6d22aede8bb0ebbc0a99",
+    "mtime": 1787924009.615636,
+    "seen": 1787924212.557441,
+    "ast_hash": "0df64b4c2930daef6775e285499182c7",
     "semantic_hash": ""
   },
   "src/public/copy/index.html": {
-    "mtime": 1787919937.148041,
-    "seen": 1787920003.9562943,
-    "ast_hash": "afdd8600fa6afbade0ec274022ac1f02",
+    "mtime": 1787922022.8506918,
+    "seen": 1787922240.9231653,
+    "ast_hash": "e9b9c3db6748f4c151048d9b0e7992a4",
     "semantic_hash": ""
   },
   "src/public/feedback/index.html": {
@@ -2118,10 +2118,10 @@
     "semantic_hash": "485d0ddc36e6e105858d32f03077307e"
   },
   "src/public/index.html": {
-    "mtime": 1787916589.1230142,
-    "seen": 1787917920.4969687,
-    "ast_hash": "cd65f229b3671fd4f3fd88dbaffa4412",
-    "semantic_hash": "cd65f229b3671fd4f3fd88dbaffa4412"
+    "mtime": 1787923978.1295543,
+    "seen": 1787924212.5574532,
+    "ast_hash": "db87d0662e642f3623bdecaaa9c4ed93",
+    "semantic_hash": ""
   },
   "src/public/loading/index.html": {
     "mtime": 1787369034.4721665,
@@ -2130,9 +2130,9 @@
     "semantic_hash": "9c63eb7b31eaebcf0dfc6b1f9744cf5b"
   },
   "src/public/print/index.html": {
-    "mtime": 1787919937.148041,
-    "seen": 1787920003.9563036,
-    "ast_hash": "fb01d26f04ebc7f71bc163d8bc7916f1",
+    "mtime": 1787922033.4103343,
+    "seen": 1787922240.9231753,
+    "ast_hash": "04a5c99a87fb5993a0cad3d27372d1d4",
     "semantic_hash": ""
   },
   "src/public/receipt/index.html": {
@@ -2148,9 +2148,9 @@
     "semantic_hash": "ea0e5d18cad05831ec09619d91289441"
   },
   "src/public/scan/index.html": {
-    "mtime": 1787919937.1464643,
-    "seen": 1787920003.956311,
-    "ast_hash": "103a8c77dff8cedcacbab050adeeca97",
+    "mtime": 1787922049.7258775,
+    "seen": 1787922240.9231825,
+    "ast_hash": "48f6a144188783c05eff26bdd435a1d1",
     "semantic_hash": ""
   },
   "src/public/scc/index.html": {
@@ -2274,9 +2274,9 @@
     "semantic_hash": "f3df6d7c95d48b7d1be5b07184f2289a"
   },
   "tests/services/idle-timeout.spec.ts": {
-    "mtime": 1787921139.1432924,
-    "seen": 1787921371.9601946,
-    "ast_hash": "3a81ed8d06be14a2424a1b9ed48c1734",
+    "mtime": 1787922104.8245585,
+    "seen": 1787922240.9229722,
+    "ast_hash": "f397a7e8ca89e51f80f99f48da52c12f",
     "semantic_hash": ""
   }
 }
