@@ -562,34 +562,42 @@ async function start() {
           );
         });
     }
-    await detectDefaultPrinter();
-    await assertPrintDispatcherReady();
-    await warmPrintDispatcherProfile();
-    // Prime the persistent PowerShell runspace used by pause/resume/status
-    // calls so the first user-driven operation is fast (sub-50 ms instead of
-    // ~450 ms). Failure is non-fatal — subsequent calls will retry the load.
-    void warmPrinterEdgeRunspace().catch((error: unknown) => {
-      console.error(
-        '[SERVER] Failed to warm printer-edge PowerShell runspace.',
-        error instanceof Error ? error.message : String(error),
-      );
-    });
     const jobProcessor = getJobProcessor();
     jobProcessor.setIo(io);
     await jobProcessor.init();
-    await detectScanner();
-    await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
-      console.error(
-        '[STARTUP] Failed to clean up transient files on startup.',
-        {
-          uploadDir: UPLOAD_DIR,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
-    });
-    startScanStorageCleanup();
-    await initSerial(io);
-    await runHopperSelfTest();
+
+    // Run independent hardware and network subsystem probes concurrently to minimize startup latency
+    await Promise.allSettled([
+      (async () => {
+        await detectDefaultPrinter();
+        await assertPrintDispatcherReady();
+        await warmPrintDispatcherProfile();
+        void warmPrinterEdgeRunspace().catch((error: unknown) => {
+          console.error(
+            '[SERVER] Failed to warm printer-edge PowerShell runspace.',
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      })(),
+      (async () => {
+        await detectScanner();
+        await cleanupTransientFilesOnStartup(UPLOAD_DIR).catch((error) => {
+          console.error(
+            '[STARTUP] Failed to clean up transient files on startup.',
+            {
+              uploadDir: UPLOAD_DIR,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
+        });
+        startScanStorageCleanup();
+      })(),
+      (async () => {
+        await initSerial(io);
+        await runHopperSelfTest();
+      })(),
+      startHotspot(),
+    ]);
 
     startPrinterMonitor(io);
     startWatchdogHealthMonitor({

@@ -53,11 +53,8 @@ if "%PORT%"=="" set "PORT=3000"
 
 if /I "%PRINTBIT_NETWORK_PROVIDER%"=="esp32" (
     if exist "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1" (
-        echo [PrintBit] Ensuring ESP32 Wi-Fi static IP profile...
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1"
-        if %errorlevel% neq 0 (
-            echo [PrintBit] WARNING: Could not fully enforce ESP32 static IP profile.
-        )
+        echo [PrintBit] Ensuring ESP32 Wi-Fi static IP profile in background...
+        start "" /b powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1" -Quiet
     ) else (
         echo [PrintBit] WARNING: Missing network helper script at "%PROJECT_DIR%\scripts\ensure-esp32-network.ps1"
     )
@@ -92,10 +89,6 @@ if defined EXISTING_SERVER_PID (
     start "PrintBit Server" /min cmd /c "pushd ""%PROJECT_DIR%"" && node dist\server.js"
 )
 set "NETWORK_PROVIDER=%PRINTBIT_NETWORK_PROVIDER%"
-
-:: Wait for server + hotspot to come up before selecting kiosk IP
-echo [PrintBit] Waiting for server to start...
-timeout /t 10 /nobreak >nul
 
 if /I "%NETWORK_PROVIDER%"=="esp32" (
     set "LOCAL_IP=%PRINTBIT_ESP32_KIOSK_IP%"

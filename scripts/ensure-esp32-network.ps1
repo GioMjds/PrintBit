@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [int]$WaitSeconds = 45,
+    [int]$WaitSeconds = 10,
     [int]$RetryCount = 3,
     [switch]$Quiet
 )

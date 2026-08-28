@@ -204,8 +204,9 @@ export async function verifyTrustedClockSync(): Promise<TrustedTimeStatus> {
   }
 
   const maxDriftMs = readMaxDriftMs();
+  const enforceForFinancial = readEnforceFlag();
   try {
-    const rawStatus = await runPowerShell('w32tm /query /status', 12_000);
+    const rawStatus = await runPowerShell('w32tm /query /status', 3_000);
     const source = parseStatusValue(rawStatus, 'Source');
     const lastSuccessfulSyncAt = parseStatusValue(
       rawStatus,
@@ -219,7 +220,7 @@ export async function verifyTrustedClockSync(): Promise<TrustedTimeStatus> {
         offsetMs: null,
         driftExceeded: false,
         maxDriftMs,
-        enforceForFinancial: readEnforceFlag(),
+        enforceForFinancial,
         checkedAt: new Date().toISOString(),
         detail: `Windows Time is not synchronized (source: ${source ?? 'unknown'}).`,
         ntpSource: source,
@@ -233,7 +234,7 @@ export async function verifyTrustedClockSync(): Promise<TrustedTimeStatus> {
       'time.windows.com';
     const rawStripchart = await runPowerShell(
       `w32tm /stripchart /computer:${ntpTarget} /samples:1 /dataonly`,
-      12_000,
+      3_000,
     );
     const offsetMs = parseStripchartOffsetMs(rawStripchart);
     const driftExceeded =
