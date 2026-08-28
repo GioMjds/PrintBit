@@ -1,7 +1,7 @@
 # Graph Report - printbit  (2026-08-28)
 
 ## Corpus Check
-- 332 files · ~468,549 words
+- 332 files · ~468,600 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -299,26 +299,26 @@
   agent_docs/in_progress.md → .github/SECURITY.md
 
 ## Import Cycles
-- 3-file cycle: `src/core/database/db.ts -> src/core/database/sqlite-storage.ts -> src/core/database/models/consumables.model.ts -> src/core/database/db.ts`
 - 3-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-quote.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-lifecycle-state.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/settlement.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/pending-refund.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/admin.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 3-file cycle: `src/core/database/db.ts -> src/core/database/sqlite-storage.ts -> src/core/database/models/consumables.model.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-status.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/anomaly.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/consumable-estimator.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/feedback.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/settlement.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/admin.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/consumable-estimator.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/financial-ledger.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/hopper.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/pending-refund.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-lifecycle-state.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-quote.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-spooler.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-fault-lock.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-status.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/recovery.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/report-issue.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/serial.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/time-source.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 5-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-quote.ts -> src/services/admin.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 5-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-status.ts -> src/core/database/sqlite-storage.ts -> src/core/database/models/consumables.model.ts -> src/core/database/db.ts`
 
 ## Hyperedges (group relationships)
 - **ESP32 Hardware Coin Bridge Architecture** — agent_docs_hardware_integration_esp32_serial_telemetry, agent_docs_hardware_integration_coin_event_idempotency, agent_docs_hardware_integration_esp32_dual_mode_firmware, agent_docs_hardware_integration_esp32_dynamic_discovery_nvs [EXTRACTED 1.00]

@@ -1308,9 +1308,9 @@
     "semantic_hash": "36d69b0fe741e74789993369b9c99017"
   },
   "src/services/idle-timeout.ts": {
-    "mtime": 1787919867.163063,
-    "seen": 1787920003.9559553,
-    "ast_hash": "a7a45ed8cbdb92e56f3bbc0540131a7b",
+    "mtime": 1787921235.594403,
+    "seen": 1787921371.9600346,
+    "ast_hash": "ba4790834b562bfd04f4c0eb827ee814",
     "semantic_hash": ""
   },
   "src/services/index.ts": {
@@ -2272,5 +2272,11 @@
     "seen": 1787917920.4969983,
     "ast_hash": "f3df6d7c95d48b7d1be5b07184f2289a",
     "semantic_hash": "f3df6d7c95d48b7d1be5b07184f2289a"
+  },
+  "tests/services/idle-timeout.spec.ts": {
+    "mtime": 1787921139.1432924,
+    "seen": 1787921371.9601946,
+    "ast_hash": "3a81ed8d06be14a2424a1b9ed48c1734",
+    "semantic_hash": ""
   }
 }

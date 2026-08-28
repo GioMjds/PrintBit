@@ -9,6 +9,7 @@ export interface PageIdleState {
   elapsedSeconds: number;
   warningShownAt: number | null;
   timerHandle: number | null;
+  startedAtMs: number | null;
 }
 
 export interface IdleTimeoutConfig {
@@ -21,12 +22,15 @@ export interface IdleTimeoutConfig {
   onWarningHidden?: () => void;
 }
 
+const DEFAULT_TIMEOUT_SECONDS = 120;
+
 const pageIdleState: PageIdleState = {
   enabled: false,
-  timeoutSeconds: 120,
+  timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
   elapsedSeconds: 0,
   warningShownAt: null,
   timerHandle: null,
+  startedAtMs: null,
 };
 
 let idleConfig: IdleTimeoutConfig = {
@@ -46,20 +50,24 @@ export async function initializePageIdleTimeout(
   config: IdleTimeoutConfig = {},
 ): Promise<void> {
   idleConfig = { ...idleConfig, ...config };
+  pageIdleState.timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
 
   try {
     const res = await fetch('/api/settings/idle-timeout');
-    if (!res.ok) return;
-    const data = (await res.json()) as { idleTimeoutSeconds?: number };
-    if (data.idleTimeoutSeconds && data.idleTimeoutSeconds > 0) {
-      pageIdleState.enabled = true;
-      pageIdleState.timeoutSeconds = data.idleTimeoutSeconds;
-      cachePageIdleDOMElements();
-      startPageIdleTimer();
-      setupPageIdleWarningButton();
+    if (res.ok) {
+      const data = (await res.json()) as { idleTimeoutSeconds?: number };
+      if (data.idleTimeoutSeconds && data.idleTimeoutSeconds > 0) {
+        pageIdleState.timeoutSeconds = data.idleTimeoutSeconds;
+      }
     }
   } catch (err) {
-    console.error('Failed to fetch idle timeout settings:', err);
+    console.error('Failed to fetch idle timeout settings, using default:', err);
+  } finally {
+    // Always enable and start the idle timer even if settings fetch fails
+    pageIdleState.enabled = true;
+    cachePageIdleDOMElements();
+    startPageIdleTimer();
+    setupPageIdleWarningButton();
   }
 }
 
@@ -80,30 +88,44 @@ function cachePageIdleDOMElements(): void {
 export function startPageIdleTimer(): void {
   if (pageIdleState.timerHandle !== null) {
     clearInterval(pageIdleState.timerHandle);
+    pageIdleState.timerHandle = null;
   }
 
+  const now = Date.now();
+  pageIdleState.startedAtMs = now;
   pageIdleState.elapsedSeconds = 0;
   pageIdleState.warningShownAt = null;
 
   if (idleConfig.showWarningModal && cachedModalElement) {
     cachedModalElement.style.display = 'none';
+    cachedModalElement.classList.remove('is-leaving');
   }
 
   let lastCountdownValue = -1; // Track lastCountdownValue to avoid unnecessary DOM updates
-  const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart'];
+  const ACTIVITY_EVENTS = [
+    'mousedown',
+    'keydown',
+    'touchstart',
+    'pointerdown',
+  ];
 
   // Attach activity listeners before timer starts
   if (!areListenersAttached) {
     ACTIVITY_EVENTS.forEach((event) => {
-      document.addEventListener(event, resetPageIdleTimer, true);
+      document.addEventListener(event, handleUserActivity, true);
     });
     areListenersAttached = true;
   }
 
   pageIdleState.timerHandle = window.setInterval(() => {
-    if (!pageIdleState.enabled) return;
+    if (!pageIdleState.enabled || pageIdleState.startedAtMs === null) return;
 
-    pageIdleState.elapsedSeconds += 0.1;
+    const currentNow = Date.now();
+    const elapsed = Math.max(
+      0,
+      (currentNow - pageIdleState.startedAtMs) / 1000,
+    );
+    pageIdleState.elapsedSeconds = elapsed;
 
     // Warning shows in last 20 seconds (or half of timeout if timeout <= 20s)
     const warningThreshold = Math.max(
@@ -143,11 +165,24 @@ export function startPageIdleTimer(): void {
 
     // Handle final timeout
     if (pageIdleState.elapsedSeconds >= pageIdleState.timeoutSeconds) {
-      clearInterval(pageIdleState.timerHandle!);
-      pageIdleState.timerHandle = null;
+      if (pageIdleState.timerHandle !== null) {
+        clearInterval(pageIdleState.timerHandle);
+        pageIdleState.timerHandle = null;
+      }
       void handlePageIdleTimeout();
     }
   }, 100);
+}
+
+function handleUserActivity(): void {
+  if (!pageIdleState.enabled) return;
+
+  // When warning modal is actively displayed, modal buttons and backdrop handle dismissal
+  if (pageIdleState.warningShownAt !== null) {
+    return;
+  }
+
+  resetPageIdleTimer();
 }
 
 export function resetPageIdleTimer(): void {
@@ -167,6 +202,7 @@ export function showPageIdleWarning(): void {
     cachedModalElement.style.display = 'flex';
 
     // Tap anywhere on the overlay backdrop to dismiss
+    cachedModalElement.removeEventListener('click', handleOverlayClick);
     cachedModalElement.addEventListener('click', handleOverlayClick);
   }
 }
@@ -212,6 +248,11 @@ function handleOverlayClick(event: Event): void {
 }
 
 export function setupPageIdleWarningButton(): void {
+  if (!cachedButtonElement && idleConfig.buttonId) {
+    cachedButtonElement = document.getElementById(
+      idleConfig.buttonId,
+    ) as HTMLButtonElement | null;
+  }
   if (!cachedButtonElement) return;
 
   // Prevent duplicate listeners by removing any existing listener first
@@ -219,7 +260,8 @@ export function setupPageIdleWarningButton(): void {
   cachedButtonElement.addEventListener('click', handleKeepActiveClick);
 }
 
-function handleKeepActiveClick(): void {
+function handleKeepActiveClick(event?: Event): void {
+  event?.stopPropagation();
   console.log('[PAGE IDLE] User dismissed timeout warning via button');
   hidePageIdleWarning();
   resetPageIdleTimer();
