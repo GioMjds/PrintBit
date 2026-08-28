@@ -1,0 +1,15 @@
+node_modules
+package-lock.json
+.env
+dist
+*bundle.js
+/src/public/shared/motion.js
+printbit.sqlite
+printbit.sqlite-shm
+printbit.sqlite-wal
+*app.js
+*uploads
+bin/
+.claude
+.superpowers
+.pnpm-store
