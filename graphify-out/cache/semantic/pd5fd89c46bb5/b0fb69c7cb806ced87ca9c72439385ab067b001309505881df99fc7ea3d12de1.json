@@ -1,0 +1,1 @@
+{"nodes": [{"id": "pnpm_workspace_config", "label": "PNPM Workspace Only-Built Dependencies Configuration", "file_type": "code", "source_file": "pnpm-workspace.yaml", "source_location": "L1-L12", "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}
