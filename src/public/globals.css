@@ -206,38 +206,73 @@ html[data-high-contrast='true'] body {
   border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
-/* ── Idle Warning Modal (Shared) ─────────────────────────────────────────────── */
+/* ── Idle Warning Modal (Shared) ────────────────────────────────────────────── */
 
 .idle-warning-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  /* Deep darkening backdrop — the core screen-darkens effect */
+  background: rgba(0, 0, 0, 0.82);
   display: none;
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px) brightness(0.6);
+  -webkit-backdrop-filter: blur(6px) brightness(0.6);
+  animation: idleOverlayIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  cursor: pointer; /* Tap anywhere to dismiss */
 }
 
+/* Prevent card clicks propagating to overlay */
 .idle-warning-modal {
-  background: #1a1829;
-  border: 2px solid #ff6b3d;
-  border-radius: 24px;
-  padding: 48px 40px;
-  max-width: 420px;
-  width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  animation: slideUp 0.3s ease-out;
+  cursor: default;
+  background: #0f0e17;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 52px 44px 44px;
+  max-width: 400px;
+  width: 88%;
+  text-align: center;
+  animation: idleCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes slideUp {
+@keyframes idleOverlayIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+  }
+}
+
+@keyframes idleCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Exit animations applied via JS */
+.idle-warning-overlay.is-leaving {
+  animation: idleOverlayOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.idle-warning-overlay.is-leaving .idle-warning-modal {
+  animation: idleCardOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes idleOverlayOut {
+  to { opacity: 0; }
+}
+
+@keyframes idleCardOut {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
   }
 }
 
@@ -245,53 +280,94 @@ html[data-high-contrast='true'] body {
   text-align: center;
 }
 
+/* Large lightweight countdown number — the visual anchor */
+.idle-warning-countdown-number {
+  font-size: 72px;
+  font-weight: 200;
+  letter-spacing: -2px;
+  color: #ffffff;
+  line-height: 1;
+  margin: 0 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.idle-warning-countdown-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0 0 32px;
+}
+
 .idle-warning-title {
-  font-size: 24px;
-  font-weight: 700;
-  margin: 0 0 16px;
-  color: #ff6b3d;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .idle-warning-subtitle {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-  margin: 0 0 16px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 36px;
+  line-height: 1.5;
 }
 
+/* Legacy countdown element (for pages that use inline countdown text) */
 .idle-warning-countdown {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.75);
   margin: 0 0 32px;
   line-height: 1.5;
 }
 
 .idle-warning-countdown span {
-  font-weight: 700;
-  color: #ff9966;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Pulsing tap-anywhere hint */
+.idle-warning-tap-hint {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.25);
+  margin: 24px 0 0;
+  animation: idleHintPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes idleHintPulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.9; }
 }
 
 .idle-warning-btn {
-  background: linear-gradient(135deg, #ff6b3d 0%, #ff9144 100%);
-  color: white;
-  border: none;
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
   padding: 14px 32px;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   width: 100%;
-  box-shadow: 0 4px 12px rgba(255, 107, 61, 0.3);
 }
 
-.idle-warning-btn:hover {
-  background: linear-gradient(135deg, #ff5810 0%, #ff7a20 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(255, 107, 61, 0.4);
+.idle-warning-btn:hover,
+.idle-warning-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+  outline: none;
 }
 
 .idle-warning-btn:active {
-  transform: translateY(0);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ── Static customer kiosk presentation ───────────────────────────────────── */

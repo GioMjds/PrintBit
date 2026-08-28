@@ -1231,11 +1231,13 @@ export class AdminController {
 
     if (
       body.idleTimeoutSeconds !== undefined &&
-      (!isFiniteNumber(body.idleTimeoutSeconds) || body.idleTimeoutSeconds < 60)
+      (!isFiniteNumber(body.idleTimeoutSeconds) ||
+        body.idleTimeoutSeconds < 60 ||
+        body.idleTimeoutSeconds > 3600)
     ) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid idleTimeoutSeconds value.' });
+      return res.status(400).json({
+        error: 'idleTimeoutSeconds must be a whole number between 60 and 3600.',
+      });
     }
 
     if (

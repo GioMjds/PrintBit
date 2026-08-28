@@ -864,27 +864,28 @@
       </button>
     </footer>
 
-    <!-- ── Idle Warning Modal ── -->
+    <!-- Idle Warning Modal -->
     <div
       id="idleWarningModal"
       class="idle-warning-overlay"
       style="display: none"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="idleWarningTitle"
     >
       <div class="idle-warning-modal">
         <div class="idle-warning-content">
-          <div class="idle-warning-icon" aria-hidden="true">⏱️</div>
-          <h2 class="idle-warning-title">Session Idle</h2>
-          <p class="idle-warning-message">
-            No activity detected. Your session will close in
-            <span id="idleCountdown">0</span>s
-          </p>
-          <p class="idle-warning-subtitle">
-            Click below to keep your session active.
-          </p>
+          <div class="idle-warning-countdown-number" id="idleCountdown">20</div>
+          <div class="idle-warning-countdown-label">seconds remaining</div>
+          <h2 id="idleWarningTitle" class="idle-warning-title">Session Timeout</h2>
+          <p class="idle-warning-subtitle">No activity detected. Your session will close soon.</p>
           <button id="keepActiveBtn" type="button" class="idle-warning-btn">
-            Keep Me Active
+            Keep Session Active
           </button>
+          <p class="idle-warning-tap-hint">or tap anywhere to continue</p>
         </div>
+      </div>
+    </div>
       </div>
     </div>
 

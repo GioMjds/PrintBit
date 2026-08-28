@@ -91,8 +91,8 @@ export function startPageIdleTimer(): void {
 
   let lastCountdownValue = -1; // Track lastCountdownValue to avoid unnecessary DOM updates
   const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart'];
-  
-  // Attach activity listeners before timer starts 
+
+  // Attach activity listeners before timer starts
   if (!areListenersAttached) {
     ACTIVITY_EVENTS.forEach((event) => {
       document.addEventListener(event, resetPageIdleTimer, true);
@@ -104,7 +104,7 @@ export function startPageIdleTimer(): void {
     if (!pageIdleState.enabled) return;
 
     pageIdleState.elapsedSeconds += 0.1;
-    
+
     // Warning shows in last 20 seconds (or half of timeout if timeout <= 20s)
     const warningThreshold = Math.max(
       0,
@@ -162,29 +162,65 @@ export function showPageIdleWarning(): void {
     cachedModalElement = document.getElementById(idleConfig.modalId);
   }
   if (cachedModalElement) {
+    // Remove any lingering exit class and make visible
+    cachedModalElement.classList.remove('is-leaving');
     cachedModalElement.style.display = 'flex';
+
+    // Tap anywhere on the overlay backdrop to dismiss
+    cachedModalElement.addEventListener('click', handleOverlayClick);
   }
 }
 
+/** Animate the overlay out, then hide it once the animation completes */
 export function hidePageIdleWarning(): void {
-  if (cachedModalElement) {
-    cachedModalElement.style.display = 'none';
+  if (!cachedModalElement) {
+    if (idleConfig.onWarningHidden) idleConfig.onWarningHidden();
+    return;
   }
+
+  // Remove overlay tap listener
+  cachedModalElement.removeEventListener('click', handleOverlayClick);
+
+  // Trigger CSS exit animation
+  cachedModalElement.classList.add('is-leaving');
+
+  // After the animation completes (280ms), hide and clean up
+  const el = cachedModalElement;
+  window.setTimeout(() => {
+    el.style.display = 'none';
+    el.classList.remove('is-leaving');
+  }, 300);
+
   if (idleConfig.onWarningHidden) {
     idleConfig.onWarningHidden();
   }
 }
 
+/**
+ * Dismiss the warning when the user taps/clicks anywhere on the dark overlay
+ * (but NOT when the click is inside the modal card itself).
+ */
+function handleOverlayClick(event: Event): void {
+  const modalCard = cachedModalElement?.querySelector('.idle-warning-modal');
+  if (modalCard && modalCard.contains(event.target as Node)) {
+    // Click was inside the card — don't dismiss
+    return;
+  }
+  console.log('[PAGE IDLE] User tapped overlay to dismiss timeout warning');
+  hidePageIdleWarning();
+  resetPageIdleTimer();
+}
+
 export function setupPageIdleWarningButton(): void {
   if (!cachedButtonElement) return;
-  
+
   // Prevent duplicate listeners by removing any existing listener first
   cachedButtonElement.removeEventListener('click', handleKeepActiveClick);
   cachedButtonElement.addEventListener('click', handleKeepActiveClick);
 }
 
 function handleKeepActiveClick(): void {
-  console.log('[PAGE IDLE] User dismissed timeout warning');
+  console.log('[PAGE IDLE] User dismissed timeout warning via button');
   hidePageIdleWarning();
   resetPageIdleTimer();
 }

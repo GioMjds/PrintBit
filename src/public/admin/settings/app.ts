@@ -402,7 +402,16 @@ settingsForm.addEventListener('submit', (e) => {
   };
 
   if (settingIdleTimeout) {
-    payload.idleTimeoutSeconds = Number(settingIdleTimeout.value);
+    const idleTimeoutValue = Number(settingIdleTimeout.value);
+    if (
+      !Number.isInteger(idleTimeoutValue) ||
+      idleTimeoutValue < 60 ||
+      idleTimeoutValue > 3600
+    ) {
+      setMessage('Idle timeout must be a whole number between 60 and 3600 seconds.');
+      return;
+    }
+    payload.idleTimeoutSeconds = idleTimeoutValue;
   }
 
   if (inkMonitoringEnabled) {

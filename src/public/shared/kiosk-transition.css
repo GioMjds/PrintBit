@@ -1,30 +1,46 @@
+/* ── Kiosk page transition animations ─────────────────────────────────────── */
+/*
+ * Arrive: leisurely spring fade-in — pages feel like they settle into place.
+ * Depart: quick but not abrupt exit — screen clears before the next page loads.
+ * Both use very small translate/scale deltas so the kiosk screen never feels
+ * like it's flying around; just a gentle, purposeful movement.
+ */
+
 html[data-kiosk-static='true'] body {
-  animation: kiosk-page-arrive 500ms cubic-bezier(0.16, 1, 0.3, 1) !important;
-  transform-origin: 50% 42%;
+  animation: kiosk-page-arrive 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: 50% 46%;
 }
 
 html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] body {
-  animation: kiosk-page-depart 170ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  animation: kiosk-page-depart 260ms cubic-bezier(0.4, 0, 1, 1) forwards;
   pointer-events: none;
 }
 
 @keyframes kiosk-page-depart {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
   to {
     opacity: 0;
-    transform: translate3d(0, -6px, 0) scale(0.995);
+    transform: translate3d(0, -10px, 0) scale(0.993);
   }
 }
 
 @keyframes kiosk-page-arrive {
   from {
-    opacity: 0.82;
-    transform: translate3d(0, 8px, 0) scale(0.998);
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.996);
   }
-
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
   }
+}
+
+/* Cross-fade between depart and arrive via a brief dim on the page root */
+html[data-kiosk-static='true'][data-kiosk-page-state='leaving'] {
+  background-color: #080810; /* avoids white flash during navigation gap */
 }
 
 @media (prefers-reduced-motion: reduce) {

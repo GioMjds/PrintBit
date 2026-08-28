@@ -1,6 +1,6 @@
 export type KioskNavigationMode = 'assign' | 'replace';
 
-const KIOSK_NAVIGATION_DELAY_MS = 170;
+const KIOSK_NAVIGATION_DELAY_MS = 260;
 
 export function resolveSameOriginNavigation(
   href: string,

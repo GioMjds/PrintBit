@@ -527,13 +527,15 @@
                       <input
                         id="settingIdleTimeout"
                         type="number"
-                        min="15"
+                        min="60"
+                        max="3600"
                         step="1"
                         class="field__input"
                         required
                       />
                       <span class="field__affix">sec</span>
                     </div>
+                    <p class="field__hint">Minimum 60 s · Maximum 3600 s (1 hr)</p>
                   </div>
                 </div>
               </div>
