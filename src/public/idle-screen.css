@@ -42,24 +42,28 @@
 
   /* Hidden by default — shown by JS adding .is-visible */
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 350ms cubic-bezier(0.16, 1, 0.3, 1), visibility 350ms ease;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  will-change: opacity;
 }
 
 /* Shown state */
 .idle-overlay.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
-/* Exit/leaving state — quicker easing out */
+/* Exit/leaving state — fast, smooth 260ms fade-out transition */
 .idle-overlay.is-leaving {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 480ms cubic-bezier(0.4, 0, 1, 1);
+  opacity: 0 !important;
+  visibility: visible !important;
+  pointer-events: none !important;
+  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 /* ── Aurora blobs ──────────────────────────────────────────────────────────── */
@@ -156,6 +160,25 @@
   gap: 0;
   text-align: center;
   padding: clamp(24px, 5vw, 60px);
+  will-change: transform, opacity;
+}
+
+/* Fluid arrive animation when idle screen appears */
+.idle-overlay.is-visible .idle-content {
+  animation: idle-content-arrive 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Fast, modern depart animation when dismissed on tap */
+.idle-overlay.is-leaving .idle-content {
+  animation: idle-content-depart 260ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+/* Softly expand and fade backdrop/rings during exit */
+.idle-overlay.is-leaving .idle-backdrop,
+.idle-overlay.is-leaving .idle-rings {
+  opacity: 0 !important;
+  transform: scale(1.03) !important;
+  transition: opacity 240ms cubic-bezier(0.4, 0, 1, 1), transform 260ms cubic-bezier(0.4, 0, 1, 1) !important;
 }
 
 /* Brand lockup */
@@ -269,6 +292,28 @@
   50%       { box-shadow: 0 8px 40px rgba(105, 111, 199, 0.22); transform: scale(1.015); }
 }
 
+@keyframes idle-content-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes idle-content-depart {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0) scale(0.985);
+  }
+}
+
 /* ── Responsive adjustments ────────────────────────────────────────────────── */
 @media (max-width: 540px) {
   .idle-headline {
@@ -294,8 +339,14 @@
 /* ── Reduced motion ────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .idle-overlay,
-  .idle-overlay.is-leaving {
-    transition: opacity 0.01ms !important;
+  .idle-overlay.is-leaving,
+  .idle-overlay.is-visible .idle-content,
+  .idle-overlay.is-leaving .idle-content,
+  .idle-overlay.is-leaving .idle-backdrop,
+  .idle-overlay.is-leaving .idle-rings {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
   }
 
   .idle-blob,

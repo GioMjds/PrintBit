@@ -10,7 +10,7 @@
  */
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000; // 2 minutes fallback
-const FADE_OUT_DURATION_MS = 480; // Must match .idle-overlay.is-leaving transition
+const FADE_OUT_DURATION_MS = 260; // Fast, responsive 260ms exit transition (matches kiosk-navigation timing)
 
 export interface IdleScreenOptions {
   /** The ID of the idle overlay element in the DOM. */
@@ -160,8 +160,12 @@ function hideIdleOverlay(): void {
   }, FADE_OUT_DURATION_MS);
 }
 
-function handleActivity(): void {
+function handleActivity(event?: Event): void {
   if (isVisible) {
+    // Consume the wake-up tap so it doesn't accidentally trigger an underlying action button
+    if (event) {
+      event.stopPropagation();
+    }
     hideIdleOverlay();
   } else {
     // Any activity while idle screen is not shown: reset the arm timer.
