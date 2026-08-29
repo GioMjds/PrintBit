@@ -96,7 +96,7 @@ html.admin-session-active #adminDashboard.hidden {
   width: 48px;
   height: 48px;
   flex-shrink: 0;
-  background: rgba(105, 111, 199, 0.15);
+  background: url("/assets/logo.png") center / contain no-repeat;
   border: 1.5px solid rgba(105, 111, 199, 0.3);
   border-radius: 14px;
   display: grid;
@@ -104,8 +104,7 @@ html.admin-session-active #adminDashboard.hidden {
   padding: 6px;
 }
 .auth-card__logomark svg {
-  width: 100%;
-  height: 100%;
+  display: none;
 }
 .auth-card__wordmark {
   font-size: 18px;
@@ -268,7 +267,7 @@ html.admin-session-active #adminDashboard.hidden {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  background: rgba(14, 165, 233, 0.14);
+  background: url("/assets/logo.png") center / contain no-repeat;
   border: 1px solid rgba(125, 211, 252, 0.4);
   border-radius: 10px;
   display: grid;
@@ -277,8 +276,7 @@ html.admin-session-active #adminDashboard.hidden {
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.18);
 }
 .sidebar__logomark svg {
-  width: 100%;
-  height: 100%;
+  display: none;
 }
 .sidebar__names {
   min-width: 0;

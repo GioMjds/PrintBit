@@ -118,18 +118,14 @@ body {
 .brand-mark {
   width: 48px;
   height: 48px;
-  border-radius: 14px;
-  background: rgba(105, 111, 199, 0.2);
-  border: 1.5px solid rgba(105, 111, 199, 0.35);
-  color: var(--lavender);
+  background: url("/assets/logo.png") center / contain no-repeat;
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 
 .brand-mark svg {
-  width: 26px;
-  height: 26px;
+  display: none;
 }
 
 .card-title {
@@ -427,7 +423,7 @@ body {
   margin: 0 0 2px;
   line-height: 1.3;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
