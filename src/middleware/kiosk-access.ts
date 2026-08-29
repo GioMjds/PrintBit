@@ -59,9 +59,16 @@ export class KioskAccessService {
   }
 
   consumeBootstrapCredential(credential: string, now = Date.now()): boolean {
-    const expiresAt = this.bootstrapCredentials.get(credential);
-    this.bootstrapCredentials.delete(credential);
     this.prune(now);
+    const expiresAt = this.bootstrapCredentials.get(credential);
+    if (!expiresAt) return false;
+    this.bootstrapCredentials.delete(credential);
+    return expiresAt > now;
+  }
+
+  hasValidBootstrapCredential(credential: string, now = Date.now()): boolean {
+    this.prune(now);
+    const expiresAt = this.bootstrapCredentials.get(credential);
     return expiresAt !== undefined && expiresAt > now;
   }
 
@@ -77,6 +84,9 @@ export class KioskAccessService {
   }
 
   isKioskRequest(req: Request): boolean {
+    if (isLoopbackRequest(req)) {
+      return true;
+    }
     const credential = req.cookies?.[KIOSK_COOKIE_NAME];
     return this.isKioskCredential(credential);
   }
@@ -116,6 +126,13 @@ export function createKioskAccessMiddleware(
     // The physical kiosk display runs on the same machine — loopback and host
     // interface requests are always authoritative kiosk origins.
     if (isLoopbackRequest(req)) {
+      if (!req.cookies?.[KIOSK_COOKIE_NAME]) {
+        res.cookie(KIOSK_COOKIE_NAME, service.getCookieCredential(), {
+          httpOnly: true,
+          sameSite: 'strict',
+          path: '/',
+        });
+      }
       next();
       return;
     }

@@ -16,6 +16,12 @@ import {
   listQuarantineRecords,
 } from '@/services/quarantine';
 
+jest.mock('@/services/admin', () => ({
+  adminService: {
+    appendAdminLog: jest.fn().mockResolvedValue({}),
+  },
+}));
+
 describe('Upload Staging and Quarantine', () => {
   let tempDir: string;
   let stagingDir: string;

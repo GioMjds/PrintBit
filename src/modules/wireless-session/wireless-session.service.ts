@@ -194,7 +194,34 @@ export class WirelessSessionService {
     next,
   ) => {
     if (kioskAccessService.isKioskRequest(req)) {
-      this.verifyUploadTarget(req, res, next);
+      const { sessionId } = req.params;
+      const sessionState = this.deps.sessionStore.getSessionState(sessionId);
+      if (sessionState === 'expired') {
+        res.status(410).json({
+          code: 'SESSION_EXPIRED',
+          error: 'Session has expired. Please start a new session.',
+        });
+        return;
+      }
+      if (sessionState === 'missing') {
+        res.status(404).json({ error: 'Session not found.' });
+        return;
+      }
+
+      const token = this.extractUploadToken(req);
+      if (token) {
+        const publicBaseUrl = this.deps.resolvePublicBaseUrl(req);
+        const session = this.deps.sessionStore.tryGetSession(
+          sessionId,
+          publicBaseUrl,
+        );
+        if (session && session.token !== token) {
+          res.status(403).json({ error: 'Invalid token for session.' });
+          return;
+        }
+      }
+
+      next();
       return;
     }
     this.verifyOwnedUploadTarget(req, res, next);
