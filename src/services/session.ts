@@ -18,6 +18,7 @@ import {
   type WirelessSessionDocumentStorageEntry,
   type WirelessSessionStorageEntry,
 } from '@/core/database/sqlite-storage';
+import { promoteStagedUpload } from '@/services/upload-staging';
 
 export interface DocumentPageAnalysis {
   index: number;
@@ -349,11 +350,13 @@ export class SessionStore {
     const safeName = `${documentId}${allowedExt}`;
     const destPath = path.join(this.uploadDir, safeName);
 
-    if (!file.buffer) {
-      throw new Error('Uploaded file is missing in-memory content buffer.');
+    if (file.path) {
+      await promoteStagedUpload(file, destPath);
+    } else if (file.buffer) {
+      await fs.promises.writeFile(destPath, file.buffer);
+    } else {
+      throw new Error('Uploaded file is missing disk path and in-memory buffer.');
     }
-
-    await fs.promises.writeFile(destPath, file.buffer);
 
     const document: UploadedDocument = {
       documentId,

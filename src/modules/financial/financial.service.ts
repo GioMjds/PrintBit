@@ -61,6 +61,7 @@ import {
   getTrustedTimestamp,
   isTrustedTimeError,
 } from '@/services/time-source';
+import { promoteStagedUpload } from '@/services/upload-staging';
 import {
   PendingRefundServiceError,
   upsertSpoolerFailureRefund,
@@ -227,37 +228,23 @@ function buildAnalysisUnavailablePayload(target: UploadedDocument): {
 }
 
 async function persistLegacyUploadWithStaging(
-  buffer: Buffer,
+  file: Express.Multer.File,
   storedFilename: string,
 ): Promise<string> {
   const uploadsDir = path.resolve('uploads');
   const finalPath = path.resolve(uploadsDir, storedFilename);
-  const relativePath = path.relative(uploadsDir, finalPath);
-  const outsideUploads =
-    relativePath === '..' ||
-    relativePath.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relativePath);
-  if (outsideUploads) {
-    throw new Error('Invalid filename');
+
+  if (file.path) {
+    return await promoteStagedUpload(file, finalPath);
   }
 
-  await fs.promises.mkdir(uploadsDir, { recursive: true });
-  await fs.promises.mkdir(LEGACY_UPLOAD_STAGING_DIR, { recursive: true });
-
-  const stagingPath = path.join(
-    LEGACY_UPLOAD_STAGING_DIR,
-    `${storedFilename}.part`,
-  );
-  await fs.promises.writeFile(stagingPath, buffer, { flag: 'wx' });
-
-  try {
-    await fs.promises.rename(stagingPath, finalPath);
-  } catch (error) {
-    await fs.promises.unlink(stagingPath).catch(() => {});
-    throw error;
+  if (file.buffer) {
+    await fs.promises.mkdir(uploadsDir, { recursive: true });
+    await fs.promises.writeFile(finalPath, file.buffer);
+    return finalPath;
   }
 
-  return finalPath;
+  throw new Error('Uploaded file is missing disk path and in-memory buffer.');
 }
 
 async function deleteUploadByStoredFilename(
@@ -887,7 +874,7 @@ export class FinancialService {
     const safeFilename = `${randomUUID()}${path.extname(req.file.originalname).toLowerCase()}`;
 
     try {
-      await persistLegacyUploadWithStaging(req.file.buffer, safeFilename);
+      await persistLegacyUploadWithStaging(req.file, safeFilename);
     } catch (error) {
       await adminService.appendAdminLog(
         'upload_failed',
