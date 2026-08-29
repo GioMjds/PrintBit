@@ -39,8 +39,8 @@ The changes do reduce part of the attack surface: `KioskAccessService` uses a pr
 
 | Finding                                           | Current status               | Reassessment evidence                                                                                                                                                                                                                                                            |
 | ------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PB-AUTH-001 — HTTP access                         | **Open / Critical**          | The kiosk middleware is not applied to legacy `POST /upload` or `POST /print`, even though `PRINT_DISPATCH_MODE` still defaults to `legacy`. `POST /api/hotspot/start` and `/stop` also remain outside the kiosk guard. The server listens on `0.0.0.0`.                         |
-| PB-AUTH-002 — sessions and Socket.IO              | **Open / Critical**          | `io.on('connection')` has no authentication middleware; a connected client can join an arbitrary `session:<id>` room and acquire/release the coin-slot lock. The Socket.IO dependency tree also retains high-severity parser and WebSocket advisories.                           |
+| PB-AUTH-001 — HTTP access                         | **Remediated / targeted verification passed** | Kiosk/admin access now precedes every listed mutable kiosk route, including legacy `POST /upload`, legacy `POST /print`, hotspot control, language, and accessibility changes. Static-file serving runs after guarded page/API routes, so it cannot bypass the page guard. |
+| PB-AUTH-002 — sessions and Socket.IO              | **Remediated / targeted verification passed** | Session creation is kiosk-only; session-ID reads/mutations require the session token plus the owning upload client (or the kiosk credential); the active-token endpoint and portal redirect are removed. Socket.IO uses authenticated control and session namespaces, room binding, and coin-lock authorization. The lockfile pins the patched Socket.IO transitive versions. |
 | PB-PAY-001 — legacy print                         | **Open / Critical**          | The unguarded legacy route calls `printFile(...)` before appending its financial ledger event, then transfers the entire current balance to earnings and sets the balance to zero. This preserves both print-before-debit and full-balance charging risk.                        |
 | PB-HW-001 — ESP32 hopper                          | **Open / Critical**          | The authenticated `/hopper/dispense` endpoint was added, but firmware still accepts unauthenticated `GET /?coins=...` to start a payout. It also contains default bridge/register/hopper tokens and the default AP password in source.                                           |
 | PB-HW-002, PB-HW-003, PB-PRINT-001                | **Open / unverified**        | No durable firmware queue, payout replay, partial-payout, or physical refund/reconciliation evidence was produced in this reassessment. These money-and-hardware findings cannot be closed with source review alone.                                                             |
@@ -114,7 +114,11 @@ The audited runtime is Node.js `25.9.0`. Node 25 reached end of life on 2026-03-
 ### PB-AUTH-001 — Mutable kiosk and hardware APIs are unauthenticated
 
 **Severity:** Critical  
-**Evidence:** `src/modules/financial/financial.controller.ts`, `src/modules/scanner/scanner.controller.ts`, `src/modules/printer/printer.controller.ts`, `src/modules/hotspot/hotspot.controller.ts`, and `src/modules/language/language.controller.ts` register mutable routes without an authentication or device-identity middleware.
+**Remediation update (2026-08-29):** The process-random kiosk cookie (or an authenticated admin session) now guards the listed scanner, copy, printer-control, confirmation, balance, hotspot, language, accessibility, and legacy print paths. The legacy upload endpoint receives a method-specific `POST /upload` guard so that the public tokenized `GET /upload/:token` portal remains available without exposing the legacy API. Static assets are registered only after the guarded page and API routes, preventing a directory index from bypassing route middleware.
+
+**Targeted verification:** `src/middleware/kiosk-access.spec.ts` rejects a non-kiosk network request with `403` and accepts the kiosk cookie; the focused authorization suite passes 8 tests with open-handle detection. The existing full lint failure and unrelated production blockers still keep the overall release verdict at **NO-GO**.
+
+**Original evidence (remediated):** `src/modules/financial/financial.controller.ts`, `src/modules/scanner/scanner.controller.ts`, `src/modules/printer/printer.controller.ts`, `src/modules/hotspot/hotspot.controller.ts`, and `src/modules/language/language.controller.ts` registered mutable routes without an authentication or device-identity middleware.
 
 Exposed operations include:
 
@@ -152,7 +156,13 @@ The CSRF middleware skips unsafe requests that do not already carry an admin coo
 ### PB-AUTH-002 — Active sessions and Socket.IO rooms can be claimed or disrupted
 
 **Severity:** Critical  
-**Evidence:** `src/app.module.ts` returns the active upload token from `GET /api/session/active`. `src/server.ts` accepts arbitrary `joinSession`, `lockCoinSlot`, and `unlockCoinSlot` socket events without authenticating the socket or validating room ownership.
+**Remediation update (2026-08-29):** `GET /api/session/active` and the `/portal` active-token redirect are removed. New session creation is kiosk-only. Session-ID reads and mutations validate the short-lived opaque session token and bind external calls to the first verified upload-client identifier; kiosk callers are admitted by their kiosk credential. Socket.IO now rejects unauthenticated handshakes, separates privileged kiosk/admin control sockets from external session sockets, binds an external socket to one owned session room, and denies coin-lock control outside the privileged namespace. Session events are emitted only to those authenticated rooms and are suppressed once the session is inactive.
+
+`package.json` and the lockfile also override the Socket.IO transitive fixes: `engine.io` 6.6.9, `socket.io-parser` 4.2.7, and `ws` 8.20.1. A production deployment must run `pnpm install --frozen-lockfile` to materialize those locked versions.
+
+**Targeted verification:** `src/middleware/socket-access.spec.ts` verifies handshake rejection, session-room binding, control authorization, and both namespace middlewares; `src/modules/wireless-session/wireless-session.controller.spec.ts` verifies the authorization guard precedes every session-ID read/mutation. The raw QR URL remains a bearer capability by design and must be treated as a physical secret; it is no longer disclosed by an unauthenticated active-session endpoint.
+
+**Original evidence (remediated):** `src/app.module.ts` returned the active upload token from `GET /api/session/active`. `src/server.ts` accepted arbitrary `joinSession`, `lockCoinSlot`, and `unlockCoinSlot` socket events without authenticating the socket or validating room ownership.
 
 `GET /api/wireless/sessions` also creates a session and resets the global balance to zero. Session lookup, preview, analysis, and document-related APIs expose more data by session identifier than the upload-owner checks protect.
 
