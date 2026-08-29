@@ -1,6 +1,7 @@
 import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
+import { createConfigPreparationLoadingController } from './loading-state';
 
 export {};
 
@@ -940,6 +941,10 @@ function setContinueEnabled(canContinue: boolean): void {
   continueBtn.setAttribute('aria-disabled', canContinue ? 'false' : 'true');
 }
 
+const preparationLoading = createConfigPreparationLoadingController({
+  setContinueEnabled,
+});
+
 if (backLink) {
   backLink.href =
     mode === 'copy' ? '/copy' : mode === 'scan' ? '/scan' : '/print';
@@ -1795,6 +1800,20 @@ async function loadPreview(): Promise<void> {
   await refreshPrintQuote();
 }
 
+function restoreContinueAfterPreparation(): void {
+  if (mode === 'print') {
+    setPrintContinueState();
+    return;
+  }
+
+  if (mode === 'copy') {
+    setContinueEnabled(Boolean(copyPreviewPath));
+    return;
+  }
+
+  setContinueEnabled(scanFilename.length > 0);
+}
+
 function lockColorMode(): void {
   const grayRadio = document.querySelector<HTMLInputElement>(
     'input[name="colorMode"][value="grayscale"]',
@@ -1929,4 +1948,43 @@ continueBtn?.addEventListener('click', () => {
   navigateWithKioskMotion('/confirm');
 });
 
-void loadPreview();
+async function prepareDocumentPreview(): Promise<void> {
+  preparationLoading.start('Preparing document');
+
+  if (mode === 'copy') {
+    preparationLoading.setMessage(
+      'Preparing copy preview',
+      'Loading the scanned pages…',
+    );
+  } else if (mode === 'scan') {
+    preparationLoading.setMessage(
+      'Preparing scan preview',
+      'Loading your scanned document…',
+    );
+  } else {
+    preparationLoading.setMessage(
+      'Analyzing document',
+      'Checking pages, color, and orientation…',
+    );
+  }
+
+  try {
+    await loadPreview();
+    restoreContinueAfterPreparation();
+  } catch (error) {
+    previewLog('document preparation failed', error);
+    preparationLoading.fail();
+  } finally {
+    preparationLoading.finish();
+  }
+}
+
+window.addEventListener(
+  'pagehide',
+  () => {
+    preparationLoading.destroy();
+  },
+  { once: true },
+);
+
+void prepareDocumentPreview();
