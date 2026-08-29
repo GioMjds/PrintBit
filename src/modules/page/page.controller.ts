@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import path from 'node:path';
 import { requireAdminLocalAccess } from '@/middleware/admin-auth';
 import type { SessionStore } from '@/services/session';
 import { db } from '@/services/db';
@@ -52,6 +53,8 @@ const KIOSK_ONLY_PAGE_ROUTES = new Set([
   '/confirm',
   '/scan',
 ]);
+
+const RECEIPT_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 
 export class PageController {
   public readonly router: Router;
@@ -108,6 +111,17 @@ export class PageController {
       requireAdminLocalAccess,
       this.handleCoinStatsRedirect.bind(this),
     );
+
+    // These assets must be registered before /receipt/:transactionId so a
+    // browser never receives receipt HTML when it asks for the stylesheet.
+    this.router.get('/receipt/:asset', (req: Request, res: Response) => {
+      const { asset } = req.params as { asset: string };
+      if (!RECEIPT_PORTAL_ASSETS.has(asset)) {
+        res.sendStatus(404);
+        return;
+      }
+      res.sendFile(path.resolve('src', 'public', 'receipt', asset));
+    });
 
     // Register public page routes (static HTML files)
     for (const page of this.deps.publicPageRoutes) {
