@@ -21,7 +21,13 @@
 
     <!-- ── Main shell: preview + settings side-by-side, above sticky footer ── -->
     <div class="page-shell">
-      <div class="config-layout" role="main">
+      <div
+        class="config-layout"
+        id="configLayout"
+        role="main"
+        aria-busy="true"
+        data-preparation-state="preparing"
+      >
         <!-- ── LEFT: full-height document preview ── -->
         <section class="preview-col" aria-label="Document preview">
           <!-- Slim eyebrow header -->
@@ -117,9 +123,47 @@
                 </p>
               </div>
 
-              <!-- Spinner overlay -->
+              <!-- Preparation overlay -->
               <div class="paper-loading" id="paperLoading">
-                <div class="paper-loading__spinner"></div>
+                <div
+                  class="config-preparing"
+                  id="configPreparing"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <canvas
+                    id="configPreparingAnimation"
+                    class="config-preparing__animation"
+                    width="120"
+                    height="120"
+                    aria-hidden="true"
+                  ></canvas>
+
+                  <div class="config-preparing__fallback" aria-hidden="true">
+                    <span
+                      class="config-preparing__pixel config-preparing__pixel--1"
+                    ></span>
+                    <span
+                      class="config-preparing__pixel config-preparing__pixel--2"
+                    ></span>
+                    <span
+                      class="config-preparing__pixel config-preparing__pixel--3"
+                    ></span>
+                    <span class="config-preparing__document">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                  </div>
+
+                  <p class="config-preparing__title" id="configPreparingStatus">
+                    Preparing document
+                  </p>
+                  <p class="config-preparing__detail" id="configPreparingDetail">
+                    Building your print preview…
+                  </p>
+                </div>
               </div>
 
               <!-- HTML document preview (Word/Excel) -->
@@ -232,7 +276,11 @@
         <!-- /.preview-col -->
 
         <!-- ── RIGHT: settings panel ── -->
-        <section class="settings-col" aria-label="Print settings">
+        <section
+          class="settings-col"
+          id="configSettings"
+          aria-label="Print settings"
+        >
           <!-- Top: back link -->
           <div class="settings-top">
             <a id="backLink" href="/print" class="back-btn" aria-label="Back">
