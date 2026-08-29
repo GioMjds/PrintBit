@@ -61,6 +61,9 @@ const settingHighQualitySurcharge = document.getElementById(
 const settingIdleTimeout = document.getElementById(
   'settingIdleTimeout',
 ) as HTMLInputElement | null;
+const settingIdleScreenTimeout = document.getElementById(
+  'settingIdleScreenTimeout',
+) as HTMLInputElement | null;
 const inkMonitoringEnabled = document.getElementById(
   'inkMonitoringEnabled',
 ) as HTMLInputElement | null;
@@ -133,6 +136,9 @@ function applySettings(settings: SettingsResponse): void {
   // Kiosk Behaviour (optional)
   if (settingIdleTimeout) {
     settingIdleTimeout.value = String(settings.idleTimeoutSeconds);
+  }
+  if (settingIdleScreenTimeout) {
+    settingIdleScreenTimeout.value = String(settings.idleScreenTimeoutSeconds);
   }
 
   // Ink Monitoring (optional)
@@ -408,6 +414,21 @@ settingsForm.addEventListener('submit', (e) => {
       return;
     }
     payload.idleTimeoutSeconds = idleTimeoutValue;
+  }
+
+  if (settingIdleScreenTimeout) {
+    const idleScreenTimeoutValue = Number(settingIdleScreenTimeout.value);
+    if (
+      !Number.isInteger(idleScreenTimeoutValue) ||
+      idleScreenTimeoutValue < 10 ||
+      idleScreenTimeoutValue > 600
+    ) {
+      setMessage(
+        'Idle screen timeout must be a whole number between 10 and 600 seconds.',
+      );
+      return;
+    }
+    payload.idleScreenTimeoutSeconds = idleScreenTimeoutValue;
   }
 
   if (inkMonitoringEnabled) {

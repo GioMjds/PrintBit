@@ -40,31 +40,45 @@ const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown'] as const;
 /**
  * Initialise the idle screen module.
  * Safe to call once per page load.
+ *
+ * NOTE: bundle.js has no `defer` attribute, so this script runs
+ * synchronously while the HTML is still being parsed. The #idleOverlay
+ * element may not yet exist in the DOM at call time. We therefore defer
+ * the actual DOM lookup and setup until DOMContentLoaded fires (or
+ * immediately if the document is already interactive/complete).
  */
-export async function initIdleScreen(
-  options: IdleScreenOptions,
-): Promise<void> {
-  overlayEl = document.getElementById(options.overlayId);
-  if (!overlayEl) {
-    console.warn(`[IdleScreen] Element #${options.overlayId} not found.`);
-    return;
-  }
+export function initIdleScreen(options: IdleScreenOptions): void {
+  const run = async () => {
+    overlayEl = document.getElementById(options.overlayId);
+    if (!overlayEl) {
+      console.warn(`[IdleScreen] Element #${options.overlayId} not found.`);
+      return;
+    }
 
-  onShowCb = options.onShow;
-  onHideCb = options.onHide;
+    onShowCb = options.onShow;
+    onHideCb = options.onHide;
 
-  // Fetch timeout from server; fall back gracefully on failure.
-  idleTimeoutMs = await fetchIdleTimeoutMs();
+    // Fetch timeout from server; fall back gracefully on failure.
+    idleTimeoutMs = await fetchIdleTimeoutMs();
 
-  // Attach activity listeners so tapping dismisses the overlay when visible.
-  ACTIVITY_EVENTS.forEach((evt) => {
-    document.addEventListener(evt, handleActivity, true);
-  });
+    // Attach activity listeners so tapping dismisses the overlay when visible.
+    ACTIVITY_EVENTS.forEach((evt) => {
+      document.addEventListener(evt, handleActivity, true);
+    });
 
-  if (options.activateImmediately) {
-    showIdleOverlay();
+    if (options.activateImmediately) {
+      showIdleOverlay();
+    } else {
+      armIdleTimer();
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => void run(), {
+      once: true,
+    });
   } else {
-    armIdleTimer();
+    void run();
   }
 }
 
@@ -76,9 +90,16 @@ async function fetchIdleTimeoutMs(): Promise<number> {
   try {
     const res = await fetch('/api/settings/idle-timeout');
     if (!res.ok) return DEFAULT_IDLE_TIMEOUT_MS;
-    const data = (await res.json()) as { idleTimeoutSeconds?: number };
-    if (data.idleTimeoutSeconds && data.idleTimeoutSeconds > 0) {
-      return data.idleTimeoutSeconds * 1_000;
+    const data = (await res.json()) as {
+      idleTimeoutSeconds?: number;
+      idleScreenTimeoutSeconds?: number;
+    };
+    // Use the dedicated idle screen timeout if configured; fall back to
+    // the session idle timeout, then the hard-coded default.
+    const seconds =
+      data.idleScreenTimeoutSeconds ?? data.idleTimeoutSeconds ?? null;
+    if (seconds && seconds > 0) {
+      return seconds * 1_000;
     }
   } catch (err) {
     console.error('[IdleScreen] Failed to fetch idle timeout settings:', err);

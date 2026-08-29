@@ -209,6 +209,7 @@ export type SettingsResponse = {
     highQualitySurcharge: number;
   };
   idleTimeoutSeconds: number;
+  idleScreenTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
   inkMonitoring: {

@@ -178,7 +178,9 @@ export class PageController {
   }
 
   private handleIdleTimeout(_req: Request, res: Response): void {
-    res.json({ idleTimeoutSeconds: db.data!.settings.idleTimeoutSeconds });
+    const { idleTimeoutSeconds, idleScreenTimeoutSeconds } =
+      db.data!.settings;
+    res.json({ idleTimeoutSeconds, idleScreenTimeoutSeconds });
   }
 
   private handleAdminRedirect(_req: Request, res: Response): void {
