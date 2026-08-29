@@ -4,6 +4,7 @@ import {
   apiFetch,
   setMessage,
   initAuth,
+  updateSidebarBadges,
 } from '../shared';
 
 const logsBody = document.getElementById('logsBody') as HTMLElement;
@@ -418,7 +419,7 @@ async function loadSummary(): Promise<void> {
   const res = await apiFetch('/api/admin/summary');
   if (!res.ok) return;
   const summary = (await res.json()) as SummaryResponse;
-  setOpenAlertBadge(summary.anomalyStats.openCount);
+  updateSidebarBadges(summary);
 }
 
 async function clearAllTransactionLogs(): Promise<void> {

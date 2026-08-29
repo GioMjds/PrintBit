@@ -21,6 +21,14 @@ body {
   display: none !important;
 }
 
+html.admin-session-active #adminAuthView {
+  display: none !important;
+}
+
+html.admin-session-active #adminDashboard.hidden {
+  display: flex !important;
+}
+
 :root {
   --sidebar-w: 224px;
   --topbar-h: 64px;

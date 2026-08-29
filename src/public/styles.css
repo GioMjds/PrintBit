@@ -258,8 +258,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  padding: clamp(36px, 4.5vw, 64px) clamp(24px, 3vw, 48px);
+  gap: clamp(12px, 1.5vw, 18px);
+  padding: clamp(28px, 3.6vw, 52px) clamp(20px, 2.5vw, 42px);
   border: none;
   border-radius: 28px;
   cursor: pointer;
@@ -363,9 +363,9 @@ body {
 
 /* Icon */
 .action-card__icon-wrap {
-  width: clamp(72px, 9vw, 120px);
-  height: clamp(72px, 9vw, 120px);
-  border-radius: 22px;
+  width: clamp(100px, 13vw, 164px);
+  height: clamp(100px, 13vw, 164px);
+  border-radius: 28px;
   display: grid;
   place-items: center;
   position: relative;
@@ -387,8 +387,8 @@ body {
 }
 
 .action-card__icon {
-  width: 65%;
-  height: 65%;
+  width: 70%;
+  height: 70%;
 }
 
 /* Title */
@@ -408,27 +408,6 @@ body {
   color: inherit;
   opacity: 0.75;
   margin: 0;
-}
-
-/* Arrow */
-.action-card__arrow {
-  width: clamp(28px, 3vw, 40px);
-  height: clamp(28px, 3vw, 40px);
-  color: inherit;
-  opacity: 0.6;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
-}
-
-.action-card:hover .action-card__arrow {
-  opacity: 1;
-  transform: translateX(4px);
-}
-
-.action-card__arrow svg {
-  width: 100%;
-  height: 100%;
 }
 
 /* ── Help button on each card ─────────────────────────────── */

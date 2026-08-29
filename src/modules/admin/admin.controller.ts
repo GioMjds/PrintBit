@@ -762,6 +762,12 @@ export class AdminController {
     const anomalyOpenCount = db.data!.anomalyIncidents.filter(
       (entry) => entry.status === 'open',
     ).length;
+    const feedbackOpenCount = (db.data!.feedback ?? []).filter(
+      (entry) => entry.status === 'open',
+    ).length;
+    const reportIssuesOpenCount = (db.data!.reportIssues ?? []).filter(
+      (entry) => entry.status === 'open',
+    ).length;
     const pendingRefunds = db.data!.pendingRefunds ?? [];
     const openRefunds = pendingRefunds.filter(
       (entry) => entry.status === 'open',
@@ -880,6 +886,14 @@ export class AdminController {
           totalCount: db.data!.anomalyIncidents.length,
           openCount: anomalyOpenCount,
         },
+        feedbackStats: {
+          totalCount: (db.data!.feedback ?? []).length,
+          openCount: feedbackOpenCount,
+        },
+        reportStats: {
+          totalCount: (db.data!.reportIssues ?? []).length,
+          openCount: reportIssuesOpenCount,
+        },
         recoveryStats: {
           bootCount: recovery.lifecycle.bootCount,
           unexpectedRestartCount: recovery.lifecycle.unexpectedRestartCount,
@@ -935,6 +949,14 @@ export class AdminController {
         anomalyStats: {
           totalCount: db.data!.anomalyIncidents.length,
           openCount: anomalyOpenCount,
+        },
+        feedbackStats: {
+          totalCount: (db.data!.feedback ?? []).length,
+          openCount: feedbackOpenCount,
+        },
+        reportStats: {
+          totalCount: (db.data!.reportIssues ?? []).length,
+          openCount: reportIssuesOpenCount,
         },
         recoveryStats: {
           bootCount: recovery.lifecycle.bootCount,

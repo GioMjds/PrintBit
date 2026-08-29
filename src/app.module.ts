@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { Request } from 'express';
 import type { Server as SocketIOServer } from 'socket.io';
+import type { Namespace } from 'socket.io';
 import type { SessionStore } from '@/services/session';
 import {
   PUBLIC_PAGE_ROUTES,
@@ -32,6 +33,7 @@ import { registerPageModule } from '@/modules/page';
 
 export interface AppModuleDeps {
   io: SocketIOServer;
+  sessionIo: Namespace;
   sessionStore: SessionStore;
   uploadDir?: string;
   getSerialStatus: () => {
@@ -62,8 +64,6 @@ export interface AppModuleDeps {
  * This function is called from server.ts during startup.
  */
 export function registerAppModules(app: Express, deps: AppModuleDeps): void {
-  registerStaticAssets(app);
-
   const requireKiosk = createKioskAccessMiddleware();
   app.use(
     [
@@ -83,9 +83,17 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
       '/api/confirm-payment',
       '/api/balance/reset',
       '/api/balance/add-test-coin',
+      '/api/hotspot/start',
+      '/api/hotspot/stop',
+      '/api/language',
+      '/api/accessibility',
+      '/print',
     ],
     requireKiosk,
   );
+  // The tokenized GET /upload/:token portal is public. Only the legacy
+  // upload API is kiosk-only, so protect it with a method-specific guard.
+  app.post('/upload', requireKiosk);
   registerPageModule(app, {
     io: deps.io,
     sessionStore: deps.sessionStore,
@@ -122,6 +130,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
   });
   registerWirelessSessionModule(app, {
     io: deps.io,
+    sessionIo: deps.sessionIo,
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
     convertToPdfPreview: deps.convertToPdfPreview,
@@ -145,22 +154,14 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
   registerHopperModule(app, { io: deps.io });
   registerAnomalyModule(app, { io: deps.io });
 
+  // Page and API routes must run before static-file lookup. In particular,
+  // this prevents a public directory index from serving a kiosk-only page
+  // before its authorization middleware. Tokenized upload pages are explicit
+  // routes registered above and remain public by design.
+  registerStaticAssets(app);
+
   // Keep legacy endpoint contract: /api/config/hotspot
   app.get('/api/config/hotspot', (_req, res) => {
     res.json(getHotspotConfig());
-  });
-
-  // Keep legacy endpoint contract: /api/session/active
-  app.get('/api/session/active', (req, res) => {
-    const token = deps.sessionStore.getActiveSessionToken();
-    if (token) {
-      const uploadUrl = new URL(
-        `/upload/${encodeURIComponent(token)}`,
-        deps.resolvePublicBaseUrl(req),
-      ).toString();
-      res.json({ token, uploadUrl });
-      return;
-    }
-    res.status(404).json({ error: 'No active session' });
   });
 }

@@ -69,10 +69,14 @@ export class PageController {
     // Favicon - return no content
     this.router.get('/favicon.ico', this.handleFavicon.bind(this));
 
-    // Upload redirect - creates new session and redirects
-    this.router.get('/upload', this.handleUploadRedirect.bind(this));
+    // Upload redirect creates a new session, so it needs the kiosk identity.
+    this.router.get(
+      '/upload',
+      createKioskAccessMiddleware(this.kioskAccess),
+      this.handleUploadRedirect.bind(this),
+    );
 
-    // Portal - redirects to active session or shows waiting page
+    // Portal never reveals an active upload token; callers must use the QR code.
     this.router.get('/portal', this.handlePortal.bind(this));
 
     // The launcher obtains a one-time credential over loopback, then Edge consumes it.
@@ -170,11 +174,6 @@ export class PageController {
   }
 
   private handlePortal(_req: Request, res: Response): void {
-    const token = this.deps.sessionStore.getActiveSessionToken();
-    if (token) {
-      res.redirect(302, `/upload/${encodeURIComponent(token)}`);
-      return;
-    }
     res.type('html').send(PORTAL_WAITING_HTML);
   }
 

@@ -69,12 +69,16 @@ export class KioskAccessService {
     return this.kioskCredential;
   }
 
-  isKioskRequest(req: Request): boolean {
-    const credential = req.cookies?.[KIOSK_COOKIE_NAME];
+  isKioskCredential(credential: unknown): boolean {
     return (
       typeof credential === 'string' &&
       constantTimeEqual(credential, this.kioskCredential)
     );
+  }
+
+  isKioskRequest(req: Request): boolean {
+    const credential = req.cookies?.[KIOSK_COOKIE_NAME];
+    return this.isKioskCredential(credential);
   }
 
   private prune(now: number): void {

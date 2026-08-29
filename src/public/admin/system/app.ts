@@ -1,4 +1,10 @@
-import { SummaryResponse, apiFetch, setMessage, initAuth } from '../shared';
+import {
+  SummaryResponse,
+  apiFetch,
+  setMessage,
+  initAuth,
+  updateSidebarBadges,
+} from '../shared';
 import {
   buildPrinterSelectionOptions,
   type PrinterSelectionInput,
@@ -270,12 +276,7 @@ function applySystem(summary: SummaryResponse): void {
   printerNameEl.textContent = p.name ?? '—';
 
   applyPrinterExt(p as PrinterTelemetryExt);
-  const openCount =
-    summary.anomalyStats.openCount > 0
-      ? String(summary.anomalyStats.openCount)
-      : '';
-  if (openAlertBadge) openAlertBadge.textContent = openCount;
-  if (openAlertBadgeMob) openAlertBadgeMob.textContent = openCount;
+  updateSidebarBadges(summary);
 }
 
 // ── Data loader (unchanged) ───────────────────────────────────────────────────

@@ -17,6 +17,13 @@ import {
   createCaptivePortalMiddleware,
   createCsrfProtectionMiddleware,
 } from '@/middleware';
+import { kioskAccessService } from '@/middleware/kiosk-access';
+import {
+  canControlCoinSlot,
+  canJoinSessionRoom,
+  installSocketAccessMiddleware,
+  type SocketPrincipal,
+} from '@/middleware/socket-access';
 import { registerAppModules } from '@/app.module';
 import { getJobProcessor } from '@/modules/print-queue';
 import {
@@ -63,10 +70,12 @@ import {
 } from '@/services/worker-return-pipe';
 import { handleWorkerReturnPrintEvent } from '@/services/worker-print-lifecycle';
 import { getLocalIPv4 } from '@/utils/network';
+import { validateAdminSession } from '@/utils/admin-session';
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+const sessionIo = io.of('/session');
 
 type StartupPhase = 'booting' | 'ready' | 'failed';
 
@@ -264,6 +273,24 @@ const sessionStore = new SessionStore(UPLOAD_DIR, {
   expiryEnabled: SESSION_EXPIRY_ENABLED,
 });
 
+installSocketAccessMiddleware(io, sessionIo, {
+  isKioskCredential: (credential) =>
+    kioskAccessService.isKioskCredential(credential),
+  isAdminSession: validateAdminSession,
+  claimSessionOwner: (sessionId, token, clientId) =>
+    sessionStore.claimOwner(sessionId, token, clientId).ok,
+});
+
+sessionIo.on('connection', (socket) => {
+  const principal = socket.data.principal as SocketPrincipal | undefined;
+  if (principal?.kind !== 'session') {
+    socket.disconnect(true);
+    return;
+  }
+
+  socket.join(`session:${principal.sessionId}`);
+});
+
 app.use(express.json());
 app.use(createCsrfProtectionMiddleware());
 
@@ -274,6 +301,7 @@ if (CAPTIVE_PORTAL_ENABLED) {
 
 registerAppModules(app, {
   io,
+  sessionIo,
   sessionStore,
   uploadDir: UPLOAD_DIR,
   getSerialStatus,
@@ -290,6 +318,12 @@ registerAppModules(app, {
 });
 
 io.on('connection', (socket) => {
+  const principal = socket.data.principal as SocketPrincipal | undefined;
+  if (!principal) {
+    socket.disconnect(true);
+    return;
+  }
+
   const locked = isCoinSlotLocked();
   const ownerId = getCoinSlotLockOwnerId();
   if (locked) {
@@ -300,10 +334,21 @@ io.on('connection', (socket) => {
   }
 
   socket.on('joinSession', (sessionId: string) => {
+    if (
+      !canJoinSessionRoom(principal, sessionId) ||
+      sessionStore.getSessionState(sessionId) !== 'active'
+    ) {
+      socket.emit('sessionJoinDenied', { reason: 'unauthorized_session' });
+      return;
+    }
     socket.join(`session:${sessionId}`);
   });
 
   socket.on('lockCoinSlot', () => {
+    if (!canControlCoinSlot(principal)) {
+      socket.emit('coinSlotLockDenied', { reason: 'unauthorized_socket' });
+      return;
+    }
     const currentOwnerId = getCoinSlotLockOwnerId();
     if (isCoinSlotLocked() && currentOwnerId && currentOwnerId !== socket.id) {
       socket.emit('coinSlotLockDenied', {
@@ -320,6 +365,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('unlockCoinSlot', () => {
+    if (!canControlCoinSlot(principal)) {
+      socket.emit('coinSlotUnlockDenied', { reason: 'unauthorized_socket' });
+      return;
+    }
     const unlocked = unlockOwnedCoinSlot(socket.id);
     if (!unlocked) {
       socket.emit('coinSlotUnlockDenied', {
@@ -331,6 +380,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (!canControlCoinSlot(principal)) return;
     const unlocked = unlockOwnedCoinSlot(socket.id);
     if (!unlocked) return;
     io.emit('coinSlotUnlocked', { reason: 'owner_disconnect' });

@@ -1,4 +1,10 @@
-import { SummaryResponse, apiFetch, setMessage, initAuth } from '../shared';
+import {
+  SummaryResponse,
+  apiFetch,
+  setMessage,
+  initAuth,
+  updateSidebarBadges,
+} from '../shared';
 
 interface FeedbackEntry {
   id: string;
@@ -193,7 +199,7 @@ async function loadSummary(): Promise<void> {
     const res = await apiFetch('/api/admin/summary');
     if (!res.ok) return;
     const summary = (await res.json()) as SummaryResponse;
-    setOpenAlertBadge(summary.anomalyStats.openCount);
+    updateSidebarBadges(summary);
   } catch (error) {
     console.error(`Failed to load summary data. ${error}`, { cause: error });
   }

@@ -6,7 +6,12 @@ void initKioskLocalization();
 declare global {
   interface Window {
     uploadToken?: string;
-    io?: () => SocketClient;
+    io?: (
+      namespace: string,
+      options: {
+        auth: { sessionId: string; token: string; clientId: string };
+      },
+    ) => SocketClient;
   }
 }
 
@@ -579,8 +584,13 @@ async function initSession(): Promise<void> {
 
 function attachSocket(sid: string): void {
   if (typeof window.io !== 'function') return;
-  const socket = window.io();
-  socket.emit('joinSession', sid);
+  const socket = window.io('/session', {
+    auth: {
+      sessionId: sid,
+      token,
+      clientId: uploadClientId,
+    },
+  });
 
   socket.on('UploadCompleted', (info: unknown) => {
     const name =

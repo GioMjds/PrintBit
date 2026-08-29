@@ -5,6 +5,7 @@ import {
   initAuth,
   peso,
   formatBytes,
+  updateSidebarBadges,
 } from '../shared';
 
 const earningsToday = document.getElementById('earningsToday') as HTMLElement;
@@ -238,6 +239,7 @@ function applySummary(summary: SummaryResponse): void {
     barScan.style.width = `${Math.round((summary.jobStats.scan / total) * 100)}%`;
   applyConsumablesForecast(summary);
   applyInkEstimation(summary);
+  updateSidebarBadges(summary);
 }
 
 async function loadData(): Promise<void> {

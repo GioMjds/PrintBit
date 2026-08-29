@@ -8,6 +8,11 @@
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/alerts/styles.css" />
+      <script>
+      if (sessionStorage.getItem('adminSessionToken')) {
+        document.documentElement.classList.add('admin-session-active');
+      }
+    </script>
   </head>
   <body>
     <div id="adminAuthView" class="auth-gate">
@@ -210,7 +215,7 @@
             </svg>
             <span>Transaction Logs</span>
           </a>
-          <a href="/admin/feedback/" class="nav-btn">
+          <a href="/admin/feedback" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -234,7 +239,7 @@
               />
             </svg>
             <span>Reports</span>
-          </a>
+            <span class="nav-count-badge" id="openReportBadge" aria-label="open reports count"></span></a>
           <a href="/admin/alerts" class="nav-btn nav-btn--active">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path

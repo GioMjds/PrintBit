@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { Request, RequestHandler } from 'express';
-import type { Server } from 'socket.io';
+import type { Namespace, Server } from 'socket.io';
+import { kioskAccessService } from '@/middleware/kiosk-access';
 import { adminService } from '@/services/admin';
 import { db, withBalanceLock } from '@/services/db';
 import type {
@@ -26,6 +27,7 @@ import { pricingAnalysisCacheStore } from '@/core/database/sqlite-storage';
 
 export interface WirelessSessionServiceDeps {
   io: Server;
+  sessionIo: Namespace;
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
   convertToPdfPreview: (sourcePath: string) => Promise<string>;
@@ -186,6 +188,18 @@ export class WirelessSessionService {
     });
   };
 
+  verifyKioskOrOwnedUploadTarget: RequestHandler<{ sessionId: string }> = (
+    req,
+    res,
+    next,
+  ) => {
+    if (kioskAccessService.isKioskRequest(req)) {
+      this.verifyUploadTarget(req, res, next);
+      return;
+    }
+    this.verifyOwnedUploadTarget(req, res, next);
+  };
+
   verifyAnalyzeJobTarget: RequestHandler = (req, res, next) => {
     const payload =
       typeof req.body === 'object' && req.body !== null
@@ -234,6 +248,31 @@ export class WirelessSessionService {
     payload.sessionId = sessionId;
     req.body = payload;
     next();
+  };
+
+  verifyKioskOrOwnedAnalyzeJobTarget: RequestHandler = (req, res, next) => {
+    this.verifyAnalyzeJobTarget(req, res, () => {
+      if (kioskAccessService.isKioskRequest(req)) {
+        next();
+        return;
+      }
+
+      const payload = req.body as { sessionId: string };
+      const claim = this.deps.sessionStore.claimOwner(
+        payload.sessionId,
+        this.extractUploadToken(req),
+        this.extractUploadClientId(req),
+      );
+      if (!claim.ok && claim.errorCode) {
+        res.status(this.statusForClaimError(claim.errorCode)).json({
+          code: claim.errorCode,
+          error: claim.errorMsg ?? 'Unable to validate session ownership.',
+        });
+        return;
+      }
+
+      next();
+    });
   };
 
   createSession: RequestHandler = async (req, res) => {
@@ -623,9 +662,7 @@ export class WirelessSessionService {
       return;
     }
 
-    this.deps.io
-      .to(`session:${sessionId}`)
-      .emit('UploadStarted', file.originalname);
+    this.emitToSession(sessionId, 'UploadStarted', file.originalname);
     void adminService.appendAdminLog(
       'upload_started',
       'Wireless upload started.',
@@ -642,7 +679,7 @@ export class WirelessSessionService {
       file,
     );
     if (!result.isSuccess || !result.document) {
-      this.deps.io.to(`session:${sessionId}`).emit('UploadFailed');
+      this.emitToSession(sessionId, 'UploadFailed');
       await adminService.appendAdminLog(
         'upload_failed',
         'Wireless upload failed.',
@@ -662,7 +699,7 @@ export class WirelessSessionService {
     }
 
     const doc = result.document;
-    this.deps.io.to(`session:${sessionId}`).emit('UploadCompleted', doc);
+    this.emitToSession(sessionId, 'UploadCompleted', doc);
     await adminService.appendAdminLog(
       'upload_completed',
       'Wireless upload completed.',
@@ -748,7 +785,7 @@ export class WirelessSessionService {
       return;
     }
 
-    this.deps.io.to(`session:${sessionId}`).emit('UploadRemoved', {
+    this.emitToSession(sessionId, 'UploadRemoved', {
       documentId: result.removedDocumentId,
       remainingCount: result.remainingCount,
     });
@@ -922,6 +959,32 @@ export class WirelessSessionService {
     return 404;
   }
 
+  /**
+   * Session events are delivered only to the authenticated kiosk/control
+   * namespace and the authenticated external-session namespace. Re-checking
+   * state here prevents a socket that outlives its session from receiving a
+   * late upload or analysis event.
+   */
+  private emitToSession(
+    sessionId: string,
+    event: string,
+    payload?: unknown,
+  ): void {
+    if (this.deps.sessionStore.getSessionState(sessionId) !== 'active') {
+      return;
+    }
+
+    const room = `session:${sessionId}`;
+    if (payload === undefined) {
+      this.deps.io.to(room).emit(event);
+      this.deps.sessionIo.to(room).emit(event);
+      return;
+    }
+
+    this.deps.io.to(room).emit(event, payload);
+    this.deps.sessionIo.to(room).emit(event, payload);
+  }
+
   private ensurePricingAnalysisWorkerStarted(): void {
     if (WirelessSessionService.pricingAnalysisWorkerInitialized) return;
 
@@ -977,7 +1040,7 @@ export class WirelessSessionService {
       };
     }
 
-    this.deps.io.to(`session:${sessionId}`).emit('AnalysisStarted', {
+    this.emitToSession(sessionId, 'AnalysisStarted', {
       documentId: targetLookup.target.documentId,
       filename: targetLookup.target.filename,
     });
@@ -1050,7 +1113,7 @@ export class WirelessSessionService {
         throw new Error(analyzed.error);
       }
 
-      this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisCompleted', {
+      this.emitToSession(job.sessionId, 'AnalysisCompleted', {
         documentId: analyzed.documentId,
         filename: analyzed.fileName,
         analysis: analyzed.analysis,
@@ -1063,7 +1126,7 @@ export class WirelessSessionService {
         job.documentId,
         reason,
       );
-      this.deps.io.to(`session:${job.sessionId}`).emit('AnalysisFailed', {
+      this.emitToSession(job.sessionId, 'AnalysisFailed', {
         documentId: job.documentId,
         filename: job.documentId,
         error: reason,

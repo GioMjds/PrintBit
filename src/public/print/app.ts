@@ -834,9 +834,7 @@ async function createSession(): Promise<void> {
 async function checkUploadStatus(): Promise<void> {
   if (!activeSessionId) return;
 
-  const response = await fetch(
-    `/api/wireless/sessions/${encodeURIComponent(activeSessionId)}`,
-  );
+  const response = await fetch(getSessionDetailsUrl(activeSessionId));
   if (!response.ok) {
     if (response.status === 404 || response.status === 410) {
       activeSessionId = '';
@@ -883,6 +881,14 @@ async function checkUploadStatus(): Promise<void> {
     return;
   }
   renderFiles(files);
+}
+
+function getSessionDetailsUrl(sessionId: string): string {
+  const params = new URLSearchParams();
+  if (activeSessionToken) params.set('token', activeSessionToken);
+  const query = params.toString();
+  const endpoint = `/api/wireless/sessions/${encodeURIComponent(sessionId)}`;
+  return query ? `${endpoint}?${query}` : endpoint;
 }
 
 /** Socket: get instant notification when upload lands, no need to wait for poll. */
@@ -1067,9 +1073,7 @@ async function restoreSession(sid: string): Promise<void> {
   attachSocket(sid);
   await checkUploadStatus();
 
-  const response = await fetch(
-    `/api/wireless/sessions/${encodeURIComponent(sid)}`,
-  );
+  const response = await fetch(getSessionDetailsUrl(sid));
   if (response.ok) {
     const session = (await response.json()) as SessionResponse;
     activeSessionToken = session.token;

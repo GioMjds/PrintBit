@@ -1,16 +1,16 @@
 # Graph Report - printbit  (2026-08-28)
 
 ## Corpus Check
-- 333 files · ~469,481 words
+- 333 files · ~469,728 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4573 nodes · 8868 edges · 293 communities (227 shown, 66 thin omitted)
+- 4575 nodes · 8888 edges · 285 communities (222 shown, 63 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 166 edges (avg confidence: 0.83)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e7cb5169`
+- Built from commit: `633a185a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -36,7 +36,7 @@
 - hopper.ts
 - recovery.ts
 - serial.ts
-- prepare-print-pdf.ts
+- services/index.ts
 - database/db.ts
 - settings/app.ts
 - alerts/app.ts
@@ -44,11 +44,11 @@
 - server.ts
 - AdminService
 - admin/feedback/app.ts
-- services/index.ts
+- AdminService
 - dashboard/app.ts
 - sqlite-storage.ts
-- session.ts
 - admin.controller.ts
+- AdminController
 - document-analysis.ts
 - HttpException
 - Hardware Integration Architecture
@@ -60,7 +60,7 @@
 - consumables.service.ts
 - receipt/app.ts
 - PrintBit Architecture
-- shared.schema.ts
+- LogMeta
 - SessionStore
 - print-queue/index.ts
 - watchdog-health.ts
@@ -75,9 +75,9 @@
 - LanguageService
 - AnomalyService
 - PrintBit Operations Runbook
-- windows-printer-edge.ts
-- scc/app.ts
-- ScanJobSettings
+- printer.service.ts
+- apiFetch
+- admin.service.ts
 - AnomalyService
 - CopyService
 - ScannerService
@@ -86,12 +86,12 @@
 - print-spooler.ts
 - Detailed findings
 - time-source.ts
-- HotspotService
+- registerAppModules
 - Graphify Incremental Update Reference
 - watchdog.ps1
 - printer-monitor.ts
 - FeedbackSqliteStore
-- apiFetch
+- logs/app.ts
 - public/feedback/app.ts
 - color-detection.ts
 - scanner.ts
@@ -101,10 +101,10 @@
 - hopper/index.ts
 - scan-storage.ts
 - Admin APIs
-- feedback.controller.ts
+- FeedbackService
 - ScannerController
 - compilerOptions
-- ReportIssueSqliteStore
+- document-rotation.ts
 - ConsumablesSqliteStore
 - Kiosk Main Landing and Service Launcher
 - loading/app.ts
@@ -124,15 +124,14 @@
 - Definition of Done (mandatory): Epson L5290 spooler handoff reliability
 - report.controller.ts
 - shared.ts
-- utils/index.ts
 - reset-db.js
-- idempotency.ts
+- print-job.model.ts
 - print-job.schema.ts
-- page.controller.ts
+- scan-delivery.ts
 - idle-timeout.ts
 - Quick start
 - AdminLogSqliteStore
-- printer.service.ts
+- .handleGetAnomalyIncidents
 - wireless-session.service.ts
 - document-analysis.spec.ts
 - job-store.ts
@@ -145,12 +144,12 @@
 - handleErrorAction
 - ensure-esp32-network.ps1
 - Power loss, reboot & crash recovery (Issue #37)
-- ReportIssueEntry
+- job-processor.ts
 - loadPreview
 - addFileToList
 - devDependencies
-- rate-limit.ts
-- helpers.ts
+- scanner.controller.ts
+- wireless-session.controller.ts
 - Pricing Engine Configuration and Rollout
 - renderRefreshSessionButtonState
 - transient-file-cleanup.ts
@@ -168,7 +167,7 @@
 - Coin Payment Panel
 - Security Policy
 - Operations Overview Dashboard
-- ReceiptService
+- addFilesToQueue
 - Graphify Query Reference
 - Copy Step 1: Place Document Screen
 - Copy Workflow Document Preview Screen
@@ -176,7 +175,7 @@
 - Print Step 1 Guide Screenshot
 - Scan & Print Step 1 Screen
 - Scan Document Preview Screen
-- LogMeta
+- anomaly.service.ts
 - printer.schema.ts
 - Scan APIs
 - loadFeedbackSession
@@ -197,7 +196,7 @@
 - Live Preview and Print Configuration Screen
 - Coin Balance Payment Gate
 - PrintBit Installation & Dependencies Guide
-- UploadPortalService
+- assertPrintDispatcherReady
 - Windows 10 Production Deployment Quickstart (Assigned Access Kiosk)
 - te
 - gs
@@ -213,12 +212,12 @@
 - UA
 - xB
 - worker-print-lifecycle.ts
-- queryPrinterTelemetry
-- FeedbackService
+- admin.module.ts
+- renderHomeWifiQr
 - Code of Conduct
 - License
 - Copyright Notice
-- anomaly.ts
+- types.ts
 - dotenv
 - edge-js
 - eslint
@@ -275,27 +274,20 @@
 - GEMINI.md
 - Job Processor & PrintQueueWatcher Execution Trace Log
 - renderDrawer
-- admin-auth.ts
-- print-lifecycle-state.ts
-- clearAllTransactionLogs
+- submitAdminPin
+- applyLogs
 - updateUploadLink
-- consumables.model.ts
 - loadData
-- ReportIssueAttachmentEntry
 - JobStore
-- worker-command-pipe.ts
 - worker-handoff.ts
-- csrf.ts
 - AnomalyController
-- submitQuickReport
-- runRefreshCycle
 
 ## God Nodes (most connected - your core abstractions)
 1. `getSqliteDb()` - 90 edges
 2. `SessionStore` - 62 edges
 3. `AdminController` - 54 edges
 4. `AdminService` - 46 edges
-5. `apiFetch()` - 44 edges
+5. `apiFetch()` - 45 edges
 6. `AdminService` - 41 edges
 7. `ScannerService` - 35 edges
 8. `AnomalyService` - 35 edges
@@ -309,29 +301,29 @@
   .github/PULL_REQUEST_TEMPLATE.md → agent_docs/hardware_integration.md
 - `main()` --calls--> `getSqliteDb()`  [EXTRACTED]
   scripts/reset-db.js → src/core/database/sqlite-storage.ts
+- `main()` --calls--> `initSqliteStorage()`  [EXTRACTED]
+  scripts/reset-db.js → src/core/database/sqlite-storage.ts
 - `PrintBit Core In-Progress Initiatives` --conceptually_related_to--> `Kiosk Hardware & Binary Security Policy`  [INFERRED]
   agent_docs/in_progress.md → .github/SECURITY.md
-- `Hardware Error Categorization Taxonomy` --conceptually_related_to--> `External Print Processing Binaries Suite`  [INFERRED]
-  .github/ISSUE_TEMPLATE/bug_report.yml → agent_docs/print_dispatch.md
 
 ## Import Cycles
 - 3-file cycle: `src/core/database/db.ts -> src/core/database/sqlite-storage.ts -> src/core/database/models/consumables.model.ts -> src/core/database/db.ts`
 - 3-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/settlement.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/report-issue.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-status.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-spooler.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/hopper.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-lifecycle-state.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/anomaly.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-fault-lock.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/consumable-estimator.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-spooler.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/financial-ledger.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/admin.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/consumable-estimator.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/feedback.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/hopper.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/financial-ledger.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/pending-refund.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-lifecycle-state.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/print-quote.ts -> src/services/db.ts -> src/core/database/db.ts`
-- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/printer-status.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/recovery.ts -> src/services/db.ts -> src/core/database/db.ts`
+- 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/report-issue.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/serial.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 4-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/time-source.ts -> src/services/db.ts -> src/core/database/db.ts`
 - 5-file cycle: `src/core/database/db.ts -> src/services/index.ts -> src/services/settlement.ts -> src/services/admin.ts -> src/services/db.ts -> src/core/database/db.ts`
@@ -349,15 +341,15 @@
 - **Kiosk Administration & Diagnostics Suite** — src_public_admin_dashboard_index_operations_dashboard, src_public_admin_system_index_system_control_center, src_public_admin_settings_index_policy_and_settings, src_public_admin_transactions_index_transaction_ledger, src_public_admin_alerts_index_anomaly_alert_desk [INFERRED 0.95]
 - **Kiosk End-to-End User Print Workflow** — src_public_index_kiosk_landing, src_public_print_index_wireless_queue_manager, src_public_upload_index_mobile_upload_portal, src_public_config_index_print_configuration, src_public_confirm_index_payment_orchestrator, src_public_receipt_index_electronic_receipt [INFERRED 0.95]
 
-## Communities (293 total, 66 thin omitted)
+## Communities (285 total, 63 thin omitted)
 
 ### Community 0 - "confirm/app.ts"
 Cohesion: 0.01
 Nodes (130): RFC-4122, actionCol, actionPriceValue, backLink, balanceValue, BLOCKED_PRINTER_STATUSES, changeRow, changeValue (+122 more)
 
 ### Community 1 - "printer-status.ts"
-Cohesion: 0.13
-Nodes (32): RFC-3805, cached, COLOR_HINT_MAP, colorHintFromName(), detectInkLevels(), extractIpFromPortName(), inferInkFromErrorState(), InkLevel (+24 more)
+Cohesion: 0.08
+Nodes (56): RFC-3805, applyConnectionSignals(), cached, COLOR_HINT_MAP, colorHintFromName(), detectConnectionType(), detectInkLevels(), ensureCriticalNotAboveLow() (+48 more)
 
 ### Community 2 - "transactions/app.ts"
 Cohesion: 0.04
@@ -368,44 +360,44 @@ Cohesion: 0.03
 Nodes (63): backLink, ColorMode, colorModeGroup, continueBtn, copiesDec, copiesGroup, copiesInc, copiesInput (+55 more)
 
 ### Community 4 - "receipt.service.ts"
-Cohesion: 0.12
-Nodes (25): ReceiptChangeSnapshot, ReceiptChangeState, ReceiptMode, ReceiptRecordStatus, ReceiptController, appendCleanupLog(), CleanupTrigger, ReceiptModuleDeps (+17 more)
+Cohesion: 0.07
+Nodes (33): ListReceiptOptions, ReceiptChangeSnapshot, ReceiptChangeState, ReceiptMode, ReceiptRecordEntry, ReceiptRecordStatus, receiptStore, ReceiptTokenLookupResult (+25 more)
 
 ### Community 5 - "scan/app.ts"
 Cohesion: 0.05
 Nodes (58): backBtn, classifyScanFailure(), errorSubtext, errorText, formatPeso(), goToPage(), hideScanTroubleshooting(), initializeScanPage() (+50 more)
 
 ### Community 7 - "print-dispatcher.ts"
-Cohesion: 0.08
-Nodes (33): GHOSTSCRIPT_PATH, PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS, PRINT_DISPATCH_MODE, PRINT_DISPATCH_TIMEOUT_MS, PrintDispatchMode, SUMATRA_PATH, buildSumatraSettings(), coerceStdout() (+25 more)
+Cohesion: 0.07
+Nodes (34): GHOSTSCRIPT_PATH, LIBREOFFICE_PATH, PDFTOPRINTER_PATH, PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS, PRINT_DISPATCH_MODE, PRINT_DISPATCH_TIMEOUT_MS, PrintDispatchMode, buildSumatraSettings() (+26 more)
 
 ### Community 8 - "scanner.service.ts"
-Cohesion: 0.08
-Nodes (25): ColorAnalysisResult, FORMAT_CONTENT_TYPES, InteractiveScanInput, InteractiveScanResult, ScanFileReleaseResult, ScanJobInput, ScannerPageColor, ScannerPageSource (+17 more)
+Cohesion: 0.10
+Nodes (20): ColorAnalysisResult, FORMAT_CONTENT_TYPES, InteractiveScanInput, InteractiveScanResult, ScanFileReleaseResult, ScanJobInput, ScannerPageColor, ScannerPageSource (+12 more)
 
 ### Community 9 - "public/app.ts"
-Cohesion: 0.03
-Nodes (59): adminCancelBtn, adminOverlay, adminPinError, adminPinInput, adminSubmitBtn, brandArea, buildWifiQrPayload(), clockDateEl (+51 more)
+Cohesion: 0.04
+Nodes (50): adminCancelBtn, adminOverlay, adminPinError, adminPinInput, adminSubmitBtn, brandArea, clockDateEl, clockTimeEl (+42 more)
 
 ### Community 10 - "system/app.ts"
 Cohesion: 0.05
 Nodes (47): applyPrinterExt(), applyPrinterSelectionBtn, applySystem(), BLOCKED_PRINTER_STATUSES, connectSocket(), hostStatus, isPrinterReadyForJobs(), mergePrinterSnapshot() (+39 more)
 
 ### Community 11 - "upload/app.ts"
-Cohesion: 0.07
-Nodes (52): addFilesToQueue(), applySessionCountdown(), attachSocket(), clearQueueForRetry(), clearStatus(), collectUnsupportedFiles(), createQueueItem(), dropZone (+44 more)
+Cohesion: 0.08
+Nodes (45): applySessionCountdown(), attachSocket(), clearQueueForRetry(), clearStatus(), dropZone, fileInput, fileQueue, formatCountdown() (+37 more)
 
 ### Community 12 - "src/middleware/index.ts"
-Cohesion: 0.19
-Nodes (10): constantTimeEqual(), createKioskAccessMiddleware(), getLocalMachineIps(), isLoopbackRequest(), KIOSK_COOKIE_NAME, KioskAccessService, normalizeIp(), registerStaticAssets() (+2 more)
+Cohesion: 0.08
+Nodes (25): isLocalRequestIp(), isPrivateIpv4(), normalizeIp(), requireAdminLocalAccess(), requireAdminPin(), createCsrfProtectionMiddleware(), getRequestHost(), getRequestOriginHost() (+17 more)
 
 ### Community 13 - "file-validation.ts"
-Cohesion: 0.07
-Nodes (47): appendSecurityLog(), classifyDetectedMime(), DANGEROUS_SCRIPT_OR_EXECUTABLE_EXTENSIONS, detectDisguisedExecutableName(), DOCUMENT_UPLOAD_POLICY, extractRequestContext(), fileFilter(), findEndOfCentralDirectoryOffset() (+39 more)
+Cohesion: 0.08
+Nodes (43): appendSecurityLog(), classifyDetectedMime(), DANGEROUS_SCRIPT_OR_EXECUTABLE_EXTENSIONS, detectDisguisedExecutableName(), DOCUMENT_UPLOAD_POLICY, extractRequestContext(), fileFilter(), findEndOfCentralDirectoryOffset() (+35 more)
 
 ### Community 14 - "admin/report/app.ts"
 Cohesion: 0.07
-Nodes (40): allItems, applyFilter(), AttachmentMeta, closeDetail, closeDetailModal(), detailAckBtn, detailBody, detailOverlay (+32 more)
+Nodes (36): allItems, applyFilter(), AttachmentMeta, closeDetail, closeDetailModal(), detailAckBtn, detailBody, detailOverlay (+28 more)
 
 ### Community 15 - "copy/app.ts"
 Cohesion: 0.07
@@ -413,11 +405,11 @@ Nodes (44): backBtn, checkDocBtn, checkForDocument(), classifyCopyFailure(), cle
 
 ### Community 16 - "financial.service.ts"
 Cohesion: 0.05
-Nodes (29): Schema, migrateSchemaSnapshotToRuntimeState(), readRuntimeState(), writeRuntimeState(), FinancialController, ACCEPTED_COIN_VALUES, buildAnalysisUnavailablePayload(), buildTrustedTimeBlockedResponse() (+21 more)
+Nodes (28): balanceLockPromise, Schema, acquireIdempotencyKey(), IdempotencyEntry, idempotencyInFlight, idempotencyStore, InFlightEntry, makeDeferred() (+20 more)
 
 ### Community 17 - "earnings/app.ts"
 Cohesion: 0.08
-Nodes (39): EarningsAnalyticsPair, loadEarningsAnalyticsPair(), LoadOneEarningsAnalytics, getEarningsAnalyticsRequestKey(), isCurrentEarningsAnalyticsRequest(), anchorDate, anchorDateInput, applyEarnings() (+31 more)
+Nodes (40): EarningsAnalyticsPair, loadEarningsAnalyticsPair(), LoadOneEarningsAnalytics, getEarningsAnalyticsRequestKey(), isCurrentEarningsAnalyticsRequest(), anchorDate, anchorDateInput, applyEarnings() (+32 more)
 
 ### Community 18 - "print/app.ts"
 Cohesion: 0.06
@@ -425,23 +417,23 @@ Nodes (31): continueBtn, DeleteDocumentResponse, deletingDocumentIds, dialogCanc
 
 ### Community 19 - "hopper.ts"
 Cohesion: 0.09
-Nodes (30): ESP32_AP_BASE_URL, ESP32_COIN_BRIDGE_API_KEY, NETWORK_PROVIDER, mapHopperErrorSeverity(), Esp32DispenseAttemptResult, Esp32HopperStatus, HopperService, buildDispenseCommand() (+22 more)
+Nodes (29): ESP32_AP_BASE_URL, ESP32_COIN_BRIDGE_API_KEY, NETWORK_PROVIDER, Esp32DispenseAttemptResult, Esp32HopperStatus, HopperService, buildDispenseCommand(), buildSelfTestCommand() (+21 more)
 
 ### Community 20 - "recovery.ts"
-Cohesion: 0.19
-Nodes (24): RecoveryLifecycleState, baseRecoveryEntry(), baseSpoolerLifecycleRecord(), checkpointRecoverySession(), coerceFiniteInteger(), coerceFiniteNumber(), ensureRecoveryState(), ensureSpoolerLifecycleState() (+16 more)
+Cohesion: 0.15
+Nodes (28): RecoveryLifecycleState, SpoolerLifecycleState, PrintLifecycleStatePayload, baseRecoveryEntry(), baseSpoolerLifecycleRecord(), checkpointRecoverySession(), coerceFiniteInteger(), coerceFiniteNumber() (+20 more)
 
 ### Community 21 - "serial.ts"
-Cohesion: 0.09
-Nodes (28): normalizeErrorCode(), parseHopperResponse(), parseLegacyHopperResponse(), ACCEPTED_COINS, armPendingHopperTimeout(), attemptSerialConnection(), clearSerialReconnectTimer(), completePendingHopperCommand() (+20 more)
+Cohesion: 0.07
+Nodes (35): mapHopperErrorSeverity(), normalizeErrorCode(), parseHopperResponse(), parseLegacyHopperResponse(), ensureFirewallRules(), HotspotService, stopHotspot(), updatePrinterWatchdogState() (+27 more)
 
-### Community 22 - "prepare-print-pdf.ts"
-Cohesion: 0.17
-Nodes (17): applyGrayscalePdf(), applyTransforms(), ensurePdfSource(), execFileAsync, expandPageRange(), getPaperSizePoints(), IMAGE_EXTENSIONS, needsOrientationRotation() (+9 more)
+### Community 22 - "services/index.ts"
+Cohesion: 0.11
+Nodes (27): SUMATRA_PATH, applyGrayscalePdf(), applyTransforms(), ensurePdfSource(), execFileAsync, expandPageRange(), getPaperSizePoints(), IMAGE_EXTENSIONS (+19 more)
 
 ### Community 23 - "database/db.ts"
-Cohesion: 0.08
-Nodes (44): buildLowDbImportSnapshot(), cloneDefaultData(), CoinStats, DEFAULT_DATA, HopperSettings, HopperStats, initDB(), JobStats (+36 more)
+Cohesion: 0.07
+Nodes (49): buildLowDbImportSnapshot(), cloneDefaultData(), CoinStats, DEFAULT_DATA, HopperSettings, HopperStats, initDB(), JobStats (+41 more)
 
 ### Community 24 - "settings/app.ts"
 Cohesion: 0.05
@@ -452,20 +444,20 @@ Cohesion: 0.07
 Nodes (35): AdminAlertsSocket, AnomalyIncident, AnomalyListResponse, cleanupLiveUpdates(), closeDetail, connectSocket(), detailAckBtn, detailBody (+27 more)
 
 ### Community 26 - "app.module.ts"
-Cohesion: 0.14
-Nodes (20): AppModuleDeps, registerAppModules(), PORTAL_ASSETS, PORTAL_DIR, PUBLIC_PAGE_ROUTES, UPLOAD_DIR, AdminControllerDeps, AdminModuleDeps (+12 more)
+Cohesion: 0.16
+Nodes (15): AppModuleDeps, PORTAL_ASSETS, PORTAL_DIR, PUBLIC_PAGE_ROUTES, UPLOAD_DIR, FinancialModuleDeps, registerFinancialModule(), ModuleContext (+7 more)
 
 ### Community 27 - "server.ts"
 Cohesion: 0.07
-Nodes (32): PUBLIC_DIR, SESSION_EXPIRY_ENABLED, WORKER_RETURN_PIPE_NAME, app, gracefulShutdown(), io, markStartupFailed(), markStartupReady() (+24 more)
+Nodes (33): PUBLIC_DIR, SESSION_EXPIRY_ENABLED, WORKER_RETURN_MAX_BYTES, WORKER_RETURN_PIPE_NAME, app, gracefulShutdown(), io, markStartupFailed() (+25 more)
 
 ### Community 29 - "admin/feedback/app.ts"
 Cohesion: 0.09
-Nodes (34): showEarningsError(), allItems, clearAllBtn, displayItems, escapeHtml(), exportCsvBtn, FeedbackEntry, feedbackList (+26 more)
+Nodes (23): allItems, clearAllBtn, displayItems, escapeHtml(), exportCsvBtn, FeedbackEntry, feedbackList, FeedbackListResponse (+15 more)
 
-### Community 30 - "services/index.ts"
-Cohesion: 0.09
-Nodes (21): ColorMode, db, PrintMode, AdminLogEntry, adminLogStore, FeedbackStatus, PrintQuality, AdminService (+13 more)
+### Community 30 - "AdminService"
+Cohesion: 0.10
+Nodes (17): ColorMode, PrintMode, AdminLogEntry, PrintQuality, AdminService, buildPrintQuote(), getTotalPages(), normalizeRangeString() (+9 more)
 
 ### Community 31 - "dashboard/app.ts"
 Cohesion: 0.07
@@ -473,15 +465,15 @@ Nodes (33): applyConsumablesForecast(), applyInkEstimation(), applySummary(), ba
 
 ### Community 32 - "sqlite-storage.ts"
 Cohesion: 0.10
-Nodes (27): feedbackStore, PricingAnalysisCacheEntry, PricingAnalysisCacheSqliteStore, pricingAnalysisCacheStore, ListReceiptOptions, ReceiptAccessTokenEntry, receiptStore, ReceiptTokenLookupResult (+19 more)
+Nodes (26): feedbackStore, PricingAnalysisCacheEntry, PricingAnalysisCacheSqliteStore, pricingAnalysisCacheStore, reportIssueStore, WirelessSessionSnapshotStorageEntry, WirelessSessionStorageEntry, wirelessSessionStore (+18 more)
 
-### Community 33 - "session.ts"
-Cohesion: 0.11
-Nodes (23): ESP32_KIOSK_SUBNET_PREFIX, PUBLIC_URL, ALLOWED_TYPES, deriveEsp32SubnetPrefix(), detectEsp32KioskAddress(), detectHotspotAddress(), detectPreferredLocalKioskAddress(), DOCUMENT_ANALYSIS_FILE_TYPES (+15 more)
+### Community 33 - "admin.controller.ts"
+Cohesion: 0.12
+Nodes (20): adminAuthRateLimit, adminStorageClearRateLimit, adminTestPrintRateLimit, adminTimeSyncRateLimit, isFiniteNumber(), isTransactionLogMode(), isTransactionLogStatus(), isWholePeso() (+12 more)
 
-### Community 34 - "admin.controller.ts"
-Cohesion: 0.03
-Nodes (51): adminAuthRateLimit, AdminController, adminStorageClearRateLimit, adminTestPrintRateLimit, adminTimeSyncRateLimit, isAnomalyCategory(), isAnomalySeverity(), isAnomalyStatus() (+43 more)
+### Community 34 - "AdminController"
+Cohesion: 0.07
+Nodes (4): PendingRefundEntry, AdminController, isEarningsAnalyticsView(), destroyAdminSession()
 
 ### Community 35 - "document-analysis.ts"
 Cohesion: 0.10
@@ -496,8 +488,8 @@ Cohesion: 0.09
 Nodes (30): Documentation Sync Rules, Mandatory Code-to-Doc Sync Mapping Matrix, Hardware Integration Architecture, Dual-Layer Coin Insertion Idempotency Guarantee, ESP32 Dual AP/STA Mode Firmware Architecture, ESP32 NVS Persistence & mDNS Gateway, ESP32 Serial Telemetry Protocol, ESP32 Hopper Dispense Protocol (+22 more)
 
 ### Community 38 - "WirelessSessionService"
-Cohesion: 0.11
-Nodes (8): isWhitespaceCharacter(), WirelessSessionService, getPricingAnalysisJobStatus(), PricingAnalysisJobData, setPricingAnalysisJobProcessor(), startPricingAnalysisWorker(), DocumentAnalysis, UploadedDocument
+Cohesion: 0.14
+Nodes (4): WirelessSessionService, getPricingAnalysisJobStatus(), PricingAnalysisJobData, DocumentAnalysis
 
 ### Community 39 - "refreshPrintQuote"
 Cohesion: 0.11
@@ -509,15 +501,15 @@ Nodes (26): ALLOWED_TYPES, AppState, attachedFiles, attachmentIds, attachmentLis
 
 ### Community 41 - "print-queue.orchestration.ts"
 Cohesion: 0.07
-Nodes (28): WORKER_PIPE_NAME, WORKER_PRECHECKS_ENABLED, PrintWorkerOrchestrationResult, TODO: Call getPrinterTelemetry() to verify printer online, TODO: Call evaluateInkPreflight() to verify ink levels, TODO: Validate document file exists and is accessible, TODO: Verify required amount vs balance, TODO: Emit printQueueJobStarted event (+20 more)
+Nodes (29): WORKER_PIPE_NAME, WORKER_PRECHECKS_ENABLED, WORKER_QUEUE_DIR, PrintWorkerOrchestrationResult, TODO: Call getPrinterTelemetry() to verify printer online, TODO: Call evaluateInkPreflight() to verify ink levels, TODO: Validate document file exists and is accessible, TODO: Verify required amount vs balance (+21 more)
 
 ### Community 42 - "LogMeta"
-Cohesion: 0.14
-Nodes (19): LogMeta, ReportIssueCategory, ReportIssueStatus, CreateAdminReportIssueInput, CreateSessionResult, ListReportIssueOptions, RegisterAttachmentInput, REPORT_ATTACHMENT_STAGING_DIR (+11 more)
+Cohesion: 0.10
+Nodes (23): LogMeta, ReportIssueCategory, ReportIssueEntry, ReportIssueStatus, parseLogMeta(), CreateAdminReportIssueInput, CreateSessionResult, ListReportIssueOptions (+15 more)
 
 ### Community 43 - "consumables.service.ts"
-Cohesion: 0.12
-Nodes (20): ConsumableInkSnapshotEntry, ConsumableUsageEventEntry, isFiniteNumber(), ConsumableForecastStatus, ConsumablesForecastResponse, ConsumablesService, estimateInkConfidence(), estimatePaperConfidence() (+12 more)
+Cohesion: 0.09
+Nodes (26): CONSUMABLE_TELEMETRY_CLEANUP_INTERVAL_MS, CONSUMABLE_TELEMETRY_RETENTION_DAYS, ConsumableInkSnapshotEntry, ConsumableInkSnapshotSupply, consumablesStore, ConsumableUsageEventEntry, InkHistoryEntry, InkRefillBaseline (+18 more)
 
 ### Community 44 - "receipt/app.ts"
 Cohesion: 0.12
@@ -527,21 +519,21 @@ Nodes (28): downloadBtn, downloadReceiptAsPdf(), fetchReceiptPayload(), fields, 
 Cohesion: 0.11
 Nodes (19): 1) HTTP + realtime layer, 2) Route layer (`src/routes`), 3) Database layer (`src/core/database`), 4) Frontend layer (`src/public`), 4) Service layer (`src/services`), A) Print flow (wireless upload), B) Document analysis (per-page pricing classification), C) Copy flow (+11 more)
 
-### Community 46 - "shared.schema.ts"
-Cohesion: 0.19
-Nodes (11): FinancialEventType, OwedChangeEntry, PendingRefundEntry, CoinStats, JobStats, TrustedTimestampMeta, TrustedTimestampSource, FinancialEventType (+3 more)
+### Community 46 - "LogMeta"
+Cohesion: 0.21
+Nodes (12): OwedChangeEntry, SpoolerLifecycleRecord, SpoolerLifecycleTransitionEntry, CoinStats, ColorMode, JobStats, LogMeta, TrustedTimestampMeta (+4 more)
 
 ### Community 47 - "SessionStore"
-Cohesion: 0.13
-Nodes (5): WirelessSessionDocumentStorageEntry, FinancialServiceDeps, buildPublicUploadUrl(), buildUploadUrl(), SessionStore
+Cohesion: 0.08
+Nodes (11): WirelessSessionDocumentStorageEntry, uploadPortalAssetRateLimit, UploadPortalController, uploadPortalPageRateLimit, registerUploadPortalModule(), UploadPortalModuleDeps, UploadPortalService, UploadPortalServiceDeps (+3 more)
 
 ### Community 48 - "print-queue/index.ts"
-Cohesion: 0.12
-Nodes (25): AdminOperatorAction, AdminQueueAttemptRecord, AdminQueueDashboardData, AdminQueueJobFilters, AdminQueueJobQueryResult, AdminQueueJobRecord, AdminTransactionSupervisionRecord, buildConsumptionFingerprint() (+17 more)
+Cohesion: 0.13
+Nodes (24): AdminOperatorAction, AdminQueueAttemptRecord, AdminQueueDashboardData, AdminQueueJobFilters, AdminQueueJobQueryResult, AdminQueueJobRecord, AdminTransactionSupervisionRecord, buildConsumptionFingerprint() (+16 more)
 
 ### Community 49 - "watchdog-health.ts"
-Cohesion: 0.11
-Nodes (23): updatePrinterWatchdogState(), APP_HEARTBEAT_INTERVAL_MS, cloneContext(), COMPONENT_POLL_INTERVAL_MS, components, DEFAULT_STALE_AFTER_MS, externalWatchdog, getWatchdogHealthSnapshot() (+15 more)
+Cohesion: 0.12
+Nodes (21): APP_HEARTBEAT_INTERVAL_MS, cloneContext(), COMPONENT_POLL_INTERVAL_MS, components, DEFAULT_STALE_AFTER_MS, externalWatchdog, getWatchdogHealthSnapshot(), pollWatchdogComponents() (+13 more)
 
 ### Community 50 - "PrintPreview"
 Cohesion: 0.23
@@ -552,12 +544,12 @@ Cohesion: 0.07
 Nodes (27): scripts, build, db:reset, dev, driver:verify, ensure-network, install-kiosk, install-startup (+19 more)
 
 ### Community 52 - "getSqliteDb"
-Cohesion: 0.11
-Nodes (5): PrintJobSqliteStore, toPrintJobState(), ReceiptSqliteStore, WirelessSessionSqliteStore, getSqliteDb()
+Cohesion: 0.08
+Nodes (11): ReceiptSqliteStore, dateMs(), jsonOrNull(), ListReportIssueOptions, normalizeLogMeta(), parseJsonValue(), ReportIssueSqliteStore, ReportSessionCleanupResult (+3 more)
 
 ### Community 53 - "ReportService"
-Cohesion: 0.13
-Nodes (5): validateReportIssueAttachmentMagicBytes(), ReportController, registerReportModule(), ReportModuleDeps, ReportService
+Cohesion: 0.10
+Nodes (6): validateReportIssueAttachmentMagicBytes(), ReportController, registerReportModule(), ReportModuleDeps, ReportService, serializeForInlineScript()
 
 ### Community 54 - "kiosk-i18n.ts"
 Cohesion: 0.14
@@ -572,8 +564,8 @@ Cohesion: 0.22
 Nodes (25): animatedValue(), baseAnimation(), COLOR, crc32(), CRC_TABLE, createCopyingAnimation(), createPixelLayer(), createPrintingAnimation() (+17 more)
 
 ### Community 57 - "getTrustedTimestamp"
-Cohesion: 0.23
-Nodes (19): withBalanceLock(), FinancialLedgerEntry, computeHash(), FinancialLedgerService, serializeForHash(), createPendingRefund(), dismissPendingRefund(), ensureDb() (+11 more)
+Cohesion: 0.21
+Nodes (21): withBalanceLock(), FinancialEventType, FinancialLedgerEntry, AppendLedgerInput, computeHash(), FinancialLedgerService, serializeForHash(), createPendingRefund() (+13 more)
 
 ### Community 58 - "LanguageService"
 Cohesion: 0.16
@@ -583,21 +575,25 @@ Nodes (10): SupportedLanguage, KioskPreferences, LanguageController, LanguageMod
 Cohesion: 0.10
 Nodes (20): Coins not updating, Common checks, Consumables incident expectations (forecast vs immediate threshold), E-Receipt link invalid/expired, Epson L5290 software setup for ink telemetry (Wi-Fi/LAN first), ESP32 captive portal checks, Frequent issues, Ink / toner levels show "N/A" (+12 more)
 
-### Community 61 - "windows-printer-edge.ts"
+### Community 61 - "printer.service.ts"
+Cohesion: 0.07
+Nodes (39): db, execFileAsync, findSpoolerJobIdByCorrelationKey(), parseIsoMs(), PrintError, PrinterService, PrinterStatusResponse, rewriteSidecarPageRange() (+31 more)
+
+### Community 62 - "apiFetch"
+Cohesion: 0.10
+Nodes (40): updateStatus(), handleClearAll(), handleDelete(), handleToggleResolved(), loadFeedback(), loadSummary(), renderPage(), updateStats() (+32 more)
+
+### Community 63 - "admin.service.ts"
+Cohesion: 0.15
+Nodes (14): adminLogStore, DispatchLatencyByEngine, DispatchLatencyByMime, DispatchLatencyMetricsResult, DispatchLatencyPercentiles, DispatchLatencySpeculation, EarningsAnalyticsBucket, EarningsAnalyticsResult (+6 more)
+
+### Community 64 - "AnomalyService"
 Cohesion: 0.16
-Nodes (20): AsyncMutex, createMutex(), createPersistentPS(), dispose(), run(), PersistentPS, NOTE: This implementation is NOT safe for concurrent calls., cancelPrintJobViaEdge() (+12 more)
-
-### Community 62 - "scc/app.ts"
-Cohesion: 0.14
-Nodes (23): authViewEl, bindCoinButtons(), bindResetButton(), bootstrap(), COIN_VALUE_TO_DENOM, coinButtons, connectSocket(), Counters (+15 more)
-
-### Community 63 - "ScanJobSettings"
-Cohesion: 0.20
-Nodes (3): ScanJobSettings, ScannerAdapter, StubScannerAdapter
+Nodes (4): AlertSettings, AnomalyIncidentEntry, AnomalyService, ListAnomalyResult
 
 ### Community 65 - "CopyService"
 Cohesion: 0.12
-Nodes (9): evaluateConsumablesForecastAlerts(), CopyController, CopyModuleDeps, registerCopyModule(), CopyService, CreateCopyJobInput, IdempotencyKeyInflightResult, buildPrintJobEnqueuePayload() (+1 more)
+Nodes (8): CopyController, CopyModuleDeps, registerCopyModule(), CopyService, CreateCopyJobInput, IdempotencyKeyInflightResult, evaluateInkPreflight(), refreshPrinterTelemetry()
 
 ### Community 67 - "loading-animation.ts"
 Cohesion: 0.10
@@ -608,8 +604,8 @@ Cohesion: 0.09
 Nodes (23): argon2, canvas, cookie-parser, file-type, i18next, i18next-fs-backend, @lottiefiles/dotlottie-web, multer (+15 more)
 
 ### Community 69 - "print-spooler.ts"
-Cohesion: 0.13
-Nodes (22): PRINT_SPOOLER_LOOKBACK_MINUTES, PRINT_SPOOLER_POLL_INTERVAL_MS, PRINT_SPOOLER_QUERY_TIMEOUT_MS, classifyQueryErrorCode(), classifySpoolerJobError(), matchesStatusSet(), monitorSpoolerJob(), normalizeOptionalString() (+14 more)
+Cohesion: 0.14
+Nodes (20): PRINT_SPOOLER_MONITOR_WINDOW_MS, classifyQueryErrorCode(), classifySpoolerJobError(), matchesStatusSet(), monitorSpoolerJob(), normalizeOptionalString(), normalizeSpoolerRows(), partialPrintGuard() (+12 more)
 
 ### Community 70 - "Detailed findings"
 Cohesion: 0.05
@@ -619,9 +615,9 @@ Nodes (36): Detailed findings, Executive summary, Existing controls worth preser
 Cohesion: 0.16
 Nodes (21): TrustedTimestampMeta, buildStatusFromOffset(), isUnsyncedSource(), normalizeW32ComputerName(), parseStatusValue(), parseStripchartOffsetMs(), readConfiguredOffsetMs(), readEnforceFlag() (+13 more)
 
-### Community 72 - "HotspotService"
-Cohesion: 0.27
-Nodes (6): HotspotController, HotspotModuleDeps, registerHotspotModule(), HotspotService, getHotspotConfig(), HotspotConfigPayload
+### Community 72 - "registerAppModules"
+Cohesion: 0.25
+Nodes (7): registerAppModules(), HotspotController, HotspotModuleDeps, registerHotspotModule(), HotspotService, getHotspotConfig(), HotspotConfigPayload
 
 ### Community 73 - "Graphify Incremental Update Reference"
 Cohesion: 0.10
@@ -639,9 +635,9 @@ Nodes (21): buildAnomalyFingerprint(), clearPrinterFaultLock(), getPrinterFaultL
 Cohesion: 0.14
 Nodes (6): FeedbackSqliteStore, jsonOrNull(), ListFeedbackOptions, normalizeLogMeta(), parseJsonValue(), toIsoDate()
 
-### Community 77 - "apiFetch"
-Cohesion: 0.11
-Nodes (26): allLogs, applyLogs(), clearAllLogs(), clearLogsBtn, escapeHtml(), exportLogsBtn, loadData(), loadSummary() (+18 more)
+### Community 77 - "logs/app.ts"
+Cohesion: 0.13
+Nodes (20): allLogs, applyLogs(), clearLogsBtn, escapeHtml(), exportLogsBtn, loadData(), loadSummary(), logsBody (+12 more)
 
 ### Community 78 - "public/feedback/app.ts"
 Cohesion: 0.10
@@ -652,24 +648,24 @@ Cohesion: 0.13
 Nodes (16): clampByte(), ColorDetectionResult, detectPdfColorContent(), getImageColorStats(), ImageColorStats, isPdfImageObject(), isPendingPdfObjectLookupError(), parseImageName() (+8 more)
 
 ### Community 80 - "scanner.ts"
-Cohesion: 0.15
-Nodes (11): buildNaps2Args(), detectScanner(), listNaps2Devices(), Naps2ScannerAdapter, parseDeviceLines(), runtimeStatus, ScannerDriver, ScannerJobResult (+3 more)
+Cohesion: 0.10
+Nodes (14): ScanJobSettings, buildNaps2Args(), detectScanner(), listNaps2Devices(), Naps2ScannerAdapter, parseDeviceLines(), runtimeStatus, ScannerAdapter (+6 more)
 
 ### Community 81 - "http.config.ts"
-Cohesion: 0.06
-Nodes (40): alwaysAcceptCoinTokens, CAPTIVE_PORTAL_ENABLED, ESP32_ALWAYS_ACCEPT_COINS, ESP32_CAPTIVE_PORTAL_PATH, ESP32_COIN_BRIDGE_RELAXED_MODE, ESP32_COIN_BRIDGE_SOURCE, ESP32_KIOSK_IP, ESP32_REGISTER_TOKEN (+32 more)
+Cohesion: 0.04
+Nodes (58): alwaysAcceptCoinTokens, CAPTIVE_PORTAL_ENABLED, ESP32_ALWAYS_ACCEPT_COINS, ESP32_CAPTIVE_PORTAL_PATH, ESP32_COIN_BRIDGE_RELAXED_MODE, ESP32_COIN_BRIDGE_SOURCE, ESP32_KIOSK_IP, ESP32_KIOSK_SUBNET_PREFIX (+50 more)
 
 ### Community 82 - "FeedbackService"
-Cohesion: 0.16
-Nodes (5): FeedbackCategory, FeedbackEntry, FeedbackSessionEntry, FeedbackService, ListFeedbackResult
+Cohesion: 0.12
+Nodes (11): FeedbackCategory, FeedbackEntry, FeedbackSessionEntry, FeedbackStatus, ReceiptAccessTokenEntry, LowDbImportSnapshot, CreateSessionResult, FeedbackService (+3 more)
 
 ### Community 83 - "watchdog.controller.ts"
-Cohesion: 0.19
-Nodes (9): WATCHDOG_ALERT_THRESHOLD, WatchdogController, WatchdogControllerDeps, registerWatchdogModule(), WatchdogModuleDeps, WatchdogService, ExternalWatchdogState, updateExternalWatchdogState() (+1 more)
+Cohesion: 0.14
+Nodes (14): WATCHDOG_ALERT_THRESHOLD, WatchdogController, WatchdogControllerDeps, registerWatchdogModule(), WatchdogModuleDeps, WatchdogService, ExternalWatchdogState, updateExternalWatchdogState() (+6 more)
 
 ### Community 84 - "hopper/index.ts"
-Cohesion: 0.21
-Nodes (7): HopperController, TODO: Define routes, HopperSettings, HopperStats, OwedChangeEntry, HopperService, HopperDispenseResult
+Cohesion: 0.19
+Nodes (10): HopperController, TODO: Define routes, getHopperService(), HopperModuleDeps, registerHopperModule(), HopperSettings, HopperStats, OwedChangeEntry (+2 more)
 
 ### Community 85 - "scan-storage.ts"
 Cohesion: 0.38
@@ -679,21 +675,17 @@ Nodes (4): parsedRetention, SCAN_DIR, ScanStorageService, startScanStorageCleanu
 Cohesion: 0.06
 Nodes (33): Admin APIs, `DELETE /api/admin/logs/system`, `DELETE /api/admin/logs/transactions`, `GET /api/admin/consumables/forecast`, `GET /api/admin/logs/system`, `GET /api/admin/logs/system/export.csv`, `GET /api/admin/logs/transactions`, `GET /api/admin/logs/transactions/export.csv` (+25 more)
 
-### Community 87 - "feedback.controller.ts"
-Cohesion: 0.23
-Nodes (14): FEEDBACK_PORTAL_ASSETS, FEEDBACK_PORTAL_DIR, FEEDBACK_PORTAL_TEMPLATE, FeedbackControllerDeps, feedbackPortalAssetRateLimit, FeedbackModuleDeps, FeedbackCategory, FeedbackEntry (+6 more)
-
-### Community 88 - "ScannerController"
-Cohesion: 0.09
-Nodes (12): USB_EXPORT_ENABLED, InteractiveScanBody, ReleaseScanBody, scanDownloadRateLimit, ScanJobBody, scanJobResultRateLimit, ScannerController, ScannerControllerDeps (+4 more)
+### Community 87 - "FeedbackService"
+Cohesion: 0.12
+Nodes (16): FEEDBACK_PORTAL_ASSETS, FEEDBACK_PORTAL_DIR, FEEDBACK_PORTAL_TEMPLATE, FeedbackControllerDeps, feedbackPortalAssetRateLimit, FeedbackModuleDeps, registerFeedbackModule(), FeedbackCategory (+8 more)
 
 ### Community 89 - "compilerOptions"
 Cohesion: 0.11
 Nodes (17): config, jest, jest.config.ts, node, src, tests, compilerOptions, esModuleInterop (+9 more)
 
-### Community 90 - "ReportIssueSqliteStore"
-Cohesion: 0.12
-Nodes (7): dateMs(), jsonOrNull(), ListReportIssueOptions, normalizeLogMeta(), parseJsonValue(), ReportIssueSqliteStore, ReportSessionCleanupResult
+### Community 90 - "document-rotation.ts"
+Cohesion: 0.25
+Nodes (12): IMAGE_EXTENSIONS, normalizeFileExtension(), normalizeRotationDeg(), OFFICE_EXTENSIONS, parseRotationDeg(), preparePrintRotationArtifact(), prepareScanRotationArtifact(), ROTATED_PRINT_DIR (+4 more)
 
 ### Community 92 - "Kiosk Main Landing and Service Launcher"
 Cohesion: 0.11
@@ -703,17 +695,13 @@ Nodes (19): Transaction Ledger Viewer, Interactive Document Preview Rationale, P
 Cohesion: 0.18
 Nodes (17): connectionText, fetchReadiness(), formatRetry(), metaText, phaseChipText, phaseText, poll(), retryText (+9 more)
 
-### Community 94 - "FeedbackController"
-Cohesion: 0.14
-Nodes (3): FeedbackController, renderFeedbackPortal(), registerFeedbackModule()
-
 ### Community 95 - "wA"
 Cohesion: 0.20
 Nodes (17): A(), B(), n(), r(), B(), cn(), E(), H() (+9 more)
 
 ### Community 96 - "copy.service.ts"
-Cohesion: 0.08
-Nodes (35): PRINT_SPOOLER_MONITOR_WINDOW_MS, consumablesStore, ClaimIdempotencyResult, CopyServiceDeps, CreateCopyJobResult, GetCopyQuoteInput, IdempotencyKeyClaimedResult, IdempotencyKeyHitResult (+27 more)
+Cohesion: 0.10
+Nodes (21): ConsumableEstimationCoefficients, ClaimIdempotencyResult, CopyServiceDeps, CreateCopyJobResult, GetCopyQuoteInput, IdempotencyKeyClaimedResult, IdempotencyKeyHitResult, NormalizedCopyJobInput (+13 more)
 
 ### Community 97 - "5. Architectural patterns and conventions"
 Cohesion: 0.07
@@ -728,8 +716,8 @@ Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 100 - "pricing-analysis-queue.ts"
-Cohesion: 0.21
-Nodes (11): buildForceJobId(), buildStableJobId(), enqueuePricingAnalysisJob(), jobStore, LocalJob, PricingAnalysisJobEnqueueResult, PricingAnalysisJobProcessor, PricingAnalysisJobStatusResult (+3 more)
+Cohesion: 0.16
+Nodes (13): buildForceJobId(), buildStableJobId(), enqueuePricingAnalysisJob(), jobStore, LocalJob, PricingAnalysisJobEnqueueResult, PricingAnalysisJobProcessor, PricingAnalysisJobStatusResult (+5 more)
 
 ### Community 101 - "applyConfirmGate"
 Cohesion: 0.17
@@ -747,9 +735,13 @@ Nodes (14): attachSocket(), checkUploadStatus(), createSession(), formatCountdow
 Cohesion: 0.18
 Nodes (11): navigateTo(), handlePageNavigation(), initKioskNavigation(), KioskNavigationMode, navigateWithKioskMotion(), resolveSameOriginNavigation(), CUSTOMER_PAGE_HTML, FakeElement (+3 more)
 
+### Community 105 - "ReportIssueService"
+Cohesion: 0.21
+Nodes (3): ReportIssueAttachmentEntry, ReportIssueSessionEntry, ReportIssueService
+
 ### Community 106 - "admin.schema.ts"
-Cohesion: 0.11
-Nodes (16): ColorMode, PrintMode, AdminLockout, AdminSettings, AlertDashboardSettings, AlertDedupeSettings, AlertEmailSettings, ConsumableEstimationCoefficients (+8 more)
+Cohesion: 0.12
+Nodes (14): PrintMode, AdminLockout, AdminSettings, AlertDashboardSettings, AlertDedupeSettings, AlertEmailSettings, ConsumableEstimationSettings, ConsumablesForecastingSettings (+6 more)
 
 ### Community 107 - "Definition of Done (mandatory): Epson L5290 spooler handoff reliability"
 Cohesion: 0.33
@@ -760,31 +752,27 @@ Cohesion: 0.20
 Nodes (10): reportIssueAttachmentUploadMiddleware, adminReportAttachmentRateLimit, ReportBody, ReportControllerDeps, reportPortalAssetRateLimit, ReportIssueAttachmentEntry, ReportIssueCategory, ReportIssueEntry (+2 more)
 
 ### Community 109 - "shared.ts"
-Cohesion: 0.19
-Nodes (12): clearAdminToken(), ensureAuth(), getAdminToken(), initAuth(), showDashboard(), unlock(), InitAuthArg, InitAuthOptions (+4 more)
-
-### Community 110 - "utils/index.ts"
-Cohesion: 0.13
-Nodes (4): ColorMode, Orientation, PaperSize, PrintMode
+Cohesion: 0.16
+Nodes (14): clearAdminToken(), ensureAuth(), getAdminToken(), initAuth(), showDashboard(), unlock(), InitAuthArg, InitAuthOptions (+6 more)
 
 ### Community 111 - "reset-db.js"
-Cohesion: 0.19
-Nodes (13): ALLOWED_TABLES, args, buildResetState(), clearSqliteOperationalTables(), countRows(), dryRun, {
+Cohesion: 0.21
+Nodes (11): ALLOWED_TABLES, args, buildResetState(), clearSqliteOperationalTables(), countRows(), dryRun, {
   getSqliteDb,
   initSqliteStorage,
-}, { initDB, db } (+5 more)
+}, { initDB, db } (+3 more)
 
-### Community 112 - "idempotency.ts"
+### Community 112 - "print-job.model.ts"
 Cohesion: 0.21
-Nodes (10): balanceLockPromise, acquireIdempotencyKey(), IdempotencyEntry, idempotencyInFlight, idempotencyStore, InFlightEntry, makeDeferred(), namespacedKey() (+2 more)
+Nodes (5): PrintJobEntry, PrintJobSqliteStore, PrintJobState, printJobStore, toPrintJobState()
 
 ### Community 113 - "print-job.schema.ts"
-Cohesion: 0.14
-Nodes (11): PRINT_JOB_PAYLOAD_VERSION, PrintJob, PrintJobAttempt, PrintJobContext, PrintJobCorrelation, PrintJobDispatchContext, PrintJobEnqueuePayload, PrintJobFinancialContext (+3 more)
-
-### Community 114 - "page.controller.ts"
 Cohesion: 0.17
-Nodes (6): KIOSK_ONLY_PAGE_ROUTES, PageController, PageControllerDeps, PageRoute, PageModuleDeps, registerPageModule()
+Nodes (10): PRINT_JOB_PAYLOAD_VERSION, PrintJobAttempt, PrintJobContext, PrintJobCorrelation, PrintJobDispatchContext, PrintJobFinancialContext, PrintJobRequest, PrintJobSettings (+2 more)
+
+### Community 114 - "scan-delivery.ts"
+Cohesion: 0.25
+Nodes (5): createScanDownloadLink(), parsedTtl, resolveScanDownload(), ScanDeliveryService, ScanDownloadSession
 
 ### Community 115 - "idle-timeout.ts"
 Cohesion: 0.27
@@ -798,20 +786,20 @@ Nodes (6): 1) Install dependencies, 2) Run in development, 3) Build browser bund
 Cohesion: 0.19
 Nodes (6): AdminLogSqliteStore, changesFromRun(), jsonOrNull(), normalizeLogMeta(), normalizeTrustedTimestampMeta(), parseJsonValue()
 
-### Community 118 - "printer.service.ts"
-Cohesion: 0.14
-Nodes (13): WORKER_COMMAND_PIPE_NAME, WORKER_FAILED_DIR, WORKER_QUEUE_DIR, execFileAsync, findSpoolerJobIdByCorrelationKey(), parseIsoMs(), PrintError, PrinterService (+5 more)
+### Community 118 - ".handleGetAnomalyIncidents"
+Cohesion: 0.20
+Nodes (5): isAnomalyCategory(), isAnomalySeverity(), isAnomalyStatus(), parseAlertSettingsPayload(), toSafeAlertSettings()
 
 ### Community 119 - "wireless-session.service.ts"
 Cohesion: 0.24
-Nodes (8): PORT, PREVIEW_CACHE_DIR, IMAGE_TYPES, PDF_CONVERT_EXTENSIONS, POWERPOINT_EXTENSIONS, WirelessSessionServiceDeps, generateHtmlPreview, supportsHtmlPreview
+Nodes (8): PREVIEW_CACHE_DIR, IMAGE_TYPES, isWhitespaceCharacter(), PDF_CONVERT_EXTENSIONS, POWERPOINT_EXTENSIONS, WirelessSessionServiceDeps, generateHtmlPreview, supportsHtmlPreview
 
 ### Community 120 - "document-analysis.spec.ts"
 Cohesion: 0.20
 Nodes (10): ANALYSIS_ALGORITHM_VERSION, MockCanvasContext, mockCanvasContexts, mockedSharp, MockPageSpec, mockPdfDocument(), PageClassification, paintFrameFromSpec() (+2 more)
 
 ### Community 121 - "job-store.ts"
-Cohesion: 0.15
+Cohesion: 0.16
 Nodes (13): BaseJob, CopyJob, CopyJobSettings, Job, JobFailure, JobProgress, JobState, JobType (+5 more)
 
 ### Community 122 - "package.json"
@@ -846,9 +834,9 @@ Nodes (6): Get-ConnectedWifiInterfaceName(), Get-EnvString(), Get-WlanInterfaces
 Cohesion: 0.40
 Nodes (5): Hardware & production field SOP, Power loss, reboot & crash recovery (Issue #37), Runtime behavior, Secondary monitor, Software recovery behavior
 
-### Community 131 - "ReportIssueEntry"
-Cohesion: 0.22
-Nodes (4): ReportIssueEntry, parseLogMeta(), ListReportIssueResult, ListReportIssueResult
+### Community 131 - "job-processor.ts"
+Cohesion: 0.29
+Nodes (4): PrintJob, PrintJobEnqueuePayload, getJobProcessor(), JobProcessor
 
 ### Community 132 - "loadPreview"
 Cohesion: 0.29
@@ -862,9 +850,13 @@ Nodes (12): addFileToList(), clearSelectedFileState(), deleteSessionFile(), esca
 Cohesion: 0.22
 Nodes (9): esbuild, devDependencies, esbuild, @types/qrcode, @types/ws, @typescript-eslint/parser, @types/qrcode, @types/ws (+1 more)
 
-### Community 135 - "rate-limit.ts"
-Cohesion: 0.28
-Nodes (8): buckets, createRateLimit(), DEFAULT_MESSAGE, getClientKey(), purgeExpiredBuckets(), RateLimitBucket, RateLimitMessage, RateLimitOptions
+### Community 135 - "scanner.controller.ts"
+Cohesion: 0.12
+Nodes (17): USB_EXPORT_ENABLED, buckets, createRateLimit(), DEFAULT_MESSAGE, getClientKey(), purgeExpiredBuckets(), RateLimitBucket, RateLimitMessage (+9 more)
+
+### Community 136 - "wireless-session.controller.ts"
+Cohesion: 0.29
+Nodes (4): handleMulterError(), uploadMiddleware, wirelessPreviewRateLimit, wirelessUploadRateLimit
 
 ### Community 137 - "Pricing Engine Configuration and Rollout"
 Cohesion: 0.40
@@ -892,7 +884,7 @@ Nodes (5): createRunspace(), { execFile }, runPs(), { spawn }, timeScript()
 
 ### Community 143 - "build-client.js"
 Cohesion: 0.29
-Nodes (4): builds, { execSync }, fs, path
+Nodes (4): entryPoints, esbuild, fs, path
 
 ### Community 144 - "CLAUDE.md"
 Cohesion: 0.12
@@ -934,9 +926,9 @@ Nodes (14): Admin Access & Authentication, Changelog, Coin & Payment Security, D
 Cohesion: 0.33
 Nodes (6): Ink Tank Level Monitoring Panel, Operations KPI and Job Breakdown, Operations Overview Dashboard, Admin Panel Entry Router, Hardware Recovery Controls Rationale, System Control Center
 
-### Community 154 - "ReceiptService"
-Cohesion: 0.19
-Nodes (5): ReceiptRecordEntry, isExpired(), normalizeIsoTimestamp(), parseTimestampMs(), ReceiptService
+### Community 154 - "addFilesToQueue"
+Cohesion: 0.38
+Nodes (7): addFilesToQueue(), collectUnsupportedFiles(), createQueueItem(), escHtml(), extOf(), formatBytes(), normalizeMimeByExtension()
 
 ### Community 155 - "Graphify Query Reference"
 Cohesion: 0.60
@@ -966,9 +958,9 @@ Nodes (5): Document Feeder Preview Area, How to Scan Instructions Panel, Scan Do
 Cohesion: 0.50
 Nodes (5): Document Preview, Scan Document Preview Screen, Proceed to Pay Action, Rescan Action, Soft Copy Pricing Rationale
 
-### Community 162 - "LogMeta"
+### Community 162 - "anomaly.service.ts"
 Cohesion: 0.25
-Nodes (15): LogMeta, AlertChannel, AnomalyCategory, AnomalySeverity, AnomalyStatus, AnomalyModuleDeps, registerAnomalyModule(), AnomalyIncidentEntry (+7 more)
+Nodes (14): AlertChannel, AnomalyCategory, AnomalySeverity, AnomalyStatus, AnomalyModuleDeps, registerAnomalyModule(), AnomalyIncidentEntry, AlertEmailSettingsLike (+6 more)
 
 ### Community 163 - "printer.schema.ts"
 Cohesion: 0.40
@@ -1050,9 +1042,9 @@ Nodes (4): Coin Balance Payment Gate, Confirm and Download Action, Scan Confirm 
 Cohesion: 0.18
 Nodes (11): 1) Platform requirements, 2) Required software, 3) Node package dependencies used by this project, 5) Windows tablet update checklist, 6) Preflight checklist (recommended), 7) Common installation issues, 8) Related docs, App dependencies (runtime) (+3 more)
 
-### Community 184 - "UploadPortalService"
-Cohesion: 0.19
-Nodes (7): uploadPortalAssetRateLimit, UploadPortalController, uploadPortalPageRateLimit, registerUploadPortalModule(), UploadPortalModuleDeps, UploadPortalService, UploadPortalServiceDeps
+### Community 184 - "assertPrintDispatcherReady"
+Cohesion: 0.47
+Nodes (4): assertPrintDispatcherReady, generateTestPagePdf(), pdfStr(), xrefEntry()
 
 ### Community 185 - "Windows 10 Production Deployment Quickstart (Assigned Access Kiosk)"
 Cohesion: 0.18
@@ -1102,9 +1094,13 @@ Nodes (3): fe(), oe(), xB()
 Cohesion: 0.20
 Nodes (15): persistAndEmitPrintLifecycleState(), getRecoverySession(), deleteTransientScanFile(), resolveTransientScanFilePath(), SCANS_ROOT, toSafeTransientScanFileName(), TransientScanDeleteResult, cleanupSuccessfulCopy() (+7 more)
 
-### Community 202 - "queryPrinterTelemetry"
-Cohesion: 0.19
-Nodes (20): applyConnectionSignals(), detectConnectionType(), ensureCriticalNotAboveLow(), extractPortTokenFromInstanceId(), findConfiguredPrinter(), findDefaultOrSinglePhysicalPrinter(), findMatchingInstalledPrinterByName(), getInkMonitoringSettings() (+12 more)
+### Community 202 - "admin.module.ts"
+Cohesion: 0.70
+Nodes (3): AdminControllerDeps, AdminModuleDeps, registerAdminModule()
+
+### Community 203 - "renderHomeWifiQr"
+Cohesion: 0.40
+Nodes (5): buildWifiQrPayload(), escapeWifiQrValue(), loadHotspotConfig(), openWifiModal(), renderHomeWifiQr()
 
 ### Community 204 - "Code of Conduct"
 Cohesion: 0.17
@@ -1118,9 +1114,9 @@ Nodes (6): About This Project, Contributors, **Copyright © 2026 PrintBit Contri
 Cohesion: 0.25
 Nodes (7): Academic Context, Contact, Contributors, Copyright Notice, Ownership, PrintBit — Coin-Operated Self-Service Printing Kiosk, Third-Party Components
 
-### Community 207 - "anomaly.ts"
-Cohesion: 0.30
-Nodes (10): AlertChannel, AnomalyCategory, AnomalyIncidentEntry, AnomalySeverity, AnomalyStatus, AlertEmailSettingsLike, ListAnomalyOptions, ListAnomalyResult (+2 more)
+### Community 207 - "types.ts"
+Cohesion: 0.40
+Nodes (4): ColorMode, Orientation, PaperSize, PrintMode
 
 ### Community 223 - "System and hotspot"
 Cohesion: 0.33
@@ -1142,69 +1138,45 @@ Nodes (8): API and validation expectations, Codebase conventions, Contributing t
 Cohesion: 0.18
 Nodes (13): escapeHtml(), formatChangeState(), formatDate(), formatMode(), formatPeso(), formatStatus(), openTransactionDrawer(), openTransactionDrawerShell() (+5 more)
 
-### Community 275 - "admin-auth.ts"
-Cohesion: 0.36
-Nodes (5): isLocalRequestIp(), isPrivateIpv4(), normalizeIp(), requireAdminLocalAccess(), requireAdminPin()
+### Community 275 - "submitAdminPin"
+Cohesion: 0.50
+Nodes (4): closeAdminModal(), navigateTo(), setAdminError(), submitAdminPin()
 
-### Community 279 - "print-lifecycle-state.ts"
-Cohesion: 0.29
-Nodes (6): SpoolerLifecycleRecord, SpoolerLifecycleState, SpoolerLifecycleTransitionEntry, PersistPrintLifecycleStateOptions, PrintLifecycleStatePayload, RecordSpoolerLifecycleTransitionInput
-
-### Community 280 - "clearAllTransactionLogs"
-Cohesion: 0.25
-Nodes (8): applyLogs(), clearAllTransactionLogs(), closeTransactionDrawer(), getTransactionContextId(), inferMode(), renderPage(), totalPages(), updatePaginationControls()
+### Community 280 - "applyLogs"
+Cohesion: 0.67
+Nodes (3): applyLogs(), getTransactionContextId(), inferMode()
 
 ### Community 281 - "updateUploadLink"
 Cohesion: 0.25
 Nodes (8): buildWifiQrPayload(), deriveInternetUploadUrl(), escapeWifiQrValue(), normalizeLocalUploadUrl(), renderStartupOnboarding(), setUploadMode(), showStartupOnboardingModal(), updateUploadLink()
 
-### Community 282 - "consumables.model.ts"
-Cohesion: 0.29
-Nodes (5): CONSUMABLE_TELEMETRY_CLEANUP_INTERVAL_MS, CONSUMABLE_TELEMETRY_RETENTION_DAYS, ConsumableInkSnapshotSupply, InkHistoryEntry, InkRefillBaseline
-
 ### Community 284 - "loadData"
-Cohesion: 0.29
-Nodes (7): applyFilters(), applyFilterStateFromInputs(), buildFilterParams(), loadData(), loadSummary(), setOpenAlertBadge(), toIso()
-
-### Community 287 - "worker-command-pipe.ts"
-Cohesion: 0.47
-Nodes (4): sendWorkerCommand(), SendWorkerCommandOptions, WorkerCommandPayload, WorkerCommandType
+Cohesion: 0.15
+Nodes (15): applyFilters(), applyFilterStateFromInputs(), buildFilterParams(), clearAllTransactionLogs(), closeReportModal(), closeTransactionDrawer(), fetchTransactionContext(), loadData() (+7 more)
 
 ### Community 288 - "worker-handoff.ts"
 Cohesion: 0.47
 Nodes (3): handoffToWorker(), WorkerHandoffError, WorkerHandoffErrorCode
 
-### Community 289 - "csrf.ts"
-Cohesion: 0.60
-Nodes (4): createCsrfProtectionMiddleware(), getRequestHost(), getRequestOriginHost(), SAFE_METHODS
-
-### Community 291 - "submitQuickReport"
-Cohesion: 0.50
-Nodes (4): closeReportModal(), fetchTransactionContext(), resolveApiErrorMessage(), submitQuickReport()
-
-### Community 292 - "runRefreshCycle"
-Cohesion: 0.50
-Nodes (4): normalizeTelemetryAvailability(), persistInkHistoryEntry(), refresh(), runRefreshCycle()
-
 ## Knowledge Gaps
 - **1539 isolated node(s):** `config`, `name`, `version`, `description`, `main` (+1534 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **66 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **63 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `getSqliteDb()` connect `getSqliteDb` to `sqlite-storage.ts`, `admin.controller.ts`, `ReportIssueSqliteStore`, `FeedbackSqliteStore`, `reset-db.js`, `financial.service.ts`, `AdminLogSqliteStore`, `database/db.ts`, `consumables.model.ts`, `ConsumablesSqliteStore`?**
+- **Why does `getSqliteDb()` connect `getSqliteDb` to `sqlite-storage.ts`, `admin.controller.ts`, `AdminController`, `receipt.service.ts`, `consumables.service.ts`, `FeedbackSqliteStore`, `reset-db.js`, `print-job.model.ts`, `financial.service.ts`, `AdminLogSqliteStore`, `database/db.ts`, `ConsumablesSqliteStore`, `printer.service.ts`?**
   _High betweenness centrality (0.012) - this node is a cross-community bridge._
-- **Why does `AdminService` connect `services/index.ts` to `receipt.service.ts`, `print-dispatcher.ts`, `scanner.service.ts`, `transient-file-cleanup.ts`, `file-validation.ts`, `financial.service.ts`, `hopper.ts`, `serial.ts`, `server.ts`, `LogMeta`, `UploadPortalService`, `print-spooler.ts`, `worker-print-lifecycle.ts`, `printer-monitor.ts`, `anomaly.ts`, `watchdog.controller.ts`, `feedback.controller.ts`, `ScannerController`, `copy.service.ts`, `wireless-session.service.ts`?**
-  _High betweenness centrality (0.009) - this node is a cross-community bridge._
-- **Why does `db` connect `services/index.ts` to `printer-status.ts`, `scanner.service.ts`, `financial.service.ts`, `admin-auth.ts`, `hopper.ts`, `recovery.ts`, `serial.ts`, `database/db.ts`, `consumables.model.ts`, `admin.controller.ts`, `LogMeta`, `consumables.service.ts`, `getTrustedTimestamp`, `LanguageService`, `windows-printer-edge.ts`, `print-spooler.ts`, `anomaly.ts`, `hopper/index.ts`, `copy.service.ts`, `page.controller.ts`, `printer.service.ts`, `wireless-session.service.ts`?**
+- **Why does `AdminService` connect `AdminService` to `receipt.service.ts`, `scanner.controller.ts`, `scanner.service.ts`, `print-dispatcher.ts`, `transient-file-cleanup.ts`, `file-validation.ts`, `financial.service.ts`, `hopper.ts`, `serial.ts`, `services/index.ts`, `database/db.ts`, `server.ts`, `LogMeta`, `SessionStore`, `print-spooler.ts`, `worker-print-lifecycle.ts`, `printer-monitor.ts`, `FeedbackService`, `watchdog.controller.ts`, `FeedbackService`, `copy.service.ts`, `wireless-session.service.ts`?**
+  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+- **Why does `AnomalyService` connect `AnomalyService` to `admin.controller.ts`, `print-spooler.ts`, `consumables.service.ts`, `printer-monitor.ts`, `file-validation.ts`, `watchdog.controller.ts`, `hopper.ts`, `serial.ts`, `services/index.ts`, `database/db.ts`, `server.ts`?**
   _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **What connects `config`, `name`, `version` to the rest of the system?**
   _1539 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `confirm/app.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.014388489208633094 - nodes in this community are weakly interconnected._
 - **Should `printer-status.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.1268939393939394 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08240794856808883 - nodes in this community are weakly interconnected._
 - **Should `transactions/app.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.03773584905660377 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.037037037037037035 - nodes in this community are weakly interconnected._

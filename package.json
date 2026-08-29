@@ -38,6 +38,13 @@
   "author": "GioMjds",
   "license": "ISC",
   "packageManager": "pnpm@10.13.1",
+  "pnpm": {
+    "overrides": {
+      "engine.io": "6.6.9",
+      "socket.io-parser": "4.2.7",
+      "ws": "8.20.1"
+    }
+  },
   "dependencies": {
     "@lottiefiles/dotlottie-web": "^0.79.2",
     "@serialport/parser-readline": "^13.0.0",

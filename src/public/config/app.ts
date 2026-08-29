@@ -408,8 +408,12 @@ class PrintPreview {
     this.setHint('Loading preview…');
     this.latestImageInfo = null;
 
+    const previewParams = new URLSearchParams();
+    if (filename) previewParams.set('filename', filename);
+    if (sessionToken) previewParams.set('token', sessionToken);
+    const previewQuery = previewParams.toString();
     let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/preview`;
-    if (filename) url += `?filename=${encodeURIComponent(filename)}`;
+    if (previewQuery) url += `?${previewQuery}`;
     previewLog('load() start', { sessionId, filename: filename ?? null, url });
 
     let response: Response;
@@ -1841,8 +1845,12 @@ async function applyColorAnalysis(
   resetColorLock();
   detectedColorMode = null;
 
+  const analysisParams = new URLSearchParams();
+  if (filename) analysisParams.set('filename', filename);
+  if (sessionToken) analysisParams.set('token', sessionToken);
+  const analysisQuery = analysisParams.toString();
   let url = `/api/wireless/sessions/${encodeURIComponent(sessionId)}/color-analysis`;
-  if (filename) url += `?filename=${encodeURIComponent(filename)}`;
+  if (analysisQuery) url += `?${analysisQuery}`;
 
   try {
     const resp = await fetchWithTimeout(url, 10_000);

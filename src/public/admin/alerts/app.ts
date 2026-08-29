@@ -1,4 +1,10 @@
-import { apiFetch, initAuth, setMessage } from '../shared';
+import {
+  SummaryResponse,
+  apiFetch,
+  initAuth,
+  setMessage,
+  updateSidebarBadges,
+} from '../shared';
 
 interface AnomalyIncident {
   id: string;
@@ -153,6 +159,18 @@ async function loadData(): Promise<void> {
   renderIncidents(data.items);
   updateStats(data);
   updatePagination();
+  await loadSummary();
+}
+
+async function loadSummary(): Promise<void> {
+  try {
+    const res = await apiFetch('/api/admin/summary');
+    if (!res.ok) return;
+    const summary = (await res.json()) as SummaryResponse;
+    updateSidebarBadges(summary);
+  } catch (error) {
+    console.error('Error loading summary in alerts:', error, { cause: error });
+  }
 }
 
 async function openDetail(id: string): Promise<void> {

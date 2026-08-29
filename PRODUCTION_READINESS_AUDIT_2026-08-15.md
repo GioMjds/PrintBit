@@ -2,14 +2,14 @@
 
 ## Report metadata
 
-| Field               | Value                                                                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Audit date          | 2026-08-15                                                                                                                            |
-| Target              | Windows self-service kiosk with ESP32 coin/hopper bridge and Epson L5290                                                              |
-| Repository revision | `dd4cac2` on `main`                                                                                                                   |
-| Assessment type     | Read-only static analysis, isolated browser exercise, build/test verification, dependency audit, and local Windows hardware discovery |
-| Release decision    | **NO-GO for unattended production use**                                                                                               |
-| Finding status      | All findings in this report are open unless explicitly stated otherwise                                                               |
+| Field               | Value                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Audit date          | Original audit: 2026-08-15; reassessed: 2026-08-29                                                              |
+| Target              | Windows self-service kiosk with ESP32 coin/hopper bridge and Epson L5290                                        |
+| Repository revision | Original: `dd4cac2`; reassessed: `e0cdfb7` on `main`                                                            |
+| Assessment type     | Original static/browser/hardware audit plus 2026-08-29 source review, CI gates, and production dependency audit |
+| Release decision    | **NO-GO for unattended production use — reconfirmed on 2026-08-29**                                             |
+| Finding status      | No original release blocker is closed by the reassessment; see the current-verdict section                      |
 
 ## Executive summary
 
@@ -18,6 +18,42 @@ PrintBit compiles and its browser bundles build, but it is not ready to accept r
 The current machine also has a deployment mismatch. The Windows default Epson USB queue is offline while a separate Epson network queue is online. The only detected serial port is Intel Active Management Technology `COM3`, but the current serial selection logic can label the first available port as an Arduino connection. The project lockdown policy is not applied on the audited machine.
 
 Production dependency scanning found 17 advisories: 2 critical, 10 high, 4 moderate, and 1 low. Several affected libraries directly process untrusted kiosk traffic or documents, including PDF.js, Socket.IO, Multer, Sharp/libvips, WebSocket, and SheetJS.
+
+## 2026-08-29 reassessment — current verdict
+
+**Verdict: NO-GO. Do not operate unattended or accept live money.** The recent work adds useful controls, but it does not clear the release blockers and has introduced failing quality gates. This is a current-code reassessment at `e0cdfb7`; it does not replace the still-required supervised hardware and fault-injection acceptance work.
+
+### Fresh verification evidence
+
+| Check                       | Command                                           | Result                                                                                               |
+| --------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| TypeScript                  | `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` | Pass (exit 0)                                                                                        |
+| Production build            | `pnpm run build`                                  | Pass (exit 0)                                                                                        |
+| Complete Jest suite         | `pnpm run test -- --runInBand --forceExit`        | **Fail:** 6 suites / 27 tests failed; 17 suites / 163 tests passed; Jest required forced termination |
+| Lint                        | `pnpm run lint`                                   | **Fail:** 70 errors, 40 warnings                                                                     |
+| Production dependency audit | `pnpm audit --prod --json`                        | **Fail:** 2 critical, 9 high, 3 moderate, 1 low advisories                                           |
+
+The changes do reduce part of the attack surface: `KioskAccessService` uses a process-random cookie credential, one-time bootstrap credentials, and constant-time comparison; it is mounted for scanner, copy, confirmation, selected printer-control, and test-balance routes. Node also now refuses the ESP32 network provider without `PRINTBIT_ESP32_COIN_API_KEY` outside tests. These are partial mitigations, not release-ready controls.
+
+### Release-blocker status
+
+| Finding                                           | Current status               | Reassessment evidence                                                                                                                                                                                                                                                            |
+| ------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PB-AUTH-001 — HTTP access                         | **Open / Critical**          | The kiosk middleware is not applied to legacy `POST /upload` or `POST /print`, even though `PRINT_DISPATCH_MODE` still defaults to `legacy`. `POST /api/hotspot/start` and `/stop` also remain outside the kiosk guard. The server listens on `0.0.0.0`.                         |
+| PB-AUTH-002 — sessions and Socket.IO              | **Open / Critical**          | `io.on('connection')` has no authentication middleware; a connected client can join an arbitrary `session:<id>` room and acquire/release the coin-slot lock. The Socket.IO dependency tree also retains high-severity parser and WebSocket advisories.                           |
+| PB-PAY-001 — legacy print                         | **Open / Critical**          | The unguarded legacy route calls `printFile(...)` before appending its financial ledger event, then transfers the entire current balance to earnings and sets the balance to zero. This preserves both print-before-debit and full-balance charging risk.                        |
+| PB-HW-001 — ESP32 hopper                          | **Open / Critical**          | The authenticated `/hopper/dispense` endpoint was added, but firmware still accepts unauthenticated `GET /?coins=...` to start a payout. It also contains default bridge/register/hopper tokens and the default AP password in source.                                           |
+| PB-HW-002, PB-HW-003, PB-PRINT-001                | **Open / unverified**        | No durable firmware queue, payout replay, partial-payout, or physical refund/reconciliation evidence was produced in this reassessment. These money-and-hardware findings cannot be closed with source review alone.                                                             |
+| PB-FILE-001 — untrusted files                     | **Open / Critical**          | Uploads still use Multer memory storage. The production audit retains critical i18next advisories and high advisories for `pdfjs-dist`, `sharp`, `xlsx`, Socket.IO, and related runtime dependencies. No CSP/security-header configuration was found in the Express setup.       |
+| PB-PRICE-001 and PB-PERF-001                      | **Open / High**              | Current document-analysis tests fail on blank/B&W/color classification. `analyzeDocument()` imports worker-thread support but invokes `analyzeDocumentDirect()` on the main thread, so expensive processing remains on the server event loop.                                    |
+| PB-WORKER-001 and PB-KIOSK-001                    | **Open / High**              | Worker command-pipe tests currently fail. Startup uses `Promise.allSettled()` for printer, scanner, serial/hopper, and hotspot probes, does not inspect rejected results, and can still call `markStartupReady()`. A failed hardware probe can therefore be advertised as ready. |
+| PB-DEVICE-001, PB-SCAN-001, PB-UI-001, PB-DOC-001 | **Not eligible for closure** | Some route protection and documentation/UI work landed, but no fresh kiosk-account printer, serial, scanner/ADF, Assigned Access, browser, or documentation-consistency acceptance evidence was collected.                                                                       |
+
+### Decision rationale and required next gate
+
+The passing type-check and build do not outweigh the remaining anonymous money/hardware paths, physical payout bypass, print-before-debit path, unresolved critical/high dependency advisories, and failed test/lint gates. All original production acceptance gates remain intentionally unchecked.
+
+Before reconsidering even a supervised paid pilot, first: remove or production-disable the legacy upload/print and ESP32 compatibility payout paths; authenticate every HTTP and Socket.IO control boundary; replace provisioned firmware secrets with unique credentials; make startup fail closed on a failed critical probe; restore a clean test/lint run; and remediate or formally replace the production dependency vulnerabilities. After that, run the original supervised fault matrix and 72-hour unattended soak under the kiosk account before changing this verdict.
 
 ### Release blockers at a glance
 

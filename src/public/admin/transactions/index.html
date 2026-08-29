@@ -11,6 +11,11 @@
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/transactions/styles.css" />
+      <script>
+      if (sessionStorage.getItem('adminSessionToken')) {
+        document.documentElement.classList.add('admin-session-active');
+      }
+    </script>
   </head>
   <body>
     <div id="adminAuthView" class="auth-gate">
@@ -173,7 +178,7 @@
         </div>
 
         <nav class="sidebar__nav">
-          <a href="/admin/" class="nav-btn">
+          <a href="/admin/dashboard" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1
@@ -183,7 +188,7 @@
             </svg>
             <span>Overview</span>
           </a>
-          <a href="/admin/earnings/" class="nav-btn">
+          <a href="/admin/earnings" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -195,7 +200,7 @@
             </svg>
             <span>Earnings</span>
           </a>
-          <a href="/admin/system/" class="nav-btn">
+          <a href="/admin/system" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -207,7 +212,7 @@
             </svg>
             <span>System</span>
           </a>
-          <a href="/admin/settings/" class="nav-btn">
+          <a href="/admin/settings" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -223,7 +228,7 @@
             </svg>
             <span>Settings</span>
           </a>
-          <a href="/admin/logs/" class="nav-btn">
+          <a href="/admin/logs" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -235,7 +240,7 @@
             </svg>
             <span>System Logs</span>
           </a>
-          <a href="/admin/transactions/" class="nav-btn nav-btn--active">
+          <a href="/admin/transactions" class="nav-btn nav-btn--active">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
@@ -243,7 +248,7 @@
             </svg>
             <span>Transaction Logs</span>
           </a>
-          <a href="/admin/feedback/" class="nav-btn">
+          <a href="/admin/feedback" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -267,7 +272,7 @@
               />
             </svg>
             <span>Reports</span>
-          </a>
+            <span class="nav-count-badge" id="openReportBadge" aria-label="open reports count"></span></a>
           <a href="/admin/alerts" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
