@@ -741,9 +741,11 @@ function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
   renderStartupOnboarding();
 
   if (publicUploadUrl) {
+    const isEsp32 = hotspotConfig?.provider === 'esp32';
+    const defaultMode = isEsp32 ? 'local' : 'internet';
     const preferredMode = uploadModeManuallySelected
       ? activeUploadMode
-      : 'internet';
+      : defaultMode;
     setUploadMode(preferredMode);
     return;
   }

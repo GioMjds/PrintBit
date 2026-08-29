@@ -4,12 +4,14 @@ export type SocketPrincipal =
   | { kind: 'session'; sessionId: string };
 
 export interface SocketHandshakeInput {
+  address?: string;
   auth: unknown;
   headers: { cookie?: string | string[] | undefined };
 }
 
 export interface SocketAccessDeps {
   isKioskCredential: (credential: string) => boolean;
+  isLoopbackAddress?: (address?: string) => boolean;
   isAdminSession: (sessionToken: string) => boolean;
   claimSessionOwner: (
     sessionId: string,
@@ -73,6 +75,14 @@ export function authenticateControlSocket(
   handshake: SocketHandshakeInput,
   deps: SocketAccessDeps,
 ): SocketPrincipal | null {
+  if (
+    handshake.address &&
+    deps.isLoopbackAddress &&
+    deps.isLoopbackAddress(handshake.address)
+  ) {
+    return { kind: 'kiosk' };
+  }
+
   const cookies = parseCookies(handshake.headers.cookie);
   const kioskCredential = getSafeString(cookies.printbit_kiosk, MAX_TOKEN_LENGTH);
   if (kioskCredential && deps.isKioskCredential(kioskCredential)) {

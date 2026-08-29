@@ -276,6 +276,15 @@ const sessionStore = new SessionStore(UPLOAD_DIR, {
 installSocketAccessMiddleware(io, sessionIo, {
   isKioskCredential: (credential) =>
     kioskAccessService.isKioskCredential(credential),
+  isLoopbackAddress: (address) => {
+    if (!address) return false;
+    const ip = address.startsWith('::ffff:') ? address.slice(7) : address;
+    return (
+      ip === '127.0.0.1' ||
+      ip === '::1' ||
+      ip === 'localhost'
+    );
+  },
   isAdminSession: validateAdminSession,
   claimSessionOwner: (sessionId, token, clientId) =>
     sessionStore.claimOwner(sessionId, token, clientId).ok,
