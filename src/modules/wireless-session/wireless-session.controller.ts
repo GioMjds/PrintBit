@@ -3,6 +3,7 @@ import {
   uploadMiddleware,
   handleMulterError,
   validateMagicBytes,
+  scanForMalware,
 } from '@/middleware/file-validation';
 import { createRateLimit } from '@/middleware/rate-limit';
 import { createKioskAccessMiddleware } from '@/middleware/kiosk-access';
@@ -65,6 +66,7 @@ export class WirelessSessionController {
       this.wirelessSessionService.verifyKioskOrOwnedUploadTarget,
       uploadMiddleware.single('file'),
       validateMagicBytes,
+      scanForMalware,
       this.wirelessSessionService.uploadToSession,
     );
     this.router.delete(

@@ -37,17 +37,17 @@ The changes do reduce part of the attack surface: `KioskAccessService` uses a pr
 
 ### Release-blocker status
 
-| Finding                                           | Current status               | Reassessment evidence                                                                                                                                                                                                                                                            |
-| ------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PB-AUTH-001 — HTTP access                         | **Remediated / targeted verification passed** | Kiosk/admin access now precedes every listed mutable kiosk route, including legacy `POST /upload`, legacy `POST /print`, hotspot control, language, and accessibility changes. Static-file serving runs after guarded page/API routes, so it cannot bypass the page guard. |
+| Finding                                           | Current status                                | Reassessment evidence                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PB-AUTH-001 — HTTP access                         | **Remediated / targeted verification passed** | Kiosk/admin access now precedes every listed mutable kiosk route, including legacy `POST /upload`, legacy `POST /print`, hotspot control, language, and accessibility changes. Static-file serving runs after guarded page/API routes, so it cannot bypass the page guard.                                                                                                |
 | PB-AUTH-002 — sessions and Socket.IO              | **Remediated / targeted verification passed** | Session creation is kiosk-only; session-ID reads/mutations require the session token and, for external callers, the owning upload client. The active-token endpoint and portal redirect are removed. Socket.IO uses authenticated control and session namespaces, room binding, and coin-lock authorization. The lockfile pins the patched Socket.IO transitive versions. |
-| PB-PAY-001 — legacy print                         | **Open / Critical**          | The unguarded legacy route calls `printFile(...)` before appending its financial ledger event, then transfers the entire current balance to earnings and sets the balance to zero. This preserves both print-before-debit and full-balance charging risk.                        |
-| PB-HW-001 — ESP32 hopper                          | **Open / Critical**          | The authenticated `/hopper/dispense` endpoint was added, but firmware still accepts unauthenticated `GET /?coins=...` to start a payout. It also contains default bridge/register/hopper tokens and the default AP password in source.                                           |
-| PB-HW-002, PB-HW-003, PB-PRINT-001                | **Open / unverified**        | No durable firmware queue, payout replay, partial-payout, or physical refund/reconciliation evidence was produced in this reassessment. These money-and-hardware findings cannot be closed with source review alone.                                                             |
-| PB-FILE-001 — untrusted files                     | **Open / Critical**          | Uploads still use Multer memory storage. The production audit retains critical i18next advisories and high advisories for `pdfjs-dist`, `sharp`, `xlsx`, Socket.IO, and related runtime dependencies. No CSP/security-header configuration was found in the Express setup.       |
-| PB-PRICE-001 and PB-PERF-001                      | **Open / High**              | Current document-analysis tests fail on blank/B&W/color classification. `analyzeDocument()` imports worker-thread support but invokes `analyzeDocumentDirect()` on the main thread, so expensive processing remains on the server event loop.                                    |
-| PB-WORKER-001 and PB-KIOSK-001                    | **Open / High**              | Worker command-pipe tests currently fail. Startup uses `Promise.allSettled()` for printer, scanner, serial/hopper, and hotspot probes, does not inspect rejected results, and can still call `markStartupReady()`. A failed hardware probe can therefore be advertised as ready. |
-| PB-DEVICE-001, PB-SCAN-001, PB-UI-001, PB-DOC-001 | **Not eligible for closure** | Some route protection and documentation/UI work landed, but no fresh kiosk-account printer, serial, scanner/ADF, Assigned Access, browser, or documentation-consistency acceptance evidence was collected.                                                                       |
+| PB-PAY-001 — legacy print                         | **Open / Critical**                           | The unguarded legacy route calls `printFile(...)` before appending its financial ledger event, then transfers the entire current balance to earnings and sets the balance to zero. This preserves both print-before-debit and full-balance charging risk.                                                                                                                 |
+| PB-HW-001 — ESP32 hopper                          | **Open / Critical**                           | The authenticated `/hopper/dispense` endpoint was added, but firmware still accepts unauthenticated `GET /?coins=...` to start a payout. It also contains default bridge/register/hopper tokens and the default AP password in source.                                                                                                                                    |
+| PB-HW-002, PB-HW-003, PB-PRINT-001                | **Open / unverified**                         | No durable firmware queue, payout replay, partial-payout, or physical refund/reconciliation evidence was produced in this reassessment. These money-and-hardware findings cannot be closed with source review alone.                                                                                                                                                      |
+| PB-FILE-001 — untrusted files                     | **Open / Critical**                           | Uploads still use Multer memory storage. The production audit retains critical i18next advisories and high advisories for `pdfjs-dist`, `sharp`, `xlsx`, Socket.IO, and related runtime dependencies. No CSP/security-header configuration was found in the Express setup.                                                                                                |
+| PB-PRICE-001 and PB-PERF-001                      | **Open / High**                               | Current document-analysis tests fail on blank/B&W/color classification. `analyzeDocument()` imports worker-thread support but invokes `analyzeDocumentDirect()` on the main thread, so expensive processing remains on the server event loop.                                                                                                                             |
+| PB-WORKER-001 and PB-KIOSK-001                    | **Open / High**                               | Worker command-pipe tests currently fail. Startup uses `Promise.allSettled()` for printer, scanner, serial/hopper, and hotspot probes, does not inspect rejected results, and can still call `markStartupReady()`. A failed hardware probe can therefore be advertised as ready.                                                                                          |
+| PB-DEVICE-001, PB-SCAN-001, PB-UI-001, PB-DOC-001 | **Not eligible for closure**                  | Some route protection and documentation/UI work landed, but no fresh kiosk-account printer, serial, scanner/ADF, Assigned Access, browser, or documentation-consistency acceptance evidence was collected.                                                                                                                                                                |
 
 ### Decision rationale and required next gate
 
@@ -110,72 +110,6 @@ No real coin was inserted, no hopper payout was requested, no physical document 
 The audited runtime is Node.js `25.9.0`. Node 25 reached end of life on 2026-03-31. The Node.js project recommends Active LTS or Maintenance LTS for production applications: <https://nodejs.org/en/about/previous-releases>.
 
 ## Detailed findings
-
-### PB-AUTH-001 — Mutable kiosk and hardware APIs are unauthenticated
-
-**Severity:** Critical  
-**Remediation update (2026-08-29):** The process-random kiosk cookie (or an authenticated admin session) now guards the listed scanner, copy, printer-control, confirmation, balance, hotspot, language, accessibility, and legacy print paths. The legacy upload endpoint receives a method-specific `POST /upload` guard so that the public tokenized `GET /upload/:token` portal remains available without exposing the legacy API. Static assets are registered only after the guarded page and API routes, preventing a directory index from bypassing route middleware.
-
-**Targeted verification:** `src/middleware/kiosk-access.spec.ts` rejects a non-kiosk network request with `403` and accepts the kiosk cookie; the focused authorization suite passes 8 tests with open-handle detection. The existing full lint failure and unrelated production blockers still keep the overall release verdict at **NO-GO**.
-
-**Original evidence (remediated):** `src/modules/financial/financial.controller.ts`, `src/modules/scanner/scanner.controller.ts`, `src/modules/printer/printer.controller.ts`, `src/modules/hotspot/hotspot.controller.ts`, and `src/modules/language/language.controller.ts` registered mutable routes without an authentication or device-identity middleware.
-
-Exposed operations include:
-
-- `POST /api/balance/reset`
-- `POST /api/balance/add-test-coin`
-- `POST /upload`
-- `POST /print`
-- `POST /api/confirm-payment`
-- `POST /api/printer/pause`
-- `POST /api/printer/resume`
-- `POST /api/printer/cancel-remaining`
-- `POST /api/scanner/scan`
-- `POST /api/scanner/soft-copy/charge`
-- `POST /api/scanner/wireless-link`
-- `POST /api/scan/jobs`
-- `POST /api/scan/preview`
-- `POST /api/scan/jobs/:id/cancel`
-- `POST /api/hotspot/start`
-- `POST /api/hotspot/stop`
-- `PUT /api/language`
-- `PUT /api/accessibility`
-
-The CSRF middleware skips unsafe requests that do not already carry an admin cookie. It is therefore not authorization for these routes. In a normal deployed state, a hotspot client can repeatedly credit test coins, upload a file, and call the legacy print endpoint.
-
-**Required remediation:**
-
-1. Compile test and legacy routes out of production or guard them with an explicit production-disabled feature flag that fails closed.
-2. Introduce separate identities for the kiosk browser, ESP32 bridge, worker service, and admin user.
-3. Require authentication and authorization on every state-changing route, not merely same-origin checks.
-4. Bind kiosk-device-only routes to loopback or a mutually authenticated local IPC channel where possible.
-5. Add negative integration tests proving anonymous LAN clients receive `401` or `403` for every mutable route.
-
-**Acceptance gate:** An unauthenticated client on the ESP32 network cannot change balance, session, language, hotspot, scanner, printer, hopper, payment, or job state.
-
-### PB-AUTH-002 — Active sessions and Socket.IO rooms can be claimed or disrupted
-
-**Severity:** Critical  
-**Remediation update (2026-08-29):** `GET /api/session/active` and the `/portal` active-token redirect are removed. New session creation is kiosk-only. Session-ID reads and mutations validate the short-lived opaque session token and bind external calls to the first verified upload-client identifier; kiosk calls additionally use the kiosk credential. Socket.IO now rejects unauthenticated handshakes, separates privileged kiosk/admin control sockets from external session sockets, binds an external socket to one owned session room, and denies coin-lock control outside the privileged namespace. Session events are emitted only to those authenticated rooms and are suppressed once the session is inactive.
-
-`package.json` and the lockfile also override the Socket.IO transitive fixes: `engine.io` 6.6.9, `socket.io-parser` 4.2.7, and `ws` 8.20.1. A production deployment must run `pnpm install --frozen-lockfile` to materialize those locked versions.
-
-**Targeted verification:** `src/middleware/socket-access.spec.ts` verifies handshake rejection, session-room binding, control authorization, and both namespace middlewares; `src/modules/wireless-session/wireless-session.controller.spec.ts` verifies the authorization guard precedes every session-ID read/mutation. The raw QR URL remains a bearer capability by design and must be treated as a physical secret; it is no longer disclosed by an unauthenticated active-session endpoint.
-
-**Original evidence (remediated):** `src/app.module.ts` returned the active upload token from `GET /api/session/active`. `src/server.ts` accepted arbitrary `joinSession`, `lockCoinSlot`, and `unlockCoinSlot` socket events without authenticating the socket or validating room ownership.
-
-`GET /api/wireless/sessions` also creates a session and resets the global balance to zero. Session lookup, preview, analysis, and document-related APIs expose more data by session identifier than the upload-owner checks protect.
-
-**Potential outcomes:**
-
-- Race the legitimate phone for ownership of the active token.
-- Keep a session alive by polling it.
-- Read another session's document metadata or preview where the session ID is known.
-- Join arbitrary Socket.IO rooms.
-- Hold the coin-slot lock until disconnect.
-- Observe global transaction and printer lifecycle events.
-
-**Required remediation:** Use signed, short-lived, purpose-scoped tokens; authenticate the Socket.IO handshake; authorize every room join; stop broadcasting transaction identifiers and spooler correlation keys globally; make session creation a kiosk-only operation; and remove the active raw token endpoint.
 
 ### PB-PAY-001 — Legacy print dispatch violates charge-before-service invariants
 

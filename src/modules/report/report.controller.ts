@@ -12,6 +12,7 @@ import {
 import {
   reportIssueAttachmentUploadMiddleware,
   validateReportIssueAttachmentMagicBytes,
+  scanReportIssueAttachmentForMalware,
   handleMulterError,
 } from '@/middleware/file-validation';
 import { createRateLimit } from '@/middleware/rate-limit';
@@ -113,6 +114,7 @@ export class ReportController {
       '/api/report-issues/sessions/:sessionId/attachments',
       reportIssueAttachmentUploadMiddleware.single('file'),
       validateReportIssueAttachmentMagicBytes,
+      scanReportIssueAttachmentForMalware,
       this.uploadAttachment.bind(this),
     );
     this.router.use(
@@ -201,7 +203,7 @@ export class ReportController {
 
     try {
       finalPath = await this.service.persistAttachmentWithStaging(
-        file.buffer,
+        file,
         storedName,
       );
       const attachment = await this.service.registerAttachment({

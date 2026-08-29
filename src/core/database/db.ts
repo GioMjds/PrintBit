@@ -276,6 +276,7 @@ const DEFAULT_DATA: Schema = {
       highQualitySurcharge: 2,
     },
     idleTimeoutSeconds: 120,
+    idleScreenTimeoutSeconds: 30,
     adminPin:
       '$argon2id$v=19$m=65536,t=3,p=4$gqSpsbLttLcalBC6SYKG0A$T34vxa4BxPcJ++fLZ+19qp9FGaQufJCCCqWu1fb35TQ',
     adminLocalOnly: true,
@@ -1139,6 +1140,11 @@ function normalizeSchema(data: Partial<Schema> | undefined): Schema {
       idleTimeoutSeconds: finiteOr(
         data?.settings?.idleTimeoutSeconds,
         DEFAULT_DATA.settings.idleTimeoutSeconds,
+      ),
+      idleScreenTimeoutSeconds: finiteOr(
+        (data?.settings as { idleScreenTimeoutSeconds?: number })
+          ?.idleScreenTimeoutSeconds,
+        DEFAULT_DATA.settings.idleScreenTimeoutSeconds,
       ),
       adminPin:
         typeof data?.settings?.adminPin === 'string' &&

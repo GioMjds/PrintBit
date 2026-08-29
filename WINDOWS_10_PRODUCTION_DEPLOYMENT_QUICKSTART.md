@@ -250,6 +250,18 @@ pnpm run updates:apply
 pnpm run lockdown:apply
 ```
 
+## 7. Secure Upload Storage & Verify Defender Upload Gate
+
+To isolate untrusted upload staging from standard kiosk users and verify fail-closed antivirus scanning posture:
+
+```powershell
+# Configure private SYSTEM/Admin-only ACLs on uploads/.staging and uploads/quarantine
+pnpm run upload-storage:secure -- -KioskUser ".\printbit"
+
+# Verify scheduled task SYSTEM principal, Defender health, signature freshness, and ACLs
+pnpm run defender:verify
+```
+
 ## Verification & Expected Startup Behavior
 
 When you restart the tablet, the following should occur:

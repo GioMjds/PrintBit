@@ -836,7 +836,13 @@ async function checkUploadStatus(): Promise<void> {
 
   const response = await fetch(getSessionDetailsUrl(activeSessionId));
   if (!response.ok) {
-    if (response.status === 404 || response.status === 410) {
+    if (
+      response.status === 404 ||
+      response.status === 410 ||
+      response.status === 400 ||
+      response.status === 401 ||
+      response.status === 403
+    ) {
       activeSessionId = '';
       activeSessionToken = '';
       resetSessionCountdown();
@@ -1071,7 +1077,6 @@ async function restoreSession(sid: string): Promise<void> {
   sessionStorage.setItem('printbit.sessionId', sid);
 
   attachSocket(sid);
-  await checkUploadStatus();
 
   const response = await fetch(getSessionDetailsUrl(sid));
   if (response.ok) {
@@ -1081,6 +1086,10 @@ async function restoreSession(sid: string): Promise<void> {
     sessionStorage.setItem('printbit.sessionToken', session.token);
     updateSessionCountdown(session.remainingSeconds);
     updateUploadLink(session.uploadUrl, session.publicUploadUrl);
+    await checkUploadStatus();
+  } else {
+    await requestNewSession();
+    return;
   }
 
   if (pollHandle !== null) window.clearInterval(pollHandle);

@@ -6,12 +6,31 @@ import {
 } from './shared/kiosk-i18n';
 import { navigateWithKioskMotion } from './shared/kiosk-navigation';
 import { mountLoadingAnimation } from './shared/loading-animation';
+import { initIdleScreen } from './shared/idle-screen';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
 };
 
 void initKioskLocalization();
+
+// ── Idle / Attractor Screen ──────────────────────────────────────────────────
+// When the loading screen navigates to /?idle=boot the overlay shows immediately
+// (boot → idle flow). On normal homepage loads the overlay shows after the
+// server-configured idle timeout expires.
+const idleBootFlag =
+  new URLSearchParams(window.location.search).get('idle') === 'boot' ||
+  document.documentElement.classList.contains('kiosk-boot-idle');
+
+if (idleBootFlag) {
+  // Clean the URL so the flag is never shown to the user.
+  window.history.replaceState(null, '', window.location.pathname);
+}
+
+initIdleScreen({
+  overlayId: 'idleOverlay',
+  activateImmediately: idleBootFlag,
+});
 
 const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }

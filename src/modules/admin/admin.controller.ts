@@ -1151,6 +1151,7 @@ export class AdminController {
         highQualitySurcharge?: number;
       };
       idleTimeoutSeconds?: number;
+      idleScreenTimeoutSeconds?: number;
       adminPin?: string;
       adminLocalOnly?: boolean;
       inkMonitoring?: {
@@ -1263,6 +1264,18 @@ export class AdminController {
     }
 
     if (
+      body.idleScreenTimeoutSeconds !== undefined &&
+      (!isFiniteNumber(body.idleScreenTimeoutSeconds) ||
+        body.idleScreenTimeoutSeconds < 10 ||
+        body.idleScreenTimeoutSeconds > 600)
+    ) {
+      return res.status(400).json({
+        error:
+          'idleScreenTimeoutSeconds must be a whole number between 10 and 600.',
+      });
+    }
+
+    if (
       body.adminPin !== undefined &&
       (typeof body.adminPin !== 'string' || body.adminPin.trim().length < 4)
     ) {
@@ -1324,6 +1337,12 @@ export class AdminController {
 
     if (body.idleTimeoutSeconds !== undefined) {
       nextSettings.idleTimeoutSeconds = Math.floor(body.idleTimeoutSeconds);
+    }
+
+    if (body.idleScreenTimeoutSeconds !== undefined) {
+      nextSettings.idleScreenTimeoutSeconds = Math.floor(
+        body.idleScreenTimeoutSeconds,
+      );
     }
 
     if (body.adminPin && body.adminPin.trim()) {

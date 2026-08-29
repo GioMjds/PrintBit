@@ -112,6 +112,7 @@ export interface AdminSettings {
   pricing: PricingSettings;
   pricingEngine: PricingEngineSettings;
   idleTimeoutSeconds: number;
+  idleScreenTimeoutSeconds: number;
   adminPin: string;
   adminLocalOnly: boolean;
   kioskPreferences: KioskPreferences;
