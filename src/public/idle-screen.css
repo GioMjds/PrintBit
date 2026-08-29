@@ -70,7 +70,6 @@ html.kiosk-boot-idle .kiosk-shell {
 
 /* Exit/leaving state — fast, responsive 260ms fade-out transition */
 .idle-overlay.is-leaving {
-  opacity: 0 !important;
   pointer-events: none !important;
   animation: idle-overlay-fade-out 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
 }
@@ -237,7 +236,7 @@ html.kiosk-boot-idle .kiosk-shell {
   color: var(--idle-text);
   font-size: clamp(52px, 10vw, 112px);
   font-weight: 800;
-  line-height: 1.0;
+  line-height: 1;
   letter-spacing: -0.05em;
   text-wrap: balance;
 }
@@ -293,34 +292,66 @@ html.kiosk-boot-idle .kiosk-shell {
 }
 
 @keyframes idle-blob-drift-1 {
-  from { transform: translate(0, 0) scale(1); }
-  to   { transform: translate(6%, 10%) scale(1.1); }
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(6%, 10%) scale(1.1);
+  }
 }
 
 @keyframes idle-blob-drift-2 {
-  from { transform: translate(0, 0) scale(1); }
-  to   { transform: translate(-7%, -8%) scale(1.08); }
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-7%, -8%) scale(1.08);
+  }
 }
 
 @keyframes idle-blob-drift-3 {
-  from { transform: translate(0, 0) scale(0.95); }
-  to   { transform: translate(5%, -6%) scale(1.12); }
+  from {
+    transform: translate(0, 0) scale(0.95);
+  }
+  to {
+    transform: translate(5%, -6%) scale(1.12);
+  }
 }
 
 @keyframes idle-ring-pulse {
-  0%, 100% { opacity: 0.55; transform: scale(1); }
-  50%       { opacity: 1;    transform: scale(1.045); }
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.045);
+  }
 }
 
 @keyframes idle-cta-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(167, 170, 225, 0.65); }
-  70%  { box-shadow: 0 0 0 16px rgba(167, 170, 225, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(167, 170, 225, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(167, 170, 225, 0.65);
+  }
+  70% {
+    box-shadow: 0 0 0 16px rgba(167, 170, 225, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(167, 170, 225, 0);
+  }
 }
 
 @keyframes idle-cta-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(105, 111, 199, 0); transform: scale(1); }
-  50%       { box-shadow: 0 8px 40px rgba(105, 111, 199, 0.22); transform: scale(1.015); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(105, 111, 199, 0);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 8px 40px rgba(105, 111, 199, 0.22);
+    transform: scale(1.015);
+  }
 }
 
 @keyframes idle-content-arrive {
@@ -386,30 +417,6 @@ html.kiosk-boot-idle .kiosk-shell {
   .idle-headline {
     font-size: clamp(36px, 8vw, 60px);
     margin-bottom: 28px;
-  }
-}
-
-/* ── Reduced motion ────────────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  .idle-overlay,
-  .idle-overlay.is-visible,
-  .idle-overlay.is-leaving,
-  .idle-overlay.is-visible .idle-content,
-  .idle-overlay.is-leaving .idle-content,
-  .idle-overlay.is-visible .idle-backdrop,
-  .idle-overlay.is-leaving .idle-backdrop,
-  .idle-overlay.is-visible .idle-rings,
-  .idle-overlay.is-leaving .idle-rings {
-    transition: none !important;
-    animation: none !important;
-    transform: none !important;
-  }
-
-  .idle-blob,
-  .idle-ring,
-  .idle-cta,
-  .idle-cta__pulse {
-    animation: none !important;
   }
 }
 
