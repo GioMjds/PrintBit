@@ -137,8 +137,10 @@ function showIdleOverlay(): void {
   isVisible = true;
   isLeaving = false;
 
-  // Remove any stale leaving class, then trigger fade-in.
-  overlayEl.classList.remove('is-leaving');
+  // Clear any existing state and force reflow so keyframe animations always play freshly from 0%
+  overlayEl.classList.remove('is-leaving', 'is-visible');
+  void overlayEl.offsetWidth;
+
   overlayEl.classList.add('is-visible');
   overlayEl.removeAttribute('aria-hidden');
   overlayEl.setAttribute('aria-modal', 'true');
@@ -151,12 +153,15 @@ function hideIdleOverlay(): void {
 
   isLeaving = true;
 
+  // Switch to is-leaving state to trigger the fast fade-out exit animation
+  overlayEl.classList.remove('is-visible');
+  void overlayEl.offsetWidth;
   overlayEl.classList.add('is-leaving');
 
-  // After the CSS transition completes, clean up and re-arm.
+  // After the CSS animation completes, clean up and re-arm timer.
   window.setTimeout(() => {
     if (!overlayEl) return;
-    overlayEl.classList.remove('is-visible', 'is-leaving');
+    overlayEl.classList.remove('is-leaving');
     overlayEl.setAttribute('aria-hidden', 'true');
     overlayEl.setAttribute('aria-modal', 'false');
 

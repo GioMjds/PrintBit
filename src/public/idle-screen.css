@@ -22,8 +22,8 @@
 /* ── Immediate boot coverage (blocks homepage before first render) ────────── */
 html.kiosk-boot-idle .idle-overlay {
   opacity: 1 !important;
-  visibility: visible !important;
   pointer-events: auto !important;
+  animation: none !important;
   transition: none !important;
 }
 
@@ -42,41 +42,37 @@ html.kiosk-boot-idle .kiosk-shell {
   background:
     radial-gradient(
       ellipse at 20% 15%,
-      rgba(105, 111, 199, 0.18),
+      rgba(105, 111, 199, 0.22),
       transparent 52%
     ),
     radial-gradient(
       ellipse at 82% 85%,
-      rgba(242, 174, 187, 0.12),
+      rgba(242, 174, 187, 0.15),
       transparent 46%
     ),
     linear-gradient(160deg, #0e0d1f 0%, #100f22 50%, #0c0b1c 100%);
 
-  /* Hidden by default — shown by JS adding .is-visible or html.kiosk-boot-idle */
+  /* Hidden by default: 0% opacity, click-through */
   opacity: 0;
-  visibility: hidden;
   pointer-events: none;
-  transition: opacity 450ms cubic-bezier(0.16, 1, 0.3, 1), visibility 450ms ease;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
-  will-change: opacity;
+  will-change: opacity, transform;
 }
 
-/* Shown state — graceful 450ms fade-in */
+/* Shown state — guaranteed, smooth 600ms fade-in */
 .idle-overlay.is-visible {
   opacity: 1;
-  visibility: visible;
   pointer-events: auto;
-  transition: opacity 450ms cubic-bezier(0.16, 1, 0.3, 1), visibility 450ms ease;
+  animation: idle-overlay-fade-in 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Exit/leaving state — fast, smooth 260ms fade-out transition */
+/* Exit/leaving state — fast, responsive 260ms fade-out transition */
 .idle-overlay.is-leaving {
   opacity: 0 !important;
-  visibility: visible !important;
   pointer-events: none !important;
-  transition: opacity 260ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+  animation: idle-overlay-fade-out 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
 }
 
 /* ── Aurora blobs ──────────────────────────────────────────────────────────── */
@@ -85,6 +81,7 @@ html.kiosk-boot-idle .kiosk-shell {
   inset: 0;
   pointer-events: none;
   overflow: hidden;
+  will-change: transform, opacity;
 }
 
 .idle-blob {
@@ -127,6 +124,7 @@ html.kiosk-boot-idle .kiosk-shell {
   display: grid;
   place-items: center;
   pointer-events: none;
+  will-change: transform, opacity;
 }
 
 .idle-ring {
@@ -178,12 +176,12 @@ html.kiosk-boot-idle .kiosk-shell {
 
 /* Fluid arrive animation when idle screen appears */
 .idle-overlay.is-visible .idle-content {
-  animation: idle-content-arrive 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: idle-content-arrive 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .idle-overlay.is-visible .idle-backdrop,
 .idle-overlay.is-visible .idle-rings {
-  animation: idle-backdrop-arrive 580ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: idle-backdrop-arrive 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Fast, modern depart animation when dismissed on tap */
@@ -191,12 +189,9 @@ html.kiosk-boot-idle .kiosk-shell {
   animation: idle-content-depart 260ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
 }
 
-/* Softly expand and fade backdrop/rings during exit */
 .idle-overlay.is-leaving .idle-backdrop,
 .idle-overlay.is-leaving .idle-rings {
-  opacity: 0 !important;
-  transform: scale(1.03) !important;
-  transition: opacity 240ms cubic-bezier(0.4, 0, 1, 1), transform 260ms cubic-bezier(0.4, 0, 1, 1) !important;
+  animation: idle-backdrop-depart 260ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
 }
 
 /* Brand lockup */
@@ -279,6 +274,24 @@ html.kiosk-boot-idle .kiosk-shell {
 }
 
 /* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes idle-overlay-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes idle-overlay-fade-out {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes idle-blob-drift-1 {
   from { transform: translate(0, 0) scale(1); }
   to   { transform: translate(6%, 10%) scale(1.1); }
@@ -311,35 +324,46 @@ html.kiosk-boot-idle .kiosk-shell {
 }
 
 @keyframes idle-content-arrive {
-  from {
+  0% {
     opacity: 0;
-    transform: translate3d(0, 24px, 0) scale(0.975);
+    transform: translate3d(0, 28px, 0) scale(0.97);
   }
-  to {
+  100% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @keyframes idle-backdrop-arrive {
-  from {
+  0% {
     opacity: 0;
-    transform: scale(0.95);
+    transform: scale(0.92);
   }
-  to {
+  100% {
     opacity: 1;
     transform: scale(1);
   }
 }
 
 @keyframes idle-content-depart {
-  from {
+  0% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
   }
-  to {
+  100% {
     opacity: 0;
-    transform: translate3d(0, -10px, 0) scale(0.985);
+    transform: translate3d(0, -12px, 0) scale(0.985);
+  }
+}
+
+@keyframes idle-backdrop-depart {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.03);
   }
 }
 
@@ -368,10 +392,13 @@ html.kiosk-boot-idle .kiosk-shell {
 /* ── Reduced motion ────────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .idle-overlay,
+  .idle-overlay.is-visible,
   .idle-overlay.is-leaving,
   .idle-overlay.is-visible .idle-content,
   .idle-overlay.is-leaving .idle-content,
+  .idle-overlay.is-visible .idle-backdrop,
   .idle-overlay.is-leaving .idle-backdrop,
+  .idle-overlay.is-visible .idle-rings,
   .idle-overlay.is-leaving .idle-rings {
     transition: none !important;
     animation: none !important;
