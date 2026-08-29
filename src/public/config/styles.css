@@ -266,32 +266,242 @@ body {
   margin: 0;
 }
 
-/* ── Loading spinner ──────────────────────────────────────── */
+/* ── Document preparation overlay ────────────────────────── */
 .paper-loading {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(4px);
-  transition: opacity 250ms ease;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(247, 246, 255, 0.98) 48%,
+    rgba(255, 255, 255, 0.96) 100%
+  );
+  transition:
+    opacity 220ms ease,
+    visibility 220ms ease;
 }
 .paper-loading.hidden {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
-.paper-loading__spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(105, 111, 199, 0.25);
-  border-top-color: var(--indigo);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+
+.config-preparing {
+  width: min(260px, 72%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  color: #29284a;
+  text-align: center;
 }
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+
+.config-preparing__animation,
+.config-preparing__fallback {
+  width: 112px;
+  height: 112px;
+}
+
+.config-preparing__animation {
+  display: block;
+}
+
+.config-preparing[data-lottie-unavailable] .config-preparing__animation {
+  display: none;
+}
+
+.config-preparing__fallback {
+  position: relative;
+  display: none;
+}
+
+.config-preparing[data-lottie-unavailable] .config-preparing__fallback {
+  display: block;
+}
+
+.config-preparing__title {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.config-preparing__detail {
+  margin: 0;
+  max-width: 220px;
+  color: #77759b;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.config-preparing__pixel {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--indigo);
+  opacity: 0;
+  animation: preparing-pixel 1.8s ease-in-out infinite;
+}
+
+.config-preparing__pixel--1 {
+  left: 8px;
+  top: 70px;
+  --tx: 38px;
+  --ty: -22px;
+}
+
+.config-preparing__pixel--2 {
+  left: 18px;
+  top: 34px;
+  --tx: 30px;
+  --ty: 12px;
+  animation-delay: 120ms;
+}
+
+.config-preparing__pixel--3 {
+  left: 88px;
+  top: 22px;
+  --tx: -34px;
+  --ty: 22px;
+  animation-delay: 240ms;
+}
+
+.config-preparing__document {
+  position: absolute;
+  left: 38px;
+  top: 28px;
+  width: 44px;
+  height: 58px;
+  box-sizing: border-box;
+  padding: 16px 9px 8px;
+  border: 2px solid rgba(105, 111, 199, 0.52);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+  transform: scale(0.88);
+  animation: preparing-document 1.8s ease-in-out infinite;
+}
+
+.config-preparing__document span {
+  display: block;
+  height: 3px;
+  margin-bottom: 6px;
+  border-radius: 999px;
+  background: rgba(105, 111, 199, 0.28);
+}
+
+.config-preparing__document span:nth-child(2) {
+  width: 76%;
+}
+
+.config-preparing__document span:nth-child(3) {
+  width: 58%;
+}
+
+@keyframes preparing-pixel {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.7);
+  }
+
+  24% {
+    opacity: 1;
+  }
+
+  52% {
+    opacity: 0.9;
+    transform: translate(var(--tx), var(--ty)) scale(1);
+  }
+
+  62%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) scale(0.5);
+  }
+}
+
+@keyframes preparing-document {
+  0%,
+  35% {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+
+  56%,
+  86% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+#configLayout[data-preparation-state='preparing'] .paper-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(123, 126, 218, 0.08) 48%,
+    rgba(255, 255, 255, 0.7) 52%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  animation: config-preparing-shimmer 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes config-preparing-shimmer {
+  0%,
+  20% {
+    transform: translateX(-120%);
+  }
+
+  75%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+#configLayout[data-preparation-state='preparing'] .settings-scroll,
+#configLayout[data-preparation-state='preparing'] .zoom-controls,
+#configLayout[data-preparation-state='preparing'] .preview-controls {
+  pointer-events: none;
+}
+
+#configLayout[data-preparation-state='preparing'] .settings-scroll {
+  position: relative;
+  opacity: 0.62;
+}
+
+#configLayout[data-preparation-state='preparing'] .option-card {
+  filter: saturate(0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #configLayout[data-preparation-state='preparing'] .paper-loading::after,
+  .config-preparing__pixel,
+  .config-preparing__document {
+    animation: none !important;
+  }
+
+  .config-preparing__document {
+    opacity: 1;
+    transform: none;
+  }
+
+  .config-preparing__pixel {
+    display: none;
   }
 }
 
