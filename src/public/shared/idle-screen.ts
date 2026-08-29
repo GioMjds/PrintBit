@@ -31,7 +31,12 @@ let isLeaving = false;
 let onHideCb: (() => void) | undefined;
 let onShowCb: (() => void) | undefined;
 
-const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown'] as const;
+const ACTIVITY_EVENTS = [
+  'pointerdown',
+  'touchstart',
+  'keydown',
+  'click',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -178,6 +183,7 @@ function handleActivity(event?: Event): void {
   if (isVisible) {
     // Consume the wake-up tap so it doesn't accidentally trigger an underlying action button
     if (event) {
+      event.preventDefault();
       event.stopPropagation();
     }
     hideIdleOverlay();

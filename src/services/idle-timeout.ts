@@ -107,6 +107,7 @@ export function startPageIdleTimer(): void {
     'keydown',
     'touchstart',
     'pointerdown',
+    'click',
   ];
 
   // Attach activity listeners before timer starts
@@ -176,11 +177,13 @@ export function startPageIdleTimer(): void {
 
 let isLeavingTimeout: number | null = null;
 
-function handleUserActivity(): void {
+function handleUserActivity(event?: Event): void {
   if (!pageIdleState.enabled) return;
 
   // When warning is actively displayed, tapping screen triggers exit transition
   if (pageIdleState.warningShownAt !== null) {
+    event?.preventDefault();
+    event?.stopPropagation();
     dismissPageIdleWarning();
     return;
   }
@@ -264,6 +267,7 @@ function dismissPageIdleWarning(): void {
 
 function handleOverlayClick(event?: Event): void {
   if (event) {
+    event.preventDefault();
     event.stopPropagation();
   }
   dismissPageIdleWarning();
@@ -284,6 +288,7 @@ export function setupPageIdleWarningButton(): void {
 
 function handleKeepActiveClick(event?: Event): void {
   if (event) {
+    event.preventDefault();
     event.stopPropagation();
   }
   console.log('[PAGE IDLE] User dismissed timeout warning via button');
