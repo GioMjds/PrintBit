@@ -1,0 +1,322 @@
+/* ── Idle / Attractor Screen Overlay ──────────────────────────────────────── */
+/*
+ * Full-screen overlay shown on the homepage after the configured idle timeout,
+ * and immediately after booting (loading → idle → homepage flow).
+ *
+ * Visual style: aurora-glow blobs + pulsing concentric rings — matches the
+ * loading screen aesthetic (#0e0d1f dark base, indigo primary, pink accent).
+ */
+
+/* ── CSS custom properties (mirrors loading/styles.css tokens) ─────────────── */
+.idle-overlay {
+  --idle-bg: #0c0b1e;
+  --idle-primary: #696fc7;
+  --idle-primary-soft: #a7aae1;
+  --idle-accent: #f2aebb;
+  --idle-success: #8de5bc;
+  --idle-text: #ffffff;
+  --idle-text-muted: #c9c9dc;
+  --idle-text-soft: #a6a5b9;
+}
+
+/* ── Overlay shell ─────────────────────────────────────────────────────────── */
+.idle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(
+      ellipse at 20% 15%,
+      rgba(105, 111, 199, 0.18),
+      transparent 52%
+    ),
+    radial-gradient(
+      ellipse at 82% 85%,
+      rgba(242, 174, 187, 0.12),
+      transparent 46%
+    ),
+    linear-gradient(160deg, #0e0d1f 0%, #100f22 50%, #0c0b1c 100%);
+
+  /* Hidden by default — shown by JS adding .is-visible */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Shown state */
+.idle-overlay.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Exit/leaving state — quicker easing out */
+.idle-overlay.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 480ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* ── Aurora blobs ──────────────────────────────────────────────────────────── */
+.idle-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.idle-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+}
+
+.idle-blob--1 {
+  width: 50vw;
+  height: 50vw;
+  top: -12%;
+  right: -10%;
+  background: rgba(105, 111, 199, 0.3);
+  animation: idle-blob-drift-1 20s ease-in-out infinite alternate;
+}
+
+.idle-blob--2 {
+  width: 44vw;
+  height: 44vw;
+  bottom: -14%;
+  left: -8%;
+  background: rgba(242, 174, 187, 0.2);
+  animation: idle-blob-drift-2 26s ease-in-out infinite alternate;
+}
+
+.idle-blob--3 {
+  width: 30vw;
+  height: 30vw;
+  top: 35%;
+  left: 35%;
+  background: rgba(141, 229, 188, 0.1);
+  animation: idle-blob-drift-3 18s ease-in-out infinite alternate;
+}
+
+/* ── Concentric rings ──────────────────────────────────────────────────────── */
+.idle-rings {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.idle-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid;
+}
+
+.idle-ring--1 {
+  width: min(240px, 36vw);
+  height: min(240px, 36vw);
+  border-color: rgba(167, 170, 225, 0.22);
+  animation: idle-ring-pulse 5s ease-in-out infinite;
+}
+
+.idle-ring--2 {
+  width: min(380px, 55vw);
+  height: min(380px, 55vw);
+  border-color: rgba(167, 170, 225, 0.14);
+  animation: idle-ring-pulse 5s ease-in-out 0.7s infinite;
+}
+
+.idle-ring--3 {
+  width: min(540px, 75vw);
+  height: min(540px, 75vw);
+  border-color: rgba(167, 170, 225, 0.08);
+  animation: idle-ring-pulse 5s ease-in-out 1.4s infinite;
+}
+
+.idle-ring--4 {
+  width: min(720px, 96vw);
+  height: min(720px, 96vw);
+  border-color: rgba(167, 170, 225, 0.05);
+  animation: idle-ring-pulse 5s ease-in-out 2.1s infinite;
+}
+
+/* ── Content ───────────────────────────────────────────────────────────────── */
+.idle-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  text-align: center;
+  padding: clamp(24px, 5vw, 60px);
+}
+
+/* Brand lockup */
+.idle-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: clamp(24px, 4vw, 42px);
+}
+
+.idle-brand__mark {
+  width: clamp(44px, 6vw, 64px);
+  height: clamp(44px, 6vw, 64px);
+  display: grid;
+  place-items: center;
+  color: var(--idle-primary-soft);
+}
+
+.idle-brand__mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.idle-brand__name {
+  font-size: clamp(26px, 4vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  color: var(--idle-text);
+}
+
+/* Eyebrow */
+.idle-eyebrow {
+  margin: 0 0 clamp(16px, 2.5vw, 26px);
+  color: var(--idle-primary-soft);
+  font-size: clamp(11px, 1.4vw, 14px);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+/* Headline */
+.idle-headline {
+  margin: 0 0 clamp(32px, 5vw, 56px);
+  color: var(--idle-text);
+  font-size: clamp(52px, 10vw, 112px);
+  font-weight: 800;
+  line-height: 1.0;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+/* ── Tap-to-start CTA ──────────────────────────────────────────────────────── */
+.idle-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: clamp(14px, 2vw, 18px) clamp(28px, 4vw, 44px);
+  border: 1px solid rgba(167, 170, 225, 0.3);
+  border-radius: 999px;
+  background: rgba(105, 111, 199, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: idle-cta-breathe 3.5s ease-in-out infinite;
+}
+
+.idle-cta__pulse {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--idle-primary-soft);
+  animation: idle-cta-pulse 2.2s ease-out infinite;
+}
+
+.idle-cta__label {
+  color: #e8e8fc;
+  font-size: clamp(15px, 2.2vw, 22px);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes idle-blob-drift-1 {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(6%, 10%) scale(1.1); }
+}
+
+@keyframes idle-blob-drift-2 {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(-7%, -8%) scale(1.08); }
+}
+
+@keyframes idle-blob-drift-3 {
+  from { transform: translate(0, 0) scale(0.95); }
+  to   { transform: translate(5%, -6%) scale(1.12); }
+}
+
+@keyframes idle-ring-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.045); }
+}
+
+@keyframes idle-cta-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(167, 170, 225, 0.65); }
+  70%  { box-shadow: 0 0 0 16px rgba(167, 170, 225, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(167, 170, 225, 0); }
+}
+
+@keyframes idle-cta-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(105, 111, 199, 0); transform: scale(1); }
+  50%       { box-shadow: 0 8px 40px rgba(105, 111, 199, 0.22); transform: scale(1.015); }
+}
+
+/* ── Responsive adjustments ────────────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .idle-headline {
+    font-size: clamp(44px, 14vw, 68px);
+  }
+
+  .idle-cta {
+    padding: 14px 28px;
+  }
+}
+
+@media (max-height: 600px) {
+  .idle-eyebrow {
+    display: none;
+  }
+
+  .idle-headline {
+    font-size: clamp(36px, 8vw, 60px);
+    margin-bottom: 28px;
+  }
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .idle-overlay,
+  .idle-overlay.is-leaving {
+    transition: opacity 0.01ms !important;
+  }
+
+  .idle-blob,
+  .idle-ring,
+  .idle-cta,
+  .idle-cta__pulse {
+    animation: none !important;
+  }
+}
+
+/* ── High contrast mode ────────────────────────────────────────────────────── */
+html[data-high-contrast='true'] .idle-overlay {
+  background: #000000;
+}
+
+html[data-high-contrast='true'] .idle-headline,
+html[data-high-contrast='true'] .idle-eyebrow {
+  color: #ffffff;
+}
+
+html[data-high-contrast='true'] .idle-cta {
+  border-color: #ffffff;
+  background: transparent;
+}

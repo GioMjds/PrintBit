@@ -151,7 +151,9 @@ const poll = async (): Promise<void> => {
     if (payload.ready === true || payload.phase === 'ready') {
       setReady();
       navigateWithKioskMotion(
-        new URL('/', window.location.origin).toString(),
+        // ?idle=boot tells the homepage to show the idle overlay immediately,
+        // so the loading screen appears to morph into the idle attractor screen.
+        new URL('/?idle=boot', window.location.origin).toString(),
         'replace',
       );
       return;

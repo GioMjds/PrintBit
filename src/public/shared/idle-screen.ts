@@ -1,0 +1,149 @@
+/**
+ * Idle / attractor screen module for the kiosk homepage.
+ *
+ * Responsibilities:
+ *  - Fetch the configured idle timeout duration from the server.
+ *  - Arm a timer that shows the idle overlay after inactivity.
+ *  - Show / hide the overlay with CSS transitions.
+ *  - Re-arm the timer each time the overlay is dismissed.
+ *  - Support an immediate-show mode for the boot → idle flow.
+ */
+
+const DEFAULT_IDLE_TIMEOUT_MS = 120_000; // 2 minutes fallback
+const FADE_OUT_DURATION_MS = 480; // Must match .idle-overlay.is-leaving transition
+
+export interface IdleScreenOptions {
+  /** The ID of the idle overlay element in the DOM. */
+  overlayId: string;
+  /** When true, show the overlay immediately (e.g. after boot). */
+  activateImmediately?: boolean;
+  /** Called just after the overlay becomes visible. */
+  onShow?: () => void;
+  /** Called just after the overlay is fully hidden. */
+  onHide?: () => void;
+}
+
+let overlayEl: HTMLElement | null = null;
+let idleTimer: number | null = null;
+let idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS;
+let isVisible = false;
+let isLeaving = false;
+let onHideCb: (() => void) | undefined;
+let onShowCb: (() => void) | undefined;
+
+const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown'] as const;
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialise the idle screen module.
+ * Safe to call once per page load.
+ */
+export async function initIdleScreen(
+  options: IdleScreenOptions,
+): Promise<void> {
+  overlayEl = document.getElementById(options.overlayId);
+  if (!overlayEl) {
+    console.warn(`[IdleScreen] Element #${options.overlayId} not found.`);
+    return;
+  }
+
+  onShowCb = options.onShow;
+  onHideCb = options.onHide;
+
+  // Fetch timeout from server; fall back gracefully on failure.
+  idleTimeoutMs = await fetchIdleTimeoutMs();
+
+  // Attach activity listeners so tapping dismisses the overlay when visible.
+  ACTIVITY_EVENTS.forEach((evt) => {
+    document.addEventListener(evt, handleActivity, true);
+  });
+
+  if (options.activateImmediately) {
+    showIdleOverlay();
+  } else {
+    armIdleTimer();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+async function fetchIdleTimeoutMs(): Promise<number> {
+  try {
+    const res = await fetch('/api/settings/idle-timeout');
+    if (!res.ok) return DEFAULT_IDLE_TIMEOUT_MS;
+    const data = (await res.json()) as { idleTimeoutSeconds?: number };
+    if (data.idleTimeoutSeconds && data.idleTimeoutSeconds > 0) {
+      return data.idleTimeoutSeconds * 1_000;
+    }
+  } catch (err) {
+    console.error('[IdleScreen] Failed to fetch idle timeout settings:', err);
+  }
+  return DEFAULT_IDLE_TIMEOUT_MS;
+}
+
+function armIdleTimer(): void {
+  clearIdleTimer();
+  idleTimer = window.setTimeout(() => {
+    showIdleOverlay();
+  }, idleTimeoutMs);
+}
+
+function clearIdleTimer(): void {
+  if (idleTimer !== null) {
+    window.clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+}
+
+function showIdleOverlay(): void {
+  if (!overlayEl || isVisible) return;
+
+  clearIdleTimer();
+  isVisible = true;
+  isLeaving = false;
+
+  // Remove any stale leaving class, then trigger fade-in.
+  overlayEl.classList.remove('is-leaving');
+  overlayEl.classList.add('is-visible');
+  overlayEl.removeAttribute('aria-hidden');
+  overlayEl.setAttribute('aria-modal', 'true');
+
+  if (onShowCb) onShowCb();
+}
+
+function hideIdleOverlay(): void {
+  if (!overlayEl || !isVisible || isLeaving) return;
+
+  isLeaving = true;
+
+  overlayEl.classList.add('is-leaving');
+
+  // After the CSS transition completes, clean up and re-arm.
+  window.setTimeout(() => {
+    if (!overlayEl) return;
+    overlayEl.classList.remove('is-visible', 'is-leaving');
+    overlayEl.setAttribute('aria-hidden', 'true');
+    overlayEl.setAttribute('aria-modal', 'false');
+
+    isVisible = false;
+    isLeaving = false;
+
+    if (onHideCb) onHideCb();
+
+    armIdleTimer();
+  }, FADE_OUT_DURATION_MS);
+}
+
+function handleActivity(): void {
+  if (isVisible) {
+    hideIdleOverlay();
+  } else {
+    // Any activity while idle screen is not shown: reset the arm timer.
+    armIdleTimer();
+  }
+}
