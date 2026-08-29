@@ -90,6 +90,7 @@ $failCount = ($checks | Where-Object { -not $_.Passed }).Count
 Write-Host ""
 if ($failCount -eq 0) {
   Write-Host "[PrintBit] [OK] All lockdown checks passed." -ForegroundColor Green
+  Write-Host "[PrintBit] Run 'pnpm run defender:verify' to verify Defender upload gate and private storage isolation." -ForegroundColor Cyan
   exit 0
 }
 
