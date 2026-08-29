@@ -6,6 +6,11 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
+    <script>
+      if (new URLSearchParams(window.location.search).get('idle') === 'boot') {
+        document.documentElement.classList.add('kiosk-boot-idle');
+      }
+    </script>
     <link rel="stylesheet" href="./globals.css" />
     <link rel="stylesheet" href="/shared/kiosk-transition.css" />
     <link rel="stylesheet" href="/shared/loading-animation.css" />

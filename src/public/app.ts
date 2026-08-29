@@ -19,14 +19,15 @@ void initKioskLocalization();
 // (boot → idle flow). On normal homepage loads the overlay shows after the
 // server-configured idle timeout expires.
 const idleBootFlag =
-  new URLSearchParams(window.location.search).get('idle') === 'boot';
+  new URLSearchParams(window.location.search).get('idle') === 'boot' ||
+  document.documentElement.classList.contains('kiosk-boot-idle');
 
 if (idleBootFlag) {
   // Clean the URL so the flag is never shown to the user.
   window.history.replaceState(null, '', window.location.pathname);
 }
 
-void initIdleScreen({
+initIdleScreen({
   overlayId: 'idleOverlay',
   activateImmediately: idleBootFlag,
 });

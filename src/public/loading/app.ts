@@ -150,12 +150,15 @@ const poll = async (): Promise<void> => {
 
     if (payload.ready === true || payload.phase === 'ready') {
       setReady();
-      navigateWithKioskMotion(
-        // ?idle=boot tells the homepage to show the idle overlay immediately,
-        // so the loading screen appears to morph into the idle attractor screen.
-        new URL('/?idle=boot', window.location.origin).toString(),
-        'replace',
-      );
+      // Allow the green 'Ready' status and full progress bar to settle before departing
+      window.setTimeout(() => {
+        navigateWithKioskMotion(
+          // ?idle=boot tells the homepage to shield with the idle overlay immediately,
+          // so the loading screen morphs directly into the idle attractor screen.
+          new URL('/?idle=boot', window.location.origin).toString(),
+          'replace',
+        );
+      }, 400);
       return;
     }
 

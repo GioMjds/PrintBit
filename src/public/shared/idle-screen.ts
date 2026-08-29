@@ -48,6 +48,12 @@ const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown'] as const;
  * immediately if the document is already interactive/complete).
  */
 export function initIdleScreen(options: IdleScreenOptions): void {
+  const isBoot = Boolean(
+    options.activateImmediately ||
+      (typeof document !== 'undefined' &&
+        document.documentElement.classList.contains('kiosk-boot-idle')),
+  );
+
   const run = async () => {
     overlayEl = document.getElementById(options.overlayId);
     if (!overlayEl) {
@@ -58,17 +64,20 @@ export function initIdleScreen(options: IdleScreenOptions): void {
     onShowCb = options.onShow;
     onHideCb = options.onHide;
 
-    // Fetch timeout from server; fall back gracefully on failure.
-    idleTimeoutMs = await fetchIdleTimeoutMs();
-
     // Attach activity listeners so tapping dismisses the overlay when visible.
     ACTIVITY_EVENTS.forEach((evt) => {
       document.addEventListener(evt, handleActivity, true);
     });
 
-    if (options.activateImmediately) {
+    if (isBoot) {
       showIdleOverlay();
-    } else {
+      document.documentElement.classList.remove('kiosk-boot-idle');
+    }
+
+    // Fetch timeout from server in background; fall back gracefully on failure.
+    idleTimeoutMs = await fetchIdleTimeoutMs();
+
+    if (!isBoot) {
       armIdleTimer();
     }
   };
