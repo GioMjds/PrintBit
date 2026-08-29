@@ -285,6 +285,7 @@ body {
     visibility 220ms ease;
 }
 .paper-loading.hidden {
+  display: grid !important;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
