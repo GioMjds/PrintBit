@@ -14,7 +14,7 @@ import {
   REPORT_ATTACHMENT_EXTENSION_MIME_MAP,
   REPORT_ATTACHMENT_MAGIC_SIGNATURES,
 } from '@/utils/file-types';
-import { adminService } from '@/services';
+import { adminService } from '@/services/admin';
 import {
   quarantineStagedUpload,
   type QuarantineReason,
@@ -775,13 +775,13 @@ export function createUploadSecurityMiddleware(
   });
 
   const validateMagicBytesHandler: RequestHandler = (req, res, next) => {
-    void validateStagedMagicBytesWithPolicy(
+    return validateStagedMagicBytesWithPolicy(
       req,
       res,
       next,
       DOCUMENT_UPLOAD_POLICY,
       deps,
-    );
+    ) as unknown as void;
   };
 
   const validateLegacyUploadMagicBytesHandler: RequestHandler = (
@@ -789,13 +789,13 @@ export function createUploadSecurityMiddleware(
     res,
     next,
   ) => {
-    void validateStagedMagicBytesWithPolicy(
+    return validateStagedMagicBytesWithPolicy(
       req,
       res,
       next,
       LEGACY_UPLOAD_POLICY,
       deps,
-    );
+    ) as unknown as void;
   };
 
   const validateReportIssueAttachmentMagicBytesHandler: RequestHandler = (
@@ -803,23 +803,23 @@ export function createUploadSecurityMiddleware(
     res,
     next,
   ) => {
-    void validateStagedMagicBytesWithPolicy(
+    return validateStagedMagicBytesWithPolicy(
       req,
       res,
       next,
       REPORT_ATTACHMENT_POLICY,
       deps,
-    );
+    ) as unknown as void;
   };
 
   const scanForMalwareHandler: RequestHandler = (req, res, next) => {
-    void scanStagedUploadWithSurface(
+    return scanStagedUploadWithSurface(
       req,
       res,
       next,
       'wireless-session-upload',
       deps,
-    );
+    ) as unknown as void;
   };
 
   const scanLegacyUploadForMalwareHandler: RequestHandler = (
@@ -827,7 +827,13 @@ export function createUploadSecurityMiddleware(
     res,
     next,
   ) => {
-    void scanStagedUploadWithSurface(req, res, next, 'legacy-upload', deps);
+    return scanStagedUploadWithSurface(
+      req,
+      res,
+      next,
+      'legacy-upload',
+      deps,
+    ) as unknown as void;
   };
 
   const scanReportIssueAttachmentForMalwareHandler: RequestHandler = (
@@ -835,13 +841,13 @@ export function createUploadSecurityMiddleware(
     res,
     next,
   ) => {
-    void scanStagedUploadWithSurface(
+    return scanStagedUploadWithSurface(
       req,
       res,
       next,
       'report-issue-attachment',
       deps,
-    );
+    ) as unknown as void;
   };
 
   return {

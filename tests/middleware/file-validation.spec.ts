@@ -19,6 +19,13 @@ jest.mock('@/services/admin', () => ({
   },
 }));
 
+jest.mock('@/services/anomaly', () => ({
+  anomalyService: {
+    report: jest.fn().mockResolvedValue({}),
+  },
+  buildAnomalyFingerprint: jest.fn(() => 'fingerprint'),
+}));
+
 describe('Upload Security Middleware', () => {
   let tempDir: string;
   let stagingDir: string;
