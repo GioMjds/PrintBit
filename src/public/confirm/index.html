@@ -70,48 +70,56 @@
         <!-- ── LEFT: Payment column ── -->
         <section class="payment-col panel" aria-label="Payment">
           <div class="payment-col__icon" aria-hidden="true">
-            <!-- Coin icon: visible by default, hidden when slot is locked -->
-            <svg id="coinIcon" viewBox="0 0 80 80" fill="none">
-              <!-- Coin stack -->
-              <ellipse
-                cx="40"
-                cy="62"
-                rx="22"
-                ry="7"
-                fill="var(--peach)"
-                opacity=".5"
-              />
-              <ellipse
-                cx="40"
-                cy="56"
-                rx="22"
-                ry="7"
-                fill="var(--peach)"
-                opacity=".7"
-              />
-              <ellipse cx="40" cy="50" rx="22" ry="7" fill="var(--peach)" />
-              <rect x="18" y="50" width="44" height="10" fill="var(--peach)" />
-              <ellipse cx="40" cy="50" rx="22" ry="7" fill="#f5d3c4" />
-              <!-- Shine -->
-              <ellipse
-                cx="34"
-                cy="48"
-                rx="5"
-                ry="2"
-                fill="white"
-                opacity=".3"
-                transform="rotate(-20 34 48)"
-              />
-              <!-- Arrow down into slot -->
-              <path
-                d="M40 14v18M33 26l7 7 7-7"
-                stroke="var(--lavender)"
-                stroke-width="2.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                opacity=".8"
-              />
-            </svg>
+            <div class="coin-lottie-wrapper" id="coinLottieWrapper">
+              <canvas
+                id="coinLottieCanvas"
+                class="coin-lottie-canvas"
+                width="160"
+                height="160"
+              ></canvas>
+              <!-- Fallback SVG icon: visible when lottie is loading or in reduced motion -->
+              <svg id="coinIcon" class="coin-fallback-icon" viewBox="0 0 80 80" fill="none">
+                <!-- Coin stack -->
+                <ellipse
+                  cx="40"
+                  cy="62"
+                  rx="22"
+                  ry="7"
+                  fill="var(--peach)"
+                  opacity=".5"
+                />
+                <ellipse
+                  cx="40"
+                  cy="56"
+                  rx="22"
+                  ry="7"
+                  fill="var(--peach)"
+                  opacity=".7"
+                />
+                <ellipse cx="40" cy="50" rx="22" ry="7" fill="var(--peach)" />
+                <rect x="18" y="50" width="44" height="10" fill="var(--peach)" />
+                <ellipse cx="40" cy="50" rx="22" ry="7" fill="#f5d3c4" />
+                <!-- Shine -->
+                <ellipse
+                  cx="34"
+                  cy="48"
+                  rx="5"
+                  ry="2"
+                  fill="white"
+                  opacity=".3"
+                  transform="rotate(-20 34 48)"
+                />
+                <!-- Arrow down into slot -->
+                <path
+                  d="M40 14v18M33 26l7 7 7-7"
+                  stroke="var(--lavender)"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  opacity=".8"
+                />
+              </svg>
+            </div>
 
             <!-- Padlock icon: hidden by default, shown when slot is locked -->
             <svg id="padlockIcon" viewBox="0 0 80 80" fill="none" hidden>
@@ -181,6 +189,7 @@
             role="meter"
             aria-label="Coin balance"
             aria-valuemin="0"
+            aria-valuemax="0"
             aria-valuenow="0"
           >
             <svg
@@ -243,180 +252,109 @@
 
         <!-- ── MIDDLE: Job summary column ── -->
         <section class="summary-col panel" aria-label="Job summary">
-          <h2 class="summary-col__title">Job Summary</h2>
+          <div class="summary-col__header">
+            <h2 class="summary-col__title">Job Summary</h2>
+            <span class="summary-mode-badge" id="modeValue">PRINT</span>
+          </div>
 
-          <dl class="summary-list">
-            <div class="summary-row" id="modeRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M4 2a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2V6.414A2 2 0
-                  0013.414 5L11 2.586A2 2 0 009.586 2H4zm6 7a1 1 0 11-2 0 1 1 0
-                  012 0zm-1-3a1 1 0 10-2 0v2a1 1 0 102 0V6z"
-                  />
+          <div class="summary-bento" id="summaryBento">
+            <!-- 1. Pages Breakdown Card (Print & Copy) -->
+            <div class="summary-bento__card summary-bento__card--pages" id="pagesCard">
+              <div class="summary-bento__card-header">
+                <div class="summary-bento__card-label">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" />
+                  </svg>
+                  <span>Pages &amp; Range</span>
+                </div>
+                <span class="summary-bento__range-tag" id="pagesRangeValue">All Pages</span>
+              </div>
+              <div class="summary-bento__metrics" id="pagesMetrics">
+                <div class="metric-pill metric-pill--total">
+                  <span class="metric-pill__label">Total Sheets</span>
+                  <span class="metric-pill__value" id="pagesTotalCount">1 page</span>
+                </div>
+                <div class="metric-pill metric-pill--bw" id="bwPagesChip">
+                  <span class="metric-pill__dot"></span>
+                  <span class="metric-pill__label">B&amp;W</span>
+                  <span class="metric-pill__value" id="pagesBwCount">1</span>
+                </div>
+                <div class="metric-pill metric-pill--color" id="colorPagesChip">
+                  <span class="metric-pill__dot"></span>
+                  <span class="metric-pill__label">Color</span>
+                  <span class="metric-pill__value" id="pagesColorCount">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Dual Sub-Cards Grid: Color Mode & Paper Layout -->
+            <div class="summary-bento__grid" id="settingsGrid">
+              <!-- Color Mode Card -->
+              <div class="summary-bento__card summary-bento__card--color" id="colorCard">
+                <div class="summary-bento__card-label">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="8" r="3" opacity=".6" />
+                    <circle cx="11" cy="8" r="3" opacity=".4" />
+                    <circle cx="8" cy="11" r="3" opacity=".5" />
+                  </svg>
+                  <span>Color Mode</span>
+                </div>
+                <div class="summary-bento__content-block">
+                  <span class="summary-bento__primary-val" id="colorModePrimary">Black &amp; White</span>
+                  <div class="summary-bento__badges-wrap" id="colorBadgesWrap">
+                    <span class="sub-badge sub-badge--detected" id="colorDetectedBadge" hidden>Detected: Color</span>
+                    <span class="sub-badge sub-badge--selected" id="colorSelectedBadge" hidden>Selected: B&amp;W</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Paper & Layout Card -->
+              <div class="summary-bento__card summary-bento__card--paper" id="paperCard">
+                <div class="summary-bento__card-label">
+                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <rect x="3" y="1" width="10" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
+                  </svg>
+                  <span>Paper &amp; Layout</span>
+                </div>
+                <div class="summary-bento__content-block">
+                  <span class="summary-bento__primary-val" id="paperSizePrimary">A4 Bond Paper</span>
+                  <div class="summary-bento__tags-wrap">
+                    <span class="info-tag" id="copiesTag">1 Copy</span>
+                    <span class="info-tag" id="orientationTag">Portrait</span>
+                    <span class="info-tag" id="qualityTag">Standard</span>
+                    <span class="info-tag" id="rotationTag" hidden>0°</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Scan Info Card (Visible only in scan mode) -->
+            <div class="summary-bento__card summary-bento__card--scan" id="scanCard" hidden>
+              <div class="summary-bento__card-label">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
                 </svg>
-                Mode
-              </dt>
-              <dd class="summary-row__value" id="modeValue">—</dd>
+                <span>Scan Service</span>
+              </div>
+              <div class="summary-bento__content-block">
+                <span class="summary-bento__primary-val">High-Resolution Soft Copy</span>
+                <span class="scan-card__subtext">Direct QR code download to your phone</span>
+              </div>
             </div>
+          </div>
 
-            <div class="summary-row" id="fileRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    d="M4 2a2 2 0 012-2h4.586A2 2 0 0112
-                  2.586L14.414 5A2 2 0 0115 6.414V14a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2
-                  2 0 012-2zm4.5 5.5a.5.5 0 000 1H9v1.5a.5.5 0 001 0V8.5h1.5a.5.5 0
-                  000-1H10V6a.5.5 0 00-1 0v1.5H8.5z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                File
-              </dt>
-              <dd
-                class="summary-row__value summary-row__value--file"
-                id="fileValue"
-              >
-                —
-              </dd>
+          <!-- Grounded Financial Summary -->
+          <div class="summary-finance-footer">
+            <div class="summary-finance-row summary-finance-row--total">
+              <span class="summary-finance-row__label">Total Price</span>
+              <span class="summary-finance-row__amount" id="priceValue">₱ 0</span>
             </div>
-
-            <div class="summary-row" id="colorRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <circle cx="5" cy="8" r="3" opacity=".6" />
-                  <circle cx="11" cy="8" r="3" opacity=".4" />
-                  <circle cx="8" cy="11" r="3" opacity=".5" />
-                </svg>
-                Color
-              </dt>
-              <dd class="summary-row__value" id="colorValue">—</dd>
+            <div class="summary-finance-row summary-finance-row--change" id="changeRow" hidden>
+              <span class="summary-finance-row__label">Calculated Change</span>
+              <span class="summary-finance-row__amount" id="changeValue">₱ 0</span>
             </div>
-
-            <div class="summary-row" id="copiesRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1
-                  1H4a1 1 0 01-1-1V7z"
-                  />
-                </svg>
-                Copies
-              </dt>
-              <dd class="summary-row__value" id="copiesValue">—</dd>
-            </div>
-
-            <div class="summary-row" id="pagesRow">
-              <dt class="summary-row__label">Pages</dt>
-              <dd class="summary-row__value" id="pagesValue">—</dd>
-            </div>
-
-            <div class="summary-row" id="orientationRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <rect x="4" y="2" width="8" height="12" rx="1" opacity=".3" />
-                  <rect
-                    x="3"
-                    y="1"
-                    width="10"
-                    height="14"
-                    rx="1"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                  />
-                </svg>
-                Orientation
-              </dt>
-              <dd class="summary-row__value" id="orientationValue">—</dd>
-            </div>
-
-            <div class="summary-row" id="rotationRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M8 2a6 6 0 015.196 3H11a1 1 0 000 2h4a1 1 0 001-1V2a1 1 0 10-2 0v1.042A8 8 0 108 16a8 8 0 007.869-6.556 1 1 0 10-1.972-.332A6 6 0 118 2z"
-                  />
-                </svg>
-                Rotation
-              </dt>
-              <dd class="summary-row__value" id="rotationValue">—</dd>
-            </div>
-
-            <div class="summary-row" id="paperRow">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1
-                  1H3a1 1 0 01-1-1V3z"
-                    opacity=".25"
-                  />
-                  <path
-                    fill-rule="evenodd"
-                    d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1
-                  1H3a1 1 0 01-1-1V3a1 1 0 011-1zm0 1v10h10V3H3z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                Paper
-              </dt>
-              <dd class="summary-row__value" id="paperSizeValue">—</dd>
-            </div>
-
-            <div class="summary-divider" aria-hidden="true"></div>
-
-            <div class="summary-row summary-row--price">
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="7"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                  />
-                  <path
-                    d="M8 5v1.5M8 9.5V11M6.5 6.5a1.5 1.5 0 013 0c0 .828-.672
-                  1.5-1.5 1.5s-1.5.672-1.5 1.5a1.5 1.5 0 003 0"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    fill="none"
-                  />
-                </svg>
-                Total Price
-              </dt>
-              <dd
-                class="summary-row__value summary-row__value--price"
-                id="priceValue"
-              >
-                —
-              </dd>
-            </div>
-
-            <div class="summary-row summary-row--change" id="changeRow" hidden>
-              <dt class="summary-row__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    d="M8 1a7 7 0 100 14A7 7 0 008 1zM4.5 7.5a.5.5 0 000
-                  1H10.3l-1.65 1.65a.5.5 0 00.7.7l2.5-2.5a.5.5 0 000-.7l-2.5-2.5a.5.5
-                  0 00-.7.7L10.3 7.5H4.5z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                Change
-              </dt>
-              <dd
-                class="summary-row__value summary-row__value--change"
-                id="changeValue"
-              >
-                —
-              </dd>
-            </div>
-          </dl>
+          </div>
         </section>
 
         <!-- ── RIGHT: Action column ── -->

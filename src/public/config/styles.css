@@ -91,7 +91,73 @@ body {
   height: calc(100dvh - 118px); /* leave room for sticky footer */
   display: flex;
   flex-direction: column;
+  padding: 0 32px;
+  box-sizing: border-box;
   overflow: hidden;
+}
+
+/* ── Top bar ──────────────────────────────────────────────── */
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 20px 0 16px;
+  border-bottom: 1px solid rgba(167, 170, 225, 0.1);
+  flex-shrink: 0;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lavender);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 40px;
+  border: 1.5px solid rgba(167, 170, 225, 0.2);
+  background: rgba(167, 170, 225, 0.07);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+  width: fit-content;
+  min-height: 44px;
+}
+.back-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.back-btn:hover {
+  background: rgba(167, 170, 225, 0.14);
+  border-color: rgba(167, 170, 225, 0.4);
+}
+.back-btn:active {
+  transform: scale(0.97);
+}
+
+.page-title-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+.page-title-icon {
+  width: 26px;
+  height: 26px;
+  color: var(--lavender);
+  flex-shrink: 0;
+}
+.page-title-block h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin: 0;
+  color: var(--white);
+}
+
+.topbar-spacer {
+  /* empty right cell keeps title centered */
 }
 
 /* ── Layout: preview | settings ───────────────────────────── */
@@ -99,6 +165,8 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 420px; /* wider settings panel */
+  gap: 20px;
+  padding: 16px 0 0;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -106,6 +174,9 @@ body {
 
 /* ── LEFT: preview column ─────────────────────────────────── */
 .preview-col {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid rgba(167, 170, 225, 0.12);
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -633,70 +704,13 @@ body {
    RIGHT: Settings panel
    ════════════════════════════════════════════════════════════ */
 .settings-col {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid rgba(167, 170, 225, 0.12);
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  border-left: 1px solid rgba(167, 170, 225, 0.08);
-  background: rgba(14, 13, 31, 0.4);
-}
-
-/* ── Settings top ─────────────────────────────────────────── */
-.settings-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 20px 12px;
-  flex-shrink: 0;
-  border-bottom: 1px solid rgba(167, 170, 225, 0.06);
-}
-
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--lavender);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 14px;
-  border-radius: 40px;
-  border: 1.5px solid rgba(167, 170, 225, 0.2);
-  background: rgba(167, 170, 225, 0.07);
-  transition:
-    background 150ms ease,
-    border-color 150ms ease;
-  min-height: 44px;
-  white-space: nowrap;
-}
-.back-btn svg {
-  width: 16px;
-  height: 16px;
-}
-.back-btn:hover {
-  background: rgba(167, 170, 225, 0.14);
-  border-color: rgba(167, 170, 225, 0.4);
-}
-.back-btn:active {
-  transform: scale(0.97);
-}
-
-/* File pill */
-.file-pill {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-muted);
-  background: rgba(167, 170, 225, 0.07);
-  border: 1px solid rgba(167, 170, 225, 0.12);
-  border-radius: 8px;
-  padding: 6px 10px;
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 180px;
 }
 
 /* ── Settings scrollable area ─────────────────────────────── */
@@ -1089,12 +1103,18 @@ body {
   }
   .page-shell {
     height: auto;
+    padding: 0 16px;
     overflow: visible;
+  }
+  .topbar {
+    padding: 14px 0 12px;
   }
   .config-layout {
     grid-template-columns: 1fr;
     height: auto;
     overflow: visible;
+    gap: 16px;
+    padding: 12px 0 0;
   }
   .preview-col {
     min-height: 480px;

@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { DotLottie } from '@lottiefiles/dotlottie-web';
 import {
   initializePageIdleTimeout,
   setupPageIdleWarningButton,
@@ -186,24 +187,10 @@ function normalizeRotationDeg(value: unknown): RotationDeg {
 }
 
 const modeValue = document.getElementById('modeValue');
-const fileValue = document.getElementById('fileValue');
-const colorValue = document.getElementById('colorValue');
-const colorRow = document.getElementById('colorRow');
-const qualityValue = document.getElementById('qualityValue');
-const qualityRow = document.getElementById('qualityRow');
-const copiesValue = document.getElementById('copiesValue');
-const copiesRow = document.getElementById('copiesRow');
-const pagesValue = document.getElementById('pagesValue');
-const pagesRow = document.getElementById('pagesRow');
-
-const orientationRow = document.getElementById('orientationRow');
-const orientationValue = document.getElementById('orientationValue');
-const rotationValue = document.getElementById('rotationValue');
-const rotationRow = document.getElementById('rotationRow');
-const paperSizeValue = document.getElementById('paperSizeValue');
-const paperRow = document.getElementById('paperRow');
 const priceValue = document.getElementById('priceValue');
 const balanceValue = document.getElementById('balanceValue');
+const balanceRing = document.getElementById('balanceRing');
+const balanceArc = document.getElementById('balanceArc') as SVGCircleElement | null;
 const changeValue = document.getElementById('changeValue');
 const changeRow = document.getElementById('changeRow');
 const statusMessage = document.getElementById('statusMessage');
@@ -211,6 +198,32 @@ const statusBadge = document.getElementById('statusBadge');
 const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
+
+// Bento Summary DOM Refs
+const pagesCard = document.getElementById('pagesCard');
+const pagesRangeValue = document.getElementById('pagesRangeValue');
+const pagesTotalCount = document.getElementById('pagesTotalCount');
+const bwPagesChip = document.getElementById('bwPagesChip');
+const pagesBwCount = document.getElementById('pagesBwCount');
+const colorPagesChip = document.getElementById('colorPagesChip');
+const pagesColorCount = document.getElementById('pagesColorCount');
+
+const settingsGrid = document.getElementById('settingsGrid');
+const colorModePrimary = document.getElementById('colorModePrimary');
+const colorDetectedBadge = document.getElementById('colorDetectedBadge');
+const colorSelectedBadge = document.getElementById('colorSelectedBadge');
+
+const paperSizePrimary = document.getElementById('paperSizePrimary');
+const copiesTag = document.getElementById('copiesTag');
+const orientationTag = document.getElementById('orientationTag');
+const qualityTag = document.getElementById('qualityTag');
+const rotationTag = document.getElementById('rotationTag');
+
+const scanCard = document.getElementById('scanCard');
+
+// Coin Lottie Refs
+const coinLottieCanvas = document.getElementById('coinLottieCanvas') as HTMLCanvasElement | null;
+const coinLottieWrapper = document.getElementById('coinLottieWrapper');
 
 // Action column refs (spec: JS bridge)
 const actionPriceValue = document.getElementById('actionPriceValue');
@@ -268,9 +281,7 @@ const modalRotationRow = document.getElementById('modalRotationRow');
 const modalPaper = document.getElementById('modalPaper');
 const modalPaperRow = document.getElementById('modalPaperRow');
 const modalPrice = document.getElementById('modalPrice');
-const modalPaidRow = document.getElementById('modalPaidRow');
 const modalPaid = document.getElementById('modalPaid');
-const modalChangeRow = document.getElementById('modalChangeRow');
 const modalChange = document.getElementById('modalChange');
 
 // Confirmation Modal — Step 1 (Tray Check) Elements
@@ -709,7 +720,10 @@ const confirmLoadingController =
     : null;
 
 window.addEventListener('pagehide', (event) => {
-  if (!event.persisted) confirmLoadingController?.destroy();
+  if (!event.persisted) {
+    confirmLoadingController?.destroy();
+    coinLottiePlayer?.destroy();
+  }
 });
 
 config.rotationDeg = normalizeRotationDeg(config.rotationDeg);
@@ -866,78 +880,145 @@ if (modalConfirmBtnSpan) {
         : 'DOWNLOAD NOW';
 }
 
-export function populateJobSummary(config: PrintConfig): void {
-  const qualityElem = document.getElementById('qualityValue');
-  const qualityRow = document.getElementById('qualityRow');
+let coinLottiePlayer: DotLottie | null = null;
 
-  if (config.mode === 'scan') {
-    if (qualityRow) {
-      qualityRow.style.display = 'none';
-      qualityRow.setAttribute('hidden', '');
-    }
-  } else {
-    if (qualityRow) {
-      qualityRow.style.display = '';
-      qualityRow.removeAttribute('hidden');
-    }
-    if (qualityElem) {
-      qualityElem.textContent =
-        config.quality === 'high' ? 'High Quality' : 'Standard';
-    }
+function initCoinLottieAnimation(): void {
+  if (!coinLottieCanvas) return;
+  try {
+    DotLottie.setWasmUrl('/vendor/dotlottie/dotlottie-player.wasm');
+    coinLottiePlayer = new DotLottie({
+      canvas: coinLottieCanvas,
+      src: '/assets/lottie/coin-insertion.json',
+      autoplay: true,
+      loop: true,
+      layout: { fit: 'contain', align: [0.5, 0.5] },
+    });
+
+    coinLottiePlayer.addEventListener('load', () => {
+      coinLottieWrapper?.classList.remove('is-fallback');
+    });
+    coinLottiePlayer.addEventListener('loadError', () => {
+      coinLottieWrapper?.classList.add('is-fallback');
+    });
+    coinLottiePlayer.addEventListener('renderError', () => {
+      coinLottieWrapper?.classList.add('is-fallback');
+    });
+  } catch (err) {
+    console.warn('[COIN-LOTTIE] Failed to initialize DotLottie player:', err);
+    coinLottieWrapper?.classList.add('is-fallback');
   }
 }
 
-if (config.mode === 'scan') {
-  // Hide all scan-irrelevant rows on the main view
-  colorRow?.setAttribute('hidden', '');
-  qualityRow?.setAttribute('hidden', '');
-  copiesRow?.setAttribute('hidden', '');
-  pagesRow?.setAttribute('hidden', '');
-  orientationRow?.setAttribute('hidden', '');
-  rotationRow?.setAttribute('hidden', '');
-  paperRow?.setAttribute('hidden', '');
+export function populateJobSummary(cfg: PrintConfig): void {
+  if (modeValue) modeValue.textContent = cfg.mode.toUpperCase();
 
-  // Hide all scan-irrelevant rows in the modal
-  modalPaperAlert?.setAttribute('hidden', '');
-  modalColorRow?.setAttribute('hidden', '');
-  modalQualityRow?.setAttribute('hidden', '');
-  modalCopiesRow?.setAttribute('hidden', '');
-  modalPagesRow?.setAttribute('hidden', '');
-  modalOrientationRow?.setAttribute('hidden', '');
-  modalRotationRow?.setAttribute('hidden', '');
-  modalPaperRow?.setAttribute('hidden', '');
-} else {
-  // Populate main screen values for print/copy
-  if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
-  if (qualityValue) {
-    qualityValue.textContent =
-      config.quality === 'high' ? 'High Quality' : 'Standard';
+  if (cfg.mode === 'scan') {
+    // Hide print/copy bento cards, show scan card
+    pagesCard?.setAttribute('hidden', '');
+    settingsGrid?.setAttribute('hidden', '');
+    scanCard?.removeAttribute('hidden');
+
+    // Hide scan-irrelevant rows in the confirmation modal
+    modalPaperAlert?.setAttribute('hidden', '');
+    modalColorRow?.setAttribute('hidden', '');
+    modalQualityRow?.setAttribute('hidden', '');
+    modalCopiesRow?.setAttribute('hidden', '');
+    modalPagesRow?.setAttribute('hidden', '');
+    modalOrientationRow?.setAttribute('hidden', '');
+    modalRotationRow?.setAttribute('hidden', '');
+    modalPaperRow?.setAttribute('hidden', '');
+    return;
   }
+
+  // Print / Copy mode:
+  pagesCard?.removeAttribute('hidden');
+  settingsGrid?.removeAttribute('hidden');
+  scanCard?.setAttribute('hidden', '');
+
+  // 1. Pages & Range Card
+  if (pagesRangeValue) {
+    pagesRangeValue.textContent = pageRangeLabel(cfg.pageRange);
+  }
+
+  const quote = currentPrintQuote;
+  const totalSheets = quote
+    ? quote.selectedPages
+    : (cfg.totalPages ?? 1);
+  const totalDisplay = quote
+    ? `${quote.selectedPages} of ${quote.totalPages} ${quote.totalPages === 1 ? 'page' : 'pages'}`
+    : `${totalSheets} ${totalSheets === 1 ? 'page' : 'pages'}`;
+
+  if (pagesTotalCount) {
+    pagesTotalCount.textContent = totalDisplay;
+  }
+
+  if (quote) {
+    if (pagesBwCount) pagesBwCount.textContent = `${quote.billableBwPages}`;
+    if (pagesColorCount) pagesColorCount.textContent = `${quote.billableColorPages}`;
+    bwPagesChip?.removeAttribute('hidden');
+    colorPagesChip?.removeAttribute('hidden');
+  } else {
+    const isColor = cfg.colorMode === 'colored';
+    if (pagesBwCount) pagesBwCount.textContent = isColor ? '0' : `${totalSheets}`;
+    if (pagesColorCount) pagesColorCount.textContent = isColor ? `${totalSheets}` : '0';
+  }
+
+  // 2. Color Mode Card
+  const displayColor = getDisplayColorMode();
+  if (colorModePrimary) {
+    colorModePrimary.textContent = formatColorMode(displayColor);
+  }
+
+  if (
+    cfg.mode === 'print' &&
+    cfg.detectedColorMode &&
+    cfg.detectedColorMode !== cfg.colorMode
+  ) {
+    if (colorDetectedBadge) {
+      colorDetectedBadge.textContent = `Detected: ${formatColorMode(cfg.detectedColorMode)}`;
+      colorDetectedBadge.removeAttribute('hidden');
+    }
+    if (colorSelectedBadge) {
+      colorSelectedBadge.textContent = `Selected: ${formatColorMode(cfg.colorMode)}`;
+      colorSelectedBadge.removeAttribute('hidden');
+    }
+  } else {
+    colorDetectedBadge?.setAttribute('hidden', '');
+    colorSelectedBadge?.setAttribute('hidden', '');
+  }
+
+  // 3. Paper & Layout Card
+  if (paperSizePrimary) {
+    paperSizePrimary.textContent = formatPaperSizeForPricing(cfg.paperSize);
+  }
+  if (copiesTag) {
+    copiesTag.textContent = `${cfg.copies} ${cfg.copies === 1 ? 'Copy' : 'Copies'}`;
+  }
+  if (orientationTag) {
+    orientationTag.textContent =
+      cfg.orientation === 'landscape' ? 'Landscape' : 'Portrait';
+  }
+  if (qualityTag) {
+    qualityTag.textContent =
+      cfg.quality === 'high' ? 'High Quality' : 'Standard';
+  }
+  if (rotationTag) {
+    if (cfg.rotationDeg && cfg.rotationDeg !== 0) {
+      rotationTag.textContent = `${cfg.rotationDeg}°`;
+      rotationTag.removeAttribute('hidden');
+    } else {
+      rotationTag.setAttribute('hidden', '');
+    }
+  }
+
+  // Populate modal quality if present
   if (modalQuality) {
     modalQuality.textContent =
-      config.quality === 'high' ? 'High Quality' : 'Standard';
+      cfg.quality === 'high' ? 'High Quality' : 'Standard';
   }
-  if (copiesValue) copiesValue.textContent = String(config.copies);
-  if (pagesValue) pagesValue.textContent = pageRangeLabel(config.pageRange);
-  if (orientationValue) {
-    orientationValue.textContent =
-      config.orientation === 'landscape' ? 'Landscape' : 'Portrait';
-  }
-  if (rotationValue) rotationValue.textContent = `${config.rotationDeg}°`;
-  if (paperSizeValue)
-    paperSizeValue.textContent = formatPaperSizeForPricing(config.paperSize);
 }
 
 populateJobSummary(config);
-
-if (modeValue) modeValue.textContent = config.mode.toUpperCase();
-if (fileValue)
-  fileValue.textContent =
-    config.mode === 'print'
-      ? (uploadedFile ?? 'No uploaded file')
-      : config.mode === 'copy'
-        ? 'Physical document copy'
-        : (config.scanFilename ?? 'Scanned document');
 if (priceValue) priceValue.textContent = 'Loading...';
 
 function applyLockState(locked: boolean): void {
@@ -951,12 +1032,15 @@ function applyLockState(locked: boolean): void {
   if (locked) {
     paymentColEl?.classList.add('payment-col--locked');
     if (padlockIcon) padlockIcon.removeAttribute('hidden');
+    if (coinLottieWrapper) coinLottieWrapper.setAttribute('hidden', '');
     if (coinIcon) coinIcon.setAttribute('hidden', '');
+    coinLottiePlayer?.pause();
     if (ctaText) ctaText.textContent = 'Coin slot locked — ready to confirm';
   } else {
     paymentColEl?.classList.remove('payment-col--locked');
-    if (coinIcon) coinIcon.removeAttribute('hidden');
+    if (coinLottieWrapper) coinLottieWrapper.removeAttribute('hidden');
     if (padlockIcon) padlockIcon.setAttribute('hidden', '');
+    coinLottiePlayer?.play();
     if (ctaText)
       ctaText.textContent = 'Insert coins into the kiosk slot to pay';
   }
@@ -1039,14 +1123,14 @@ function applyConfirmGate(statusOverride?: string): void {
   if (currentBalance >= totalPrice) {
     confirmBtn.disabled = false;
     confirmBtn.setAttribute('aria-disabled', 'false');
-    confirmBtn.classList.add('is-ready'); // NEW
-    actionCol?.classList.add('is-ready'); // NEW (turns price green)
+    confirmBtn.classList.add('is-ready');
+    actionCol?.classList.add('is-ready');
     statusMessage.textContent =
       statusOverride ?? 'Sufficient balance detected. You can confirm now.';
     if (statusBadge) statusBadge.dataset.state = 'ready';
   } else {
-    confirmBtn.classList.remove('is-ready'); // NEW
-    actionCol?.classList.remove('is-ready'); // NEW
+    confirmBtn.classList.remove('is-ready');
+    actionCol?.classList.remove('is-ready');
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
@@ -1056,9 +1140,86 @@ function applyConfirmGate(statusOverride?: string): void {
   }
 }
 
+let displayedBalance = 0;
+let balanceAnimFrameId: number | null = null;
+
+function animateBalanceCounter(targetBalance: number): void {
+  if (balanceAnimFrameId !== null) {
+    cancelAnimationFrame(balanceAnimFrameId);
+    balanceAnimFrameId = null;
+  }
+
+  const startBalance = displayedBalance;
+  const diff = targetBalance - startBalance;
+
+  if (diff > 0) {
+    // Trigger pop bounce & shimmer animation on coin insertion
+    if (balanceRing) {
+      balanceRing.classList.remove('balance-pop');
+      void balanceRing.offsetWidth;
+      balanceRing.classList.add('balance-pop');
+    }
+    if (balanceValue) {
+      balanceValue.classList.remove('count-anim');
+      void balanceValue.offsetWidth;
+      balanceValue.classList.add('count-anim');
+    }
+  }
+
+  if (diff === 0) {
+    displayedBalance = targetBalance;
+    if (balanceValue) balanceValue.textContent = `₱ ${targetBalance}`;
+    return;
+  }
+
+  const startTime = performance.now();
+  const durationMs = 380;
+
+  function step(currentTime: number): void {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / durationMs, 1);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(startBalance + diff * ease);
+    displayedBalance = current;
+    if (balanceValue) balanceValue.textContent = `₱ ${current}`;
+
+    if (progress < 1) {
+      balanceAnimFrameId = requestAnimationFrame(step);
+    } else {
+      displayedBalance = targetBalance;
+      if (balanceValue) balanceValue.textContent = `₱ ${targetBalance}`;
+      balanceAnimFrameId = null;
+    }
+  }
+
+  balanceAnimFrameId = requestAnimationFrame(step);
+}
+
+function updateBalanceRingArc(balance: number): void {
+  if (balanceRing) {
+    balanceRing.setAttribute('aria-valuenow', String(balance));
+    balanceRing.setAttribute('aria-valuemax', String(totalPrice));
+  }
+  if (!balanceArc) return;
+  const circumference = 326.7;
+  const ratio =
+    totalPrice > 0 ? Math.min(1, Math.max(0, balance / totalPrice)) : 0;
+  const offset = circumference * (1 - ratio);
+  balanceArc.style.strokeDashoffset = String(offset);
+
+  if (balanceRing) {
+    if (pricingLoaded && totalPrice > 0 && balance >= totalPrice) {
+      balanceRing.classList.add('is-ready');
+    } else {
+      balanceRing.classList.remove('is-ready');
+    }
+  }
+}
+
 function updateBalanceUI(balance: number): void {
   currentBalance = balance;
-  if (balanceValue) balanceValue.textContent = `₱ ${balance}`;
+  animateBalanceCounter(balance);
+  updateBalanceRingArc(balance);
   updateChangeDisplay(balance);
   syncCoinSlotLockState();
   applyConfirmGate();
@@ -1273,14 +1434,8 @@ async function loadPricing(): Promise<void> {
       pricingError = null;
       if (priceValue) priceValue.textContent = `₱ ${totalPrice}`;
       if (actionPriceValue) actionPriceValue.textContent = `₱ ${totalPrice}`;
-      if (colorValue) colorValue.textContent = getColorModeSummaryLabel();
-      if (pagesValue) {
-        pagesValue.textContent =
-          `${pageRangeLabel(config.pageRange)} · ` +
-          `Selected ${payload.quote.selectedPages} of ${payload.quote.totalPages} · ` +
-          `B/W ${payload.quote.billableBwPages} · ` +
-          `Color ${payload.quote.billableColorPages}`;
-      }
+      populateJobSummary(config);
+      updateBalanceRingArc(currentBalance);
       updateChangeDisplay(currentBalance);
       syncCoinSlotLockState();
       applyConfirmGate();
@@ -1516,6 +1671,16 @@ function finalizePrintSuccess(transactionId: string | null): void {
   } else {
     if (owedChangeAlert) {
       owedChangeAlert.setAttribute('hidden', '');
+    }
+  }
+
+  if (thankYouTitle) {
+    if (config.mode === 'copy') {
+      thankYouTitle.textContent = 'Copy Complete!';
+    } else if (config.mode === 'scan') {
+      thankYouTitle.textContent = 'Scan Complete!';
+    } else {
+      thankYouTitle.textContent = 'Thank You!';
     }
   }
 
@@ -1930,6 +2095,9 @@ modalConfirmBtn?.addEventListener('click', async () => {
       // For copy jobs, the ID is often in 'id' field of the job object
       const transactionId = payload.transactionId ?? payload.id ?? null;
       captureReceiptCta(payload);
+      if (!payload.receipt?.viewUrl && payload.id) {
+        void pollCopyJobReceipt(payload.id);
+      }
       enterWorkerPendingState(transactionId);
     } else {
       // Print implementation...
@@ -2416,6 +2584,7 @@ async function loadPrinterStatus(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
+  initCoinLottieAnimation();
   await Promise.all([
     loadPrinterStatus(),
     loadPricing(),
