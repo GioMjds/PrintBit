@@ -17,6 +17,7 @@ class FakeClassList {
 class FakeElement {
   readonly classList = new FakeClassList();
   readonly attributes = new Map<string, string>();
+  inert = false;
   textContent = '';
 
   setAttribute(name: string, value: string): void {
@@ -29,10 +30,17 @@ class FakeElement {
 }
 
 class FakeDocument {
-  constructor(private readonly elements: Record<string, FakeElement>) {}
+  constructor(
+    private readonly elements: Record<string, FakeElement>,
+    private readonly selectors: Record<string, FakeElement> = {},
+  ) {}
 
   getElementById(id: string): FakeElement | null {
     return this.elements[id] ?? null;
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    return this.selectors[selector] ?? null;
   }
 }
 
@@ -111,4 +119,41 @@ test('preparation locks the page and a failure remains terminal after cleanup', 
   expect(detail.textContent).toBe('Loading the scanned pages…');
   expect(paperLoading.classList.contains('hidden')).toBe(true);
   expect(setContinueEnabled).toHaveBeenCalledWith(false);
+});
+
+test('preparation makes settings and preview controls inert until cleanup', () => {
+  const layout = new FakeElement();
+  const settings = new FakeElement();
+  const previewControls = new FakeElement();
+  const zoomControls = new FakeElement();
+  const paperLoading = new FakeElement();
+
+  browserGlobals.document = new FakeDocument(
+    {
+      configLayout: layout,
+      configSettings: settings,
+      previewControls,
+      paperLoading,
+    },
+    { '.zoom-controls': zoomControls },
+  );
+  browserGlobals.window = {
+    matchMedia: () => ({ matches: true }),
+  };
+
+  const controller = loadControllerModule().createConfigPreparationLoadingController;
+  const preparation = controller!({ setContinueEnabled: jest.fn() });
+
+  preparation.start();
+
+  expect(settings.inert).toBe(true);
+  expect(previewControls.inert).toBe(true);
+  expect(zoomControls.inert).toBe(true);
+
+  preparation.fail();
+  preparation.finish();
+
+  expect(settings.inert).toBe(false);
+  expect(previewControls.inert).toBe(false);
+  expect(zoomControls.inert).toBe(false);
 });

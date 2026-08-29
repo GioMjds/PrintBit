@@ -30,12 +30,19 @@ export function createConfigPreparationLoadingController(
   const status = document.getElementById('configPreparingStatus');
   const detail = document.getElementById('configPreparingDetail');
   const paperLoading = document.getElementById('paperLoading');
+  const interactionLocks = [
+    document.getElementById('configSettings'),
+    document.getElementById('previewControls'),
+    document.querySelector<HTMLElement>('.zoom-controls'),
+  ].filter((element): element is HTMLElement => element !== null);
   const reducedMotion = window.matchMedia(
     '(prefers-reduced-motion: reduce)',
   ).matches;
 
   let state: ConfigPreparationState = 'ready';
   let animation: DotLottie | null = null;
+  let interactionsLocked = false;
+  const priorInertStates = new Map<HTMLElement, boolean>();
 
   const showFallback = (): void => {
     preparing?.setAttribute('data-lottie-unavailable', '');
@@ -76,9 +83,28 @@ export function createConfigPreparationLoadingController(
     );
   };
 
+  const lockInteractions = (): void => {
+    if (interactionsLocked) return;
+    interactionsLocked = true;
+    interactionLocks.forEach((element) => {
+      priorInertStates.set(element, element.inert);
+      element.inert = true;
+    });
+  };
+
+  const unlockInteractions = (): void => {
+    if (!interactionsLocked) return;
+    interactionsLocked = false;
+    interactionLocks.forEach((element) => {
+      element.inert = priorInertStates.get(element) ?? false;
+    });
+    priorInertStates.clear();
+  };
+
   return {
     start(message = DEFAULT_TITLE): void {
       setState('preparing');
+      lockInteractions();
       if (status) status.textContent = message;
       if (detail) detail.textContent = DEFAULT_DETAIL;
       paperLoading?.classList.remove('hidden');
@@ -93,12 +119,14 @@ export function createConfigPreparationLoadingController(
 
     finish(): void {
       if (state !== 'error') setState('ready');
+      unlockInteractions();
       paperLoading?.classList.add('hidden');
       animation?.pause();
     },
 
     fail(message = 'Preview unavailable'): void {
       setState('error');
+      unlockInteractions();
       if (status) status.textContent = message;
       paperLoading?.classList.add('hidden');
       animation?.pause();

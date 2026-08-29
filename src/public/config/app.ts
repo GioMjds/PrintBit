@@ -45,6 +45,8 @@ type PaperSize = 'A4' | 'Letter' | 'Legal';
 type RotationDeg = 0 | 90 | 180 | 270;
 type WorkflowMode = 'print' | 'copy' | 'scan';
 
+const HTML_PREVIEW_LOAD_TIMEOUT_MS = 20_000;
+
 type PageRangeSelection =
   | { type: 'all' }
   | { type: 'custom'; range: string }
@@ -478,7 +480,7 @@ class PrintPreview {
       this.latestImageInfo = null;
       const html = await response.text();
       previewLog('html preview loaded', { chars: html.length });
-      this.loadHtml(html);
+      await this.loadHtml(html);
     } else {
       previewLog('unsupported preview content type', { contentType });
       this.latestImageInfo = null;
@@ -643,20 +645,42 @@ class PrintPreview {
     this.pageNext.disabled = this.currentPage >= this.totalPages;
   }
 
-  private loadHtml(html: string): void {
+  private loadHtml(html: string): Promise<void> {
     previewLog('loadHtml() start');
     // Show frame first so its dimensions are available when onload fires
     this.showCanvas(false);
     this.showImg(false);
     this.showFrame(true);
     this.showLoading(true);
-    this.iframe.onload = () => {
-      previewLog('loadHtml() onload');
-      this.recalcHtmlPages();
-      this.showLoading(false);
-      this.setHint('Document preview');
-    };
-    this.iframe.srcdoc = html;
+    return new Promise((resolve) => {
+      let settled = false;
+      const complete = (loaded: boolean): void => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        this.iframe.onload = null;
+        this.iframe.onerror = null;
+
+        if (loaded) {
+          previewLog('loadHtml() onload');
+          this.recalcHtmlPages();
+          this.showLoading(false);
+          this.setHint('Document preview');
+        } else {
+          previewLog('loadHtml() failed');
+          this.showError('Could not load HTML preview.');
+        }
+        resolve();
+      };
+
+      const timeoutId = window.setTimeout(
+        () => complete(false),
+        HTML_PREVIEW_LOAD_TIMEOUT_MS,
+      );
+      this.iframe.onload = () => complete(true);
+      this.iframe.onerror = () => complete(false);
+      this.iframe.srcdoc = html;
+    });
   }
 
   private recalcHtmlPages(): void {
