@@ -126,6 +126,8 @@ describe('PrinterService.cancelRemaining', () => {
       removeDocument: jest.fn().mockResolvedValue({ success: true, deletedFile: true }),
     } as any;
 
+    (financialLedgerService.append as jest.Mock).mockReset().mockResolvedValue({});
+
     printerService = new PrinterService(mockIo, mockSessionStore);
   });
 
@@ -834,7 +836,7 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
     (cancelPrintJobViaEdge as jest.Mock).mockReset();
     (pausePrintJobViaEdge as jest.Mock).mockReset();
     (resumePrintJobViaEdge as jest.Mock).mockReset();
-    (deleteTransientScanFile as jest.Mock).mockReset();
+    (financialLedgerService.append as jest.Mock).mockReset().mockResolvedValue({});
     
     printerService = new PrinterService();
     db.data = {
@@ -846,7 +848,7 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
     } as any;
   });
 
-  it('dispatches IPC pause command when pauseJob is called', async () => {
+  it('pauses print job via edge when pauseJob is called', async () => {
     (db.data!.spoolerLifecycle as any) = [
       {
         spoolerCorrelationKey: 'key_pause',
@@ -863,19 +865,10 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
 
     await printerService.pauseJob('key_pause');
 
-    expect(sendWorkerCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'pause_job',
-        transactionId: 'tx_pause',
-        spoolerCorrelationKey: 'key_pause',
-        protocolVersion: 2,
-        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-      }),
-      { pipeName: 'configured-worker-command-pipe' },
-    );
+    expect(pausePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 100);
   });
 
-  it('dispatches IPC resume command when resumeJob is called', async () => {
+  it('resumes print job via edge when resumeJob is called', async () => {
     (db.data!.spoolerLifecycle as any) = [
       {
         spoolerCorrelationKey: 'key_resume',
@@ -904,16 +897,7 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
 
     await printerService.resumeJob('key_resume');
 
-    expect(sendWorkerCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'resume_job',
-        transactionId: 'tx_resume',
-        spoolerCorrelationKey: 'key_resume',
-        protocolVersion: 2,
-        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-      }),
-      { pipeName: 'configured-worker-command-pipe' },
-    );
+    expect(resumePrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 102);
   });
 
   it('calculates partial refund correctly (2 of 5 pages printed for ₱50 job = ₱30 refund)', async () => {
@@ -958,16 +942,7 @@ describe('PrinterService IPC & Financial Refund Safety', () => {
         referenceId: 'tx_1',
       }),
     );
-    expect(sendWorkerCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'cancel_job',
-        transactionId: 'tx_1',
-        spoolerCorrelationKey: 'key_1',
-        protocolVersion: 2,
-        commandId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-      }),
-      { pipeName: 'configured-worker-command-pipe' },
-    );
+    expect(cancelPrintJobViaEdge).toHaveBeenCalledWith('TestPrinter', 101);
   });
 
   it('rejects duplicate cancellation when session phase is already reconciled', async () => {

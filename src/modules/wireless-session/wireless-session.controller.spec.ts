@@ -9,6 +9,7 @@ jest.mock('@/middleware/file-validation', () => {
     uploadMiddleware: { single: jest.fn(() => passThrough) },
     handleMulterError: passThrough,
     validateMagicBytes: passThrough,
+    scanForMalware: passThrough,
   };
 });
 
