@@ -1049,6 +1049,39 @@
           </div>
         </div>
 
+        <div class="refund-breakdown-card" id="refundBreakdownCard" hidden>
+          <div class="refund-breakdown-header">
+            <span class="warning-icon">⚠️</span>
+            <div>
+              <h4>Print Interrupted — Partial Refund Issued</h4>
+              <p>The printer ran out of paper before finishing your document.</p>
+            </div>
+          </div>
+          <div class="breakdown-details">
+            <div class="breakdown-row">
+              <span>Total Money Inserted:</span>
+              <strong id="bdTotalInserted">₱0.00</strong>
+            </div>
+            <div class="breakdown-row">
+              <span>Printed Pages (<span id="bdPagesPrinted">0</span> pages):</span>
+              <strong id="bdPrintedCharge">₱0.00</strong>
+            </div>
+            <div class="breakdown-row breakdown-row--highlight">
+              <span>Unprinted Page Refund (<span id="bdUnprintedPages">0</span> pages):</span>
+              <strong id="bdUnprintedRefund">₱0.00</strong>
+            </div>
+            <div class="breakdown-row">
+              <span>Original Change:</span>
+              <strong id="bdOriginalChange">₱0.00</strong>
+            </div>
+            <hr class="breakdown-divider" />
+            <div class="breakdown-row breakdown-row--total">
+              <span>Total Dispensed from Coin Slot:</span>
+              <strong id="bdTotalDispensed">₱0.00</strong>
+            </div>
+          </div>
+        </div>
+
         <!-- QR Codes Grid (Dual QR for scan mode, single centered QR for print/copy) -->
         <div class="success-qr-grid" id="successQrGrid">
           <!-- 1. Scanned Document Download CTA -->

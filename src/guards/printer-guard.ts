@@ -211,3 +211,65 @@ export function isPrinterBlocked(): boolean {
   const overlay = getOverlay();
   return overlay ? overlay.style.display === 'flex' : false;
 }
+
+export interface HardwareStateEvaluation {
+  isBlocked: boolean;
+  reason: string | null;
+  status: string;
+  connected: boolean;
+}
+
+export function evaluateHardwareState(input: {
+  connected?: boolean;
+  status?: string;
+  statusFlags?: string[];
+  isOutOfPaper?: boolean;
+}): HardwareStateEvaluation {
+  const connected = input.connected !== false;
+  if (!connected) {
+    return {
+      isBlocked: true,
+      reason: input.status || 'Offline',
+      status: input.status || 'Offline',
+      connected: false,
+    };
+  }
+
+  const rawStatus = input.status || 'Idle';
+  const hasPaperOutFlag =
+    Boolean(input.isOutOfPaper) ||
+    rawStatus.toLowerCase().includes('paper out') ||
+    rawStatus.toLowerCase().includes('paperout') ||
+    Boolean(
+      input.statusFlags &&
+        input.statusFlags.some((f) => f.toLowerCase().includes('paper out')),
+    );
+
+  if (hasPaperOutFlag) {
+    return {
+      isBlocked: true,
+      reason: 'Paper Out',
+      status: rawStatus.toLowerCase().includes('paper') ? rawStatus : 'Paper Out',
+      connected: true,
+    };
+  }
+
+  const BLOCKED = new Set([
+    'Offline',
+    'Error',
+    'Paper Jam',
+    'Paper Out',
+    'Door Open',
+    'User Intervention Required',
+    'Paused',
+  ]);
+
+  const isBlocked = BLOCKED.has(rawStatus);
+  return {
+    isBlocked,
+    reason: isBlocked ? rawStatus : null,
+    status: rawStatus,
+    connected: true,
+  };
+}
+
