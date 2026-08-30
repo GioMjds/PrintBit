@@ -608,6 +608,27 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
     return;
   }
 
+  // C# worker pre-flight pause: the worker automatically resumes when it
+  // detects paper is back — no spooler API call is needed or possible
+  // (no Win32 spooler job exists yet at this stage). Show a passive message
+  // and wait for the worker to emit `workerJobResumed` over the pipe.
+  if (currentPrinterError?.code === 'WORKER_HARDWARE_ERROR') {
+    if (action === 'resume') {
+      console.log(
+        '[PRINTER-ACTION] C# worker pre-flight pause: waiting for worker to auto-resume when paper is detected.',
+      );
+      if (errorMessage) {
+        errorMessage.textContent =
+          'Waiting for printer\u2026 Load paper into the rear tray and the job will resume automatically.';
+      }
+      if (errorHint) {
+        errorHint.textContent = '';
+        errorHint.setAttribute('hidden', '');
+      }
+    }
+    return;
+  }
+
   // Enter loading state for both buttons so a rapid second click is ignored.
   const clickedBtn = action === 'pause' ? errorPauseBtn : errorResumeBtn;
   const otherBtn = action === 'pause' ? errorResumeBtn : errorPauseBtn;
@@ -619,6 +640,7 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
   errorPauseBtn.disabled = true;
   errorResumeBtn.disabled = true;
   const clickedSpan = clickedBtn.querySelector('span');
+
   if (clickedSpan) clickedSpan.textContent = loadingLabel;
   clearErrorActionInlineError();
 
