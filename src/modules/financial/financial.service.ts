@@ -1,6 +1,8 @@
 import type { Request, Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Server } from 'socket.io';
@@ -38,7 +40,8 @@ import {
 } from '@/core/database/sqlite-storage';
 import { adminService } from '@/services/admin';
 import { financialLedgerService } from '@/services/financial-ledger';
-import { settlementService } from '@/services/settlement';
+import { settlementService, settleTerminal } from '@/services/settlement';
+import { cancelPrintJobViaEdge } from '@/services/windows-printer-edge';
 import {
   printFile,
   type PrintDispatchResult,
@@ -84,6 +87,35 @@ export interface FinancialServiceDeps {
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
 }
+
+export interface MidJobCancellationInput {
+  transactionId: string;
+  totalInserted: number;
+  unitPricePerPage: number;
+  totalPages: number;
+  pagesPrinted: number;
+  spoolerJobId?: number;
+  printerName?: string;
+  io?: Server;
+}
+
+export interface MidJobCancellationResult {
+  chargedAmount: number;
+  refundAmount: number;
+  originalChange: number;
+  totalDispensed: number;
+  itemizedBreakdown: {
+    totalInserted: number;
+    pagesPrinted: number;
+    printedCharge: number;
+    unprintedPages: number;
+    unprintedRefund: number;
+    originalChange: number;
+    totalDispensed: number;
+  };
+}
+
+const execFileAsync = promisify(execFile);
 
 interface UploadDeletionResult {
   deleted: boolean;
@@ -2439,4 +2471,113 @@ export class FinancialService {
       throw error;
     }
   }
+
+  async handleMidJobCancellation(
+    input: MidJobCancellationInput,
+  ): Promise<MidJobCancellationResult> {
+    return handleMidJobCancellation(input, this.deps);
+  }
+}
+
+export async function handleMidJobCancellation(
+  input: MidJobCancellationInput,
+  deps?: Partial<FinancialServiceDeps>,
+): Promise<MidJobCancellationResult> {
+  // Step 1: Spooler cancellation & vendor popup dismissal
+  if (input.printerName && typeof input.spoolerJobId === 'number') {
+    try {
+      await cancelPrintJobViaEdge(input.printerName, input.spoolerJobId);
+    } catch (error) {
+      console.warn(
+        `[FINANCIAL] Failed to cancel spooler job #${input.spoolerJobId} on ${input.printerName} via edge:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
+    try {
+      await execFileAsync('taskkill', ['/F', '/IM', 'e_yarnyre.exe'], {
+        timeout: 2000,
+      });
+    } catch {
+      // Best-effort dismissal: ignore if process not running or platform unsupported
+    }
+  }
+
+  // Step 2: Itemized breakdown calculation
+  const totalPages = Math.max(0, input.totalPages);
+  const safePagesPrinted = Math.max(0, Math.min(input.pagesPrinted, totalPages));
+  const unitPricePerPage = Math.max(0, input.unitPricePerPage);
+  const totalInserted = Math.max(0, input.totalInserted);
+
+  const printedCharge = safePagesPrinted * unitPricePerPage;
+  const unprintedPages = totalPages - safePagesPrinted;
+  const unprintedRefund = unprintedPages * unitPricePerPage;
+  const originalExpectedCost = totalPages * unitPricePerPage;
+  const originalChange = Math.max(0, totalInserted - originalExpectedCost);
+  const totalRefundAndChange = Math.max(0, totalInserted - printedCharge);
+
+  // Step 3: Financial settlement & payout
+  const effectiveIo =
+    input.io ?? deps?.io ?? ({ emit: () => {} } as unknown as Server);
+
+  const settlementResult = await settleTerminal({
+    escrowBalance: totalInserted,
+    actualChargedAmount: printedCharge,
+    io: effectiveIo,
+    jobContext: {
+      mode: 'print',
+      transactionId: input.transactionId,
+      pagesPrinted: safePagesPrinted,
+      totalPages,
+      terminalReason: 'paper_out_auto_refund',
+    },
+  });
+
+  const totalDispensed =
+    settlementResult?.change?.dispensed !== undefined
+      ? settlementResult.change.dispensed
+      : totalRefundAndChange;
+
+  // Step 4: Ledger logging
+  try {
+    await financialLedgerService.append({
+      eventType: 'refund_issued',
+      amount: unprintedRefund,
+      referenceId: input.transactionId,
+      meta: {
+        source: 'print_partial_settlement',
+        transactionId: input.transactionId,
+        totalPages,
+        pagesPrinted: safePagesPrinted,
+        unprintedPages,
+        printedCharge,
+        unprintedRefund,
+        originalChange,
+        totalDispensed,
+        spoolerJobId: input.spoolerJobId ?? null,
+        printerName: input.printerName ?? null,
+      },
+    });
+  } catch (error) {
+    console.warn(
+      `[FINANCIAL] Failed to append ledger entry for transaction ${input.transactionId}:`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  return {
+    chargedAmount: printedCharge,
+    refundAmount: unprintedRefund,
+    originalChange,
+    totalDispensed,
+    itemizedBreakdown: {
+      totalInserted,
+      pagesPrinted: safePagesPrinted,
+      printedCharge,
+      unprintedPages,
+      unprintedRefund,
+      originalChange,
+      totalDispensed,
+    },
+  };
 }
