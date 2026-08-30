@@ -340,6 +340,21 @@ const owedChangeAmountBadge = document.getElementById('owedChangeAmountBadge');
 const owedChangeAmountText = document.getElementById('owedChangeAmountText');
 const owedChangeRefId = document.getElementById('owedChangeRefId');
 
+// Refund Breakdown Elements
+const refundBreakdownCard = document.getElementById('refundBreakdownCard');
+const bdTotalInserted = document.getElementById('bdTotalInserted');
+const bdPagesPrinted = document.getElementById('bdPagesPrinted');
+const bdPrintedCharge = document.getElementById('bdPrintedCharge');
+const bdUnprintedPages = document.getElementById('bdUnprintedPages');
+const bdUnprintedRefund = document.getElementById('bdUnprintedRefund');
+const bdOriginalChange = document.getElementById('bdOriginalChange');
+const bdTotalDispensed = document.getElementById('bdTotalDispensed');
+
+function formatBreakdownCurrency(val: number | null | undefined): string {
+  const num = typeof val === 'number' && Number.isFinite(val) ? val : 0;
+  return `₱${num.toFixed(2)}`;
+}
+
 interface OwedChangeNotice {
   amountOwed: number;
   transactionId: string | null;
@@ -593,6 +608,27 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
     return;
   }
 
+  // C# worker pre-flight pause: the worker automatically resumes when it
+  // detects paper is back — no spooler API call is needed or possible
+  // (no Win32 spooler job exists yet at this stage). Show a passive message
+  // and wait for the worker to emit `workerJobResumed` over the pipe.
+  if (currentPrinterError?.code === 'WORKER_HARDWARE_ERROR') {
+    if (action === 'resume') {
+      console.log(
+        '[PRINTER-ACTION] C# worker pre-flight pause: waiting for worker to auto-resume when paper is detected.',
+      );
+      if (errorMessage) {
+        errorMessage.textContent =
+          'Waiting for printer\u2026 Load paper into the rear tray and the job will resume automatically.';
+      }
+      if (errorHint) {
+        errorHint.textContent = '';
+        errorHint.setAttribute('hidden', '');
+      }
+    }
+    return;
+  }
+
   // Enter loading state for both buttons so a rapid second click is ignored.
   const clickedBtn = action === 'pause' ? errorPauseBtn : errorResumeBtn;
   const otherBtn = action === 'pause' ? errorResumeBtn : errorPauseBtn;
@@ -604,6 +640,7 @@ async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
   errorPauseBtn.disabled = true;
   errorResumeBtn.disabled = true;
   const clickedSpan = clickedBtn.querySelector('span');
+
   if (clickedSpan) clickedSpan.textContent = loadingLabel;
   clearErrorActionInlineError();
 
@@ -2220,10 +2257,91 @@ if (typeof ioFactory === 'function') {
       owedChangeId?: string | null;
       message?: string;
       transactionId?: string | null;
+      breakdown?: {
+        totalInserted?: number;
+        pagesPrinted?: number;
+        printedCharge?: number;
+        unprintedPages?: number;
+        unprintedRefund?: number;
+        originalChange?: number;
+        totalDispensed?: number;
+        actualCharged?: number;
+        refundAndChange?: number;
+        totalAmount?: number;
+        refundAmount?: number;
+      };
+      itemizedBreakdown?: {
+        totalInserted?: number;
+        pagesPrinted?: number;
+        printedCharge?: number;
+        unprintedPages?: number;
+        unprintedRefund?: number;
+        originalChange?: number;
+        totalDispensed?: number;
+        actualCharged?: number;
+        refundAndChange?: number;
+        totalAmount?: number;
+        refundAmount?: number;
+      };
     };
     if (data.transactionId) {
       setTransactionReference(data.transactionId);
     }
+
+    const rawBd = data.itemizedBreakdown || data.breakdown;
+    if (rawBd && typeof rawBd === 'object') {
+      const totalInserted =
+        typeof rawBd.totalInserted === 'number' && Number.isFinite(rawBd.totalInserted)
+          ? rawBd.totalInserted
+          : (typeof rawBd.totalAmount === 'number' && Number.isFinite(rawBd.totalAmount)
+              ? rawBd.totalAmount
+              : (typeof data.amount === 'number' ? data.amount : 0));
+      const pagesPrinted =
+        typeof rawBd.pagesPrinted === 'number' && Number.isFinite(rawBd.pagesPrinted)
+          ? rawBd.pagesPrinted
+          : lastKnownPagesPrinted;
+      const printedCharge =
+        typeof rawBd.printedCharge === 'number' && Number.isFinite(rawBd.printedCharge)
+          ? rawBd.printedCharge
+          : (typeof rawBd.actualCharged === 'number' && Number.isFinite(rawBd.actualCharged)
+              ? rawBd.actualCharged
+              : 0);
+      const unprintedPages =
+        typeof rawBd.unprintedPages === 'number' && Number.isFinite(rawBd.unprintedPages)
+          ? rawBd.unprintedPages
+          : Math.max(0, (lastKnownTotalPages || 0) - pagesPrinted);
+      const unprintedRefund =
+        typeof rawBd.unprintedRefund === 'number' && Number.isFinite(rawBd.unprintedRefund)
+          ? rawBd.unprintedRefund
+          : (typeof rawBd.refundAmount === 'number' && Number.isFinite(rawBd.refundAmount)
+              ? rawBd.refundAmount
+              : 0);
+      const originalChange =
+        typeof rawBd.originalChange === 'number' && Number.isFinite(rawBd.originalChange)
+          ? rawBd.originalChange
+          : 0;
+      const totalDispensed =
+        typeof rawBd.totalDispensed === 'number' && Number.isFinite(rawBd.totalDispensed)
+          ? rawBd.totalDispensed
+          : (typeof data.dispensed === 'number' && Number.isFinite(data.dispensed)
+              ? data.dispensed
+              : (typeof data.amount === 'number' && Number.isFinite(data.amount)
+                  ? data.amount
+                  : unprintedRefund + originalChange));
+
+      if (bdTotalInserted) bdTotalInserted.textContent = formatBreakdownCurrency(totalInserted);
+      if (bdPagesPrinted) bdPagesPrinted.textContent = String(pagesPrinted);
+      if (bdPrintedCharge) bdPrintedCharge.textContent = formatBreakdownCurrency(printedCharge);
+      if (bdUnprintedPages) bdUnprintedPages.textContent = String(unprintedPages);
+      if (bdUnprintedRefund) bdUnprintedRefund.textContent = formatBreakdownCurrency(unprintedRefund);
+      if (bdOriginalChange) bdOriginalChange.textContent = formatBreakdownCurrency(originalChange);
+      if (bdTotalDispensed) bdTotalDispensed.textContent = formatBreakdownCurrency(totalDispensed);
+
+      if (refundBreakdownCard) {
+        refundBreakdownCard.removeAttribute('hidden');
+      }
+    }
+
     if (data.state === 'dispensing') {
       setPrintingPhase('dispensing');
     } else if (data.state === 'failed') {

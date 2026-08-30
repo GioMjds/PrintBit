@@ -64,6 +64,17 @@ export interface EdgeJobActionResult {
   alreadyInState?: boolean;
 }
 
+export interface EdgeJobProgress {
+  jobId: number;
+  pagesPrinted: number;
+  totalPages: number;
+  isOutOfPaper: boolean;
+  isPaused: boolean;
+  isCompleted: boolean;
+  isDeleting: boolean;
+  status: string;
+}
+
 // ── Persistent runspace + mutex ──────────────────────────────────
 
 /**
@@ -441,6 +452,73 @@ export async function cancelPrintJobViaEdge(
   } catch (err) {
     return {
       success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Queries real-time progress and status of a specific print job in the
+ * Windows spooler via System.Printing.PrintSystemJobInfo.
+ */
+export async function queryActiveJobProgressViaEdge(
+  printerName: string,
+  jobId: number,
+): Promise<EdgeJobProgress | { error: string }> {
+  if (typeof printerName !== 'string' || !PRINTER_NAME_REGEX.test(printerName)) {
+    return { error: 'Invalid printerName format' };
+  }
+  const escaped = escapePsString(printerName);
+  const script = `
+    Add-Type -AssemblyName System.Printing | Out-Null
+    try {
+      $ps = [System.Printing.LocalPrintServer]::new()
+      $queue = New-Object System.Printing.PrintQueue($ps, '${escaped}')
+      $queue.Refresh()
+      $found = $false
+      foreach ($job in $queue.GetPrintJobInfoCollection()) {
+        if ($job.JobIdentifier -eq ${jobId}) {
+          $found = $true
+          @{
+            jobId        = [int]$job.JobIdentifier
+            pagesPrinted = [int]$job.NumberOfPagesPrinted
+            totalPages   = [int]$job.NumberOfPages
+            isOutOfPaper = [bool]($job.JobStatus -band [System.Printing.PrintJobStatus]::PaperOut)
+            isPaused     = [bool]$job.IsPaused
+            isCompleted  = [bool]$job.IsCompleted
+            isDeleting   = [bool]$job.IsDeleting
+            status       = $job.JobStatus.ToString()
+          } | ConvertTo-Json -Compress
+          break
+        }
+      }
+      if (-not $found) {
+        @{ error = 'Job not found in queue' } | ConvertTo-Json -Compress
+      }
+    } catch {
+      @{ error = $_.Exception.Message } | ConvertTo-Json -Compress
+    }
+  `;
+
+  try {
+    const json = await runEdgeScript(script, STATUS_TIMEOUT_MS);
+    if (!json) return { error: 'Empty response from job progress query' };
+    const parsed = JSON.parse(json);
+    if ('error' in parsed) {
+      return { error: String(parsed.error) };
+    }
+    return {
+      jobId: Number(parsed.jobId),
+      pagesPrinted: Number(parsed.pagesPrinted ?? 0),
+      totalPages: Number(parsed.totalPages ?? 0),
+      isOutOfPaper: Boolean(parsed.isOutOfPaper),
+      isPaused: Boolean(parsed.isPaused),
+      isCompleted: Boolean(parsed.isCompleted),
+      isDeleting: Boolean(parsed.isDeleting),
+      status: String(parsed.status ?? ''),
+    };
+  } catch (err) {
+    return {
       error: err instanceof Error ? err.message : String(err),
     };
   }

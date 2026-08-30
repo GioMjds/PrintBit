@@ -10,7 +10,9 @@ import {
   pausePrintJobViaEdge,
   resumePrintJobViaEdge,
   cancelPrintJobViaEdge,
+  queryActiveJobProgressViaEdge,
   type EdgePrinterStatus,
+  type EdgeJobProgress,
 } from '@/services/windows-printer-edge';
 import { getRecoverySession, checkpointRecoverySession } from '@/services/recovery';
 import { withBalanceLock, db } from '@/core/database/db';
@@ -112,11 +114,117 @@ export interface PrintError {
   canDismiss?: boolean;
 }
 
+export interface JobProgressEvaluation {
+  interrupted: boolean;
+  reason: 'out_of_paper' | 'paused_error' | 'none';
+  confirmedPagesPrinted: number;
+  unprintedPages: number;
+}
+
+export function evaluateJobProgress(progress: {
+  jobId: number;
+  pagesPrinted: number;
+  totalPages: number;
+  isOutOfPaper?: boolean;
+  isPaused?: boolean;
+  isCompleted?: boolean;
+  isDeleting?: boolean;
+  status?: string;
+}): JobProgressEvaluation {
+  const isOutOfPaper = Boolean(
+    progress.isOutOfPaper ||
+    (progress.status && progress.status.toLowerCase().includes('paperout'))
+  );
+  const interrupted = isOutOfPaper || Boolean(progress.isPaused && progress.pagesPrinted < progress.totalPages);
+  const confirmedPagesPrinted = Math.max(0, Math.min(progress.pagesPrinted, progress.totalPages));
+  const unprintedPages = Math.max(0, progress.totalPages - confirmedPagesPrinted);
+
+  return {
+    interrupted,
+    reason: isOutOfPaper ? 'out_of_paper' : progress.isPaused ? 'paused_error' : 'none',
+    confirmedPagesPrinted,
+    unprintedPages,
+  };
+}
+
+export interface HardwareStateEvaluation {
+  isBlocked: boolean;
+  reason: string | null;
+  status: string;
+  connected: boolean;
+}
+
+export function evaluateHardwareState(input: {
+  connected?: boolean;
+  status?: string;
+  statusFlags?: string[];
+  isOutOfPaper?: boolean;
+}): HardwareStateEvaluation {
+  const connected = input.connected !== false;
+  if (!connected) {
+    return {
+      isBlocked: true,
+      reason: input.status || 'Offline',
+      status: input.status || 'Offline',
+      connected: false,
+    };
+  }
+
+  const rawStatus = input.status || 'Idle';
+  const hasPaperOutFlag =
+    Boolean(input.isOutOfPaper) ||
+    rawStatus.toLowerCase().includes('paper out') ||
+    rawStatus.toLowerCase().includes('paperout') ||
+    Boolean(
+      input.statusFlags &&
+        input.statusFlags.some((f) => f.toLowerCase().includes('paper out')),
+    );
+
+  if (hasPaperOutFlag) {
+    return {
+      isBlocked: true,
+      reason: 'Paper Out',
+      status: rawStatus.toLowerCase().includes('paper') ? rawStatus : 'Paper Out',
+      connected: true,
+    };
+  }
+
+  const isBlocked = BLOCKED_STATUSES.has(rawStatus);
+  return {
+    isBlocked,
+    reason: isBlocked ? rawStatus : null,
+    status: rawStatus,
+    connected: true,
+  };
+}
+
 export class PrinterService {
   constructor(
     private readonly io?: SocketIOServer,
     private readonly sessionStore?: SessionStore,
   ) {}
+
+  evaluateHardwareState(input: {
+    connected?: boolean;
+    status?: string;
+    statusFlags?: string[];
+    isOutOfPaper?: boolean;
+  }): HardwareStateEvaluation {
+    return evaluateHardwareState(input);
+  }
+
+  evaluateJobProgress(progress: {
+    jobId: number;
+    pagesPrinted: number;
+    totalPages: number;
+    isOutOfPaper?: boolean;
+    isPaused?: boolean;
+    isCompleted?: boolean;
+    isDeleting?: boolean;
+    status?: string;
+  }): JobProgressEvaluation {
+    return evaluateJobProgress(progress);
+  }
 
   async getStatusResponse(): Promise<PrinterStatusResponse> {
     let telemetry = getPrinterTelemetry();
@@ -467,13 +575,15 @@ export class PrinterService {
       `[PRINTER] Resuming job #${spoolerJobId} on ${printerName} via edge-js (lifecycle state: ${lifecyclePages.currentState ?? 'unknown'})`,
     );
 
-    // Attempt to kill the Epson Status Monitor popup if it exists, 
+    // Attempt to kill any Epson Status Monitor popups if they exist, 
     // otherwise the physical printer might stay blocked.
-    try {
-      await execFileAsync('taskkill', ['/F', '/IM', 'e_yarnyre.exe'], { timeout: 2000 });
-      console.log(`[PRINTER] Successfully dismissed Epson Status Monitor popup (e_yarnyre.exe)`);
-    } catch (e) {
-      // Ignore errors (process not found, etc.)
+    for (const exe of ['e_yarnyre.exe', 'e_yatiyre.exe', 'e_s11rpb.exe', 'e_ybcsyre.exe']) {
+      try {
+        await execFileAsync('taskkill', ['/F', '/IM', exe], { timeout: 2000 });
+        console.log(`[PRINTER] Successfully dismissed Epson Status Monitor popup (${exe})`);
+      } catch (e) {
+        // Ignore errors (process not found, etc.)
+      }
     }
 
     const result = await resumePrintJobViaEdge(printerName, spoolerJobId);

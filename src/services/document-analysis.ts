@@ -328,7 +328,7 @@ async function analyzePdfFile(
       });
     }
   } finally {
-    await doc.destroy();
+    await (doc as any).destroy?.();
   }
 
   const colorPages = pages.filter((page) => page.isColor).length;

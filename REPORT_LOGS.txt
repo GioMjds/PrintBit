@@ -1,8 +1,15 @@
-[JOB-PROCESSOR] Enqueued job 1e131a34-6ba9-4cbb-bb8e-651d166e8da0 for transaction cb8bab2e-a13e-4db2-86cb-176352a2eb3c
-[JOB-PROCESSOR] Picking up pending job 1e131a34-6ba9-4cbb-bb8e-651d166e8da0 for transaction cb8bab2e-a13e-4db2-86cb-176352a2eb3c
-[JOB-PROCESSOR] Job 1e131a34-6ba9-4cbb-bb8e-651d166e8da0 completed successfully
+[PRINTER-SERVICE] spoolerJobId is missing for key 12ad8599-edfc-4f60-8919-981b4d026e71. Attempting to resolve via Get-PrintJob...
+[PRINTER_CTRL] Failed to resume job: Error: Incomplete spooler details (missing printerName or spoolerJobId)
+    at PrinterService2.findSpoolerJobDetails (C:\Users\printbit\printbit\dist\server.js:21961:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async PrinterService2.resumeJob (C:\Users\printbit\printbit\dist\server.js:22001:58)
+    at async resumeJob (C:\Users\printbit\printbit\dist\server.js:26208:7)
 
 info: PrintBit.HardwareService.Services.PrintQueueWatcher[0]
-      Detected print job: C:\Users\printbit\printbit-worker\queue\cb8bab2e-a13e-4db2-86cb-176352a2eb3c_bead6cc3-b6c0-47f9-afb5-c377b3353b7a_1787023448791.pdf
-warn: PrintBit.HardwareService.Services.PrintQueueWatcher[0]
-      Print job failed. Files moved to failed directory.
+      Detected print job: C:\Users\printbit\printbit-worker\queue\a1817689-df60-4b20-b4c2-6e0210823415_12ad8599-edfc-4f60-8919-981b4d026e71_1788072339549.pdf
+info: PrintBit.Infrastructure.IPC.WorkerEventPipeClient[0]
+      [PIPE → Node] Sent PrintStarted to printbit-worker-events
+warn: PrintBit.Infrastructure.Services.PrintService.JobOrchestrator[0]
+      Whole-document copy 1 waiting for printer health before page 1: Epson hardware status: No Paper
+info: PrintBit.Infrastructure.IPC.WorkerEventPipeClient[0]
+      [PIPE → Node] Sent JobPaused to printbit-worker-events
