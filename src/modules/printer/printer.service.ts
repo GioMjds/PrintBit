@@ -10,7 +10,9 @@ import {
   pausePrintJobViaEdge,
   resumePrintJobViaEdge,
   cancelPrintJobViaEdge,
+  queryActiveJobProgressViaEdge,
   type EdgePrinterStatus,
+  type EdgeJobProgress,
 } from '@/services/windows-printer-edge';
 import { getRecoverySession, checkpointRecoverySession } from '@/services/recovery';
 import { withBalanceLock, db } from '@/core/database/db';
@@ -112,11 +114,57 @@ export interface PrintError {
   canDismiss?: boolean;
 }
 
+export interface JobProgressEvaluation {
+  interrupted: boolean;
+  reason: 'out_of_paper' | 'paused_error' | 'none';
+  confirmedPagesPrinted: number;
+  unprintedPages: number;
+}
+
+export function evaluateJobProgress(progress: {
+  jobId: number;
+  pagesPrinted: number;
+  totalPages: number;
+  isOutOfPaper?: boolean;
+  isPaused?: boolean;
+  isCompleted?: boolean;
+  isDeleting?: boolean;
+  status?: string;
+}): JobProgressEvaluation {
+  const isOutOfPaper = Boolean(
+    progress.isOutOfPaper ||
+    (progress.status && progress.status.toLowerCase().includes('paperout'))
+  );
+  const interrupted = isOutOfPaper || Boolean(progress.isPaused && progress.pagesPrinted < progress.totalPages);
+  const confirmedPagesPrinted = Math.max(0, Math.min(progress.pagesPrinted, progress.totalPages));
+  const unprintedPages = Math.max(0, progress.totalPages - confirmedPagesPrinted);
+
+  return {
+    interrupted,
+    reason: isOutOfPaper ? 'out_of_paper' : progress.isPaused ? 'paused_error' : 'none',
+    confirmedPagesPrinted,
+    unprintedPages,
+  };
+}
+
 export class PrinterService {
   constructor(
     private readonly io?: SocketIOServer,
     private readonly sessionStore?: SessionStore,
   ) {}
+
+  evaluateJobProgress(progress: {
+    jobId: number;
+    pagesPrinted: number;
+    totalPages: number;
+    isOutOfPaper?: boolean;
+    isPaused?: boolean;
+    isCompleted?: boolean;
+    isDeleting?: boolean;
+    status?: string;
+  }): JobProgressEvaluation {
+    return evaluateJobProgress(progress);
+  }
 
   async getStatusResponse(): Promise<PrinterStatusResponse> {
     let telemetry = getPrinterTelemetry();
