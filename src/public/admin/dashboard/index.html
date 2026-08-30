@@ -315,6 +315,22 @@
               </p>
             </section>
 
+            <div class="admin-card active-job-card" id="activeJobCard" hidden>
+              <div class="active-job-header">
+                <h3>⚠️ Active Print Job Supervisor</h3>
+                <span class="badge" id="jobStatusBadge">Paused (Out of Paper)</span>
+              </div>
+              <div class="active-job-details">
+                <p><strong>Document:</strong> <span id="activeJobDocName">-</span></p>
+                <p><strong>Progress:</strong> <span id="activeJobPages">2 / 3 pages</span></p>
+                <p><strong>Escrow Balance:</strong> ₱<span id="activeJobBalance">10.00</span></p>
+              </div>
+              <div class="active-job-actions">
+                <button class="btn btn-primary" id="btnResumeJob">🔄 Refilled Paper &amp; Resume Print</button>
+                <button class="btn btn-danger" id="btnCancelJob">🛑 Cancel Job &amp; Auto-Refund</button>
+              </div>
+            </div>
+
             <div class="kpi-ink-row">
               <!-- Left: KPI cards -->
               <div class="kpi-ink-row__left">

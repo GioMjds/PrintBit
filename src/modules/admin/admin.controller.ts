@@ -418,6 +418,12 @@ export class AdminController {
       this.handleGetSummary,
     );
     this.router.get(
+      '/active-print-job',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      this.handleGetActivePrintJob,
+    );
+    this.router.get(
       '/status',
       requireAdminLocalAccess,
       requireAdminPin,
@@ -989,6 +995,50 @@ export class AdminController {
           wifiActive,
         },
       });
+    }
+  };
+
+  private handleGetActivePrintJob = async (
+    _req: Request,
+    res: Response,
+  ): Promise<void> => {
+    try {
+      const lifecycleEntries = db.data?.spoolerLifecycle ?? [];
+      const activeEntry = lifecycleEntries.find(
+        (e) =>
+          e.currentState === 'processing' ||
+          e.currentState === 'paused' ||
+          e.currentState === 'queued',
+      );
+
+      if (!activeEntry) {
+        res.json({ ok: true, activeJob: { hasActiveJob: false } });
+        return;
+      }
+
+      const currentBalance = db.data?.balance ?? 0;
+
+      res.json({
+        ok: true,
+        activeJob: {
+          hasActiveJob: true,
+          jobId: activeEntry.spoolerJobId ?? null,
+          spoolerCorrelationKey: activeEntry.spoolerCorrelationKey,
+          transactionId: activeEntry.transactionId,
+          documentName: (activeEntry as any).meta?.filename ?? 'Document',
+          pagesPrinted: activeEntry.pagesPrinted ?? 0,
+          totalPages: activeEntry.totalPages ?? 0,
+          escrowBalance: currentBalance,
+          status: activeEntry.currentState,
+          isOutOfPaper:
+            activeEntry.reason?.toLowerCase().includes('paper') ?? false,
+          isPaused: activeEntry.currentState === 'paused',
+        },
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ ok: false, error: 'Failed to query active print job' });
     }
   };
 

@@ -44,6 +44,31 @@ const forecastInkList = document.getElementById(
   'forecastInkList',
 ) as HTMLElement | null;
 
+// ── Active Job Supervisor elements ──────────────────────
+const activeJobCard = document.getElementById('activeJobCard') as HTMLElement | null;
+const jobStatusBadge = document.getElementById('jobStatusBadge') as HTMLElement | null;
+const activeJobDocName = document.getElementById('activeJobDocName') as HTMLElement | null;
+const activeJobPages = document.getElementById('activeJobPages') as HTMLElement | null;
+const activeJobBalance = document.getElementById('activeJobBalance') as HTMLElement | null;
+const btnResumeJob = document.getElementById('btnResumeJob') as HTMLButtonElement | null;
+const btnCancelJob = document.getElementById('btnCancelJob') as HTMLButtonElement | null;
+
+interface ActiveJobInfo {
+  hasActiveJob: boolean;
+  jobId?: number | null;
+  spoolerCorrelationKey?: string | null;
+  transactionId?: string;
+  documentName?: string;
+  pagesPrinted?: number;
+  totalPages?: number;
+  escrowBalance?: number;
+  status?: string;
+  isOutOfPaper?: boolean;
+  isPaused?: boolean;
+}
+
+let currentActiveJob: ActiveJobInfo | null = null;
+
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 const resetBalanceBtn = document.getElementById(
   'resetBalanceBtn',
@@ -242,8 +267,72 @@ function applySummary(summary: SummaryResponse): void {
   updateSidebarBadges(summary);
 }
 
+function updateActiveJobCard(activeJob: ActiveJobInfo | null | undefined): void {
+  if (!activeJobCard) return;
+
+  if (!activeJob || !activeJob.hasActiveJob) {
+    activeJobCard.hidden = true;
+    currentActiveJob = null;
+    return;
+  }
+
+  currentActiveJob = activeJob;
+  activeJobCard.hidden = false;
+
+  if (activeJobDocName) {
+    activeJobDocName.textContent = activeJob.documentName || 'Document';
+  }
+  if (activeJobPages) {
+    const printed = activeJob.pagesPrinted ?? 0;
+    const total = activeJob.totalPages ?? 0;
+    activeJobPages.textContent = `${printed} / ${total} pages`;
+  }
+  if (activeJobBalance) {
+    const bal =
+      typeof activeJob.escrowBalance === 'number'
+        ? activeJob.escrowBalance.toFixed(2)
+        : '0.00';
+    activeJobBalance.textContent = bal;
+  }
+  if (jobStatusBadge) {
+    if (activeJob.isOutOfPaper) {
+      jobStatusBadge.textContent = 'Paused (Out of Paper)';
+      jobStatusBadge.className = 'badge badge--danger';
+    } else if (activeJob.isPaused) {
+      jobStatusBadge.textContent = 'Paused';
+      jobStatusBadge.className = 'badge badge--warning';
+    } else if (activeJob.status === 'processing') {
+      jobStatusBadge.textContent = 'Processing';
+      jobStatusBadge.className = 'badge badge--info';
+    } else {
+      jobStatusBadge.textContent = activeJob.status || 'Active';
+      jobStatusBadge.className = 'badge';
+    }
+  }
+}
+
+async function loadActivePrintJob(): Promise<void> {
+  try {
+    const res = await apiFetch('/api/admin/active-print-job');
+    if (res.ok) {
+      const data = (await res.json()) as { ok: boolean; activeJob?: ActiveJobInfo };
+      if (data.ok && data.activeJob) {
+        updateActiveJobCard(data.activeJob);
+        return;
+      }
+    }
+    updateActiveJobCard(null);
+  } catch (err) {
+    console.error('Failed to load active print job:', err);
+    updateActiveJobCard(null);
+  }
+}
+
 async function loadData(): Promise<void> {
-  const res = await apiFetch('/api/admin/summary');
+  const [res] = await Promise.all([
+    apiFetch('/api/admin/summary'),
+    loadActivePrintJob(),
+  ]);
   if (!res.ok) {
     if (res.status === 401) throw new Error('Invalid admin PIN.');
     throw new Error('Failed to load dashboard data.');
@@ -303,8 +392,67 @@ clearStorageBtn.addEventListener('click', () => {
     );
 });
 
+if (btnResumeJob) {
+  btnResumeJob.addEventListener('click', async () => {
+    if (!currentActiveJob?.spoolerCorrelationKey) {
+      setMessage('No active job correlation key found.');
+      return;
+    }
+    if (!window.confirm('Resume print job after refilling paper?')) return;
+    setMessage('Resuming print job...');
+    btnResumeJob.disabled = true;
+    try {
+      const res = await apiFetch('/api/printer/resume', {
+        method: 'POST',
+        body: { spoolerCorrelationKey: currentActiveJob.spoolerCorrelationKey },
+      });
+      const data = await res.json();
+      if (res.ok && (data.success || data.ok)) {
+        setMessage('Print job resumed.');
+        await loadData();
+      } else {
+        throw new Error(data.error || 'Failed to resume print job.');
+      }
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Failed to resume print job.');
+    } finally {
+      btnResumeJob.disabled = false;
+    }
+  });
+}
+
+if (btnCancelJob) {
+  btnCancelJob.addEventListener('click', async () => {
+    if (!currentActiveJob?.spoolerCorrelationKey) {
+      setMessage('No active job correlation key found.');
+      return;
+    }
+    if (!window.confirm('Cancel job and refund remaining unprinted pages?')) return;
+    setMessage('Cancelling job and processing auto-refund...');
+    btnCancelJob.disabled = true;
+    try {
+      const res = await apiFetch('/api/printer/cancel-remaining', {
+        method: 'POST',
+        body: { spoolerCorrelationKey: currentActiveJob.spoolerCorrelationKey },
+      });
+      const data = await res.json();
+      if (res.ok && (data.success || data.ok)) {
+        setMessage('Print job cancelled and auto-refund processed.');
+        await loadData();
+      } else {
+        throw new Error(data.error || 'Failed to cancel print job.');
+      }
+    } catch (e: unknown) {
+      setMessage(e instanceof Error ? e.message : 'Failed to cancel print job.');
+    } finally {
+      btnCancelJob.disabled = false;
+    }
+  });
+}
+
 initAuth(async () => {
   await loadData();
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(() => void loadData(), 10_000);
 });
+
