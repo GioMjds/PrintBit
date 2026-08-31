@@ -97,18 +97,18 @@ if (-not (Test-Path $serverBundlePath)) {
     $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
     if (-not $pnpm) {
         Write-Host "[PrintBit] ERROR: pnpm is required to build dist\server.js." -ForegroundColor Red
-        Write-Host "           Run 'pnpm run build:server' once from project root." -ForegroundColor Yellow
+        Write-Host "           Run 'pnpm run build' once from project root." -ForegroundColor Yellow
         Read-Host  "           Press Enter to exit"
         exit 1
     }
     try {
         Push-Location $ProjectDir
-        & $pnpm.Source run build:server
+        & $pnpm.Source run build
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $serverBundlePath)) {
-            throw "build:server did not produce dist\server.js"
+            throw "build did not produce dist\server.js"
         }
     } catch {
-        Write-Host "[PrintBit] ERROR: build:server failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[PrintBit] ERROR: build failed: $($_.Exception.Message)" -ForegroundColor Red
         Read-Host  "           Press Enter to exit"
         exit 1
     } finally {

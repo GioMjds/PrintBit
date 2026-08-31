@@ -302,6 +302,50 @@ body {
   place-items: center;
   padding: 28px;
   position: relative;
+  overflow: hidden;
+}
+
+.scan-error-notice {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  left: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  border-radius: 14px;
+  background: rgba(54, 24, 43, 0.94);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+}
+
+.scan-error-notice__title {
+  margin: 0;
+  color: #fecaca;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.scan-error-notice__summary {
+  margin: 4px 0 0;
+  color: #ffe4e6;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scan-error-notice__checks {
+  display: grid;
+  gap: 4px;
+  min-width: 205px;
+  margin: 0;
+  padding-left: 17px;
+  color: #ffe4e6;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 /* All states overlap */
@@ -1304,6 +1348,11 @@ body {
   }
   .config-strip {
     flex-wrap: wrap;
+  }
+  .scan-error-notice {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    max-width: none;
   }
 }
 

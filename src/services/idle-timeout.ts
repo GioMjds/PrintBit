@@ -3,6 +3,8 @@
  * Provides configurable idle detection with optional warning modal
  */
 
+import { isMobileViewport } from '@/public/shared/device-mode';
+
 export interface PageIdleState {
   enabled: boolean;
   timeoutSeconds: number;
@@ -49,7 +51,15 @@ let areListenersAttached = false;
 export async function initializePageIdleTimeout(
   config: IdleTimeoutConfig = {},
 ): Promise<void> {
-  idleConfig = { ...idleConfig, ...config };
+  idleConfig = {
+    ...idleConfig,
+    ...config,
+    // Keep the session timeout/cleanup active on mobile, but never mount its
+    // fullscreen warning there. The warning is a kiosk-only interaction.
+    showWarningModal: isMobileViewport()
+      ? false
+      : (config.showWarningModal ?? idleConfig.showWarningModal),
+  };
   pageIdleState.timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
 
   try {

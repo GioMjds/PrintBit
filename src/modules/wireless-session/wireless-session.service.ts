@@ -429,6 +429,7 @@ export class WirelessSessionService {
 
     const absolutePath = path.resolve(target.filePath);
     const extension = path.extname(absolutePath).toLowerCase();
+    const sourceRequested = req.query.source === '1';
     const startedAt = Date.now();
     console.log('[preview] request', {
       sessionId,
@@ -437,6 +438,20 @@ export class WirelessSessionService {
     });
 
     try {
+      if (sourceRequested && extension === '.docx') {
+        res.setHeader(
+          'Content-Type',
+          target.contentType ||
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
+        console.log('[preview] serving docx source file', {
+          path: absolutePath,
+          tookMs: Date.now() - startedAt,
+        });
+        res.sendFile(absolutePath);
+        return;
+      }
+
       if (extension === '.pdf') {
         res.setHeader('Content-Type', 'application/pdf');
         console.log('[preview] serving pdf file', {

@@ -9,6 +9,8 @@ import { PREVIEW_CACHE_DIR } from "@/config/http.config";
 const execFileAsync = promisify(execFile);
 
 export class PreviewService {
+  private readonly inFlightConversions = new Map<string, Promise<string>>();
+
   private resolveLibreOfficePath(): string | null {
     const configured = process.env.PRINTBIT_LIBREOFFICE_PATH;
     if (configured && fs.existsSync(configured)) {
@@ -75,7 +77,41 @@ export class PreviewService {
     const cachePdf = path.join(PREVIEW_CACHE_DIR, `${key}.pdf`);
     if (fs.existsSync(cachePdf)) return cachePdf;
 
+    const existing = this.inFlightConversions.get(cachePdf);
+    if (existing) return existing;
+
+    const conversion = this.convertToPdfPreviewUncached(
+      sourcePath,
+      cacheSource,
+      cachePdf,
+      ext,
+    );
+    this.inFlightConversions.set(cachePdf, conversion);
+
+    try {
+      return await conversion;
+    } finally {
+      this.inFlightConversions.delete(cachePdf);
+    }
+  }
+
+  private async convertToPdfPreviewUncached(
+    sourcePath: string,
+    cacheSource: string,
+    cachePdf: string,
+    ext: string,
+  ): Promise<string> {
     await fs.promises.copyFile(sourcePath, cacheSource);
+
+    const sofficePath = this.resolveLibreOfficePath();
+    let libreOfficeError: unknown;
+    if (sofficePath) {
+      try {
+        return await this.convertViaLibreOffice(cacheSource, cachePdf);
+      } catch (error) {
+        libreOfficeError = error;
+      }
+    }
 
     if ((ext === ".doc" || ext === ".docx") && process.platform === "win32") {
       try {
@@ -85,16 +121,28 @@ export class PreviewService {
         );
         if (fs.existsSync(cachePdf)) return cachePdf;
       } catch {
-        // Word not installed or COM failed - fall through to LibreOffice
+        // Word is a fallback for DOC and DOCX when LibreOffice cannot convert.
       }
     }
 
+    if (libreOfficeError) {
+      throw libreOfficeError;
+    }
+
+    throw new Error(
+      "Preview conversion tool not found. Install Microsoft Word or LibreOffice, or set PRINTBIT_LIBREOFFICE_PATH.",
+    );
+  }
+
+  private async convertViaLibreOffice(
+    cacheSource: string,
+    cachePdf: string,
+  ): Promise<string> {
     const sofficePath = this.resolveLibreOfficePath();
     if (!sofficePath) {
-      throw new Error(
-        "Preview conversion tool not found. Install Microsoft Word or LibreOffice, or set PRINTBIT_LIBREOFFICE_PATH.",
-      );
+      throw new Error("LibreOffice is not available for preview conversion.");
     }
+    const ext = path.extname(cacheSource);
 
     try {
       await execFileAsync(
