@@ -39,7 +39,13 @@ const feedbackPortalAssetRateLimit = createRateLimit({
   message: 'Too many requests. Please try again later.',
 });
 
-function renderFeedbackPortal(token: string): string {
+function renderFeedbackPortal(token?: string): string {
+  if (!token) {
+    return FEEDBACK_PORTAL_TEMPLATE.replace(
+      '</head>',
+      `<base href="/feedback/"></head>`,
+    );
+  }
   const safeTokenForScript = serializeForInlineScript(token);
   return FEEDBACK_PORTAL_TEMPLATE.replace(
     '</head>',
@@ -66,16 +72,47 @@ export class FeedbackController {
 
   private initializeRoutes(): void {
     // API routes (mounted at /api/feedback)
+    this.router.post('/', this.submitDirectFeedback);
     this.router.post('/sessions', this.createSession);
     this.router.get('/sessions/by-token/:token', this.getSessionByToken);
     this.router.post('/sessions/:sessionId/submit', this.submitFeedback);
 
     // Portal routes (mounted at /feedback)
+    this.portalRouter.get('/', this.serveDirectFeedbackPortal);
+    this.portalRouter.get('/styles.css', this.serveDirectFeedbackAsset);
+    this.portalRouter.get('/app.js', this.serveDirectFeedbackAsset);
     this.portalRouter.get('/:token', this.serveFeedbackPortal);
     this.portalRouter.get('/:token/:asset', feedbackPortalAssetRateLimit, this.serveFeedbackAsset);
   }
 
   // Public API routes
+  private submitDirectFeedback = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    const body = req.body as {
+      comment?: unknown;
+      category?: unknown;
+      rating?: unknown;
+    };
+
+    const comment = typeof body.comment === 'string' ? body.comment : '';
+    const category = typeof body.category === 'string' ? body.category : null;
+    const rating = typeof body.rating === 'number' ? body.rating : null;
+
+    try {
+      const entry = await this.feedbackService.submitFeedback({
+        comment,
+        category,
+        rating,
+      });
+      res.status(201).json({ ok: true, feedbackId: entry.id });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: msg });
+    }
+  };
+
   private createSession = async (
     req: Request,
     res: Response,
@@ -135,6 +172,13 @@ export class FeedbackController {
   };
 
   // Portal routes
+  private serveDirectFeedbackPortal = (
+    _req: Request,
+    res: Response,
+  ): void => {
+    res.type('html').send(renderFeedbackPortal());
+  };
+
   private serveFeedbackPortal = async (
     req: Request,
     res: Response,
@@ -153,8 +197,17 @@ export class FeedbackController {
     }
   };
 
+  private serveDirectFeedbackAsset = (req: Request, res: Response): void => {
+    const asset = req.path.replace(/^\//, '');
+    this.sendAssetFile(asset, res);
+  };
+
   private serveFeedbackAsset = (req: Request, res: Response): void => {
     const { asset } = req.params as { asset: string };
+    this.sendAssetFile(asset, res);
+  };
+
+  private sendAssetFile = (asset: string, res: Response): void => {
     if (!FEEDBACK_PORTAL_ASSETS.has(asset)) {
       res.status(404).send('Not found.');
       return;

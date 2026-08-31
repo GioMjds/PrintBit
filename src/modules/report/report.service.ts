@@ -55,8 +55,8 @@ export interface CreateSessionResult {
 }
 
 export interface RegisterAttachmentInput {
-  sessionId: string;
-  token: string;
+  sessionId?: string;
+  token?: string;
   originalName: string;
   storedName: string;
   contentType: string;
@@ -65,8 +65,8 @@ export interface RegisterAttachmentInput {
 }
 
 export interface SubmitReportIssueInput {
-  sessionId: string;
-  token: string;
+  sessionId?: string;
+  token?: string;
   title: string;
   description: string;
   category?: string | null;
@@ -148,7 +148,13 @@ export class ReportService {
     return reportIssueService.submitReportIssue(input);
   }
 
-  renderReportPortal(token: string): string {
+  renderReportPortal(token?: string): string {
+    if (!token) {
+      return REPORT_PORTAL_TEMPLATE.replace(
+        '</head>',
+        `<base href="/report/"></head>`,
+      );
+    }
     const safeTokenForScript = serializeForInlineScript(token);
     return REPORT_PORTAL_TEMPLATE.replace(
       '</head>',

@@ -582,90 +582,36 @@ const feedbackQrCanvas = document.getElementById(
   'feedbackQrCanvas',
 ) as HTMLCanvasElement | null;
 const feedbackModalStatus = document.getElementById('feedbackModalStatus');
-const feedbackModalTimer = document.getElementById('feedbackModalTimer');
-const feedbackTimerCount = document.getElementById('feedbackTimerCount');
-
-let feedbackTimerHandle: number | null = null;
-
-interface FeedbackSessionResponse {
-  sessionId: string;
-  token: string;
-  feedbackUrl: string;
-  expiresAt: string;
-}
 
 function setFeedbackStatus(msg: string): void {
   if (feedbackModalStatus) feedbackModalStatus.textContent = msg;
 }
 
+async function renderFeedbackQr(): Promise<void> {
+  if (!feedbackQrCanvas) return;
+  setFeedbackStatus('Generating QR code\u2026');
+  try {
+    const feedbackUrl = `${window.location.origin}/feedback`;
+    await QRCode.toCanvas(feedbackQrCanvas, feedbackUrl, {
+      width: 220,
+      margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    setFeedbackStatus('');
+  } catch {
+    setFeedbackStatus('Could not generate QR code. Please try again.');
+  }
+}
+
 function openFeedbackModal(): void {
   feedbackOverlay?.classList.add('is-visible');
   feedbackOverlay?.setAttribute('aria-hidden', 'false');
-  void loadFeedbackSession();
+  void renderFeedbackQr();
 }
 
 function closeFeedbackModal(): void {
   feedbackOverlay?.classList.remove('is-visible');
   feedbackOverlay?.setAttribute('aria-hidden', 'true');
-  if (feedbackTimerHandle !== null) {
-    clearInterval(feedbackTimerHandle);
-    feedbackTimerHandle = null;
-  }
-  if (feedbackModalTimer) feedbackModalTimer.style.display = 'none';
-  if (feedbackQrCanvas) {
-    const ctx = feedbackQrCanvas.getContext('2d');
-    ctx?.clearRect(0, 0, feedbackQrCanvas.width, feedbackQrCanvas.height);
-  }
-  setFeedbackStatus('Generating QR code\u2026');
-}
-
-function startExpiryCountdown(expiresAt: string): void {
-  if (feedbackModalTimer) feedbackModalTimer.style.display = 'block';
-
-  const tick = (): void => {
-    const remaining = new Date(expiresAt).getTime() - Date.now();
-    if (remaining <= 0) {
-      if (feedbackTimerCount) feedbackTimerCount.textContent = '0:00';
-      if (feedbackTimerHandle !== null) clearInterval(feedbackTimerHandle);
-      setFeedbackStatus(
-        'Session expired. Close and reopen to get a new QR code.',
-      );
-      return;
-    }
-    const mins = Math.floor(remaining / 60000);
-    const secs = String(Math.floor((remaining % 60000) / 1000)).padStart(
-      2,
-      '0',
-    );
-    if (feedbackTimerCount) feedbackTimerCount.textContent = `${mins}:${secs}`;
-  };
-
-  tick();
-  feedbackTimerHandle = window.setInterval(tick, 1000);
-}
-
-async function loadFeedbackSession(): Promise<void> {
-  setFeedbackStatus('Generating QR code\u2026');
-  try {
-    const res = await fetch('/api/feedback/sessions', { method: 'POST' });
-    if (!res.ok) {
-      setFeedbackStatus('Failed to create session. Please try again.');
-      return;
-    }
-    const data = (await res.json()) as FeedbackSessionResponse;
-
-    if (!feedbackQrCanvas) return;
-    await QRCode.toCanvas(feedbackQrCanvas, data.feedbackUrl, {
-      width: 220,
-      margin: 1,
-      color: { dark: '#000000', light: '#ffffff' },
-    });
-
-    setFeedbackStatus('');
-    startExpiryCountdown(data.expiresAt);
-  } catch {
-    setFeedbackStatus('Could not generate QR code. Please try again.');
-  }
 }
 
 openFeedbackBtn?.addEventListener('click', openFeedbackModal);
@@ -683,87 +629,36 @@ const reportQrCanvas = document.getElementById(
   'reportQrCanvas',
 ) as HTMLCanvasElement | null;
 const reportModalStatus = document.getElementById('reportModalStatus');
-const reportModalTimer = document.getElementById('reportModalTimer');
-const reportTimerCount = document.getElementById('reportTimerCount');
-
-let reportTimerHandle: number | null = null;
-
-interface ReportSessionResponse {
-  sessionId: string;
-  token: string;
-  reportUrl: string;
-  expiresAt: string;
-}
 
 function setReportStatus(msg: string): void {
   if (reportModalStatus) reportModalStatus.textContent = msg;
 }
 
+async function renderReportQr(): Promise<void> {
+  if (!reportQrCanvas) return;
+  setReportStatus('Generating QR code\u2026');
+  try {
+    const reportUrl = `${window.location.origin}/report`;
+    await QRCode.toCanvas(reportQrCanvas, reportUrl, {
+      width: 220,
+      margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    setReportStatus('');
+  } catch {
+    setReportStatus('Could not generate QR code. Please try again.');
+  }
+}
+
 function openReportModal(): void {
   reportOverlay?.classList.add('is-visible');
   reportOverlay?.setAttribute('aria-hidden', 'false');
-  void loadReportSession();
+  void renderReportQr();
 }
 
 function closeReportModal(): void {
   reportOverlay?.classList.remove('is-visible');
   reportOverlay?.setAttribute('aria-hidden', 'true');
-  if (reportTimerHandle !== null) {
-    clearInterval(reportTimerHandle);
-    reportTimerHandle = null;
-  }
-  if (reportModalTimer) reportModalTimer.style.display = 'none';
-  if (reportQrCanvas) {
-    const ctx = reportQrCanvas.getContext('2d');
-    ctx?.clearRect(0, 0, reportQrCanvas.width, reportQrCanvas.height);
-  }
-  setReportStatus('Generating QR code…');
-}
-
-function startReportExpiry(expiresAt: string): void {
-  if (reportModalTimer) reportModalTimer.style.display = 'block';
-  const tick = (): void => {
-    const remaining = new Date(expiresAt).getTime() - Date.now();
-    if (remaining <= 0) {
-      if (reportTimerHandle !== null) clearInterval(reportTimerHandle);
-      reportTimerHandle = null;
-      setReportStatus('Session expired. Close and reopen to try again.');
-      if (reportModalTimer) reportModalTimer.style.display = 'none';
-      return;
-    }
-    const mins = Math.floor(remaining / 60000);
-    const secs = String(Math.floor((remaining % 60000) / 1000)).padStart(
-      2,
-      '0',
-    );
-    if (reportTimerCount) reportTimerCount.textContent = `${mins}:${secs}`;
-  };
-  tick();
-  reportTimerHandle = window.setInterval(tick, 1000);
-}
-
-async function loadReportSession(): Promise<void> {
-  setReportStatus('Generating QR code…');
-  try {
-    const res = await fetch('/api/report-issues/sessions', { method: 'POST' });
-    if (!res.ok) {
-      setReportStatus('Failed to create session. Please try again.');
-      return;
-    }
-    const data = (await res.json()) as ReportSessionResponse;
-
-    if (!reportQrCanvas) return;
-    await QRCode.toCanvas(reportQrCanvas, data.reportUrl, {
-      width: 220,
-      margin: 1,
-      color: { dark: '#000000', light: '#ffffff' },
-    });
-
-    setReportStatus('');
-    startReportExpiry(data.expiresAt);
-  } catch {
-    setReportStatus('Could not generate QR code. Please try again.');
-  }
 }
 
 openReportBtn?.addEventListener('click', openReportModal);

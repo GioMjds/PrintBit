@@ -22,9 +22,9 @@ interface CreateSessionResult {
   expiresAt: string;
 }
 
-interface SubmitFeedbackInput {
-  sessionId: string;
-  token: string;
+export interface SubmitFeedbackInput {
+  sessionId?: string;
+  token?: string;
   comment: string;
   category?: string | null;
   rating?: number | null;
@@ -93,17 +93,23 @@ class FeedbackService {
     const category = this.normalizeCategory(input.category);
     const rating = this.normalizeRating(input.rating);
 
-    const session = feedbackStore.findSessionByIdAndToken(
-      input.sessionId,
-      input.token,
-    );
-    if (!session) throw new Error('Invalid session');
-    if (this.isExpired(session.expiresAt))
-      throw new Error('Session has expired');
+    let sessionId = input.sessionId;
+    if (input.sessionId && input.token) {
+      const session = feedbackStore.findSessionByIdAndToken(
+        input.sessionId,
+        input.token,
+      );
+      if (!session) throw new Error('Invalid session');
+      if (this.isExpired(session.expiresAt))
+        throw new Error('Session has expired');
+      sessionId = session.id;
+    } else {
+      sessionId = sessionId || 'direct';
+    }
 
     const entry: FeedbackEntry = {
       id: randomUUID(),
-      sessionId: session.id,
+      sessionId,
       timestamp: new Date().toISOString(),
       comment,
       category,
@@ -113,7 +119,11 @@ class FeedbackService {
       meta: input.meta,
     };
 
-    feedbackStore.createFeedbackSubmission(entry);
+    if (input.sessionId && input.token) {
+      feedbackStore.createFeedbackSubmission(entry);
+    } else {
+      feedbackStore.insertFeedback(entry);
+    }
 
     await adminService.appendAdminLog(
       'feedback_submitted',

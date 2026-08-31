@@ -26,9 +26,9 @@ interface CreateSessionResult {
   expiresAt: string;
 }
 
-interface RegisterAttachmentInput {
-  sessionId: string;
-  token: string;
+export interface RegisterAttachmentInput {
+  sessionId?: string;
+  token?: string;
   originalName: string;
   storedName: string;
   contentType: string;
@@ -36,9 +36,9 @@ interface RegisterAttachmentInput {
   filePath: string;
 }
 
-interface SubmitReportIssueInput {
-  sessionId: string;
-  token: string;
+export interface SubmitReportIssueInput {
+  sessionId?: string;
+  token?: string;
   title: string;
   description: string;
   category?: string | null;
@@ -46,7 +46,7 @@ interface SubmitReportIssueInput {
   meta?: LogMeta;
 }
 
-interface CreateAdminReportIssueInput {
+export interface CreateAdminReportIssueInput {
   title: string;
   description: string;
   category?: string | null;
@@ -54,14 +54,14 @@ interface CreateAdminReportIssueInput {
   meta?: LogMeta;
 }
 
-interface ListReportIssueOptions {
+export interface ListReportIssueOptions {
   status?: ReportIssueStatus;
   category?: ReportIssueCategory;
   limit?: number;
   offset?: number;
 }
 
-interface ListReportIssueResult {
+export interface ListReportIssueResult {
   total: number;
   items: ReportIssueEntry[];
 }
@@ -108,19 +108,25 @@ class ReportIssueService {
   async registerAttachment(
     input: RegisterAttachmentInput,
   ): Promise<ReportIssueAttachmentEntry> {
-    const session = this.findSession(input.sessionId, input.token);
-    if (!session) throw new Error('Invalid session');
-    if (this.isExpired(session.expiresAt))
-      throw new Error('Session has expired');
-    if (session.submittedAt) throw new Error('Session already submitted');
+    let sessionId = input.sessionId;
+    if (input.sessionId && input.token) {
+      const session = this.findSession(input.sessionId, input.token);
+      if (!session) throw new Error('Invalid session');
+      if (this.isExpired(session.expiresAt))
+        throw new Error('Session has expired');
+      if (session.submittedAt) throw new Error('Session already submitted');
 
-    const existingCount = reportIssueStore.countSessionAttachments(session.id);
-    if (existingCount >= MAX_ATTACHMENTS_PER_SESSION)
-      throw new Error('Attachment limit reached');
+      const existingCount = reportIssueStore.countSessionAttachments(session.id);
+      if (existingCount >= MAX_ATTACHMENTS_PER_SESSION)
+        throw new Error('Attachment limit reached');
+      sessionId = session.id;
+    } else {
+      sessionId = sessionId || 'direct';
+    }
 
     const attachment: ReportIssueAttachmentEntry = {
       id: randomUUID(),
-      sessionId: session.id,
+      sessionId,
       reportIssueId: null,
       timestamp: new Date().toISOString(),
       originalName: input.originalName.trim(),
@@ -136,7 +142,7 @@ class ReportIssueService {
       'report_issue_attachment_uploaded',
       'Report issue image uploaded',
       {
-        sessionId: session.id,
+        sessionId: attachment.sessionId,
         attachmentId: attachment.id,
         contentType: attachment.contentType,
         sizeBytes: attachment.sizeBytes,
@@ -151,11 +157,26 @@ class ReportIssueService {
   ): Promise<ReportIssueEntry> {
     await this.cleanupExpiredSessions();
 
-    const session = this.findSession(input.sessionId, input.token);
-    if (!session) throw new Error('Invalid session');
-    if (this.isExpired(session.expiresAt))
-      throw new Error('Session has expired');
-    if (session.submittedAt) throw new Error('Session already submitted');
+    let sessionId = input.sessionId;
+    let attachmentIds: string[] = [];
+
+    if (input.sessionId && input.token) {
+      const session = this.findSession(input.sessionId, input.token);
+      if (!session) throw new Error('Invalid session');
+      if (this.isExpired(session.expiresAt))
+        throw new Error('Session has expired');
+      if (session.submittedAt) throw new Error('Session already submitted');
+      sessionId = session.id;
+      attachmentIds = this.resolveAttachmentIds(
+        input.attachmentIds ?? [],
+        session.id,
+      );
+    } else {
+      sessionId = sessionId || 'direct';
+      attachmentIds = this.resolveDirectAttachmentIds(
+        input.attachmentIds ?? [],
+      );
+    }
 
     const title = this.sanitizeTitle(input.title);
     if (!title) throw new Error('Title is required');
@@ -164,14 +185,10 @@ class ReportIssueService {
     if (!description) throw new Error('Description is required');
 
     const category = this.normalizeCategory(input.category);
-    const attachmentIds = this.resolveAttachmentIds(
-      input.attachmentIds ?? [],
-      session.id,
-    );
 
     const entry: ReportIssueEntry = {
       id: randomUUID(),
-      sessionId: session.id,
+      sessionId,
       timestamp: new Date().toISOString(),
       title,
       description,
@@ -183,7 +200,11 @@ class ReportIssueService {
       meta: input.meta,
     };
 
-    reportIssueStore.createSessionIssueWithAttachments(entry);
+    if (input.sessionId && input.token) {
+      reportIssueStore.createSessionIssueWithAttachments(entry);
+    } else {
+      reportIssueStore.createDirectIssueWithAttachments(entry);
+    }
 
     await adminService.appendAdminLog(
       'report_issue_submitted',
@@ -335,6 +356,16 @@ class ReportIssueService {
       .listUnlinkedSessionAttachments(sessionId)
       .map((a) => a.id);
     return unique.filter((id) => valid.includes(id));
+  }
+
+  private resolveDirectAttachmentIds(ids: string[]): string[] {
+    const unique = [
+      ...new Set(ids.filter((id) => typeof id === 'string' && id.trim())),
+    ];
+    return unique.filter((id) => {
+      const att = reportIssueStore.findAttachmentById(id);
+      return att !== null && att.reportIssueId === null;
+    });
   }
 
   private sanitizeTitle(value: string): string {

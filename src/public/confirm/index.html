@@ -507,66 +507,62 @@
           <span>Dismiss</span>
         </button>
 
-        <!-- Action buttons for pause/resume (paper errors) -->
-        <div class="printer-error-modal__actions" id="errorActions" hidden>
-          <button
-            id="errorPauseBtn"
-            type="button"
-            class="error-modal-btn error-modal-btn--pause"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="6" y="4" width="4" height="16" rx="1" />
-              <rect x="14" y="4" width="4" height="16" rx="1" />
-            </svg>
-            <span>Pause Job</span>
-          </button>
-          <button
-            id="errorResumeBtn"
-            type="button"
-            class="error-modal-btn error-modal-btn--resume"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-            <span>Resume Print</span>
-          </button>
-          <button
-            id="errorCancelRemainingBtn"
-            type="button"
-            class="error-modal-btn error-modal-btn--cancel-remaining"
+        <section
+          class="maintenance-resolution"
+          id="maintenanceResolution"
+          aria-labelledby="maintenanceHeading"
+          hidden
+        >
+          <div class="maintenance-resolution__callout">
+            <h3 id="maintenanceHeading">Call maintenance staff</h3>
+            <p>
+              Keep this screen open and provide the transaction ID for
+              verification of the printing problem.
+            </p>
+          </div>
+
+          <div class="maintenance-resolution__reference">
+            <span>Transaction ID</span>
+            <code id="maintenanceTransactionId">Pending verification</code>
+          </div>
+
+          <div
+            class="maintenance-resolution__receipt"
+            id="maintenanceReceiptContainer"
             hidden
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-            <span>Cancel Remaining</span>
+            <div class="maintenance-resolution__receipt-header">
+              Transaction e-receipt
+            </div>
+            <p>Scan to view or save the receipt for staff verification.</p>
+            <div class="maintenance-resolution__qr-box">
+              <canvas
+                id="maintenanceReceiptQrCanvas"
+                aria-label="Transaction receipt QR code"
+              ></canvas>
+            </div>
+            <p
+              class="maintenance-resolution__expiry"
+              id="maintenanceReceiptQrExpiry"
+            ></p>
+          </div>
+
+          <p
+            class="maintenance-resolution__pending"
+            id="maintenanceReceiptPending"
+            role="status"
+          >
+            Preparing the transaction receipt QR code…
+          </p>
+
+          <button
+            id="maintenanceDoneBtn"
+            type="button"
+            class="maintenance-resolution__done"
+          >
+            Done
           </button>
-        </div>
+        </section>
       </div>
     </div>
 

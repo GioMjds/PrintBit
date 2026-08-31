@@ -277,6 +277,22 @@ export class ReportIssueSqliteStore {
     }
   }
 
+  assignAttachmentsDirectly(
+    attachmentIds: string[],
+    reportIssueId: string,
+  ): void {
+    if (attachmentIds.length === 0) return;
+    const db = getSqliteDb();
+    const stmt = db.prepare(
+      `UPDATE report_issue_attachments
+       SET report_issue_id = ?
+       WHERE id = ? AND report_issue_id IS NULL`,
+    );
+    for (const attachmentId of attachmentIds) {
+      stmt.run(reportIssueId, attachmentId);
+    }
+  }
+
   markSessionSubmitted(sessionId: string, submittedAt: string): number {
     const result = getSqliteDb()
       .prepare(
@@ -303,6 +319,13 @@ export class ReportIssueSqliteStore {
         entry.id,
         entry.sessionId,
       );
+    });
+  }
+
+  createDirectIssueWithAttachments(entry: ReportIssueEntry): void {
+    withTransaction(() => {
+      this.createReportIssue(entry);
+      this.assignAttachmentsDirectly(entry.attachmentIds, entry.id);
     });
   }
 

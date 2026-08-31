@@ -66,9 +66,6 @@ const formMsg = document.getElementById('formMsg') as HTMLElement;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const token =
-  window.reportIssueToken ?? window.location.pathname.split('/')[2] ?? '';
-let sessionId: string | null = null;
 let selectedCategory: string = 'other';
 const attachmentIds: string[] = [];
 const attachedFiles: Array<{
@@ -170,8 +167,6 @@ function renderAttachmentList(): void {
 // ── Single file upload ────────────────────────────────────────────────────────
 
 async function uploadSingleFile(file: File): Promise<void> {
-  if (!sessionId) throw new Error('Session unavailable');
-
   const trackIdx =
     attachedFiles.push({
       name: file.name,
@@ -184,10 +179,10 @@ async function uploadSingleFile(file: File): Promise<void> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(
-    `/api/report-issues/sessions/${encodeURIComponent(sessionId)}/attachments?token=${encodeURIComponent(token)}`,
-    { method: 'POST', body: formData },
-  );
+  const res = await fetch('/api/report-issues/attachments', {
+    method: 'POST',
+    body: formData,
+  });
 
   if (!res.ok) {
     const body = (await res.json()) as { error?: string };
@@ -208,7 +203,7 @@ async function uploadSingleFile(file: File): Promise<void> {
 imageInput.addEventListener('change', () => {
   const files = Array.from(imageInput.files ?? []);
   imageInput.value = '';
-  if (!files.length || !sessionId) return;
+  if (!files.length) return;
 
   void (async () => {
     for (const file of files) {
@@ -237,36 +232,10 @@ imageInput.addEventListener('change', () => {
   })();
 });
 
-// ── Session loading ───────────────────────────────────────────────────────────
-
-async function loadSession(): Promise<void> {
-  if (!token) {
-    setState('error');
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      `/api/report-issues/sessions/by-token/${encodeURIComponent(token)}`,
-    );
-    if (!res.ok) {
-      setState('error');
-      return;
-    }
-
-    const data = (await res.json()) as SessionResponse;
-    sessionId = data.sessionId;
-    setState('ready');
-  } catch {
-    setState('error');
-  }
-}
-
 // ── Form submission ───────────────────────────────────────────────────────────
 
 reportForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (!sessionId) return;
 
   const title = titleInput.value.trim();
   const description = descriptionInput.value.trim();
@@ -285,19 +254,16 @@ reportForm.addEventListener('submit', (e) => {
   void (async () => {
     setState('submitting');
     try {
-      const res = await fetch(
-        `/api/report-issues/sessions/${encodeURIComponent(sessionId!)}/submit?token=${encodeURIComponent(token)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            description,
-            category: selectedCategory,
-            attachmentIds,
-          }),
-        },
-      );
+      const res = await fetch('/api/report-issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description,
+          category: selectedCategory,
+          attachmentIds,
+        }),
+      });
 
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
@@ -317,7 +283,7 @@ reportForm.addEventListener('submit', (e) => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 buildCategoryChips();
-void loadSession();
+setState('ready');
 
 window.addEventListener('beforeunload', () => {
   for (const item of attachedFiles) {

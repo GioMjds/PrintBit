@@ -684,84 +684,139 @@ body {
   transform: scale(0.96);
 }
 
-/* ── Action buttons (pause / resume) ──────────────────────── */
+/* ── Staff-assisted maintenance resolution ───────────────── */
 
-.printer-error-modal__actions {
-  display: flex;
-  flex-direction: row;
-  justify-content: center;
-  flex-wrap: wrap;
+.maintenance-resolution {
+  display: grid;
   gap: 14px;
   width: 100%;
-  margin-top: 28px;
+  margin-top: 20px;
 }
 
-.error-modal-btn {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 18px 24px;
-  border: none;
-  border-radius: 16px;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 17px;
+.maintenance-resolution[hidden],
+.maintenance-resolution__receipt[hidden],
+.maintenance-resolution__pending[hidden] {
+  display: none;
+}
+
+.maintenance-resolution__callout {
+  padding: 14px 16px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 14px;
+  background: rgba(251, 191, 36, 0.1);
+  text-align: left;
+}
+
+.maintenance-resolution__callout h3 {
+  margin: 0 0 5px;
+  color: #fbbf24;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.maintenance-resolution__callout p,
+.maintenance-resolution__receipt p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.maintenance-resolution__reference {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(167, 170, 225, 0.22);
+  border-radius: 14px;
+  background: rgba(167, 170, 225, 0.08);
+  text-align: left;
+}
+
+.maintenance-resolution__reference span {
+  color: var(--text-secondary);
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.maintenance-resolution__reference code {
+  color: var(--white);
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.maintenance-resolution__receipt {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(167, 170, 225, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.maintenance-resolution__receipt-header {
+  color: #1a1a2e;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.maintenance-resolution__receipt p {
+  color: #56536f;
+  text-align: center;
+}
+
+.maintenance-resolution__qr-box {
+  display: grid;
+  place-items: center;
+  min-width: 148px;
+  min-height: 148px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--white);
+}
+
+.maintenance-resolution__expiry {
+  min-height: 18px;
+}
+
+.maintenance-resolution__pending {
+  margin: 0;
+  color: var(--lavender);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.maintenance-resolution__done {
+  width: 100%;
+  padding: 16px 24px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--peach);
+  color: #1a1a2e;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
   cursor: pointer;
   transition:
-    background 150ms,
-    transform 120ms cubic-bezier(0.34, 1.4, 0.64, 1),
-    box-shadow 200ms;
-  -webkit-tap-highlight-color: transparent;
+    filter 150ms,
+    transform 120ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
-.error-modal-btn svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
+.maintenance-resolution__done:hover {
+  filter: brightness(1.06);
 }
 
-.error-modal-btn:active {
-  transform: scale(0.96);
+.maintenance-resolution__done:active {
+  transform: scale(0.98);
 }
 
-/* Pause button — muted warm tone */
-.error-modal-btn--pause {
-  background: rgba(251, 191, 36, 0.12);
-  border: 1.5px solid rgba(251, 191, 36, 0.25);
-  color: #fbbf24;
-}
-
-.error-modal-btn--pause:hover {
-  background: rgba(251, 191, 36, 0.2);
-  border-color: rgba(251, 191, 36, 0.4);
-  box-shadow: 0 4px 20px rgba(251, 191, 36, 0.15);
-}
-
-/* Resume button — green, prominent */
-.error-modal-btn--resume {
-  background: #3a9e52;
-  color: var(--white);
-  box-shadow: 0 4px 20px rgba(58, 158, 82, 0.3);
-}
-
-.error-modal-btn--resume:hover {
-  background: #45b560;
-  box-shadow: 0 8px 32px rgba(58, 158, 82, 0.45);
-}
-
-/* Cancel Remaining Button */
-.error-modal-btn--cancel-remaining {
-  background: rgba(242, 110, 107, 0.1);
-  color: #f26e6b;
-  border: 1.5px solid rgba(242, 110, 107, 0.25);
-}
-
-.error-modal-btn--cancel-remaining:hover {
-  background: rgba(242, 110, 107, 0.18);
-  border-color: rgba(242, 110, 107, 0.4);
-  box-shadow: 0 4px 20px rgba(242, 110, 107, 0.15);
+.maintenance-resolution__done:focus-visible {
+  outline: 3px solid var(--white);
+  outline-offset: 3px;
 }
 
 /* Progress text styling */
@@ -776,50 +831,13 @@ body {
   display: inline-block;
 }
 
-/* Loading + error feedback for the action buttons */
-
-.error-modal-btn[disabled] {
-  opacity: 0.6;
-  cursor: not-allowed;
-  pointer-events: none;
-  box-shadow: none;
-  transform: none;
-}
-
-.error-modal-btn[disabled]:active {
-  transform: none;
-}
-
-.printer-error-modal__inline-error {
-  grid-column: 1 / -1;
-  width: 100%;
-  margin: 6px 0 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(242, 110, 107, 0.12);
-  border: 1px solid rgba(242, 110, 107, 0.3);
-  color: #f26e6b;
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
-  text-align: center;
-}
-
-.printer-error-modal__inline-error[hidden] {
-  display: none;
-}
-
 /* ── Responsive adjustments ───────────────────────────────── */
 @media (max-width: 540px) {
   .printer-error-modal {
     padding: 36px 24px 32px;
     border-radius: 24px;
-  }
-
-  .printer-error-modal__actions {
-    flex-direction: column;
-    gap: 10px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
   }
 
   .printer-error-modal__title {

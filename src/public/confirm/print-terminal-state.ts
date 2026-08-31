@@ -3,6 +3,20 @@ export interface PrintJobIdentity {
   spoolerCorrelationKey?: string | null;
 }
 
+export type PrintTerminalEventType =
+  | 'printErrorRaised'
+  | 'printLifecycleFailed'
+  | 'workerJobPaused'
+  | 'workerPrintFailed'
+  | 'workerPrintSucceeded';
+
+export interface PrintTerminalEvent {
+  type: PrintTerminalEventType;
+  identity: PrintJobIdentity;
+}
+
+export type PrintTerminalDisposition = 'maintenance' | 'success';
+
 interface NormalizedPrintJobIdentity {
   transactionId: string | null;
   spoolerCorrelationKey: string | null;
@@ -63,4 +77,21 @@ export class PrintTerminalGuard {
   reset(): void {
     this.failedIdentity = null;
   }
+}
+
+/**
+ * Applies a terminal worker event to the active print job. A failure is
+ * terminal for the kiosk session, so a later success for that same job must
+ * leave the maintenance outcome in place.
+ */
+export function applyPrintTerminalEvent(
+  guard: PrintTerminalGuard,
+  event: PrintTerminalEvent,
+): PrintTerminalDisposition {
+  if (event.type !== 'workerPrintSucceeded') {
+    guard.markFailed(event.identity);
+    return 'maintenance';
+  }
+
+  return guard.canFinalizeSuccess(event.identity) ? 'success' : 'maintenance';
 }

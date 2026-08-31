@@ -43,9 +43,6 @@ const formMsg = document.getElementById('formMsg') as HTMLElement;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const token =
-  window.feedbackToken ?? window.location.pathname.split('/')[2] ?? '';
-let sessionId: string | null = null;
 let selectedCategory: string | null = null;
 let selectedRating: number | null = null;
 
@@ -124,34 +121,10 @@ commentInput.addEventListener('input', () => {
   commentCounter.textContent = `${commentInput.value.length} / 1200`;
 });
 
-// ── Session loading ───────────────────────────────────────────────────────────
-
-async function loadSession(): Promise<void> {
-  if (!token) {
-    setState('error');
-    return;
-  }
-  try {
-    const res = await fetch(
-      `/api/feedback/sessions/by-token/${encodeURIComponent(token)}`,
-    );
-    if (!res.ok) {
-      setState('error');
-      return;
-    }
-    const data = (await res.json()) as SessionResponse;
-    sessionId = data.sessionId;
-    setState('ready');
-  } catch {
-    setState('error');
-  }
-}
-
 // ── Form submit ───────────────────────────────────────────────────────────────
 
 feedbackForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (!sessionId) return;
   const comment = commentInput.value.trim();
   if (!comment) {
     formMsg.textContent = 'Please write a comment before submitting.';
@@ -162,21 +135,17 @@ feedbackForm.addEventListener('submit', (e) => {
 });
 
 async function submitFeedback(comment: string): Promise<void> {
-  if (!sessionId) return;
   setState('submitting');
   try {
-    const res = await fetch(
-      `/api/feedback/sessions/${encodeURIComponent(sessionId)}/submit?token=${encodeURIComponent(token)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          comment,
-          category: selectedCategory,
-          rating: selectedRating,
-        }),
-      },
-    );
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        comment,
+        category: selectedCategory,
+        rating: selectedRating,
+      }),
+    });
     if (!res.ok) {
       const body = (await res.json()) as { error?: string };
       formMsg.textContent =
@@ -196,4 +165,4 @@ async function submitFeedback(comment: string): Promise<void> {
 
 buildCategoryChips();
 buildStarRating();
-void loadSession();
+setState('ready');

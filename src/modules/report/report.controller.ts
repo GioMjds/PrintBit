@@ -111,6 +111,18 @@ export class ReportController {
     );
 
     this.router.post(
+      '/api/report-issues/attachments',
+      reportIssueAttachmentUploadMiddleware.single('file'),
+      validateReportIssueAttachmentMagicBytes,
+      scanReportIssueAttachmentForMalware,
+      this.uploadDirectAttachment.bind(this),
+    );
+    this.router.use(
+      '/api/report-issues/attachments',
+      handleMulterError,
+    );
+
+    this.router.post(
       '/api/report-issues/sessions/:sessionId/attachments',
       reportIssueAttachmentUploadMiddleware.single('file'),
       validateReportIssueAttachmentMagicBytes,
@@ -123,10 +135,18 @@ export class ReportController {
     );
 
     this.router.post(
+      '/api/report-issues',
+      this.submitDirectReportIssue.bind(this),
+    );
+
+    this.router.post(
       '/api/report-issues/sessions/:sessionId/submit',
       this.submitReportIssue.bind(this),
     );
 
+    this.router.get('/report', this.serveDirectReportPortal.bind(this));
+    this.router.get('/report/styles.css', this.serveDirectReportAsset.bind(this));
+    this.router.get('/report/app.js', this.serveDirectReportAsset.bind(this));
     this.router.get('/report/:token', this.serveReportPortal.bind(this));
     this.router.get('/report/:token/:asset', reportPortalAssetRateLimit, this.serveReportAsset.bind(this));
 
@@ -232,7 +252,83 @@ export class ReportController {
     }
   }
 
-  private async submitReportIssue(req: Request, res: Response): Promise<void> {
+  private uploadDirectAttachment = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: 'No file provided.' });
+      return;
+    }
+
+    const extension = this.service.resolveAttachmentExtension(
+      file.originalname,
+      file.mimetype,
+    );
+    const storedName = `${randomUUID()}${extension}`;
+    let finalPath = '';
+
+    try {
+      finalPath = await this.service.persistAttachmentWithStaging(
+        file,
+        storedName,
+      );
+      const attachment = await this.service.registerAttachment({
+        originalName: file.originalname,
+        storedName,
+        contentType: file.mimetype,
+        sizeBytes: file.size,
+        filePath: finalPath,
+      });
+
+      res.status(201).json({
+        attachmentId: attachment.id,
+        fileName: attachment.originalName,
+        contentType: attachment.contentType,
+        sizeBytes: attachment.sizeBytes,
+        uploadedAt: attachment.timestamp,
+      });
+    } catch (err) {
+      if (finalPath) {
+        await this.service.removeAttachmentFile(finalPath);
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
+    }
+  };
+
+  private submitDirectReportIssue = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
+    const body = req.body as ReportBody;
+
+    const title = typeof body.title === 'string' ? body.title : '';
+    const description = typeof body.description === 'string' ? body.description : '';
+    const category = typeof body.category === 'string' ? body.category : null;
+    const attachmentIds = Array.isArray(body.attachmentIds)
+      ? body.attachmentIds.filter((id): id is string => typeof id === 'string')
+      : [];
+
+    try {
+      const entry = await this.service.submitReportIssue({
+        title,
+        description,
+        category,
+        attachmentIds,
+      });
+      res.status(201).json({ ok: true, reportIssueId: entry.id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(400).json({ error: message });
+    }
+  };
+
+  private submitReportIssue = async (
+    req: Request,
+    res: Response,
+  ): Promise<void> => {
     const { sessionId } = req.params as { sessionId: string };
     const token = typeof req.query.token === 'string' ? req.query.token : '';
     const body = req.body as ReportBody;
@@ -258,7 +354,18 @@ export class ReportController {
       const message = err instanceof Error ? err.message : String(err);
       res.status(400).json({ error: message });
     }
-  }
+  };
+
+  private serveDirectReportPortal = (
+    _req: Request,
+    res: Response,
+  ): void => {
+    try {
+      res.type('html').send(this.service.renderReportPortal());
+    } catch {
+      res.status(500).send('Error loading report portal.');
+    }
+  };
 
   private async serveReportPortal(req: Request, res: Response): Promise<void> {
     const { token } = req.params as { token: string };
@@ -272,6 +379,18 @@ export class ReportController {
     } catch {
       res.status(500).send('Error loading report portal.');
     }
+  }
+
+  private serveDirectReportAsset(req: Request, res: Response): void {
+    const asset = req.path.replace(/^\/report\//, '').replace(/^\//, '');
+    if (!this.service.isReportPortalAssetAllowed(asset)) {
+      res.status(404).send('Not found.');
+      return;
+    }
+    const filePath = this.service.getReportPortalAssetPath(asset);
+    res.sendFile(filePath, (err) => {
+      if (err) res.status(404).send('Asset not found.');
+    });
   }
 
   private serveReportAsset(req: Request, res: Response): void {

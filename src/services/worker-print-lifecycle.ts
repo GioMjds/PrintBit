@@ -7,6 +7,7 @@ import { ReceiptService } from '@/modules/receipt/receipt.service';
 import {
   checkpointRecoverySession,
   getRecoverySession,
+  getSpoolerLifecycleRecord,
   persistAndEmitPrintLifecycleState,
 } from '@/services';
 import {
@@ -18,6 +19,21 @@ import type { WorkerPrintEvent } from './worker-return-pipe';
 import { jobStore } from './job-store';
 
 const receiptService = new ReceiptService();
+const workerEventChains = new Map<string, Promise<void>>();
+const terminalWorkerFailures = new Map<string, string | null>();
+
+function hasTerminalWorkerFailure(
+  transactionId: string,
+  spoolerCorrelationKey: string | null | undefined,
+): boolean {
+  if (!terminalWorkerFailures.has(transactionId)) return false;
+  const failedSpoolerKey = terminalWorkerFailures.get(transactionId);
+  return (
+    !failedSpoolerKey ||
+    !spoolerCorrelationKey ||
+    failedSpoolerKey === spoolerCorrelationKey
+  );
+}
 
 function parseSpoolerJobId(value: string | undefined | null): number | null {
   if (value === null) return null;
@@ -156,7 +172,40 @@ async function createRefundReview(input: {
   }
 }
 
-export async function handleWorkerReturnPrintEvent(input: {
+export function handleWorkerReturnPrintEvent(input: {
+  evt: WorkerPrintEvent;
+  io: Server;
+  sessionStore: SessionStore;
+}): Promise<void> {
+  const transactionId =
+    typeof input.evt.transactionId === 'string'
+      ? input.evt.transactionId.trim()
+      : null;
+  if (!transactionId) {
+    return processWorkerReturnPrintEvent(input);
+  }
+
+  const priorEvent = workerEventChains.get(transactionId) ?? Promise.resolve();
+  const currentEvent = priorEvent
+    .catch(() => undefined)
+    .then(() => processWorkerReturnPrintEvent(input));
+  workerEventChains.set(transactionId, currentEvent);
+  void currentEvent.then(
+    () => {
+      if (workerEventChains.get(transactionId) === currentEvent) {
+        workerEventChains.delete(transactionId);
+      }
+    },
+    () => {
+      if (workerEventChains.get(transactionId) === currentEvent) {
+        workerEventChains.delete(transactionId);
+      }
+    },
+  );
+  return currentEvent;
+}
+
+async function processWorkerReturnPrintEvent(input: {
   evt: WorkerPrintEvent;
   io: Server;
   sessionStore: SessionStore;
@@ -237,9 +286,47 @@ export async function handleWorkerReturnPrintEvent(input: {
 
   if (
     input.evt.type === 'PrinterOffline' ||
-    input.evt.type === 'PrinterOnline' ||
-    input.evt.type === 'PrinterError'
+    input.evt.type === 'PrinterOnline'
   ) {
+    return;
+  }
+
+  if (input.evt.type === 'PrinterError') {
+    terminalWorkerFailures.set(
+      transactionId,
+      input.evt.spoolerCorrelationKey ?? null,
+    );
+    await persistAndEmitPrintLifecycleState(
+      input.io,
+      {
+        mode,
+        state: 'failed',
+        transactionId,
+        spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        spoolerJobId: parseSpoolerJobId(input.evt.spoolerJobId),
+        printerName: input.evt.printerName ?? null,
+        reason: input.evt.message ?? 'The printer reported a hardware error.',
+        printError: {
+          code: 'WORKER_HARDWARE_ERROR',
+          severity: 'recoverable',
+          userMessage:
+            input.evt.message ?? 'The printer reported a hardware error.',
+          hint:
+            'Please call maintenance staff and provide the transaction ID below.',
+          timestamp: new Date().toISOString(),
+          canRetry: false,
+          canDismiss: false,
+        },
+      },
+      {
+        requiredAmount,
+        sessionId: recovery?.sessionId ?? null,
+        documentId: recovery?.documentId ?? null,
+        meta: {
+          workerFailureStage: input.evt.failureStage ?? 'hardware_error',
+        },
+      },
+    );
     return;
   }
 
@@ -349,6 +436,39 @@ export async function handleWorkerReturnPrintEvent(input: {
     input.evt.type === 'PrintSucceeded' ||
     (input.evt.type === 'JobCompleted' && input.evt.outcome === 'completed')
   ) {
+    if (
+      hasTerminalWorkerFailure(
+        transactionId,
+        input.evt.spoolerCorrelationKey,
+      )
+    ) {
+      console.warn(
+        '[WORKER_RETURN_PIPE] Ignoring success after a terminal hardware failure.',
+        {
+          transactionId,
+          spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        },
+      );
+      return;
+    }
+
+    const recordedLifecycle = getSpoolerLifecycleRecord(transactionId, mode);
+    const sameSpoolerJob =
+      !recordedLifecycle?.spoolerCorrelationKey ||
+      !input.evt.spoolerCorrelationKey ||
+      recordedLifecycle.spoolerCorrelationKey ===
+        input.evt.spoolerCorrelationKey;
+    if (recordedLifecycle?.currentState === 'failed' && sameSpoolerJob) {
+      console.warn(
+        '[WORKER_RETURN_PIPE] Ignoring success after a terminal hardware failure.',
+        {
+          transactionId,
+          spoolerCorrelationKey: input.evt.spoolerCorrelationKey ?? null,
+        },
+      );
+      return;
+    }
+
     if (mode === 'copy') {
       jobStore.updateJobState(transactionId, 'printed');
     }
@@ -433,6 +553,11 @@ export async function handleWorkerReturnPrintEvent(input: {
         canDismiss: false,
       }
     : null;
+
+  terminalWorkerFailures.set(
+    transactionId,
+    input.evt.spoolerCorrelationKey ?? null,
+  );
 
   await persistAndEmitPrintLifecycleState(
     input.io,

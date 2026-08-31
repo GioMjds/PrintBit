@@ -1,4 +1,7 @@
-import { PrintTerminalGuard } from '../../src/public/confirm/print-terminal-state';
+import {
+  applyPrintTerminalEvent,
+  PrintTerminalGuard,
+} from '../../src/public/confirm/print-terminal-state';
 
 describe('PrintTerminalGuard', () => {
   test('rejects a late success for a transaction already marked failed', () => {
@@ -49,4 +52,33 @@ describe('PrintTerminalGuard', () => {
       }),
     ).toBe(true);
   });
+
+  test.each([
+    'printErrorRaised',
+    'printLifecycleFailed',
+    'workerJobPaused',
+    'workerPrintFailed',
+  ] as const)(
+    '%s keeps the maintenance outcome when the worker later reports success',
+    (failureEvent) => {
+      const guard = new PrintTerminalGuard();
+      const identity = {
+        transactionId: 'tx-paper-empty',
+        spoolerCorrelationKey: 'spool-paper-empty',
+      };
+
+      expect(
+        applyPrintTerminalEvent(guard, {
+          type: failureEvent,
+          identity,
+        }),
+      ).toBe('maintenance');
+      expect(
+        applyPrintTerminalEvent(guard, {
+          type: 'workerPrintSucceeded',
+          identity,
+        }),
+      ).toBe('maintenance');
+    },
+  );
 });

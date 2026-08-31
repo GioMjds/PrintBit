@@ -7,6 +7,15 @@ import {
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { mountLoadingAnimation } from '../shared/loading-animation';
+import {
+  applyPrintTerminalEvent,
+  PrintTerminalGuard,
+} from './print-terminal-state';
+import {
+  buildMaintenanceReceiptView,
+  isMaintenancePrintFailure,
+} from './maintenance-receipt';
+import { presentMaintenanceError } from './maintenance-view';
 
 export {};
 
@@ -157,11 +166,7 @@ type PrintError = {
   timestamp?: string;
   canRetry?: boolean;
   canDismiss?: boolean;
-  /**
-   * Correlation key of the spooler job this error refers to. Carried in
-   * the printErrorRaised socket payload so the Pause/Resume buttons have a
-   * fallback key when paymentSpoolerCorrelationKey is null.
-   */
+  /** Correlation key of the spooler job this error refers to. */
   spoolerCorrelationKey?: string | null;
 };
 
@@ -237,19 +242,30 @@ const errorHint = document.getElementById('errorHint');
 const errorCloseBtn = document.getElementById(
   'errorCloseBtn',
 ) as HTMLButtonElement;
-const errorActions = document.getElementById('errorActions');
-const errorPauseBtn = document.getElementById(
-  'errorPauseBtn',
-) as HTMLButtonElement;
-const errorResumeBtn = document.getElementById(
-  'errorResumeBtn',
-) as HTMLButtonElement;
 const errorSeverityText = document.getElementById('errorSeverityText');
 const errorProgressEl = document.getElementById(
   'errorProgress',
 ) as HTMLParagraphElement | null;
-const errorCancelRemainingBtn = document.getElementById(
-  'errorCancelRemainingBtn',
+const maintenanceResolution = document.getElementById(
+  'maintenanceResolution',
+) as HTMLElement | null;
+const maintenanceTransactionId = document.getElementById(
+  'maintenanceTransactionId',
+) as HTMLElement | null;
+const maintenanceReceiptContainer = document.getElementById(
+  'maintenanceReceiptContainer',
+) as HTMLElement | null;
+const maintenanceReceiptPending = document.getElementById(
+  'maintenanceReceiptPending',
+) as HTMLElement | null;
+const maintenanceReceiptQrCanvas = document.getElementById(
+  'maintenanceReceiptQrCanvas',
+) as HTMLCanvasElement | null;
+const maintenanceReceiptQrExpiry = document.getElementById(
+  'maintenanceReceiptQrExpiry',
+) as HTMLElement | null;
+const maintenanceDoneBtn = document.getElementById(
+  'maintenanceDoneBtn',
 ) as HTMLButtonElement | null;
 
 // Confirmation Modal Elements
@@ -373,6 +389,7 @@ const receiptQrExpiry = document.getElementById(
 let currentPrinterError: PrintError | null = null;
 let lastKnownPagesPrinted = 0;
 let lastKnownTotalPages = 0;
+const printTerminalGuard = new PrintTerminalGuard();
 
 function hasActiveJob(): boolean {
   return (
@@ -393,11 +410,30 @@ function renderPrinterError(err: PrintError): void {
   currentPrinterError = err;
   if (!printerErrorBlock) return;
 
-  if (errorTitle) errorTitle.textContent = 'Printer Error';
+  const requiresMaintenance = isMaintenancePrintFailure(err.code);
+  if (requiresMaintenance) {
+    applyPrintTerminalEvent(printTerminalGuard, {
+      type: 'printErrorRaised',
+      identity: {
+        transactionId: currentTransactionId,
+        spoolerCorrelationKey:
+          err.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+      },
+    });
+  }
+
+  if (errorTitle) {
+    errorTitle.textContent = requiresMaintenance
+      ? 'Printing Problem'
+      : 'Printer Error';
+  }
   if (errorMessage) errorMessage.textContent = err.userMessage;
   if (errorHint) {
-    errorHint.textContent = err.hint || '';
-    if (err.hint) errorHint.removeAttribute('hidden');
+    const hint = requiresMaintenance
+      ? 'Please call maintenance staff and provide the transaction ID below for verification.'
+      : err.hint || '';
+    errorHint.textContent = hint;
+    if (hint) errorHint.removeAttribute('hidden');
     else errorHint.setAttribute('hidden', '');
   }
 
@@ -411,54 +447,41 @@ function renderPrinterError(err: PrintError): void {
       recoverable: 'Recoverable',
       fatal: 'Fatal Error',
     };
-    errorSeverityText.textContent =
-      severityLabels[err.severity] ?? err.severity;
+    errorSeverityText.textContent = requiresMaintenance
+      ? 'Staff Assistance'
+      : severityLabels[err.severity] ?? err.severity;
   }
 
-  if (err.severity === 'warning') {
+  if (err.severity === 'warning' && !requiresMaintenance) {
     if (errorCloseBtn) errorCloseBtn.removeAttribute('hidden');
   } else {
     if (errorCloseBtn) errorCloseBtn.setAttribute('hidden', '');
   }
-
-  // Pause/Resume controls are valid for all paper/jam related codes,
-  // including mid-job exhaustion where the OS may have purged the job.
-  const PAUSE_RESUME_ERROR_CODES = new Set([
-    'PAPER_INSUFFICIENT_PRE_DISPATCH',
-    'PAPER_INSUFFICIENT_MID_JOB',
-    'PAPER_TRAY_EMPTY',
-    'PAPER_JAM_PRINT',
-  ]);
-  const showActions = PAUSE_RESUME_ERROR_CODES.has(err.code);
 
   if (lastKnownPagesPrinted > 0) {
     if (errorProgressEl) {
       errorProgressEl.textContent = `Printed: ${lastKnownPagesPrinted} of ${lastKnownTotalPages || 1} pages`;
       errorProgressEl.removeAttribute('hidden');
     }
-    if (errorCancelRemainingBtn) {
-      errorCancelRemainingBtn.removeAttribute('hidden');
-    }
   } else {
     if (errorProgressEl) {
       errorProgressEl.setAttribute('hidden', '');
     }
-    if (errorCancelRemainingBtn) {
-      errorCancelRemainingBtn.setAttribute('hidden', '');
-    }
   }
 
-  if (errorActions) {
-    if (showActions || lastKnownPagesPrinted > 0) {
-      errorActions.removeAttribute('hidden');
-      // Reset button state every time the modal becomes visible
-      resetErrorActionButtons();
-    } else {
-      errorActions.setAttribute('hidden', '');
-    }
+  if (requiresMaintenance) {
+    renderMaintenanceResolution();
+    presentMaintenanceError({
+      thankYouOverlay,
+      printerErrorBlock,
+      maintenanceResolution,
+      doneButton: maintenanceDoneBtn,
+    });
+  } else {
+    maintenanceResolution?.setAttribute('hidden', '');
   }
 
-  if (hasActiveJob()) {
+  if (hasActiveJob() && !requiresMaintenance) {
     printerErrorBlock.removeAttribute('hidden');
   }
   applyConfirmGate();
@@ -468,207 +491,8 @@ function clearPrinterError(): void {
   currentPrinterError = null;
   if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
   if (errorProgressEl) errorProgressEl.setAttribute('hidden', '');
-  if (errorCancelRemainingBtn)
-    errorCancelRemainingBtn.setAttribute('hidden', '');
+  maintenanceResolution?.setAttribute('hidden', '');
   applyConfirmGate();
-}
-
-const PAUSE_BTN_DEFAULT_LABEL = 'Pause Job';
-const RESUME_BTN_DEFAULT_LABEL = 'Resume Print';
-const PAUSE_BTN_LOADING_LABEL = 'Pausing…';
-const RESUME_BTN_LOADING_LABEL = 'Resuming…';
-
-/**
- * Minimum duration the loading label stays visible after a click. The new
- * persistent PowerShell runspace returns pause/resume in ~60 ms (down from
- * ~820 ms), which is fast enough that the user can't tell the click
- * registered. Hold the "Pausing…" / "Resuming…" label for at least this
- * long so the UI gives visible feedback for every click.
- */
-const ERROR_ACTION_MIN_LOADING_MS = 350;
-
-/**
- * Restores the printer-error action buttons to their default labels, removes
- * the loading/disabled state, and clears any inline error from a previous
- * failed action.
- */
-function resetErrorActionButtons(): void {
-  const PAUSE_RESUME_ERROR_CODES = new Set([
-    'PAPER_INSUFFICIENT_PRE_DISPATCH',
-    'PAPER_INSUFFICIENT_MID_JOB',
-    'PAPER_TRAY_EMPTY',
-    'PAPER_JAM_PRINT',
-  ]);
-  const showPauseResume =
-    currentPrinterError &&
-    PAUSE_RESUME_ERROR_CODES.has(currentPrinterError.code);
-
-  if (errorPauseBtn) {
-    if (showPauseResume) {
-      errorPauseBtn.removeAttribute('hidden');
-      errorPauseBtn.disabled = false;
-      const span = errorPauseBtn.querySelector('span');
-      if (span) span.textContent = PAUSE_BTN_DEFAULT_LABEL;
-    } else {
-      errorPauseBtn.setAttribute('hidden', '');
-    }
-  }
-  if (errorResumeBtn) {
-    if (showPauseResume) {
-      errorResumeBtn.removeAttribute('hidden');
-      errorResumeBtn.disabled = false;
-      const span = errorResumeBtn.querySelector('span');
-      if (span) span.textContent = RESUME_BTN_DEFAULT_LABEL;
-    } else {
-      errorResumeBtn.setAttribute('hidden', '');
-    }
-  }
-  if (errorCancelRemainingBtn) {
-    if (lastKnownPagesPrinted > 0) {
-      errorCancelRemainingBtn.removeAttribute('hidden');
-      errorCancelRemainingBtn.disabled = false;
-      const span = errorCancelRemainingBtn.querySelector('span');
-      if (span) span.textContent = 'Cancel Remaining';
-    } else {
-      errorCancelRemainingBtn.setAttribute('hidden', '');
-    }
-  }
-  clearErrorActionInlineError();
-}
-
-/**
- * Shows an inline error message under the Pause/Resume action buttons.
- * Replaces any previous inline error.
- */
-function showErrorActionInlineError(message: string): void {
-  if (!errorActions) return;
-  let el = errorActions.querySelector<HTMLElement>(
-    '.printer-error-modal__inline-error',
-  );
-  if (!el) {
-    el = document.createElement('p');
-    el.className = 'printer-error-modal__inline-error';
-    el.setAttribute('role', 'alert');
-    errorActions.appendChild(el);
-  }
-  el.textContent = message;
-  el.removeAttribute('hidden');
-}
-
-function clearErrorActionInlineError(): void {
-  if (!errorActions) return;
-  const el = errorActions.querySelector<HTMLElement>(
-    '.printer-error-modal__inline-error',
-  );
-  if (el) {
-    el.textContent = '';
-    el.setAttribute('hidden', '');
-  }
-}
-
-/**
- * Resolves the spooler correlation key to send to /api/printer/{action}.
- * Prefers the live key from the active payment; falls back to whichever key
- * the currently-displayed printer error carries.
- */
-function resolveErrorActionCorrelationKey(): string | null {
-  if (paymentSpoolerCorrelationKey) return paymentSpoolerCorrelationKey;
-  if (currentPrinterError?.spoolerCorrelationKey) {
-    return currentPrinterError.spoolerCorrelationKey;
-  }
-  return null;
-}
-
-async function handleErrorAction(action: 'pause' | 'resume'): Promise<void> {
-  if (!errorPauseBtn || !errorResumeBtn) return;
-
-  const targetKey = resolveErrorActionCorrelationKey();
-  if (!targetKey) {
-    console.warn(
-      `[PRINTER-ACTION] Cannot ${action}: no spooler correlation key available.`,
-    );
-    showErrorActionInlineError(
-      'No active print job to control. Please try again or contact staff.',
-    );
-    return;
-  }
-
-  // Enter loading state for both buttons so a rapid second click is ignored.
-  const clickedBtn = action === 'pause' ? errorPauseBtn : errorResumeBtn;
-  const otherBtn = action === 'pause' ? errorResumeBtn : errorPauseBtn;
-  const loadingLabel =
-    action === 'pause' ? PAUSE_BTN_LOADING_LABEL : RESUME_BTN_LOADING_LABEL;
-  const defaultLabel =
-    action === 'pause' ? PAUSE_BTN_DEFAULT_LABEL : RESUME_BTN_DEFAULT_LABEL;
-
-  errorPauseBtn.disabled = true;
-  errorResumeBtn.disabled = true;
-  const clickedSpan = clickedBtn.querySelector('span');
-  if (clickedSpan) clickedSpan.textContent = loadingLabel;
-  clearErrorActionInlineError();
-
-  const loadingStartedAt = Date.now();
-
-  try {
-    const response = await fetchWithTimeout(`/api/printer/${action}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spoolerCorrelationKey: targetKey }),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      const message =
-        (errBody && typeof errBody.error === 'string' && errBody.error) ||
-        `Server returned HTTP ${response.status}.`;
-      throw new Error(message);
-    }
-
-    // Hold the loading label for at least ERROR_ACTION_MIN_LOADING_MS so
-    // fast (~60 ms) persistent-PS round-trips still produce visible
-    // feedback. If the call already took longer than the floor, no wait.
-    const elapsed = Date.now() - loadingStartedAt;
-    if (elapsed < ERROR_ACTION_MIN_LOADING_MS) {
-      await new Promise<void>((resolve) =>
-        setTimeout(resolve, ERROR_ACTION_MIN_LOADING_MS - elapsed),
-      );
-    }
-
-    if (action === 'pause') {
-      // Reflect paused state in the modal: keep Resume prominent, hide Pause.
-      if (errorTitle) errorTitle.textContent = 'Job Paused';
-      if (errorMessage) {
-        errorMessage.textContent =
-          'The print job is paused. Reload paper, then press Resume to continue.';
-      }
-      clickedBtn.setAttribute('hidden', '');
-      const clickedLoadingSpan = clickedBtn.querySelector('span');
-      if (clickedLoadingSpan) clickedLoadingSpan.textContent = defaultLabel;
-      otherBtn.disabled = false;
-      const otherSpan = otherBtn.querySelector('span');
-      if (otherSpan) otherSpan.textContent = RESUME_BTN_DEFAULT_LABEL;
-      return;
-    }
-
-    // action === 'resume' — restore normal flow.
-    clearPrinterError();
-  } catch (err) {
-    console.error(`[PRINTER-ACTION] Failed to ${action} job:`, err);
-    const message =
-      err instanceof Error ? err.message : `Could not ${action} the print job.`;
-    // Re-enable both buttons with their default labels.
-    const clickedSpanAgain = clickedBtn.querySelector('span');
-    if (clickedSpanAgain) clickedSpanAgain.textContent = defaultLabel;
-    const otherSpanAgain = otherBtn.querySelector('span');
-    if (otherSpanAgain) otherSpanAgain.textContent = defaultLabel;
-    clickedBtn.removeAttribute('hidden');
-    otherBtn.removeAttribute('hidden');
-    errorPauseBtn.disabled = false;
-    errorResumeBtn.disabled = false;
-    showErrorActionInlineError(
-      `Could not ${action} the print job. ${message} Please try again.`,
-    );
-  }
 }
 
 function syncCoinInsertGuidanceMessage(): void {
@@ -1599,12 +1423,55 @@ function renderReceiptCta(): void {
   }).catch(console.error);
 }
 
+function renderMaintenanceResolution(): void {
+  const view = buildMaintenanceReceiptView({
+    transactionId: currentTransactionId,
+    receiptUrl: currentReceiptUrl,
+    receiptExpiresAt: currentReceiptExpiry,
+  });
+
+  if (maintenanceTransactionId) {
+    maintenanceTransactionId.textContent = view.transactionId;
+  }
+
+  if (!view.receipt || !maintenanceReceiptQrCanvas) {
+    maintenanceReceiptContainer?.setAttribute('hidden', '');
+    maintenanceReceiptPending?.removeAttribute('hidden');
+    return;
+  }
+
+  maintenanceReceiptPending?.setAttribute('hidden', '');
+  maintenanceReceiptContainer?.removeAttribute('hidden');
+  if (maintenanceReceiptQrExpiry) {
+    if (view.receipt.expiresAt) {
+      const expiry = new Date(view.receipt.expiresAt);
+      maintenanceReceiptQrExpiry.textContent = Number.isNaN(expiry.getTime())
+        ? 'Valid for 15 minutes'
+        : `Valid until ${expiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+      maintenanceReceiptQrExpiry.textContent = 'Valid for 15 minutes';
+    }
+  }
+
+  QRCode.toCanvas(maintenanceReceiptQrCanvas, view.receipt.url, {
+    width: 140,
+    margin: 1,
+    color: { dark: '#1a1a2e', light: '#ffffff' },
+  }).catch(console.error);
+}
+
 function captureReceiptCta(payload: ReceiptLinkPayload): void {
   const receipt = extractReceiptUrl(payload);
   if (!receipt) return;
   currentReceiptUrl = receipt.url;
   currentReceiptExpiry = receipt.expiresAt;
   renderReceiptCta();
+  if (
+    currentPrinterError &&
+    isMaintenancePrintFailure(currentPrinterError.code)
+  ) {
+    renderMaintenanceResolution();
+  }
 }
 
 function renderScanDownloadCta(): void {
@@ -1647,8 +1514,28 @@ function captureScanDownloadCta(
   renderScanDownloadCta();
 }
 
-function finalizePrintSuccess(transactionId: string | null): void {
+function finalizePrintSuccess(
+  transactionId: string | null,
+  spoolerCorrelationKey: string | null =
+    activeSpoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+): void {
   const effectiveTxId = transactionId ?? currentTransactionId;
+  if (
+    applyPrintTerminalEvent(printTerminalGuard, {
+      type: 'workerPrintSucceeded',
+      identity: {
+        transactionId: effectiveTxId,
+        spoolerCorrelationKey,
+      },
+    }) !== 'success'
+  ) {
+    console.warn(
+      '[PRINT] Ignoring success event because this job already failed',
+      { transactionId: effectiveTxId, spoolerCorrelationKey },
+    );
+    return;
+  }
+
   setTransactionReference(effectiveTxId);
   hideOverlay(printingOverlay);
   hidePrintProgress();
@@ -1747,6 +1634,16 @@ function finalizePrintSuccess(transactionId: string | null): void {
 function enterWorkerPendingState(transactionId: string | null): void {
   setTransactionReference(transactionId);
   activeSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
+  if (
+    !printTerminalGuard.canFinalizeSuccess({
+      transactionId,
+      spoolerCorrelationKey: activeSpoolerCorrelationKey,
+    })
+  ) {
+    hideOverlay(printingOverlay);
+    renderMaintenanceResolution();
+    return;
+  }
   if (statusMessage) {
     statusMessage.textContent =
       config.mode === 'copy'
@@ -1929,6 +1826,7 @@ function hideOverlay(el: HTMLElement | null): void {
 }
 
 function clearConfirmSessionStorage(): void {
+  printTerminalGuard.reset();
   setTransactionReference(null);
   pendingOwedChange = null;
   if (owedChangeAlert) {
@@ -2174,6 +2072,11 @@ thankYouDoneBtn?.addEventListener('click', () => {
   navigateWithKioskMotion('/');
 });
 
+maintenanceDoneBtn?.addEventListener('click', () => {
+  clearConfirmSessionStorage();
+  navigateWithKioskMotion('/');
+});
+
 printAnotherBtn?.addEventListener('click', () => {
   setTransactionReference(null);
   pendingOwedChange = null;
@@ -2278,11 +2181,12 @@ if (typeof ioFactory === 'function') {
     if (typeof lifecycle.totalPages === 'number') {
       lastKnownTotalPages = lifecycle.totalPages;
     }
-    const isHardwareError =
-      lifecycle.printError?.severity === 'recoverable' ||
-      lifecycle.printError?.code === 'PAPER_TRAY_EMPTY' ||
-      lifecycle.printError?.code === 'PAPER_JAM_PRINT' ||
-      currentPrinterError?.severity === 'recoverable';
+    const isHardwareError = Boolean(
+      (lifecycle.printError &&
+        isMaintenancePrintFailure(lifecycle.printError.code)) ||
+        (currentPrinterError &&
+          isMaintenancePrintFailure(currentPrinterError.code)),
+    );
 
     // Live progress updates — only 'processing' transitions carry
     // pagesPrinted. PrintStarted emits the same state without pagesPrinted,
@@ -2306,6 +2210,18 @@ if (typeof ioFactory === 'function') {
         spoolerCorrelationKey: lifecycle.spoolerCorrelationKey ?? null,
       })
     ) {
+      if (lifecycle.transactionId) {
+        setTransactionReference(lifecycle.transactionId);
+      }
+      applyPrintTerminalEvent(printTerminalGuard, {
+        type: 'printLifecycleFailed',
+        identity: {
+          transactionId: lifecycle.transactionId ?? currentTransactionId,
+          spoolerCorrelationKey:
+            lifecycle.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+        },
+      });
+
       if (isHardwareError) {
         hideOverlay(printingOverlay);
         isProcessingPayment = false;
@@ -2365,14 +2281,24 @@ if (typeof ioFactory === 'function') {
     const status = payload as PrinterStatusPayload | null;
     printerReady = true;
     latestPrinterStatusLabel = status?.status || 'Idle';
-    clearPrinterError();
+    if (
+      !currentPrinterError ||
+      !isMaintenancePrintFailure(currentPrinterError.code)
+    ) {
+      clearPrinterError();
+    }
     applyConfirmGate();
   });
 
   connectedSocket.on('printerStatusRestored', () => {
     printerReady = true;
     latestPrinterStatusLabel = 'Ready';
-    clearPrinterError();
+    if (
+      !currentPrinterError ||
+      !isMaintenancePrintFailure(currentPrinterError.code)
+    ) {
+      clearPrinterError();
+    }
     applyConfirmGate();
   });
 
@@ -2395,6 +2321,7 @@ if (typeof ioFactory === 'function') {
   connectedSocket.on('workerPrintStarted', (payload: unknown) => {
     const job = payload as WorkerJobPayload | null;
     if (!matchesPendingWorkerEvent(job ?? {})) return;
+    if (!printTerminalGuard.canFinalizeSuccess(job ?? {})) return;
     setPrintingPhase('printing');
     if (statusMessage) {
       statusMessage.textContent =
@@ -2407,59 +2334,85 @@ if (typeof ioFactory === 'function') {
   connectedSocket.on('workerJobPaused', (payload: unknown) => {
     const job = payload as WorkerJobPayload | null;
     if (!matchesPendingWorkerEvent(job ?? {})) return;
+    if (job?.transactionId) setTransactionReference(job.transactionId);
+    applyPrintTerminalEvent(printTerminalGuard, {
+      type: 'workerJobPaused',
+      identity: {
+        transactionId: job?.transactionId ?? currentTransactionId,
+        spoolerCorrelationKey:
+          job?.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+      },
+    });
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
     renderPrinterError({
       code: 'WORKER_HARDWARE_ERROR',
       severity: 'recoverable',
-      userMessage: 'Printer paused due to a hardware issue.',
-      hint: job?.errorMessage ?? job?.message ?? 'Please check the printer.',
+      userMessage:
+        job?.errorMessage ??
+        job?.message ??
+        'The printer could not complete this print job.',
+      hint:
+        'Please call maintenance staff and provide the transaction ID below.',
       timestamp: new Date().toISOString(),
-      canRetry: true,
+      canRetry: false,
+      canDismiss: false,
       spoolerCorrelationKey: job?.spoolerCorrelationKey,
     });
-  });
-
-  connectedSocket.on('workerJobResumed', (payload: unknown) => {
-    const job = payload as WorkerJobPayload | null;
-    if (!matchesPendingWorkerEvent(job ?? {})) return;
-    clearPrinterError();
-    setPrintingPhase('printing');
-    isProcessingPayment = true;
-    showOverlay(printingOverlay);
   });
 
   connectedSocket.on('workerPrintSucceeded', (payload: unknown) => {
     const job = payload as WorkerJobPayload | null;
     if (!matchesPendingWorkerEvent(job ?? {})) return;
-    finalizePrintSuccess(job?.transactionId ?? null);
+    finalizePrintSuccess(
+      job?.transactionId ?? null,
+      job?.spoolerCorrelationKey ?? null,
+    );
   });
 
   connectedSocket.on('workerPrintFailed', (payload: unknown) => {
     const job = payload as WorkerJobPayload | null;
     if (!matchesPendingWorkerEvent(job ?? {})) return;
 
-    // If the worker reports a HardwareError, show the error modal
-    // with pause/resume instead of aborting the transaction.
+    if (job?.transactionId) setTransactionReference(job.transactionId);
+    applyPrintTerminalEvent(printTerminalGuard, {
+      type: 'workerPrintFailed',
+      identity: {
+        transactionId: job?.transactionId ?? currentTransactionId,
+        spoolerCorrelationKey:
+          job?.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+      },
+    });
+
+    // Hardware failures require staff verification and remain terminal for
+    // this kiosk session. A later success event cannot replace this result.
     const isHardwareError =
       job?.failureStage === 'HardwareError' ||
       job?.failureStage === 'IncompleteOutput' ||
       job?.errorType === 'HardwareError' ||
       job?.reason === 'HardwareError' ||
-      job?.printError?.code === 'PAPER_TRAY_EMPTY' ||
-      job?.printError?.code === 'PAPER_JAM_PRINT';
+      (job?.printError && isMaintenancePrintFailure(job.printError.code));
 
     if (isHardwareError) {
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
-      const hardwareError: PrintError = job?.printError ?? {
-        code: 'PAPER_TRAY_EMPTY',
-        severity: 'recoverable' as PrintErrorSeverity,
-        userMessage:
-          job?.message ??
-          'Printer Out of Paper. Please load paper and click Resume.',
-        hint: 'Ask staff to load paper into the rear tray, then press Resume to retry.',
-        canRetry: true,
+      const hardwareError: PrintError = {
+        ...(job?.printError ?? {
+          code: 'WORKER_HARDWARE_ERROR',
+          severity: 'recoverable' as PrintErrorSeverity,
+          userMessage:
+            job?.errorMessage ??
+            job?.message ??
+            'The printer could not complete this print job.',
+        }),
+        hint:
+          'Please call maintenance staff and provide the transaction ID below.',
+        canRetry: false,
+        canDismiss: false,
+        spoolerCorrelationKey:
+          job?.spoolerCorrelationKey ??
+          job?.printError?.spoolerCorrelationKey ??
+          null,
       };
       // Ensure severity is at least recoverable for hardware errors
       if (hardwareError.severity === 'warning') {
@@ -2481,61 +2434,9 @@ if (typeof ioFactory === 'function') {
   });
 }
 
-// Error action button handlers
+// Warning-only dismissal. Maintenance failures use the Done action instead.
 errorCloseBtn?.addEventListener('click', () => {
   clearPrinterError();
-});
-
-errorPauseBtn?.addEventListener('click', () => {
-  void handleErrorAction('pause');
-});
-
-errorResumeBtn?.addEventListener('click', () => {
-  void handleErrorAction('resume');
-});
-
-errorCancelRemainingBtn?.addEventListener('click', async () => {
-  const key = resolveErrorActionCorrelationKey();
-  if (!key) {
-    showErrorActionInlineError(
-      'No active print job to control. Please try again or contact staff.',
-    );
-    return;
-  }
-
-  if (errorCancelRemainingBtn) {
-    errorCancelRemainingBtn.disabled = true;
-    const span = errorCancelRemainingBtn.querySelector('span');
-    if (span) span.textContent = 'Cancelling…';
-  }
-  clearErrorActionInlineError();
-
-  try {
-    const response = await fetchWithTimeout('/api/printer/cancel-remaining', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spoolerCorrelationKey: key }),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      const message =
-        (errBody && typeof errBody.error === 'string' && errBody.error) ||
-        `Server returned HTTP ${response.status}.`;
-      throw new Error(message);
-    }
-
-    clearPrinterError();
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Could not cancel the print job.';
-    showErrorActionInlineError(message);
-    if (errorCancelRemainingBtn) {
-      errorCancelRemainingBtn.disabled = false;
-      const span = errorCancelRemainingBtn.querySelector('span');
-      if (span) span.textContent = 'Cancel Remaining';
-    }
-  }
 });
 
 const BLOCKED_PRINTER_STATUSES = new Set([
