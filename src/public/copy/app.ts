@@ -5,6 +5,10 @@ import {
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { mountLoadingAnimation } from '../shared/loading-animation';
+import {
+  destroyPdfLoadingTask,
+  type PdfLoadingTask,
+} from '../shared/pdfjs-loading-task-cleanup';
 
 export {};
 
@@ -33,15 +37,14 @@ void initializePageIdleTimeout({
 
 type PdfjsLib = {
   GlobalWorkerOptions: { workerSrc: string };
-  getDocument: (src: string | ArrayBuffer | { data: ArrayBuffer }) => {
-    promise: Promise<PDFDocumentProxy>;
-  };
+  getDocument: (
+    src: string | ArrayBuffer | { data: ArrayBuffer },
+  ) => PdfLoadingTask & { promise: Promise<PDFDocumentProxy> };
 };
 
 interface PDFDocumentProxy {
   numPages: number;
   getPage: (n: number) => Promise<PDFPageProxy>;
-  destroy: () => void;
 }
 
 interface PDFPageProxy {
@@ -450,7 +453,8 @@ async function renderPdfPreview(buf: ArrayBuffer): Promise<void> {
   const pdfjs = (mod.default ?? mod) as PdfjsLib;
   pdfjs.GlobalWorkerOptions.workerSrc = `${window.location.origin}/libs/pdfjs/pdf.worker.min.mjs`;
 
-  const pdfDoc = await pdfjs.getDocument({ data: buf }).promise;
+  const loadingTask = pdfjs.getDocument({ data: buf });
+  const pdfDoc = await loadingTask.promise;
   try {
     const firstPage = await pdfDoc.getPage(1);
     const baseViewport = firstPage.getViewport({ scale: 1 });
@@ -480,7 +484,7 @@ async function renderPdfPreview(buf: ArrayBuffer): Promise<void> {
     if (previewImageStage) previewImageStage.style.display = 'none';
     previewCanvas.style.display = 'block';
   } finally {
-    pdfDoc.destroy();
+    await destroyPdfLoadingTask(loadingTask);
   }
 }
 

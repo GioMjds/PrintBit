@@ -2,6 +2,17 @@ import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { createConfigPreparationLoadingController } from './loading-state';
+import {
+  buildDocxSourcePreviewUrl,
+  isDocxPreview,
+  renderDocxPreview,
+  shouldPreparePreviewInBackground,
+} from './office-preview';
+import { getPreviewRequestTimeoutMs } from './preview-timeout';
+import {
+  destroyPdfLoadingTask,
+  type PdfLoadingTask,
+} from '../shared/pdfjs-loading-task-cleanup';
 
 export {};
 
@@ -46,6 +57,7 @@ type RotationDeg = 0 | 90 | 180 | 270;
 type WorkflowMode = 'print' | 'copy' | 'scan';
 
 const HTML_PREVIEW_LOAD_TIMEOUT_MS = 20_000;
+const DOCX_SOURCE_LOAD_TIMEOUT_MS = 15_000;
 
 type PageRangeSelection =
   | { type: 'all' }
@@ -134,15 +146,14 @@ interface StoredConfigSeed {
 // PDF.js types (loaded dynamically from /libs/pdfjs)
 type PdfjsLib = {
   GlobalWorkerOptions: { workerSrc: string };
-  getDocument: (src: string | ArrayBuffer | { data: ArrayBuffer }) => {
-    promise: Promise<PDFDocumentProxy>;
-  };
+  getDocument: (
+    src: string | ArrayBuffer | { data: ArrayBuffer },
+  ) => PdfLoadingTask & { promise: Promise<PDFDocumentProxy> };
 };
 
 interface PDFDocumentProxy {
   numPages: number;
   getPage: (n: number) => Promise<PDFPageProxy>;
-  destroy: () => void;
 }
 
 interface PDFPageProxy {
@@ -293,6 +304,7 @@ class PrintPreview {
   private readonly ZOOM_STEP = 0.25;
 
   private pdfDoc: PDFDocumentProxy | null = null;
+  private pdfLoadingTask: PdfLoadingTask | null = null;
   private currentPage = 1;
   private totalPages = 1;
   private latestImageInfo: {
@@ -421,7 +433,10 @@ class PrintPreview {
 
     let response: Response;
     try {
-      response = await fetchWithTimeout(url, 20_000);
+      response = await fetchWithTimeout(
+        url,
+        getPreviewRequestTimeoutMs(filename),
+      );
       previewLog('preview response received', {
         status: response.status,
         ok: response.ok,
@@ -489,10 +504,40 @@ class PrintPreview {
 
   }
 
+  async loadDocx(sessionId: string, filename: string): Promise<void> {
+    this.iframe.onload = null;
+    this.controls.style.display = 'none';
+    this.showLoading(true);
+    this.showCanvas(false);
+    this.showImg(false);
+    this.showFrame(false);
+    this.setHint('Loading document preview…');
+    this.latestImageInfo = null;
+
+    const url = buildDocxSourcePreviewUrl(sessionId, filename, sessionToken);
+    previewLog('loadDocx() start', { sessionId, filename, url });
+
+    try {
+      const response = await fetchWithTimeout(url, DOCX_SOURCE_LOAD_TIMEOUT_MS);
+      if (!response.ok) {
+        throw new Error(`DOCX source request failed with ${response.status}.`);
+      }
+
+      const source = await response.arrayBuffer();
+      const html = await renderDocxPreview(source);
+      this.latestImageInfo = null;
+      await this.loadHtml(html);
+    } catch (error) {
+      previewLog('loadDocx() failed; falling back to local PDF preview', error);
+      await this.load(sessionId, filename);
+    }
+  }
+
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
     previewLog('loadPdf() start', { bytes: buf.byteLength });
-    if (this.pdfDoc) {
-      this.pdfDoc.destroy();
+    if (this.pdfLoadingTask) {
+      await destroyPdfLoadingTask(this.pdfLoadingTask);
+      this.pdfLoadingTask = null;
       this.pdfDoc = null;
     }
 
@@ -511,12 +556,17 @@ class PrintPreview {
     }
 
     try {
-      this.pdfDoc = await pdfjs.getDocument({ data: buf }).promise;
+      const loadingTask = pdfjs.getDocument({ data: buf });
+      this.pdfLoadingTask = loadingTask;
+      this.pdfDoc = await loadingTask.promise;
       this.totalPages = this.pdfDoc.numPages;
       this.currentPage = 1;
       this.updatePager();
       await this.renderPage(1);
     } catch (e) {
+      await destroyPdfLoadingTask(this.pdfLoadingTask);
+      this.pdfLoadingTask = null;
+      this.pdfDoc = null;
       console.error('PDF load error:', e);
       previewLog('loadPdf() failed', e);
       this.showError('Could not parse PDF.');
@@ -746,7 +796,9 @@ class PrintPreview {
 
   destroy(): void {
     this.resizeObserver.disconnect();
-    this.pdfDoc?.destroy();
+    void destroyPdfLoadingTask(this.pdfLoadingTask);
+    this.pdfLoadingTask = null;
+    this.pdfDoc = null;
   }
 
   zoomIn(): void {
@@ -1020,8 +1072,10 @@ let quoteError: string | null = null;
 let quoteLoading = false;
 let quoteRequestVersion = 0;
 let quoteDebounceHandle: number | null = null;
+let analysisPendingQuoteRetryHandle: number | null = null;
 const QUOTE_409_RETRY_ATTEMPTS = 20;
 const QUOTE_409_RETRY_DELAY_MS = 500;
+const ANALYSIS_PENDING_QUOTE_RETRY_DELAY_MS = 2_000;
 
 function getPageRangeMaxPages(): number {
   return Math.max(1, preview.pageCount || 1);
@@ -1413,6 +1467,11 @@ async function refreshPrintQuote(): Promise<void> {
   if ((mode !== 'print' && mode !== 'copy') || (!sessionId && mode === 'print'))
     return;
 
+  if (analysisPendingQuoteRetryHandle !== null) {
+    window.clearTimeout(analysisPendingQuoteRetryHandle);
+    analysisPendingQuoteRetryHandle = null;
+  }
+
   if (
     mode === 'print' &&
     hasMultiplePages() &&
@@ -1460,6 +1519,7 @@ async function refreshPrintQuote(): Promise<void> {
     let resolvedQuote: PrintQuote | null = null;
     let resolvedError: string | null = null;
     let attemptedAnalysisRecovery = false;
+    let analysisStillPending = false;
 
     const endpoint = mode === 'print' ? '/api/print/quote' : '/api/copy/quote';
 
@@ -1522,7 +1582,10 @@ async function refreshPrintQuote(): Promise<void> {
       }
 
       if (!response.ok || !payload.quote) {
-        resolvedError = payload.error ?? 'Failed to calculate price.';
+        analysisStillPending = isAnalysisPending;
+        resolvedError = isAnalysisPending
+          ? 'Document preparation is still in progress.'
+          : (payload.error ?? 'Failed to calculate price.');
         break;
       }
 
@@ -1540,6 +1603,9 @@ async function refreshPrintQuote(): Promise<void> {
       currentPrintQuote = null;
       quoteError = resolvedError ?? 'Failed to calculate price.';
       settingsLog('Quote failed to resolve', { error: resolvedError });
+      if (analysisStillPending) {
+        scheduleAnalysisPendingQuoteRetry(requestVersion);
+      }
     }
   } catch {
     if (requestVersion !== quoteRequestVersion) return;
@@ -1554,8 +1620,22 @@ async function refreshPrintQuote(): Promise<void> {
   }
 }
 
+function scheduleAnalysisPendingQuoteRetry(requestVersion: number): void {
+  if (mode !== 'print' && mode !== 'copy') return;
+
+  analysisPendingQuoteRetryHandle = window.setTimeout(() => {
+    analysisPendingQuoteRetryHandle = null;
+    if (requestVersion !== quoteRequestVersion) return;
+    void refreshPrintQuote();
+  }, ANALYSIS_PENDING_QUOTE_RETRY_DELAY_MS);
+}
+
 function schedulePrintQuoteRefresh(): void {
   if (mode !== 'print' && mode !== 'copy') return;
+  if (analysisPendingQuoteRetryHandle !== null) {
+    window.clearTimeout(analysisPendingQuoteRetryHandle);
+    analysisPendingQuoteRetryHandle = null;
+  }
   if (quoteDebounceHandle !== null) {
     window.clearTimeout(quoteDebounceHandle);
   }
@@ -1815,7 +1895,27 @@ async function loadPreview(): Promise<void> {
   }
 
   syncOrientationDetectionContext();
-  await preview.load(sessionId, selectedFile ?? undefined);
+  const filename = selectedFile ?? undefined;
+  const previewPromise = isDocxPreview(filename)
+    ? preview.loadDocx(sessionId, filename!)
+    : preview.load(sessionId, filename);
+
+  if (shouldPreparePreviewInBackground(filename)) {
+    void previewPromise.then(() => {
+      applyImageOrientationDetection();
+      syncPageRangeAvailability();
+      clampSinglePage();
+      updateSummary();
+    });
+    void applyColorAnalysis(sessionId, selectedFile);
+    syncPageRangeAvailability();
+    clampSinglePage();
+    updateSummary();
+    void refreshPrintQuote();
+    return;
+  }
+
+  await previewPromise;
   applyImageOrientationDetection();
   if (sessionId) await applyColorAnalysis(sessionId, selectedFile);
   syncPageRangeAvailability();

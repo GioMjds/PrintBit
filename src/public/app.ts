@@ -7,6 +7,7 @@ import {
 import { navigateWithKioskMotion } from './shared/kiosk-navigation';
 import { mountLoadingAnimation } from './shared/loading-animation';
 import { initIdleScreen } from './shared/idle-screen';
+import { isMobileViewport } from './shared/device-mode';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
@@ -18,9 +19,15 @@ void initKioskLocalization();
 // When the loading screen navigates to /?idle=boot the overlay shows immediately
 // (boot → idle flow). On normal homepage loads the overlay shows after the
 // server-configured idle timeout expires.
+const mobileViewport = isMobileViewport();
 const idleBootFlag =
-  new URLSearchParams(window.location.search).get('idle') === 'boot' ||
-  document.documentElement.classList.contains('kiosk-boot-idle');
+  !mobileViewport &&
+  (new URLSearchParams(window.location.search).get('idle') === 'boot' ||
+    document.documentElement.classList.contains('kiosk-boot-idle'));
+
+if (mobileViewport) {
+  document.documentElement.classList.remove('kiosk-boot-idle');
+}
 
 if (idleBootFlag) {
   // Clean the URL so the flag is never shown to the user.

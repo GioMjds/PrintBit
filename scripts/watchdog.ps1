@@ -390,7 +390,7 @@ function Ensure-ServerRunning {
 
     if (-not (Test-Path $ServerBundlePath)) {
         $State.lastAction = "server_start_failed"
-        $State.lastError = "Missing dist\server.js. Run 'pnpm run build:server' before kiosk deployment."
+        $State.lastError = "Missing dist\server.js. Run 'pnpm run build' before kiosk deployment."
         return $false
     }
 

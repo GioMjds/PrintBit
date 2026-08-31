@@ -54,6 +54,10 @@ interface PdfPageProxy {
 interface PdfDocumentProxy {
   numPages: number;
   getPage(pageNum: number): Promise<PdfPageProxy>;
+}
+
+interface PdfDocumentLoadingTask {
+  promise: Promise<PdfDocumentProxy>;
   destroy(): Promise<void> | void;
 }
 
@@ -310,14 +314,16 @@ export async function detectPdfColorContent(
     const pdfjs =
       (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
         OPS: PdfOps;
-        getDocument(src: { data: Uint8Array; verbosity: number }): {
-          promise: Promise<PdfDocumentProxy>;
-        };
+        getDocument(src: {
+          data: Uint8Array;
+          verbosity: number;
+        }): PdfDocumentLoadingTask;
       };
     const OPS = pdfjs.OPS;
 
     const data = new Uint8Array(fs.readFileSync(pdfPath));
-    const doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
+    const loadingTask = pdfjs.getDocument({ data, verbosity: 0 });
+    const doc = await loadingTask.promise;
     const imagePaintOps = new Set(
       [
         OPS.paintImageXObject,
@@ -360,7 +366,7 @@ export async function detectPdfColorContent(
               `[colorDetection] ✓ COLOR via RGB on page ${pageNum}: ` +
                 `R=${r} G=${g} B=${b} spread=${spread} raw=${JSON.stringify(args)}`,
             );
-            await doc.destroy();
+            await loadingTask.destroy();
             return {
               hasColor: true,
               isGrayscale: false,
@@ -393,7 +399,7 @@ export async function detectPdfColorContent(
               `[colorDetection] ✓ COLOR via CMYK on page ${pageNum}: ` +
                 `C=${c.toFixed(3)} M=${m.toFixed(3)} Y=${y.toFixed(3)} K=${k.toFixed(3)}`,
             );
-            await doc.destroy();
+            await loadingTask.destroy();
             return {
               hasColor: true,
               isGrayscale: false,
@@ -421,7 +427,7 @@ export async function detectPdfColorContent(
                 `channels=${imageStats.channels} sampled=${imageStats.sampledPixels} ` +
                 `color_pixels=${imageStats.colorPixels} ratio=${imageStats.colorRatio.toFixed(4)}`,
             );
-            await doc.destroy();
+            await loadingTask.destroy();
             return {
               hasColor: true,
               isGrayscale: false,
@@ -445,7 +451,7 @@ export async function detectPdfColorContent(
       page.cleanup();
     }
 
-    await doc.destroy();
+    await loadingTask.destroy();
     console.log(
       `[colorDetection] ✗ Classified as GRAYSCALE after all ${totalPages} pages`,
     );

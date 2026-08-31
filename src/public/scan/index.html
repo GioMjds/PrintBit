@@ -208,19 +208,19 @@
                   Check the feeder and follow the steps below
                 </p>
 
-                <section class="scan-troubleshoot preview hidden" id="previewTroubleshooting" aria-live="polite">
-                  <h3 class="scan-troubleshoot__title">Troubleshoot scanner issue</h3>
-                  <p class="scan-troubleshoot__summary" id="previewTroubleshootSummary"></p>
-                  <div class="scan-troubleshoot__group">
-                    <p class="scan-troubleshoot__label">Possible reasons</p>
-                    <ul class="scan-troubleshoot__list" id="previewTroubleshootCauses"></ul>
-                  </div>
-                  <div class="scan-troubleshoot__group">
-                    <p class="scan-troubleshoot__label">How to fix it on the machine</p>
-                    <ol class="scan-troubleshoot__steps" id="previewTroubleshootSteps"></ol>
-                  </div>
-                </section>
               </div>
+              <section
+                class="scan-error-notice hidden"
+                id="scanErrorNotice"
+                role="alert"
+                aria-live="assertive"
+              >
+                <div>
+                  <h3 class="scan-error-notice__title" id="scanErrorNoticeTitle"></h3>
+                  <p class="scan-error-notice__summary" id="scanErrorNoticeSummary"></p>
+                </div>
+                <ul class="scan-error-notice__checks" id="scanErrorNoticeChecks"></ul>
+              </section>
             </div>
             <!-- /preview-area -->
 
@@ -326,30 +326,6 @@
               </p>
             </div>
           </div>
-
-          <section
-            id="scanTroubleshootingPanel"
-            class="scan-troubleshoot"
-            style="display: none"
-            aria-live="polite"
-          >
-            <h3 class="scan-troubleshoot__title">Troubleshoot scanner issue</h3>
-            <p class="scan-troubleshoot__summary" id="scanTroubleshootSummary"></p>
-            <div class="scan-troubleshoot__group">
-              <p class="scan-troubleshoot__label">Possible reasons</p>
-              <ul
-                class="scan-troubleshoot__list"
-                id="scanTroubleshootCauses"
-              ></ul>
-            </div>
-            <div class="scan-troubleshoot__group">
-              <p class="scan-troubleshoot__label">How to fix it on the machine</p>
-              <ol
-                class="scan-troubleshoot__steps"
-                id="scanTroubleshootSteps"
-              ></ol>
-            </div>
-          </section>
 
           <!-- /scan-info-card -->
         </section>

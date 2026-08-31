@@ -276,7 +276,8 @@ async function analyzePdfFile(
       .map((k) => pdfjsAllOps[k])
       .filter((v): v is number => typeof v === 'number'),
   );
-  const doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
+  const loadingTask = pdfjs.getDocument({ data, verbosity: 0 });
+  const doc = await loadingTask.promise;
 
   const pages: PageAnalysis[] = [];
   let fallbackPageCount = 0;
@@ -328,7 +329,7 @@ async function analyzePdfFile(
       });
     }
   } finally {
-    await doc.destroy();
+    await loadingTask.destroy();
   }
 
   const colorPages = pages.filter((page) => page.isColor).length;

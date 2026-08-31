@@ -51,10 +51,10 @@ function Get-BuildCommandCandidates {
     $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     $commands = @(
-        @{ Name = "pnpm.cmd"; Args = @("run", "build:server") },
-        @{ Name = "pnpm"; Args = @("run", "build:server") },
-        @{ Name = "corepack.cmd"; Args = @("pnpm", "run", "build:server") },
-        @{ Name = "corepack"; Args = @("pnpm", "run", "build:server") }
+        @{ Name = "pnpm.cmd"; Args = @("run", "build") },
+        @{ Name = "pnpm"; Args = @("run", "build") },
+        @{ Name = "corepack.cmd"; Args = @("pnpm", "run", "build") },
+        @{ Name = "corepack"; Args = @("pnpm", "run", "build") }
     )
 
     foreach ($entry in $commands) {
@@ -74,8 +74,8 @@ function Get-BuildCommandCandidates {
     foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
         if ([string]::IsNullOrWhiteSpace($root)) { continue }
         foreach ($entry in @(
-            @{ Relative = "nodejs\pnpm.cmd"; Label = "programfiles-pnpm.cmd"; Args = @("run", "build:server") },
-            @{ Relative = "nodejs\corepack.cmd"; Label = "programfiles-corepack.cmd"; Args = @("pnpm", "run", "build:server") }
+            @{ Relative = "nodejs\pnpm.cmd"; Label = "programfiles-pnpm.cmd"; Args = @("run", "build") },
+            @{ Relative = "nodejs\corepack.cmd"; Label = "programfiles-corepack.cmd"; Args = @("pnpm", "run", "build") }
         )) {
             $path = Join-Path $root $entry.Relative
             if (-not (Test-Path $path)) { continue }
@@ -98,7 +98,7 @@ function Ensure-ServerBundle {
         return
     }
 
-    Write-StartupLog "Server bundle missing at $ServerBundlePath. Attempting build:server."
+    Write-StartupLog "Server bundle missing at $ServerBundlePath. Attempting build."
     $candidates = Get-BuildCommandCandidates
     if ($candidates.Count -eq 0) {
         throw "[PrintBit] Missing dist\server.js and no pnpm/corepack build command is available."
@@ -121,7 +121,7 @@ function Ensure-ServerBundle {
         }
     }
 
-    throw "[PrintBit] Unable to create dist\server.js. Run 'pnpm run build:server' from project root and retry."
+    throw "[PrintBit] Unable to create dist\server.js. Run 'pnpm run build' from project root and retry."
 }
 
 Set-Location -Path $ProjectDir

@@ -9,6 +9,8 @@
  *  - Support an immediate-show mode for the boot → idle flow.
  */
 
+import { isMobileViewport } from './device-mode';
+
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000; // 2 minutes fallback
 const FADE_OUT_DURATION_MS = 260; // Fast, responsive 260ms exit transition (matches kiosk-navigation timing)
 
@@ -53,6 +55,8 @@ const ACTIVITY_EVENTS = [
  * immediately if the document is already interactive/complete).
  */
 export function initIdleScreen(options: IdleScreenOptions): void {
+  if (isMobileViewport()) return;
+
   const isBoot = Boolean(
     options.activateImmediately ||
       (typeof document !== 'undefined' &&

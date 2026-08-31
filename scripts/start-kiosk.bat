@@ -65,15 +65,15 @@ if not exist "%PROJECT_DIR%\dist\server.js" (
     where pnpm >nul 2>&1
     if %errorlevel% neq 0 (
         echo [PrintBit] ERROR: pnpm is required to build dist\server.js.
-        echo [PrintBit]        Run "pnpm run build:server" once from project root.
+        echo [PrintBit]        Run "pnpm run build" once from project root.
         pause
         exit /b 1
     )
     pushd "%PROJECT_DIR%"
-    call pnpm run build:server
+    call pnpm run build
     if %errorlevel% neq 0 (
         popd
-        echo [PrintBit] ERROR: build:server failed.
+        echo [PrintBit] ERROR: build failed.
         pause
         exit /b 1
     )
