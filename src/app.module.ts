@@ -10,6 +10,7 @@ import {
   UPLOAD_DIR,
 } from '@/config';
 import { getHotspotConfig } from '@/services';
+import { powerSafetyService } from '@/services/power-safety';
 import {
   createKioskAccessMiddleware,
   registerStaticAssets,
@@ -120,6 +121,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     io: deps.io,
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
+    powerSafetyService,
   });
   registerReceiptModule(app);
   registerUploadPortalModule(app, {
@@ -134,14 +136,17 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
     convertToPdfPreview: deps.convertToPdfPreview,
+    powerSafetyService,
   });
   registerScannerModule(app, {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
+    powerSafetyService,
   });
   registerCopyModule(app, {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
+    powerSafetyService,
   });
   registerPrinterModule(app, {
     io: deps.io,

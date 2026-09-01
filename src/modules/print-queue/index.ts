@@ -21,6 +21,10 @@ export {
 } from './print-job.schema';
 
 export { getJobProcessor } from '@/services/job-processor';
+export {
+  enqueuePrintJob,
+  type EnqueuePrintJobOptions,
+} from './print-queue.service';
 
 export {
   buildPrintJobEnqueuePayload,

@@ -19,10 +19,15 @@ import {
   getPrinterTelemetry,
   refreshPrinterTelemetry,
   isCoinSlotLocked,
+  isCoinSlotLockedBy,
   getCoinSlotLockOwnerId,
   getPrinterFaultLock,
   clearPrinterFaultLock,
 } from '@/services';
+import {
+  powerSafetyService,
+  type PowerSafetyService,
+} from '@/services/power-safety';
 import {
   ESP32_COIN_BRIDGE_API_KEY,
   ESP32_COIN_BRIDGE_RELAXED_MODE,
@@ -77,12 +82,15 @@ import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 import {
   buildPrintJobEnqueuePayload,
   getJobProcessor,
+  enqueuePrintJob,
+  PrintJobEnqueueError,
 } from '@/modules/print-queue';
 
 export interface FinancialServiceDeps {
   io: Server;
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
+  powerSafetyService?: PowerSafetyService;
 }
 
 interface UploadDeletionResult {
@@ -305,8 +313,11 @@ async function deleteUploadByStoredFilename(
 
 export class FinancialService {
   private readonly receiptService = new ReceiptService();
+  private readonly powerSafety: PowerSafetyService;
 
-  constructor(private readonly deps: FinancialServiceDeps) {}
+  constructor(private readonly deps: FinancialServiceDeps) {
+    this.powerSafety = deps.powerSafetyService ?? powerSafetyService;
+  }
 
   private incrementCoinStats(state: Schema, coinValue: number): void {
     switch (coinValue) {
@@ -382,6 +393,16 @@ export class FinancialService {
     source: CoinSource,
     eventId?: string,
   ): Promise<number> {
+    if (
+      isCoinSlotLockedBy('power-safety') ||
+      !this.powerSafety.canAcceptCustomerWork()
+    ) {
+      throw new CoinCreditRejectedError('slot_locked', 503, false, {
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+    }
+
     const trustedTime = getTrustedTimeStatus();
     if (
       trustedTime.enforceForFinancial &&
@@ -630,6 +651,18 @@ export class FinancialService {
       );
     }
 
+    if (
+      isCoinSlotLockedBy('power-safety') ||
+      !this.powerSafety.canAcceptCustomerWork()
+    ) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        error: 'Coin rejected',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const namespace = 'GET:/coin';
     const idempotencyClaim = acquireIdempotencyKey(eventId, namespace);
     if (idempotencyClaim.type === 'hit') {
@@ -863,6 +896,13 @@ export class FinancialService {
     req: Request,
     res: Response,
   ): Promise<Response | void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      return res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+    }
+
     if (!req.file) {
       await adminService.appendAdminLog(
         'upload_failed',
@@ -904,6 +944,13 @@ export class FinancialService {
     req: Request,
     res: Response,
   ): Promise<Response | void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      return res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+    }
+
     const { filename } = req.body as { filename?: string };
 
     if (!filename) {
@@ -1085,6 +1132,14 @@ export class FinancialService {
   };
 
   confirmPayment = async (req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const idempotencyKey = req.get('Idempotency-Key') ?? '';
     let idempotencyClaimed = false;
     if (idempotencyKey) {
@@ -1842,7 +1897,9 @@ export class FinancialService {
       });
 
       try {
-        await getJobProcessor().enqueue(payload);
+        await enqueuePrintJob(payload, {
+          powerSafetyService: this.powerSafety,
+        });
         queuedAt = getTrustedTimestamp().timestamp;
       } catch (enqueueError) {
         await upsertSpoolerFailureRefund({
@@ -1871,7 +1928,15 @@ export class FinancialService {
               : String(enqueueError),
         });
         sendResponse(503, {
+          code:
+            enqueueError instanceof PrintJobEnqueueError
+              ? enqueueError.code
+              : 'PRINT_ENQUEUE_FAILED',
           error: 'Print job could not be queued for the worker.',
+          message:
+            enqueueError instanceof Error
+              ? enqueueError.message
+              : String(enqueueError),
         });
         return;
       }

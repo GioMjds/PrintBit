@@ -63,9 +63,7 @@ let serialCoinTarget: string | null = null;
 let serialPortalTarget: string | null = null;
 let activeSerialPort: SerialPort | null = null;
 let socketIo: Server | null = null;
-let coinSlotLocked: boolean = false;
-let coinSlotLockOwnerId: string | null = null;
-let coinSlotLockedAt: string | null = null;
+const coinSlotLocks = new Map<string, string>();
 
 let hopperCommandPending = false;
 let hopperLastError: string | null = null;
@@ -268,36 +266,40 @@ export function getHopperStatus() {
 }
 
 export function lockCoinSlot(ownerId: string): void {
-  coinSlotLocked = true;
-  coinSlotLockOwnerId = ownerId;
-  coinSlotLockedAt = new Date().toISOString();
-  console.log('[SERIAL] Coin slot locked - rejecting incoming coins.');
-}
-
-function unlockCoinSlot(): void {
-  coinSlotLocked = false;
-  coinSlotLockOwnerId = null;
-  coinSlotLockedAt = null;
-  console.log('[SERIAL] Coin slot unlocked - accepting incoming coins.');
-}
-
-export function isCoinSlotLocked(): boolean {
-  return coinSlotLocked;
-}
-
-export function getCoinSlotLockOwnerId(): string | null {
-  return coinSlotLockOwnerId;
-}
-
-export function getCoinSlotLockedAt(): string | null {
-  return coinSlotLockedAt;
+  coinSlotLocks.set(ownerId, new Date().toISOString());
+  console.log(`[SERIAL] Coin slot locked by "${ownerId}" - rejecting incoming coins.`);
 }
 
 export function unlockOwnedCoinSlot(ownerId: string): boolean {
-  if (!coinSlotLocked) return false;
-  if (!coinSlotLockOwnerId || coinSlotLockOwnerId !== ownerId) return false;
-  unlockCoinSlot();
+  if (!coinSlotLocks.has(ownerId)) return false;
+  coinSlotLocks.delete(ownerId);
+  console.log(`[SERIAL] Coin slot lock released by "${ownerId}".`);
   return true;
+}
+
+export function isCoinSlotLocked(): boolean {
+  return coinSlotLocks.size > 0;
+}
+
+export function isCoinSlotLockedBy(ownerId: string): boolean {
+  return coinSlotLocks.has(ownerId);
+}
+
+export function getCoinSlotLockOwnerId(): string | null {
+  for (const owner of coinSlotLocks.keys()) {
+    if (owner !== 'power-safety') return owner;
+  }
+  if (coinSlotLocks.has('power-safety')) return 'power-safety';
+  return null;
+}
+
+export function getCoinSlotLockedAt(): string | null {
+  const ownerId = getCoinSlotLockOwnerId();
+  return ownerId ? (coinSlotLocks.get(ownerId) ?? null) : null;
+}
+
+export function resetCoinSlotLocks(): void {
+  coinSlotLocks.clear();
 }
 
 function completePendingHopperCommand(result: HopperCommandResult): boolean {
@@ -766,6 +768,22 @@ async function attemptSerialConnection(
       };
 
       const creditResolvedCoin = async (coinValue: number, token: string) => {
+        if (isCoinSlotLockedBy('power-safety')) {
+          console.warn(
+            `[SERIAL] ⚠ Coin rejected — power-safety lock active. Token: "${token}"`,
+          );
+          socketIo?.emit('coinRejected', {
+            value: coinValue,
+            reason: 'power_emergency',
+          });
+          void adminService.appendAdminLog(
+            'coin_rejected_power_emergency',
+            'Serial coin rejected while power-safety lock is active.',
+            { token, coinValue },
+          );
+          return;
+        }
+
         const trustedTime = getTrustedTimeStatus();
         if (
           trustedTime.enforceForFinancial &&
@@ -828,6 +846,24 @@ async function attemptSerialConnection(
 
       const processToken = async (token: string) => {
         try {
+          if (isCoinSlotLockedBy('power-safety')) {
+            clearPending();
+            console.warn(
+              `[SERIAL] ⚠ Coin token rejected — power-safety lock active. Token: "${token}"`,
+            );
+            const num = Number(token);
+            socketIo?.emit('coinRejected', {
+              value: Number.isFinite(num) ? num : 0,
+              reason: 'power_emergency',
+            });
+            void adminService.appendAdminLog(
+              'coin_rejected_power_emergency',
+              'Serial coin rejected while power-safety lock is active.',
+              { token },
+            );
+            return;
+          }
+
           console.log(`[SERIAL] Token: "${token}"`);
           if (pendingPrefix) {
             if (token === '0') {
@@ -1087,6 +1123,10 @@ class SerialService {
 
   isCoinSlotLocked(): boolean {
     return isCoinSlotLocked();
+  }
+
+  isCoinSlotLockedBy(ownerId: string): boolean {
+    return isCoinSlotLockedBy(ownerId);
   }
 
   getCoinSlotLockOwnerId(): string | null {

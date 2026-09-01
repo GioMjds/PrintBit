@@ -3,6 +3,7 @@ import type { ModuleContext } from '../module.types';
 import type { Request } from 'express';
 import type { Namespace } from 'socket.io';
 import type { SessionStore } from '@/services/session';
+import type { PowerSafetyService } from '@/services/power-safety';
 import { WirelessSessionService } from './wireless-session.service';
 import { WirelessSessionController } from './wireless-session.controller';
 
@@ -11,6 +12,7 @@ export interface WirelessSessionModuleDeps extends ModuleContext {
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
   convertToPdfPreview: (sourcePath: string) => Promise<string>;
+  powerSafetyService?: PowerSafetyService;
 }
 
 export function registerWirelessSessionModule(
@@ -23,8 +25,11 @@ export function registerWirelessSessionModule(
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
     convertToPdfPreview: deps.convertToPdfPreview,
+    powerSafetyService: deps.powerSafetyService,
   });
-  const controller = new WirelessSessionController(service);
+  const controller = new WirelessSessionController(
+    service,
+    deps.powerSafetyService,
+  );
   app.use(controller.router);
 }
-

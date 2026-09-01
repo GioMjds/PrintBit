@@ -24,6 +24,10 @@ import {
 } from '@/services/pricing-analysis-queue';
 import { PORT } from '@/config/http.config';
 import { pricingAnalysisCacheStore } from '@/core/database/sqlite-storage';
+import {
+  powerSafetyService,
+  type PowerSafetyService,
+} from '@/services/power-safety';
 
 export interface WirelessSessionServiceDeps {
   io: Server;
@@ -31,6 +35,7 @@ export interface WirelessSessionServiceDeps {
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
   convertToPdfPreview: (sourcePath: string) => Promise<string>;
+  powerSafetyService?: PowerSafetyService;
 }
 
 const IMAGE_TYPES: Record<string, string> = {
@@ -52,8 +57,10 @@ function isWhitespaceCharacter(value: string): boolean {
 
 export class WirelessSessionService {
   private static pricingAnalysisWorkerInitialized = false;
+  private readonly powerSafety: PowerSafetyService;
 
   constructor(private readonly deps: WirelessSessionServiceDeps) {
+    this.powerSafety = deps.powerSafetyService ?? powerSafetyService;
     this.ensurePricingAnalysisWorkerStarted();
   }
 
@@ -303,6 +310,14 @@ export class WirelessSessionService {
   };
 
   createSession: RequestHandler = async (req, res) => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     try {
       const previousBalance = await withBalanceLock(async () => {
         const currentBalance = db.data?.balance ?? 0;

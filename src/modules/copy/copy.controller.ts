@@ -4,10 +4,17 @@ import type {
   CopyService,
   IdempotencyKeyInflightResult,
 } from './copy.service';
+import {
+  powerSafetyService,
+  type PowerSafetyService,
+} from '@/services/power-safety';
 
 export class CopyController {
   public readonly router: Router;
-  constructor(private readonly copyService: CopyService) {
+  constructor(
+    private readonly copyService: CopyService,
+    private readonly powerSafety: PowerSafetyService = powerSafetyService,
+  ) {
     this.router = Router();
     this.initializeRoutes();
   }
@@ -25,6 +32,14 @@ export class CopyController {
   };
 
   private createCopyJob = async (req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const idempotencyKey = req.get('Idempotency-Key') ?? '';
     const claim = this.copyService.claimIdempotencyKey(idempotencyKey);
 

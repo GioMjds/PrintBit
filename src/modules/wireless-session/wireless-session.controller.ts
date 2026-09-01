@@ -7,6 +7,10 @@ import {
 } from '@/middleware/file-validation';
 import { createRateLimit } from '@/middleware/rate-limit';
 import { createKioskAccessMiddleware } from '@/middleware/kiosk-access';
+import {
+  powerSafetyService,
+  type PowerSafetyService,
+} from '@/services/power-safety';
 import type { WirelessSessionService } from './wireless-session.service';
 
 const wirelessPreviewRateLimit = createRateLimit({
@@ -23,8 +27,13 @@ const wirelessUploadRateLimit = createRateLimit({
 
 export class WirelessSessionController {
   public readonly router: Router;
+  private readonly powerSafety: PowerSafetyService;
 
-  constructor(private readonly wirelessSessionService: WirelessSessionService) {
+  constructor(
+    private readonly wirelessSessionService: WirelessSessionService,
+    powerSafety: PowerSafetyService = powerSafetyService,
+  ) {
+    this.powerSafety = powerSafety;
     this.router = Router();
     this.initializeRoutes();
   }
@@ -33,7 +42,16 @@ export class WirelessSessionController {
     this.router.get(
       '/api/wireless/sessions',
       createKioskAccessMiddleware(),
-      this.wirelessSessionService.createSession,
+      (req, res, next) => {
+        if (!this.powerSafety.canAcceptCustomerWork()) {
+          res.status(503).json({
+            code: 'POWER_EMERGENCY',
+            message: 'Power emergency active; customer work suspended',
+          });
+          return;
+        }
+        return this.wirelessSessionService.createSession(req, res, next);
+      },
     );
     this.router.get(
       '/api/wireless/sessions/by-token/:token',

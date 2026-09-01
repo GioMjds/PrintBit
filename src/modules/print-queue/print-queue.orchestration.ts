@@ -36,6 +36,7 @@ import {
   sendWorkerError,
 } from '@/services/worker-error-pipe';
 import { preparePrintPdf } from '@/services/prepare-print-pdf';
+import { powerSafetyService } from '@/services/power-safety';
 
 /**
  * Result of orchestration execution
@@ -247,6 +248,15 @@ export async function orchestratePrintJob(
     // STAGE 3: HANDOFF TO C# WORKER
     // =========================================================================
     currentStage = 'handoff';
+
+    if (!powerSafetyService.canAcceptCustomerWork()) {
+      throw new WorkerOrchestrationError(
+        'POWER_EMERGENCY',
+        false,
+        'handoff',
+        'Power emergency active; worker handoff blocked',
+      );
+    }
 
     if (!WORKER_QUEUE_DIR) {
       throw new WorkerOrchestrationError(

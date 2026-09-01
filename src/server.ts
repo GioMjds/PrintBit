@@ -368,7 +368,12 @@ io.on('connection', (socket) => {
       return;
     }
     const currentOwnerId = getCoinSlotLockOwnerId();
-    if (isCoinSlotLocked() && currentOwnerId && currentOwnerId !== socket.id) {
+    if (
+      isCoinSlotLocked() &&
+      currentOwnerId &&
+      currentOwnerId !== socket.id &&
+      currentOwnerId !== 'power-safety'
+    ) {
       socket.emit('coinSlotLockDenied', {
         reason: 'lock_owned_by_another_socket',
       });
@@ -437,7 +442,14 @@ async function start() {
         }
 
         const mapped = mapWorkerEventToSocket(evt);
-        io.emit(mapped.event, mapped.payload);
+        if (mapped.event === 'workerPowerStatusChanged') {
+          io.emit(
+            'workerPowerStatusChanged',
+            powerSafetyService.getEffectiveEvent(),
+          );
+        } else {
+          io.emit(mapped.event, mapped.payload);
+        }
 
         if (evt.type === 'PrinterOffline') {
           io.emit('printerMalfunction', {

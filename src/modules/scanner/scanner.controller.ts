@@ -5,11 +5,16 @@ import type { Server as SocketIOServer } from 'socket.io';
 import { USB_EXPORT_ENABLED } from '@/config';
 import { createRateLimit } from '@/middleware/rate-limit';
 import { adminService } from '@/services/admin';
+import {
+  powerSafetyService,
+  type PowerSafetyService,
+} from '@/services/power-safety';
 import { ScannerService } from './scanner.service';
 
 interface ScannerControllerDeps {
   io: SocketIOServer;
   resolvePublicBaseUrl: (req: Request) => URL;
+  powerSafetyService?: PowerSafetyService;
 }
 
 type InteractiveScanBody = {
@@ -57,11 +62,13 @@ const scanPreviewFileRateLimit = createRateLimit({
 
 export class ScannerController {
   public readonly router: Router;
+  private readonly powerSafety: PowerSafetyService;
 
   constructor(
     private readonly scannerService: ScannerService,
     private readonly deps: ScannerControllerDeps,
   ) {
+    this.powerSafety = deps.powerSafetyService ?? powerSafetyService;
     this.router = Router();
     this.initializeRoutes();
   }
@@ -94,6 +101,14 @@ export class ScannerController {
     req: Request,
     res: Response,
   ): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const body = req.body as InteractiveScanBody;
     try {
       const result = await this.scannerService.interactiveScan({
@@ -131,6 +146,14 @@ export class ScannerController {
   };
 
   private chargeSoftCopy = async (req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const safeFilename = this.scannerService.toSafeScanFilename(req.body?.filename);
     if (!safeFilename) {
       res.status(400).json({ error: 'Invalid filename.' });
@@ -220,6 +243,14 @@ export class ScannerController {
   };
 
   private exportToUsb = async (req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     if (!USB_EXPORT_ENABLED) {
       this.sendUsbExportDisabled(res);
       return;
@@ -250,6 +281,14 @@ export class ScannerController {
     req: Request,
     res: Response,
   ): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const body = req.body as WirelessLinkBody;
     const safeFilename = this.scannerService.toSafeScanFilename(body?.filename);
     if (!safeFilename) {
@@ -286,6 +325,14 @@ export class ScannerController {
   };
 
   private releaseScanFile = async (req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const body = req.body as ReleaseScanBody;
     const releaseToken =
       typeof body?.releaseToken === 'string' ? body.releaseToken.trim() : '';
@@ -355,6 +402,14 @@ export class ScannerController {
   };
 
   private createScanJob = async (req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const body = req.body as ScanJobBody;
     try {
       const settings = this.scannerService.validateScanJobInput({
@@ -410,6 +465,14 @@ export class ScannerController {
   };
 
   private previewScan = async (_req: Request, res: Response): Promise<void> => {
+    if (!this.powerSafety.canAcceptCustomerWork()) {
+      res.status(503).json({
+        code: 'POWER_EMERGENCY',
+        message: 'Power emergency active; customer work suspended',
+      });
+      return;
+    }
+
     const preview = await this.scannerService.previewScan();
     res.json(preview);
   };
