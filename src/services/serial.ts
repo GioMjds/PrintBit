@@ -10,21 +10,14 @@ import {
   mapHopperErrorSeverity,
 } from './anomaly';
 import {
-  clearPrinterFaultLock,
-  getPrinterFaultLock,
-} from './printer-fault-lock';
-import {
   parseHopperResponse,
   parseLegacyHopperResponse,
   type HopperResponse,
   type HopperErrorCodeValue,
   HopperErrorCode,
 } from './hopper-protocol';
-import { getPrinterTelemetry } from './printer-status';
-import { BLOCKED_STATUSES } from '@/utils';
 import {
   NETWORK_PROVIDER,
-  ESP32_ALWAYS_ACCEPT_COINS,
   PORT,
   ESP32_CAPTIVE_PORTAL_PATH,
   ESP32_KIOSK_SUBNET_PREFIX,
@@ -43,7 +36,6 @@ import {
 
 const ACCEPTED_COINS = new Set([1, 5, 10, 20]);
 const FRAGMENT_WINDOW_MS = 140;
-const TELEMETRY_MAX_AGE_MS = 45_000;
 const RETRY_INTERVAL_MS = 5_000;
 const MAX_RETRIES = 12; // 60 seconds of retrying
 const LEGACY_START_TIMEOUT_EXTENSION_MS = 20_000;
@@ -931,7 +923,9 @@ async function attemptSerialConnection(
               break;
             case 'KIOSK_IP':
               serialKioskIp = telemetry.value;
-              console.log(`[SERIAL] ESP32 kiosk IP confirmed: ${serialKioskIp}`);
+              console.log(
+                `[SERIAL] ESP32 kiosk IP confirmed: ${serialKioskIp}`,
+              );
               break;
             case 'COIN_TARGET':
               serialCoinTarget = telemetry.value;
@@ -939,7 +933,9 @@ async function attemptSerialConnection(
               break;
             case 'PORTAL_TARGET':
               serialPortalTarget = telemetry.value;
-              console.log(`[SERIAL] ESP32 portal target: ${serialPortalTarget}`);
+              console.log(
+                `[SERIAL] ESP32 portal target: ${serialPortalTarget}`,
+              );
               break;
             case 'WIFI_STA_CONNECTED':
               console.log('[SERIAL] ESP32 STA connected to Wi-Fi.');
@@ -949,10 +945,14 @@ async function attemptSerialConnection(
               console.log('[SERIAL] ESP32 STA disconnected from Wi-Fi.');
               break;
             case 'WIFI_STA_CONNECTING':
-              console.log(`[SERIAL] ESP32 connecting to Wi-Fi SSID: ${telemetry.value}`);
+              console.log(
+                `[SERIAL] ESP32 connecting to Wi-Fi SSID: ${telemetry.value}`,
+              );
               break;
             case 'WIFI_SETUP_READY':
-              console.log(`[SERIAL] ESP32 setup portal ready at: ${telemetry.value}`);
+              console.log(
+                `[SERIAL] ESP32 setup portal ready at: ${telemetry.value}`,
+              );
               break;
           }
           io.emit('serialStatus', getSerialStatus());
@@ -1075,6 +1075,22 @@ class SerialService {
 
   async init(io: Server): Promise<void> {
     return initSerial(io);
+  }
+
+  lockCoinSlot(ownerId: string): void {
+    lockCoinSlot(ownerId);
+  }
+
+  unlockOwnedCoinSlot(ownerId: string): boolean {
+    return unlockOwnedCoinSlot(ownerId);
+  }
+
+  isCoinSlotLocked(): boolean {
+    return isCoinSlotLocked();
+  }
+
+  getCoinSlotLockOwnerId(): string | null {
+    return getCoinSlotLockOwnerId();
   }
 }
 

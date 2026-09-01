@@ -377,6 +377,17 @@ function ensureSchema(db: DatabaseSync): void {
       ON pricing_analysis_cache(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_pricing_analysis_cache_config_fingerprint
       ON pricing_analysis_cache(config_fingerprint);
+
+    CREATE TABLE IF NOT EXISTS power_safety_state (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      power_source_instance_id TEXT,
+      power_sequence INTEGER,
+      status_json TEXT,
+      operational_state TEXT,
+      accepting_transactions INTEGER,
+      source_timestamp_utc TEXT,
+      received_timestamp_utc TEXT
+    );
   `);
 
   const wirelessDocumentColumnRows = db
@@ -693,6 +704,11 @@ export {
 } from './models/report-issue.model';
 
 export { AdminLogSqliteStore, adminLogStore } from './models/admin.model';
+export {
+  PowerSafetySqliteStore,
+  powerSafetyStore,
+  type PowerSafetyStateRecord,
+} from './power-safety-store';
 
 export function importLowDbSnapshotIfNeeded(
   snapshot: LowDbImportSnapshot,

@@ -43,3 +43,4 @@ export * from './transient-scan-file';
 export * from './usb-drives';
 export * from './watchdog-health';
 export * from './worker-command-pipe';
+export * from './power-safety';

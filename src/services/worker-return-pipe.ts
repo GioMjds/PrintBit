@@ -1,4 +1,11 @@
 import net from 'node:net';
+import {
+  type PowerStatus,
+  type PowerState,
+  type WorkerPowerEvent,
+  type PowerSafetyState,
+  powerSafetyService,
+} from './power-safety';
 
 export type WorkerPrintEventType =
   | 'PrintStarted'
@@ -10,7 +17,9 @@ export type WorkerPrintEventType =
   | 'PrinterError'
   | 'JobPaused'
   | 'JobResumed'
-  | 'JobCompleted';
+  | 'JobCompleted'
+  | 'PowerStatusChanged'
+  | 'PowerStatusSnapshot';
 
 export type WorkerTerminalOutcome =
   | 'completed'
@@ -51,6 +60,11 @@ export interface WorkerPrintEvent {
    * confirm page can render an "N of M" progress indicator.
    */
   totalPages?: number;
+  powerStatus?: PowerStatus;
+  operationalState?: PowerState;
+  acceptingTransactions?: boolean;
+  powerSourceInstanceId?: string;
+  powerSequence?: number;
   timestampUtc: string;
 }
 
@@ -106,15 +120,16 @@ export function parseWorkerEventLine(
 
 export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
   event:
-  | 'workerPrintStarted'
-  | 'workerPrintProgress'
-  | 'workerPrintSucceeded'
-  | 'workerPrintFailed'
-  | 'workerPrinterOffline'
-  | 'workerPrinterOnline'
-  | 'workerPrinterError'
-  | 'workerJobPaused'
-  | 'workerJobResumed';
+    | 'workerPrintStarted'
+    | 'workerPrintProgress'
+    | 'workerPrintSucceeded'
+    | 'workerPrintFailed'
+    | 'workerPrinterOffline'
+    | 'workerPrinterOnline'
+    | 'workerPrinterError'
+    | 'workerJobPaused'
+    | 'workerJobResumed'
+    | 'workerPowerStatusChanged';
   payload: WorkerPrintEvent;
 } {
   switch (evt.type) {
@@ -136,9 +151,15 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
       return { event: 'workerJobPaused', payload: evt };
     case 'JobResumed':
       return { event: 'workerJobResumed', payload: evt };
+    case 'PowerStatusChanged':
+    case 'PowerStatusSnapshot':
+      return { event: 'workerPowerStatusChanged', payload: evt };
     case 'JobCompleted':
       return {
-        event: evt.outcome === 'completed' ? 'workerPrintSucceeded' : 'workerPrintFailed',
+        event:
+          evt.outcome === 'completed'
+            ? 'workerPrintSucceeded'
+            : 'workerPrintFailed',
         payload: evt,
       };
     default: {
@@ -151,6 +172,20 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
       return { event: 'workerPrintFailed', payload: evt };
     }
   }
+}
+
+export function handleWorkerPowerEvent(
+  evt: WorkerPrintEvent,
+  io?: { emit: (event: string, ...args: unknown[]) => void },
+): PowerSafetyState | null {
+  if (evt.type !== 'PowerStatusChanged' && evt.type !== 'PowerStatusSnapshot') {
+    return null;
+  }
+  const state = powerSafetyService.applyWorkerPowerEvent(
+    evt as unknown as WorkerPowerEvent,
+  );
+  io?.emit('workerPowerStatusChanged', evt);
+  return state;
 }
 
 export function startWorkerReturnPipeServer(input: {
@@ -176,7 +211,8 @@ export function startWorkerReturnPipeServer(input: {
           input.onEvent(evt);
         } catch (err) {
           logger.warn(
-            `[WORKER_RETURN_PIPE] Ignored payload: ${err instanceof Error ? err.message : String(err)
+            `[WORKER_RETURN_PIPE] Ignored payload: ${
+              err instanceof Error ? err.message : String(err)
             }`,
           );
         }
@@ -184,18 +220,15 @@ export function startWorkerReturnPipeServer(input: {
       }
     });
 
-    // Catch ECONNRESET and other transient socket errors so they don't
-    // propagate as unhandled exceptions and crash the process.
     socket.on('error', (err) => {
       logger.warn(
-        `[WORKER_RETURN_PIPE] Socket error: ${err instanceof Error ? err.message : String(err)
+        `[WORKER_RETURN_PIPE] Socket error: ${
+          err instanceof Error ? err.message : String(err)
         }`,
       );
     });
   });
 
-  // Track whether the ready promise has already settled so we don't call
-  // resolve/reject twice if both 'listening' and 'error' fire.
   let settled = false;
 
   const ready = new Promise<void>((resolve, reject) => {

@@ -69,6 +69,10 @@ import {
   mapWorkerEventToSocket,
 } from '@/services/worker-return-pipe';
 import { handleWorkerReturnPrintEvent } from '@/services/worker-print-lifecycle';
+import {
+  powerSafetyService,
+  type WorkerPowerEvent,
+} from '@/services/power-safety';
 import { getLocalIPv4 } from '@/utils/network';
 import { validateAdminSession } from '@/utils/admin-session';
 
@@ -342,6 +346,11 @@ io.on('connection', (socket) => {
     });
   }
 
+  socket.emit(
+    'workerPowerStatusChanged',
+    powerSafetyService.getEffectiveEvent(),
+  );
+
   socket.on('joinSession', (sessionId: string) => {
     if (
       !canJoinSessionRoom(principal, sessionId) ||
@@ -420,6 +429,13 @@ async function start() {
       pipeName: WORKER_RETURN_PIPE_NAME,
       maxBytes: WORKER_RETURN_MAX_BYTES,
       onEvent: (evt) => {
+        if (
+          evt.type === 'PowerStatusChanged' ||
+          evt.type === 'PowerStatusSnapshot'
+        ) {
+          powerSafetyService.applyWorkerPowerEvent(evt as WorkerPowerEvent);
+        }
+
         const mapped = mapWorkerEventToSocket(evt);
         io.emit(mapped.event, mapped.payload);
 
