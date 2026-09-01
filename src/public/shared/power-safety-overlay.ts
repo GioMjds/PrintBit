@@ -343,6 +343,14 @@ export function attachPowerSafetyOverlay(
   let acceptingTransactions = false;
   let transactionReferenceId: string | null = null;
   let destroyed = false;
+  /**
+   * Set to true when the host calls notifyPrintCompleted() — i.e. any terminal
+   * outcome (success, failure, hardware error, catch block). Once set, the
+   * overlay no longer defers to `options.isPrintInFlight()` so it can show the
+   * full blocking overlay even if the caller intentionally keeps its spooler
+   * correlation keys alive for maintenance-reference purposes.
+   */
+  let printCompleted = false;
 
   ensureStylesInjected();
 
@@ -432,8 +440,12 @@ export function attachPowerSafetyOverlay(
       return;
     }
 
-    // Power is in an emergency / recovering / unknown
-    const inFlight = options.isPrintInFlight ? options.isPrintInFlight() : false;
+    // Power is in an emergency / recovering / unknown.
+    // If notifyPrintCompleted() has already been called, treat the job as
+    // finished even if the caller still holds correlation keys for maintenance.
+    const inFlight =
+      !printCompleted &&
+      (options.isPrintInFlight ? options.isPrintInFlight() : false);
 
     if (inFlight) {
       // Show non-blocking banner, hide full overlay
@@ -536,15 +548,20 @@ export function attachPowerSafetyOverlay(
   // 2. Fetch initial status from /api/power-safety/status
   if (typeof fetch === 'function') {
     void fetch('/api/power-safety/status')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: WorkerPowerEventPayload | null) => {
-        if (data && !destroyed) {
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<WorkerPowerEventPayload>;
+      })
+      .then((data) => {
+        if (!destroyed) {
           handlePowerEvent(data);
         }
       })
       .catch(() => {
-        // If fetch fails and we haven't received a live socket event, stay fail-closed
-        if (!destroyed && operationalState === 'Unknown') {
+        // Fail-closed: on any network error or non-OK response, run
+        // updatePresentation() so the overlay is shown if power state is
+        // unknown (rather than leaving it hidden and fail-open).
+        if (!destroyed) {
           updatePresentation();
         }
       });
@@ -572,6 +589,7 @@ export function attachPowerSafetyOverlay(
       }
     },
     notifyPrintCompleted() {
+      printCompleted = true;
       updatePresentation();
     },
     updateState(event: WorkerPowerEventPayload) {

@@ -234,8 +234,10 @@ class FeedbackService {
   }
 
   private buildFeedbackUrl(publicBaseUrl: URL, token: string): string {
-    const base = publicBaseUrl.toString().replace(/$/, '');
-    return base + 'feedback/' + encodeURIComponent(token);
+    return new URL(
+      `/feedback/${encodeURIComponent(token)}`,
+      publicBaseUrl,
+    ).toString();
   }
 
   private sanitizeComment(value: string): string {

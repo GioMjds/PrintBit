@@ -176,4 +176,18 @@ describe('ReportController direct and non-session based endpoints', () => {
       expect(res._sent).toContain('<base href="/report/">');
     });
   });
+
+  describe('GET /api/report-issues/qr-url', () => {
+    it('returns the customer-accessible report url using resolvePublicBaseUrl', () => {
+      const req = {} as unknown as Request;
+      const res = createMockResponse();
+
+      const getReportQrUrl = (controller as any).getReportQrUrl;
+      getReportQrUrl(req, res);
+
+      expect(res._status).toBe(200);
+      expect(res._sent).toEqual({ url: 'http://192.168.4.1:3000/report' });
+    });
+  });
 });
+

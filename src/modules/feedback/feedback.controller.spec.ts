@@ -121,5 +121,19 @@ describe('FeedbackController direct and non-session based endpoints', () => {
       expect(typeof res._sent).toBe('string');
       expect(res._sent).toContain('<base href="/feedback/">');
     });
+
+  });
+
+  describe('GET /api/feedback/qr-url', () => {
+    it('returns the customer-accessible feedback url using resolvePublicBaseUrl', () => {
+      const req = {} as unknown as Request;
+      const res = createMockResponse();
+
+      const getFeedbackQrUrl = (controller as any).getFeedbackQrUrl;
+      getFeedbackQrUrl(req, res);
+
+      expect(res._status).toBe(200);
+      expect(res._sent).toEqual({ url: 'http://192.168.4.1:3000/feedback' });
+    });
   });
 });

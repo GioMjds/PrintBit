@@ -72,6 +72,8 @@ export class FeedbackController {
 
   private initializeRoutes(): void {
     // API routes (mounted at /api/feedback)
+    this.router.get('/qr-url', this.getFeedbackQrUrl);
+    this.router.get('/url', this.getFeedbackQrUrl);
     this.router.post('/', this.submitDirectFeedback);
     this.router.post('/sessions', this.createSession);
     this.router.get('/sessions/by-token/:token', this.getSessionByToken);
@@ -110,6 +112,17 @@ export class FeedbackController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(400).json({ error: msg });
+    }
+  };
+
+  private getFeedbackQrUrl = (req: Request, res: Response): void => {
+    try {
+      const baseUrl = this.deps.resolvePublicBaseUrl(req);
+      const url = new URL('/feedback', baseUrl).toString();
+      res.json({ url });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
     }
   };
 

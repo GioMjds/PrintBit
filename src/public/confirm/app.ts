@@ -16,7 +16,10 @@ import {
   isMaintenancePrintFailure,
 } from './maintenance-receipt';
 import { presentMaintenanceError } from './maintenance-view';
-import { attachPowerSafetyOverlay } from '../shared/power-safety-overlay';
+import {
+  attachPowerSafetyOverlay,
+  type PowerSafetyOverlayController,
+} from '../shared/power-safety-overlay';
 
 export {};
 
@@ -400,10 +403,12 @@ function hasActiveJob(): boolean {
   );
 }
 
-const powerSafetyOverlay = attachPowerSafetyOverlay({
-  socket: () => socket,
-  isPrintInFlight: () => hasActiveJob(),
-});
+// NOTE: powerSafetyOverlay is initialized AFTER socket is created (below, inside the
+// ioFactory block) so that socket is non-null when the overlay first tries to attach
+// its workerPowerStatusChanged listener. All usage sites (notifyPrintCompleted, etc.)
+// are inside socket event handlers and therefore always execute after initialization.
+// eslint-disable-next-line prefer-const
+let powerSafetyOverlay!: PowerSafetyOverlayController;
 
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
   'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
@@ -2119,6 +2124,16 @@ const ioFactory = (window as unknown as { io?: SocketIoFactory }).io;
 if (typeof ioFactory === 'function') {
   const connectedSocket = ioFactory() as SocketLike;
   socket = connectedSocket;
+
+  // Attach the power safety overlay now that socket is initialized.
+  // Passing the live socket instance (not a getter) avoids the fallback
+  // ioFactory() path inside the overlay that would otherwise create a
+  // redundant, unmanaged Socket.IO connection.
+  powerSafetyOverlay = attachPowerSafetyOverlay({
+    socket: connectedSocket,
+    isPrintInFlight: () => hasActiveJob(),
+  });
+
   connectedSocket.on('balance', (amount: unknown) => {
     if (typeof amount === 'number') updateBalanceUI(amount);
   });

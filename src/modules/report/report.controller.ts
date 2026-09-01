@@ -101,6 +101,15 @@ export class ReportController {
   private initializeRoutes(): void {
     this.service.ensureStorageDirs();
 
+    this.router.get(
+      '/api/report-issues/qr-url',
+      this.getReportQrUrl,
+    );
+    this.router.get(
+      '/api/report-issues/url',
+      this.getReportQrUrl,
+    );
+
     this.router.post(
       '/api/report-issues/sessions',
       this.createSession.bind(this),
@@ -182,6 +191,17 @@ export class ReportController {
       this.getAdminAttachmentFile.bind(this),
     );
   }
+
+  private getReportQrUrl = (req: Request, res: Response): void => {
+    try {
+      const baseUrl = this.deps.resolvePublicBaseUrl(req);
+      const url = new URL('/report', baseUrl).toString();
+      res.json({ url });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  };
 
   private async createSession(req: Request, res: Response): Promise<void> {
     try {

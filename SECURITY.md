@@ -76,6 +76,11 @@ or mitigation within **14 days** for critical issues.
   Wi-Fi provisioning; it does not expose the kiosk's internal LAN.
 - Wi-Fi credentials provisioned via captive portal are stored in **ESP32
   NVS (Non-Volatile Storage)**, not in plaintext files.
+- First boot exposes only the temporary open `PrintBit-Setup` AP. Normal
+  coin, hopper, registration, and redirect behavior remains disabled until an
+  administrator defines an 8–63 character permanent `PrintBit` AP password.
+- Reprovisioning requires the explicit `WIFI_FACTORY_RESET` serial command;
+  the firmware contains no shared fallback Wi-Fi password.
 - Serial communication between the ESP32 and the Node.js host is
   **rate-limited** and validated to prevent command injection.
 

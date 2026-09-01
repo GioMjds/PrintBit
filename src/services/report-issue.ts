@@ -405,11 +405,10 @@ class ReportIssueService {
   }
 
   private buildReportUrl(publicBaseUrl: URL, token: string): string {
-    return (
-      publicBaseUrl.toString().replace(/\/$/, '') +
-      '/report/' +
-      encodeURIComponent(token)
-    );
+    return new URL(
+      `/report/${encodeURIComponent(token)}`,
+      publicBaseUrl,
+    ).toString();
   }
 
   private isExpired(expiresAtIso: string): boolean {

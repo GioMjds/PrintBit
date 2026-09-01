@@ -180,7 +180,9 @@ describe('PowerSafetyOverlay', () => {
   });
 
   test('displays non-blocking banner when power is emergency and print IS in-flight', () => {
-    let printingActive = true;
+    // printingActive stays true throughout — notifyPrintCompleted() must
+    // internally override the isPrintInFlight predicate (Fix 1).
+    const printingActive = true;
     const controller = attachPowerSafetyOverlay({
       isPrintInFlight: () => printingActive,
     });
@@ -198,8 +200,9 @@ describe('PowerSafetyOverlay', () => {
     expect(banner?.getAttribute('hidden')).toBeNull();
     expect(overlay?.classList.contains('is-visible')).toBe(false);
 
-    // When in-flight print finishes, notifyPrintCompleted converts banner to full overlay
-    printingActive = false;
+    // When in-flight print finishes, notifyPrintCompleted() sets the internal
+    // printCompleted flag, bypassing isPrintInFlight() and showing the full
+    // blocking overlay — WITHOUT requiring the caller to flip printingActive.
     controller.notifyPrintCompleted();
 
     expect(banner?.classList.contains('is-visible')).toBe(false);
@@ -289,6 +292,86 @@ describe('PowerSafetyOverlay', () => {
     const refEl = fakeDoc.getElementById('printbitPowerSafetyOverlay')?.querySelector('#powerSafetyRef');
     expect(refEl?.textContent).toBe('Reference ID: tx-12345');
     expect(refEl?.getAttribute('hidden')).toBeNull();
+
+    controller.destroy();
+  });
+
+  // Fix 2: When a live socket object is passed, the overlay subscribes to it
+  // directly and does NOT fall back to window.io (which would create a
+  // redundant unmanaged connection).
+  test('does not call window.io() when a live socket is provided', () => {
+    const mockIoFactory = jest.fn();
+    (globalThis as any).window = { io: mockIoFactory };
+
+    const mockSocket = {
+      on: jest.fn(),
+      off: jest.fn(),
+    };
+
+    const controller = attachPowerSafetyOverlay({
+      // Pass the live socket directly (simulating post-socket-init attachment)
+      socket: mockSocket,
+      isPrintInFlight: () => false,
+    });
+
+    // The overlay must have subscribed via the provided socket
+    expect(mockSocket.on).toHaveBeenCalledWith(
+      'workerPowerStatusChanged',
+      expect.any(Function),
+    );
+    // window.io() must NOT have been called — no redundant socket creation
+    expect(mockIoFactory).not.toHaveBeenCalled();
+
+    controller.destroy();
+  });
+
+  // Fix 3: When the /api/power-safety/status endpoint returns a non-OK
+  // response, the overlay must call updatePresentation() (fail-closed) rather
+  // than silently swallowing the error (fail-open).
+  test('fail-closed: calls updatePresentation when status fetch returns non-OK', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    });
+
+    const controller = attachPowerSafetyOverlay({
+      // No socket, no isPrintInFlight — default Unknown state
+    });
+
+    // Flush the microtask queue so the fetch promise chain resolves
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // With a 503, the overlay should have run updatePresentation() in
+    // fail-closed mode. Since operationalState is still 'Unknown' and
+    // acceptingTransactions is false, the full blocking overlay must be visible.
+    const overlay = fakeDoc.getElementById('printbitPowerSafetyOverlay');
+    expect(overlay?.classList.contains('is-visible')).toBe(true);
+
+    controller.destroy();
+  });
+
+  // Fix 3 supplementary: verify the happy-path still applies the fetched state.
+  test('applies fetched operational state on successful status response', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async (): Promise<WorkerPowerEventPayload> => ({
+        operationalState: 'PowerEmergency',
+        acceptingTransactions: false,
+      }),
+    });
+
+    const controller = attachPowerSafetyOverlay({
+      isPrintInFlight: () => false,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(controller.getOperationalState()).toBe('PowerEmergency');
+    expect(controller.isAcceptingTransactions()).toBe(false);
+
+    const overlay = fakeDoc.getElementById('printbitPowerSafetyOverlay');
+    expect(overlay?.classList.contains('is-visible')).toBe(true);
 
     controller.destroy();
   });

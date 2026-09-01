@@ -1,268 +1,225 @@
-For PrintBit, I recommend a **fixed, offline-first kiosk network architecture**, but I would not make the Node.js server depend on the ESP32-assigned IP address at startup.
+For PrintBit, I would divide the responsibility like this:
 
-The most important change is this:
+| Component          | Responsibility                                        | Change needed?              |
+| ------------------ | ----------------------------------------------------- | --------------------------- |
+| **Windows Tablet** | Keep tablet network address predictable               | ✅ Yes                      |
+| **ESP32**          | Keep AP address fixed, discover/register kiosk server | ✅ Yes, main change         |
+| **Node.js**        | Listen correctly and register itself with ESP32       | ✅ Yes, main change         |
+| **C# Worker**      | Local printer/hardware worker on same tablet          | ⚠️ Probably small/no change |
 
-> **Express should start independently of the ESP32 network.**
->
-> The kiosk UI should always use `localhost`, while the ESP32 Wi-Fi subnet is only used for devices that actually need LAN access.
-
-## Recommended PrintBit architecture
-
-```text
-                   PRINTBIT KIOSK
-┌─────────────────────────────────────────────────────┐
-│ Windows Tablet                                      │
-│                                                     │
-│  Edge Kiosk                                         │
-│      │                                              │
-│      │ http://127.0.0.1:3000                       │
-│      ▼                                              │
-│  Node.js + Express                                  │
-│      │                                              │
-│      │ localhost IPC / HTTP / WebSocket             │
-│      ▼                                              │
-│  C# PrintBit Worker                                 │
-│      │                    │                         │
-│      │ USB / Serial        │ Windows APIs / USB     │
-│      ▼                    ▼                         │
-│    ESP32                Epson L5290                 │
-│                                                     │
-│  Wi-Fi adapter                                     │
-│  Static IP: 10.77.0.2                              │
-└──────────────┬──────────────────────────────────────┘
-               │
-               │ Wi-Fi
-               ▼
-┌─────────────────────────────────────────────────────┐
-│ ESP32 SoftAP                                        │
-│                                                     │
-│ SSID: PrintBit                                      │
-│ IP:   10.77.0.1                                     │
-│ Mask: 255.255.255.0                                 │
-│                                                     │
-│ DHCP pool:                                          │
-│ 10.77.0.100 - 10.77.0.199                           │
-└──────────────┬──────────────────────────────────────┘
-               │
-        ┌──────┴───────┐
-        ▼              ▼
-   Admin phone     Customer phone
-   10.77.0.x       10.77.0.x
-
-Customer upload:
-http://10.77.0.2:3000/upload
-```
-
-This is the architecture I would deploy before introducing a captive portal.
-
----
-
-# 1. Do not use `10.0.0.1`
-
-Technically, `10.0.0.1` will work. It is not inherently more stable than `192.168.4.1`.
-
-The stability comes from **static network configuration**, not from choosing `10.x.x.x`.
-
-I would instead choose something uncommon and PrintBit-specific, such as:
+The target architecture should be:
 
 ```text
-Network:     10.77.0.0/24
+                     PRINTBIT
 
-ESP32:       10.77.0.1
-Tablet:      10.77.0.2
-
-DHCP:
-10.77.0.100
-through
-10.77.0.199
+                 ESP32 Controller
+                   192.168.4.1
+                        |
+                PrintBit Wi-Fi AP
+                        |
+          +-------------+-------------+
+          |                           |
+    Windows Tablet                User Phones
+     192.168.4.2                  DHCP clients
+          |
+          |
+   +------+-------+
+   |              |
+Node.js         C# Worker
+:3000
+0.0.0.0
 ```
 
-Why avoid `10.0.0.1`?
-
-Because these are extremely common:
+Then add a safety mechanism:
 
 ```text
-192.168.0.0/24
-192.168.1.0/24
-192.168.4.0/24
-10.0.0.0/24
-10.0.1.0/24
+Node.js starts
+      |
+      v
+POST http://192.168.4.1/kiosk/register
+      |
+      v
+ESP32 reads client.remoteIP()
+      |
+      v
+ESP32 knows where Node.js is
 ```
 
-If PrintBit later gains another Wi-Fi/Ethernet interface, VPN, router, or Internet connection, overlapping subnets can cause confusing routing problems.
+## Step-by-step implementation order
 
-`10.77.0.0/24` is still a valid private network but is less likely to collide.
+1. **First, make the ESP32 AP address permanently `192.168.4.1`.**
 
----
-
-# 2. Your ESP32 and tablet must have different IPs
-
-This part of your existing configuration is particularly important.
-
-You should never have:
-
-```text
-ESP32  = 192.168.4.2
-Tablet = 192.168.4.2
-```
-
-That causes an IP conflict.
-
-Every interface must have its own address.
-
-For the proposed architecture:
-
-```text
-ESP32
-10.77.0.1
-
-Windows tablet
-10.77.0.2
-```
-
-Then phones receive:
-
-```text
-10.77.0.100
-10.77.0.101
-10.77.0.102
-...
-```
-
----
-
-# 3. Give the ESP32 a permanent SoftAP IP
-
-Arduino ESP32 supports configuring the SoftAP interface with a fixed IP, gateway, and subnet through `softAPConfig()`. ([Espressif Systems][1])
-
-I would configure it approximately like this:
+   In your ESP32 firmware, configure the AP before `WiFi.softAP()`:
 
 ```cpp
-#include <WiFi.h>
+IPAddress apIP(192, 168, 4, 1);
+IPAddress gateway(192, 168, 4, 1);
+IPAddress subnet(255, 255, 255, 0);
 
-const char* WIFI_SSID = "PrintBit";
-const char* WIFI_PASSWORD = "your-secure-password";
+WiFi.mode(WIFI_AP_STA);
 
-IPAddress apIP(
-  10, 77, 0, 1
-);
-
-IPAddress gateway(
-  10, 77, 0, 1
-);
-
-IPAddress subnet(
-  255, 255, 255, 0
-);
-
-IPAddress dhcpStart(
-  10, 77, 0, 100
-);
-
-void setup() {
-  Serial.begin(115200);
-
-  WiFi.mode(WIFI_AP);
-
-  bool configured = WiFi.softAPConfig(
-    apIP,
-    gateway,
-    subnet,
-    dhcpStart
-  );
-
-  if (!configured) {
-    Serial.println("[WiFi] SoftAP configuration failed");
-    ESP.restart();
-  }
-
-  bool started = WiFi.softAP(
-    WIFI_SSID,
-    WIFI_PASSWORD,
-    6,      // channel
-    0,      // SSID visible
-    4       // max clients
-  );
-
-  if (!started) {
-    Serial.println("[WiFi] SoftAP failed");
-    ESP.restart();
-  }
-
-  Serial.println("[WiFi] PrintBit AP started");
-
-  Serial.print("[WiFi] IP: ");
-  Serial.println(WiFi.softAPIP());
+if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
+    Serial.println("Failed to configure AP IP");
 }
 
-void loop() {
-}
+WiFi.softAP("PrintBit", "printbit123");
+
+Serial.print("PrintBit AP: ");
+Serial.println(WiFi.softAPIP());
 ```
 
-The current Arduino-ESP32 source exposes the optional DHCP lease-start argument on `softAPConfig()`, which lets you deliberately start DHCP away from addresses reserved for infrastructure devices. ([GitHub][2])
-
-That gives you:
+You want this invariant:
 
 ```text
-10.77.0.1      ESP32
-10.77.0.2      reserved for kiosk
-10.77.0.3-99   reserved for future infrastructure
-
-10.77.0.100+
-DHCP devices
+ESP32 = ALWAYS 192.168.4.1
 ```
 
-That is substantially cleaner than letting the tablet randomly become `.2`, `.3`, `.4`, etc.
+Not:
+
+```text
+ESP32 = 192.168.4.x
+```
+
+This becomes the one address every PrintBit component can safely know.
 
 ---
 
-# 4. Do not make Express listen specifically on `10.77.0.2`
+2. **Configure the Windows Tablet to prefer `192.168.4.2`.**
 
-This is probably one of the biggest improvements you can make.
+   This is worth doing because the tablet is a fixed component of the kiosk.
 
-Avoid:
+   On Windows 10:
 
-```ts
-app.listen(3000, "10.77.0.2");
+```text
+Control Panel
+    ↓
+Network and Internet
+    ↓
+Network and Sharing Center
+    ↓
+Change adapter settings
+    ↓
+Wi-Fi
+    ↓
+Properties
+    ↓
+Internet Protocol Version 4 (TCP/IPv4)
+    ↓
+Properties
 ```
 
-Because if the Windows Wi-Fi adapter has not initialized yet when PrintBit boots, Express can fail with an address binding error.
+Configure:
 
-Instead:
+```text
+Use the following IP address:
+
+IP address:
+192.168.4.2
+
+Subnet mask:
+255.255.255.0
+
+Default gateway:
+192.168.4.1
+```
+
+For your local ESP32-only network, DNS is not particularly important. You can generally use:
+
+```text
+Preferred DNS:
+192.168.4.1
+```
+
+if your ESP32 captive portal/DNS server is providing DNS behavior.
+
+The resulting network is:
+
+```text
+192.168.4.1 = ESP32
+192.168.4.2 = PrintBit Tablet
+```
+
+Do not assign `.2` to another device.
+
+---
+
+3. **Change Node.js so it does not bind specifically to `192.168.4.2`.**
+
+Avoid this:
+
+```ts
+app.listen(3000, '192.168.4.2');
+```
+
+Use:
 
 ```ts
 const PORT = 3000;
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`PrintBit server running on port ${PORT}`);
 });
 ```
 
-`0.0.0.0` means:
-
-> Listen on all available network interfaces.
-
-The server does not need to know whether Windows currently owns:
+This means:
 
 ```text
-10.77.0.2
+Node.js
+   |
+   +-- localhost:3000
+   |
+   +-- 127.0.0.1:3000
+   |
+   +-- 192.168.4.2:3000
+   |
+   +-- other tablet interfaces
 ```
 
-or another interface.
+This is important.
 
-This eliminates the ESP32 IP from the **server startup dependency chain**.
+The **operating system owns the IP address**.
+
+Node.js should primarily own:
+
+```text
+port 3000
+```
+
+not:
+
+```text
+192.168.4.2
+```
+
+So mentally think:
+
+```text
+Wrong:
+
+Node.js owns
+192.168.4.2:3000
+
+
+Correct:
+
+Windows owns
+192.168.4.2
+
+Node.js listens on
+*:3000
+```
 
 ---
 
-# 5. The kiosk UI should always use `localhost`
+4. **Keep Node.js and C# communication local whenever possible.**
 
-This is another major architectural improvement.
-
-Do not launch Edge with:
+Since Node.js and your C# Worker run on the same Windows Tablet, they should generally not communicate through:
 
 ```text
-http://10.77.0.2:3000
+192.168.4.2
 ```
+
+when they don't have to.
 
 Use:
 
@@ -276,436 +233,599 @@ or:
 http://localhost:3000
 ```
 
-Your kiosk browser and Node server are on the same machine.
+For example, if your C# Worker calls Node:
 
-Therefore the network should be:
-
-```text
-Edge
-  ↓
-127.0.0.1:3000
-  ↓
-Express
+```csharp
+var baseUrl = "http://127.0.0.1:3000";
 ```
 
-Not:
+rather than:
 
-```text
-Edge
-  ↓
-ESP32 WiFi
-  ↓
-10.77.0.2
-  ↓
-Express
+```csharp
+var baseUrl = "http://192.168.4.2:3000";
 ```
 
-There is no benefit to putting the ESP32 network in that loop.
-
-### Result
-
-Even if:
+This separates two concepts:
 
 ```text
-ESP32 Wi-Fi crashes
-ESP32 restarts
-Wi-Fi disconnects
-Windows reconnects
-DHCP fails
-```
+Inside Tablet
+=============
 
-your kiosk interface can still load:
-
-```text
-http://localhost:3000
-```
-
-That is exactly the type of isolation you want in unattended kiosk software.
-
----
-
-# 6. External phones use `10.77.0.2`
-
-There are therefore two addresses for the same Express application.
-
-### Kiosk itself
-
-```text
-http://127.0.0.1:3000
-```
-
-### Devices connected to PrintBit Wi-Fi
-
-```text
-http://10.77.0.2:3000
-```
-
-So later your QR code could contain something like:
-
-```text
-http://10.77.0.2:3000/upload
-```
-
-or preferably:
-
-```text
-http://10.77.0.2:3000/upload?t=<temporary-token>
-```
-
-The customer:
-
-```text
-Scan QR
-    ↓
-Connect to PrintBit Wi-Fi
-    ↓
-Open upload URL
-    ↓
-10.77.0.2:3000
-    ↓
-Express
-```
-
-You do **not** need a captive portal for this architecture.
-
-A captive portal can be added later as a UX improvement.
-
----
-
-# 7. Keep critical ESP32 hardware events off Wi-Fi
-
-For PrintBit specifically, I would make this an architectural rule:
-
-> **Wi-Fi failure should never cause coin accounting, hopper control, or printing state to fail.**
-
-For example:
-
-```text
-Coin acceptor
-      ↓
-    ESP32
-      ↓
-USB Serial
-      ↓
 C# Worker
-      ↓
-TransactionStateMachine
-      ↓
-Express / WebSocket
-      ↓
-UI
-```
+    |
+localhost
+    |
+Node.js
 
-Instead of:
 
-```text
-Coin acceptor
-      ↓
+Outside Tablet
+==============
+
 ESP32
-      ↓
+    |
 Wi-Fi
-      ↓
-Express
+    |
+192.168.4.2:3000
+Node.js
 ```
 
-The first design is much safer for a payment-related kiosk.
+That is much more robust.
 
-Your ESP32 can continue handling:
+Even if Wi-Fi disappears temporarily:
 
 ```text
-CoinInserted
-HopperCompleted
-Heartbeat
-hardware commands
-sensor state
+C# ↔ Node.js
 ```
 
-through the dedicated local hardware channel.
-
-Wi-Fi then becomes responsible for things like:
-
-```text
-customer uploads
-admin phone
-device discovery
-maintenance UI
-```
-
-rather than controlling the transaction itself.
+can still work locally.
 
 ---
 
-# 8. C# Worker should also use localhost
+5. **Implement `/kiosk/register` on the ESP32.**
 
-The same principle applies between Node.js and the C# Worker.
+Your ESP32 should accept something like:
+
+```http
+POST /kiosk/register
+```
+
+When Node connects, do not trust Node to say:
+
+```json
+{
+  "ip": "192.168.4.2"
+}
+```
+
+The ESP32 can obtain the real network source address itself:
+
+```cpp
+IPAddress kioskIp;
+uint16_t kioskPort = 3000;
+bool kioskRegistered = false;
+```
+
+Then when handling registration:
+
+```cpp
+void handleKioskRegister(NetworkClient &client) {
+    kioskIp = client.remoteIP();
+    kioskPort = 3000;
+    kioskRegistered = true;
+
+    Serial.print("Kiosk registered: ");
+    Serial.print(kioskIp);
+    Serial.print(":");
+    Serial.println(kioskPort);
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+
+    client.println("{\"success\":true}");
+}
+```
+
+Conceptually:
+
+```text
+Tablet gets 192.168.4.2
+
+Node:
+POST /kiosk/register
+
+ESP32 sees:
+
+client.remoteIP()
+       =
+192.168.4.2
+```
+
+Now ESP32 stores:
+
+```cpp
+kioskIp = 192.168.4.2;
+```
+
+---
+
+6. **Stop hardcoding `192.168.4.2:3000` throughout ESP32.**
+
+If you currently have:
+
+```cpp
+HTTPClient http;
+
+http.begin(
+    "http://192.168.4.2:3000/api/coin"
+);
+```
+
+replace that pattern.
+
+Create:
+
+```cpp
+String getKioskBaseUrl() {
+    return "http://" +
+           kioskIp.toString() +
+           ":" +
+           String(kioskPort);
+}
+```
+
+Then:
+
+```cpp
+HTTPClient http;
+
+String url =
+    getKioskBaseUrl() +
+    "/api/hardware/coin";
+
+http.begin(url);
+```
+
+Now your ESP32 does not care whether the tablet becomes:
+
+```text
+192.168.4.2
+```
+
+or unexpectedly:
+
+```text
+192.168.4.3
+```
+
+because `/kiosk/register` updates:
+
+```cpp
+kioskIp
+```
+
+---
+
+7. **Make Node.js register itself automatically at startup.**
+
+Your Express server should do something similar to:
+
+```ts
+const ESP32_BASE_URL = 'http://192.168.4.1';
+
+async function registerKiosk() {
+  try {
+    const response = await fetch(`${ESP32_BASE_URL}/kiosk/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        port: 3000,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Registration failed: ${response.status}`);
+    }
+
+    console.log('Registered with PrintBit ESP32.');
+  } catch (error) {
+    console.error('Unable to register with ESP32:', error);
+  }
+}
+```
+
+Then:
+
+```ts
+app.listen(3000, '0.0.0.0', async () => {
+  console.log('PrintBit server started.');
+
+  await registerKiosk();
+});
+```
+
+So your boot becomes automatic:
+
+```text
+Windows boots
+     ↓
+Connects to PrintBit Wi-Fi
+     ↓
+Tablet receives/configures
+192.168.4.2
+     ↓
+Node.js starts
+     ↓
+0.0.0.0:3000
+     ↓
+POST 192.168.4.1/kiosk/register
+     ↓
+ESP32 learns tablet address
+     ↓
+PrintBit Ready
+```
+
+---
+
+8. **Add retries to Node registration.**
+
+This matters because Windows may start Node before Wi-Fi is completely ready.
 
 For example:
 
-```text
-Express
-   │
-   │ http://127.0.0.1:xxxx
-   │ WebSocket
-   │ Named Pipe
-   ▼
-C# Worker
-```
+```ts
+async function registerWithRetry() {
+  while (true) {
+    try {
+      const response = await fetch('http://192.168.4.1/kiosk/register', {
+        method: 'POST',
+      });
 
-Do not use:
+      if (response.ok) {
+        console.log('ESP32 registration complete.');
+        return;
+      }
+    } catch {
+      console.log('ESP32 unavailable, retrying...');
+    }
 
-```text
-10.77.0.2
-```
-
-for communication between applications running on the same Windows machine.
-
-You want the system to behave like:
-
-```text
-                   Windows Tablet
-             ┌─────────────────────────┐
-
- Browser ─── localhost ─── Express
-
-                         │
-                      localhost
-                         │
-                         ▼
-
-                      Worker
-                         │
-                ┌────────┴─────────┐
-                ▼                  ▼
-             ESP32              Printer
-             Serial             Windows
-
-             └─────────────────────────┘
-```
-
-The network is therefore no longer part of the critical processing path.
-
----
-
-# 9. Set the Windows tablet to `10.77.0.2`
-
-If that Wi-Fi adapter is dedicated to PrintBit, you can statically configure it.
-
-For example, first identify it:
-
-```powershell
-Get-NetAdapter
-```
-
-Then:
-
-```powershell
-Set-NetIPInterface `
-    -InterfaceAlias "Wi-Fi" `
-    -AddressFamily IPv4 `
-    -Dhcp Disabled
-```
-
-Then:
-
-```powershell
-New-NetIPAddress `
-    -InterfaceAlias "Wi-Fi" `
-    -IPAddress 10.77.0.2 `
-    -PrefixLength 24
-```
-
-You technically do not need a default gateway for communication inside:
-
-```text
-10.77.0.0/24
-```
-
-because all devices are local.
-
-If later you use the ESP32 for NAT/Internet routing, that architecture changes.
-
-One warning: Windows static IP configuration applies to the network adapter, so this is appropriate when the adapter is essentially dedicated to the PrintBit network.
-
----
-
-# 10. Recommended startup sequence
-
-I would make the kiosk startup independent and fault tolerant:
-
-```text
-Windows starts
-   ↓
-PrintBit Worker Service starts
-   ↓
-Express starts on 0.0.0.0:3000
-   ↓
-Edge kiosk starts
-   ↓
-http://127.0.0.1:3000
-```
-
-Separately:
-
-```text
-ESP32 boots
-   ↓
-Creates PrintBit Wi-Fi
-   ↓
-10.77.0.1
-   ↓
-Windows connects
-   ↓
-Windows = 10.77.0.2
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+}
 ```
 
 Then:
 
 ```text
-Worker detects ESP32
-   ↓
-hardwareReady = true
+Node starts
+    ↓
+ESP32 reachable?
+   / \
+ YES  NO
+  |    |
+  |   retry
+  |   3 sec
+  |    |
+  +----+
+  |
+registered
 ```
 
-If the ESP32 is unavailable:
-
-```text
-UI still loads
-
-Printer status still loads
-
-Admin UI still loads
-
-But:
-
-Payments unavailable
-Hardware unavailable
-```
-
-That is graceful degradation.
-
-It is much better than:
-
-```text
-ESP32 unavailable
-      ↓
-IP unavailable
-      ↓
-Express cannot start
-      ↓
-Entire kiosk unavailable
-```
+For production, I would eventually add a maximum backoff rather than retrying exactly every 3 seconds indefinitely.
 
 ---
 
-# 11. Add health states instead of assuming everything is connected
+9. **Add heartbeat or health checking.**
 
-Your backend can expose something like:
+Registration only tells ESP32:
+
+> Node existed at this address at some point.
+
+You also want to know:
+
+> Is Node still alive?
+
+Node could provide:
 
 ```http
 GET /api/health
 ```
 
-Returning:
+returning:
 
 ```json
 {
-  "server": "online",
-  "worker": "online",
-  "esp32": "online",
-  "printer": "online",
-  "network": "online",
-  "ready": true
+  "status": "ok"
 }
 ```
 
-Your startup screen can then determine whether PrintBit is actually ready.
+ESP32 periodically checks:
+
+```text
+http://<kioskIp>:3000/api/health
+```
 
 For example:
 
 ```text
-Initializing PrintBit...
+Every 5 seconds
 
-✓ Server
-✓ Worker
-✓ ESP32
-✓ Coin acceptor
-✓ Hopper
-✓ Printer
-
-Ready
+ESP32
+   |
+   v
+GET /api/health
+   |
+   +--> 200 OK
+   |       ↓
+   |     READY
+   |
+   +--> timeout
+           ↓
+       DISCONNECTED
 ```
 
-If ESP32 disappears:
-
-```text
-✓ Server
-✓ Worker
-✗ ESP32
-- Coin acceptor
-- Hopper
-✓ Printer
-
-Hardware unavailable
-```
-
-This is much more production-oriented than coupling application startup to one IP.
+For a coin-operated kiosk, this is important.
 
 ---
 
-# 12. What I would deploy for PrintBit now
+10. **Disable payment when Node is unavailable.**
 
-My recommended configuration is:
+This is where your architecture becomes much safer.
 
-| Component        | Configuration           |
-| ---------------- | ----------------------- |
-| ESP32 Wi-Fi mode | SoftAP                  |
-| ESP32 IP         | `10.77.0.1`             |
-| Subnet           | `255.255.255.0`         |
-| Tablet           | `10.77.0.2`             |
-| DHCP clients     | `10.77.0.100-199`       |
-| SSID             | `PrintBit`              |
-| Express binding  | `0.0.0.0:3000`          |
-| Kiosk URL        | `http://127.0.0.1:3000` |
-| Phone upload URL | `http://10.77.0.2:3000` |
-| Node ↔ C#        | localhost               |
-| C# ↔ ESP32       | USB/serial              |
-| C# ↔ printer     | Windows/USB             |
-| Captive portal   | Not required yet        |
-
-Espressif explicitly supports SoftAP operation and static SoftAP addressing, and the AP mode includes DHCP support for connected stations. ([Espressif Systems][1])
-
-## Longer-term production architecture
-
-There is one further improvement I would consider after PrintBit is stable:
+Do not allow:
 
 ```text
-               Dedicated router/AP
-                   10.77.0.1
-                 /     |      \
-                /      |       \
-           Tablet    ESP32    Phones
-          .2        .10       DHCP
+Customer inserts ₱20
+        ↓
+Node is dead
+        ↓
+transaction lost
 ```
 
-Then the ESP32 stops being responsible for being the network infrastructure.
-
-That is the stronger production architecture if PrintBit eventually has many customer phones connecting simultaneously.
-
-But **I would not add that complexity right now**. With the current architecture, a carefully configured ESP32 SoftAP is adequate for a small number of connected clients. Arduino's SoftAP API also allows configuring the maximum number of clients. ([Espressif Systems][1])
-
-The immediate refactor I would prioritize is:
+Instead:
 
 ```text
-1. ESP32 → 10.77.0.1 static
-2. Tablet → 10.77.0.2 static
-3. DHCP → .100+
-4. Express → 0.0.0.0
-5. Edge → localhost:3000
-6. Node ↔ Worker → localhost
-7. Critical hardware → serial, not Wi-Fi
+kioskRegistered == false
+        OR
+heartbeat failed
+        ↓
+Coin acceptor disabled
+        ↓
+Maintenance Mode
 ```
 
-That removes the IP-change problem from PrintBit's core architecture instead of merely replacing `192.168.4.2` with another hard-coded address.
+Conceptually:
 
-[1]: https://docs.espressif.com/projects/arduino-esp32/en/latest/api/wifi.html?utm_source=chatgpt.com "Wi-Fi API - - — Arduino ESP32 latest documentation"
-[2]: https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/src/WiFiAP.h?utm_source=chatgpt.com "arduino-esp32/libraries/WiFi/src/WiFiAP.h at master · espressif/arduino-esp32 · GitHub"
+```cpp
+if (!kioskRegistered) {
+    disableCoinAcceptor();
+}
+```
+
+and:
+
+```cpp
+if (kioskHealthy) {
+    enableCoinAcceptor();
+}
+```
+
+Your UI can display:
+
+```text
+PrintBit temporarily unavailable
+
+Reconnecting to kiosk controller...
+```
+
+---
+
+11. **Audit the C# Worker for IP dependencies.**
+
+The C# Worker should not need to participate in ESP32 discovery unless it directly communicates with ESP32.
+
+Search the Worker repo for:
+
+```text
+192.168.
+192.168.4.2
+:3000
+localhost
+127.0.0.1
+```
+
+If you see:
+
+```csharp
+http://192.168.4.2:3000
+```
+
+and the Worker is communicating with Node on the same tablet, replace it with:
+
+```csharp
+http://127.0.0.1:3000
+```
+
+The ideal architecture is:
+
+```text
+                 NETWORK
+
+ESP32 192.168.4.1
+        |
+        |
+        v
+Node.js :3000
+        |
+        | localhost
+        |
+        v
+C# Worker
+        |
+        |
+ Windows Printer API
+        |
+        v
+ Epson L5290
+```
+
+C# shouldn't care whether the tablet is `.2`, `.3`, or `.50`.
+
+It operates locally.
+
+---
+
+12. **Centralize all addresses into configuration constants.**
+
+Node.js:
+
+```ts
+export const networkConfig = {
+  port: 3000,
+  host: '0.0.0.0',
+  esp32Url: 'http://192.168.4.1',
+};
+```
+
+ESP32:
+
+```cpp
+const IPAddress PRINTBIT_AP_IP(
+    192, 168, 4, 1
+);
+
+const uint16_t KIOSK_DEFAULT_PORT = 3000;
+```
+
+C#:
+
+```csharp
+public static class NetworkConfig
+{
+    public const string NodeBaseUrl =
+        "http://127.0.0.1:3000";
+}
+```
+
+Do not scatter:
+
+```text
+192.168.4.1
+192.168.4.2
+3000
+```
+
+through dozens of files.
+
+---
+
+## The final configuration I recommend
+
+```text
+ESP32
+────────────────────────────
+AP IP:
+192.168.4.1
+
+Mode:
+WIFI_AP_STA
+
+Responsibilities:
+Wi-Fi AP
+Coin acceptor
+Hopper
+Hardware events
+Kiosk registration
+Heartbeat monitoring
+
+
+WINDOWS TABLET
+────────────────────────────
+Preferred/static:
+192.168.4.2
+
+Subnet:
+255.255.255.0
+
+Gateway:
+192.168.4.1
+
+
+NODE.JS
+────────────────────────────
+Listen:
+0.0.0.0:3000
+
+ESP32:
+http://192.168.4.1
+
+Startup:
+POST /kiosk/register
+
+Health:
+GET /api/health
+
+
+C# WORKER
+────────────────────────────
+Node.js:
+http://127.0.0.1:3000
+
+No dependency on:
+192.168.4.2
+```
+
+### Priority order
+
+If you're writing an implementation plan or GitHub issue, I would divide it into these phases:
+
+```text
+Phase 1
+Windows static network
+192.168.4.2
+
+        ↓
+
+Phase 2
+ESP32 fixed AP
+192.168.4.1
+
+        ↓
+
+Phase 3
+Node
+0.0.0.0:3000
+
+        ↓
+
+Phase 4
+Node → ESP32
+/kiosk/register
+
+        ↓
+
+Phase 5
+ESP32 removes hardcoded .4.2
+
+        ↓
+
+Phase 6
+Heartbeat + reconnect
+
+        ↓
+
+Phase 7
+C# audit
+localhost only
+
+        ↓
+
+Phase 8
+Payment safety /
+Maintenance Mode
+```
+
+So the **actual coding task belongs primarily to ESP32 and Node.js**. Windows static configuration should still be done because this is a fixed kiosk appliance, but it should be treated as the first layer of stability, not your only protection. The C# Worker should ideally remain network-address agnostic and communicate with Node locally through `127.0.0.1`.

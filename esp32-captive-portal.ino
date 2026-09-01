@@ -1,4 +1,4 @@
-#include <WiFi.h>
+#include <WiFiManager.h>
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 #include <HTTPClient.h>
@@ -11,6 +11,8 @@
 #define relayPin 32
 
 const byte DNS_PORT = 53;
+IPAddress printBitApIp(192, 168, 4, 1);
+IPAddress printBitSubnet(255, 255, 255, 0);
 
 const char* fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
@@ -22,14 +24,23 @@ const char* hopperControlToken = "printbit-coin-bridge-key";
 
 Preferences preferences;
 const char* PREFS_NAMESPACE = "printbit-cfg";
+WiFiManager wifiManager;
+WiFiManagerParameter permanentApPassword(
+  "printbit_ap_password",
+  "Permanent PrintBit AP password (8-63 characters)",
+  "",
+  64,
+  "type='password' minlength='8' maxlength='63' required"
+);
 
 DNSServer dnsServer;
 NetworkServer server(80);
 
 String apSsid = "PrintBit";
-String apPass = "printbit123";
+String apPass = "";
 String staSsid = "";
 String staPass = "";
+bool provisioningComplete = false;
 
 String kioskIp = fallbackKioskIp;
 uint16_t kioskPort = fallbackKioskPort;
@@ -172,16 +183,14 @@ void refreshTargets() {
 void loadNvsConfig() {
   preferences.begin(PREFS_NAMESPACE, true);
   apSsid = preferences.getString("ap_ssid", "PrintBit");
-  apPass = preferences.getString("ap_pass", "printbit123");
-  staSsid = preferences.getString("sta_ssid", "");
-  staPass = preferences.getString("sta_pass", "");
+  apPass = preferences.getString("ap_pass", "");
   String savedIp = preferences.getString("kiosk_ip", fallbackKioskIp);
   uint32_t savedPort = preferences.getUInt("kiosk_port", fallbackKioskPort);
   String savedPath = preferences.getString("kiosk_path", fallbackKioskPortalPath);
   preferences.end();
 
   if (apSsid.length() == 0) apSsid = "PrintBit";
-  if (apPass.length() < 8) apPass = "printbit123";
+  provisioningComplete = apPass.length() >= 8 && apPass.length() <= 63;
 
   if (isValidIpv4Address(savedIp)) {
     kioskIp = savedIp;
@@ -200,14 +209,63 @@ void loadNvsConfig() {
   refreshTargets();
 }
 
-void saveWifiConfigToNvs(const String& newStaSsid, const String& newStaPass, const String& newApPass = "") {
+void savePermanentApPassword(const String& newApPass) {
+  if (newApPass.length() < 8 || newApPass.length() > 63) return;
   preferences.begin(PREFS_NAMESPACE, false);
-  preferences.putString("sta_ssid", newStaSsid);
-  preferences.putString("sta_pass", newStaPass);
-  if (newApPass.length() >= 8) {
-    preferences.putString("ap_pass", newApPass);
-  }
+  preferences.putString("ap_ssid", "PrintBit");
+  preferences.putString("ap_pass", newApPass);
   preferences.end();
+}
+
+void saveWifiConfigToNvs(const String&, const String&, const String& newApPass = "") {
+  savePermanentApPassword(newApPass);
+}
+
+void saveProvisioningParameters() {
+  String candidate = permanentApPassword.getValue();
+  candidate.trim();
+  if (candidate.length() < 8 || candidate.length() > 63) {
+    Serial.println("PROVISIONING_REJECTED:AP_PASSWORD_MUST_BE_8_TO_63_CHARACTERS");
+    return;
+  }
+  savePermanentApPassword(candidate);
+  apPass = candidate;
+  provisioningComplete = true;
+  Serial.println("PROVISIONING_SAVED");
+}
+
+void runInitialProvisioning() {
+  wifiManager.setAPStaticIPConfig(printBitApIp, printBitApIp, printBitSubnet);
+  wifiManager.setBreakAfterConfig(true);
+  wifiManager.setSaveConnect(false);
+  wifiManager.setSaveParamsCallback(saveProvisioningParameters);
+  wifiManager.addParameter(&permanentApPassword);
+  const char* menu[] = { "wifi", "info", "restart", "exit" };
+  wifiManager.setMenu(menu, 4);
+
+  while (!provisioningComplete) {
+    Serial.println("PROVISIONING_REQUIRED:CONNECT_TO_OPEN_AP:PrintBit-Setup");
+    wifiManager.startConfigPortal("PrintBit-Setup");
+    if (!provisioningComplete) {
+      Serial.println("PROVISIONING_INCOMPLETE:AP_PASSWORD_REQUIRED");
+      delay(500);
+    }
+  }
+
+  Serial.println("PROVISIONING_COMPLETE:RESTARTING");
+  delay(500);
+  ESP.restart();
+}
+
+void factoryResetWifi() {
+  digitalWrite(relayPin, LOW);
+  wifiManager.resetSettings();
+  preferences.begin(PREFS_NAMESPACE, false);
+  preferences.clear();
+  preferences.end();
+  Serial.println("WIFI_FACTORY_RESET:RESTARTING_IN_SETUP_MODE");
+  delay(500);
+  ESP.restart();
 }
 
 void saveKioskConfigToNvs(const String& newIp, uint16_t newPort, const String& newPath) {
@@ -372,6 +430,10 @@ void emitHopperError(
 }
 
 void sendCoinToTablet(int value) {
+  if (!provisioningComplete) {
+    logCoinSendFailure("provisioning_required", 0, "");
+    return;
+  }
   if (WiFi.softAPgetStationNum() == 0 && WiFi.status() != WL_CONNECTED) {
     logCoinSendFailure("network_unreachable_no_station", 0, "");
     return;
@@ -642,19 +704,6 @@ void handleWifiRequest(NetworkClient& client) {
     return;
   }
 
-  // Native setup portal endpoints
-  if (method == "GET" && routePath == "/setup") {
-    handleSetupPage(client);
-    client.stop();
-    return;
-  }
-
-  if (method == "POST" && routePath == "/setup/save") {
-    handleSetupSave(client, body);
-    client.stop();
-    return;
-  }
-
   if ((method == "POST" || method == "GET") && routePath == "/hopper/dispense") {
     String postedToken = getFormValue(body, "token");
     String postedCoins = getFormValue(body, "coins");
@@ -797,6 +846,10 @@ bool startDispense(
   int coins,
   const String& requestId,
   const String& sourceLabel) {
+  if (!provisioningComplete) {
+    emitHopperError(requestId, "PROVISIONING_REQUIRED", "HARDWARE_DISABLED");
+    return false;
+  }
   if (dispensing) {
     emitHopperError(requestId, "UNKNOWN", "BUSY");
     return false;
@@ -924,6 +977,11 @@ void handleSerialCommand(const String& rawLine) {
     return;
   }
 
+  if (line == "WIFI_FACTORY_RESET" || line == "wifi_factory_reset") {
+    factoryResetWifi();
+    return;
+  }
+
   if (line == "WIFI_STATUS" || line == "wifi_status") {
     Serial.print("AP_SSID:");
     Serial.println(apSsid);
@@ -969,7 +1027,15 @@ void setup() {
 
   loadNvsConfig();
 
+  if (!provisioningComplete) {
+    runInitialProvisioning();
+    return;
+  }
+
   WiFi.mode(WIFI_AP_STA);
+  if (!WiFi.softAPConfig(printBitApIp, printBitApIp, printBitSubnet)) {
+    Serial.println("AP_CONFIG_FAILED");
+  }
   WiFi.softAP(apSsid.c_str(), apPass.c_str(), 1, 0);
 
   dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
@@ -982,11 +1048,12 @@ void setup() {
     Serial.println("mDNS responder failed to start");
   }
 
-  if (staSsid.length() > 0) {
+  staSsid = wifiManager.getWiFiSSID();
+  if (staSsid.length() > 0 && WiFi.status() != WL_CONNECTED) {
     Serial.print("Connecting to STA Wi-Fi: ");
     Serial.println(staSsid);
     Serial.println("WIFI_STA_CONNECTING");
-    WiFi.begin(staSsid.c_str(), staPass.c_str());
+    WiFi.begin();
   }
 
   Serial.println("AP Started");
