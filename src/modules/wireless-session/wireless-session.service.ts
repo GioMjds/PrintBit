@@ -38,14 +38,14 @@ export interface WirelessSessionServiceDeps {
   powerSafetyService?: PowerSafetyService;
 }
 
-const IMAGE_TYPES: Record<string, string> = {
+const IMAGE_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.bmp': 'image/bmp',
   '.gif': 'image/gif',
-};
+} satisfies Record<string, string>;
 
 const PDF_CONVERT_EXTENSIONS = new Set(['.doc', '.docx', '.ppt', '.pptx']);
 const POWERPOINT_EXTENSIONS = new Set(['.ppt', '.pptx']);
@@ -477,11 +477,13 @@ export class WirelessSessionService {
         return;
       }
 
-      if (IMAGE_TYPES[extension]) {
-        res.setHeader('Content-Type', IMAGE_TYPES[extension]);
+      const imageContentType =
+        IMAGE_TYPES[extension as keyof typeof IMAGE_TYPES];
+      if (imageContentType) {
+        res.setHeader('Content-Type', imageContentType);
         console.log('[preview] serving image file', {
           path: absolutePath,
-          contentType: IMAGE_TYPES[extension],
+          contentType: imageContentType,
           tookMs: Date.now() - startedAt,
         });
         res.sendFile(absolutePath);
