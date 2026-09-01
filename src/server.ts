@@ -271,6 +271,14 @@ app.get('/api/startup/ready', (_req, res) => {
   res.status(statusCode).json(snapshot);
 });
 
+app.get('/api/power-safety/status', (_req, res) => {
+  res.setHeader(
+    'Cache-Control',
+    'no-store, no-cache, must-revalidate, proxy-revalidate',
+  );
+  res.json(powerSafetyService.getEffectiveEvent());
+});
+
 app.use(cookieParser());
 
 const sessionStore = new SessionStore(UPLOAD_DIR, {

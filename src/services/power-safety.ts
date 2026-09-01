@@ -84,6 +84,15 @@ export class PowerSafetyService extends EventEmitter {
       sourceTimestampUtc: null,
       receivedTimestampUtc: null,
     };
+
+    try {
+      this.serial.lockCoinSlot('power-safety');
+    } catch (serialErr) {
+      console.error(
+        '[POWER_SAFETY] Failed to lock coin slot on startup:',
+        serialErr,
+      );
+    }
   }
 
   canAcceptCustomerWork(): boolean {

@@ -5,6 +5,9 @@ import {
 } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
+import { attachPowerSafetyOverlay } from '../shared/power-safety-overlay';
+
+attachPowerSafetyOverlay();
 
 type UploadedFile = {
   documentId?: string;

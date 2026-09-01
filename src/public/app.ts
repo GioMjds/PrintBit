@@ -8,6 +8,7 @@ import { navigateWithKioskMotion } from './shared/kiosk-navigation';
 import { mountLoadingAnimation } from './shared/loading-animation';
 import { initIdleScreen } from './shared/idle-screen';
 import { isMobileViewport } from './shared/device-mode';
+import { attachPowerSafetyOverlay } from './shared/power-safety-overlay';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
@@ -43,9 +44,11 @@ const ioFactory = (
   window as unknown as { io?: (...args: unknown[]) => SocketLike }
 ).io;
 
-if (typeof ioFactory === 'function') {
-  const socket = ioFactory();
-  socket.on('balance', (amount: unknown) => {
+const homeSocket = typeof ioFactory === 'function' ? ioFactory() : null;
+attachPowerSafetyOverlay({ socket: homeSocket });
+
+if (homeSocket) {
+  homeSocket.on('balance', (amount: unknown) => {
     const el = document.getElementById('balance');
     if (el && typeof amount === 'number') el.textContent = String(amount);
   });
@@ -229,6 +232,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 void loadHotspotConfig();
+void resolveFeedbackQrUrl();
+void resolveReportQrUrl();
 
 powerOff?.addEventListener('click', () => {
   const ok = confirm('Power off device?');
@@ -583,6 +588,79 @@ const feedbackQrCanvas = document.getElementById(
 ) as HTMLCanvasElement | null;
 const feedbackModalStatus = document.getElementById('feedbackModalStatus');
 
+let cachedFeedbackQrUrl: string | null = null;
+let cachedReportQrUrl: string | null = null;
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return (
+    normalized === '' ||
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1'
+  );
+}
+
+function isLoopbackUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    return isLoopbackHostname(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function resolveFeedbackQrUrl(): Promise<string> {
+  if (cachedFeedbackQrUrl && !isLoopbackUrl(cachedFeedbackQrUrl)) {
+    return cachedFeedbackQrUrl;
+  }
+  try {
+    const res = await fetch('/api/feedback/qr-url');
+    if (res.ok) {
+      const data = (await res.json()) as { url?: string };
+      if (typeof data.url === 'string' && data.url.trim().length > 0) {
+        const resolved = data.url.trim();
+        if (!isLoopbackUrl(resolved)) {
+          cachedFeedbackQrUrl = resolved;
+        }
+        return resolved;
+      }
+    }
+  } catch {
+    /* fallback below */
+  }
+
+  if (cachedFeedbackQrUrl) return cachedFeedbackQrUrl;
+
+  // Fallback: If current page origin is not loopback, use origin; otherwise keep origin/feedback
+  return `${window.location.origin}/feedback`;
+}
+
+async function resolveReportQrUrl(): Promise<string> {
+  if (cachedReportQrUrl && !isLoopbackUrl(cachedReportQrUrl)) {
+    return cachedReportQrUrl;
+  }
+  try {
+    const res = await fetch('/api/report-issues/qr-url');
+    if (res.ok) {
+      const data = (await res.json()) as { url?: string };
+      if (typeof data.url === 'string' && data.url.trim().length > 0) {
+        const resolved = data.url.trim();
+        if (!isLoopbackUrl(resolved)) {
+          cachedReportQrUrl = resolved;
+        }
+        return resolved;
+      }
+    }
+  } catch {
+    /* fallback below */
+  }
+
+  if (cachedReportQrUrl) return cachedReportQrUrl;
+
+  return `${window.location.origin}/report`;
+}
+
 function setFeedbackStatus(msg: string): void {
   if (feedbackModalStatus) feedbackModalStatus.textContent = msg;
 }
@@ -591,7 +669,7 @@ async function renderFeedbackQr(): Promise<void> {
   if (!feedbackQrCanvas) return;
   setFeedbackStatus('Generating QR code\u2026');
   try {
-    const feedbackUrl = `${window.location.origin}/feedback`;
+    const feedbackUrl = await resolveFeedbackQrUrl();
     await QRCode.toCanvas(feedbackQrCanvas, feedbackUrl, {
       width: 220,
       margin: 1,
@@ -638,7 +716,7 @@ async function renderReportQr(): Promise<void> {
   if (!reportQrCanvas) return;
   setReportStatus('Generating QR code\u2026');
   try {
-    const reportUrl = `${window.location.origin}/report`;
+    const reportUrl = await resolveReportQrUrl();
     await QRCode.toCanvas(reportQrCanvas, reportUrl, {
       width: 220,
       margin: 1,

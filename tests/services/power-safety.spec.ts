@@ -41,6 +41,7 @@ describe('PowerSafetyService', () => {
       expect(state.powerStatus).toBeNull();
       expect(state.powerSourceInstanceId).toBeNull();
       expect(state.powerSequence).toBeNull();
+      expect(mockSerialService.lockCoinSlot).toHaveBeenCalledWith('power-safety');
     });
   });
 

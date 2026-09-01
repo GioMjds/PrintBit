@@ -16,6 +16,7 @@ import {
   isMaintenancePrintFailure,
 } from './maintenance-receipt';
 import { presentMaintenanceError } from './maintenance-view';
+import { attachPowerSafetyOverlay } from '../shared/power-safety-overlay';
 
 export {};
 
@@ -398,6 +399,11 @@ function hasActiveJob(): boolean {
     paymentSpoolerCorrelationKey !== null
   );
 }
+
+const powerSafetyOverlay = attachPowerSafetyOverlay({
+  socket: () => socket,
+  isPrintInFlight: () => hasActiveJob(),
+});
 
 const DEFAULT_COIN_INSERT_GUIDANCE_MESSAGE =
   'Tip: Insert one coin at a time. Rapid insertion may not be detected by the kiosk.';
@@ -1345,6 +1351,7 @@ let currentScanDownloadExpiry: string | null = null;
 
 function setTransactionReference(id: string | null): void {
   currentTransactionId = id?.trim().length ? id.trim() : null;
+  powerSafetyOverlay.setTransactionReference(currentTransactionId);
   if (!transactionReference) return;
   if (currentTransactionId) {
     transactionReference.textContent = `Reference ID: ${currentTransactionId}`;
@@ -1612,6 +1619,7 @@ function finalizePrintSuccess(
           : 'Printing complete. Thank you!';
   }
   isProcessingPayment = false;
+  powerSafetyOverlay.notifyPrintCompleted();
 
   if (printAnotherBtn) {
     printAnotherBtn.removeAttribute('hidden');
@@ -2061,6 +2069,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
   } catch (error) {
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
+    powerSafetyOverlay.notifyPrintCompleted();
     const message =
       error instanceof Error ? error.message : 'Error processing payment.';
     applyConfirmGate(message);
@@ -2225,6 +2234,7 @@ if (typeof ioFactory === 'function') {
       if (isHardwareError) {
         hideOverlay(printingOverlay);
         isProcessingPayment = false;
+        powerSafetyOverlay.notifyPrintCompleted();
         // Keep activeSpoolerCorrelationKey and session state intact!
         if (lifecycle.printError) {
           renderPrinterError(lifecycle.printError);
@@ -2239,6 +2249,7 @@ if (typeof ioFactory === 'function') {
       isProcessingPayment = false;
       activeSpoolerCorrelationKey = null;
       clearPendingPaymentSessionState();
+      powerSafetyOverlay.notifyPrintCompleted();
       applyConfirmGate(
         lifecycle.reason ?? 'The worker could not complete this print job.',
       );
@@ -2396,6 +2407,7 @@ if (typeof ioFactory === 'function') {
     if (isHardwareError) {
       hideOverlay(printingOverlay);
       isProcessingPayment = false;
+      powerSafetyOverlay.notifyPrintCompleted();
       const hardwareError: PrintError = {
         ...(job?.printError ?? {
           code: 'WORKER_HARDWARE_ERROR',
@@ -2428,6 +2440,7 @@ if (typeof ioFactory === 'function') {
     isProcessingPayment = false;
     activeSpoolerCorrelationKey = null;
     clearPendingPaymentSessionState();
+    powerSafetyOverlay.notifyPrintCompleted();
     applyConfirmGate(
       job?.message ?? 'The worker reported a terminal print failure.',
     );

@@ -63,7 +63,9 @@ let serialCoinTarget: string | null = null;
 let serialPortalTarget: string | null = null;
 let activeSerialPort: SerialPort | null = null;
 let socketIo: Server | null = null;
-const coinSlotLocks = new Map<string, string>();
+const coinSlotLocks = new Map<string, string>([
+  ['power-safety', new Date().toISOString()],
+]);
 
 let hopperCommandPending = false;
 let hopperLastError: string | null = null;
