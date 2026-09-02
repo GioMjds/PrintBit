@@ -60,8 +60,9 @@
           <h1>Configure</h1>
         </div>
 
-        <!-- spacer to keep title centred -->
-        <div class="topbar-spacer"></div>
+        <div class="topbar-spacer topbar-actions">
+          <button class="pricing-summary__button" id="openPricingBtn" type="button">View all prices</button>
+        </div>
       </header>
 
       <div
@@ -457,32 +458,6 @@
                 </label>
               </div>
             </fieldset>
-
-            <section
-              class="pricing-summary"
-              aria-labelledby="pricingSummaryTitle"
-            >
-              <div class="pricing-summary__heading">
-                <div>
-                  <p class="option-label" id="pricingSummaryTitle">
-                    Price for your selection
-                  </p>
-                  <p class="pricing-summary__value" id="pricingSummaryValue">
-                    Loading rate…
-                  </p>
-                </div>
-                <button
-                  class="pricing-summary__button"
-                  id="openPricingBtn"
-                  type="button"
-                >
-                  View all prices
-                </button>
-              </div>
-              <p class="pricing-summary__detail" id="pricingSummaryDetail">
-                Base price per page
-              </p>
-            </section>
 
             <fieldset class="option-group" id="orientationGroup">
               <legend class="option-label">Orientation</legend>
@@ -943,7 +918,10 @@
 
     <!-- ── STICKY FOOTER: summary + Continue button ── -->
     <footer class="sticky-footer">
-      <p class="footer-summary" id="footerSummary">Choose your settings.</p>
+      <div class="footer-price" aria-live="polite">
+        <p class="footer-selections" id="footerSelections">Choose your settings.</p>
+        <p class="footer-total" id="footerTotal">—</p>
+      </div>
       <button
         id="continueBtn"
         type="button"

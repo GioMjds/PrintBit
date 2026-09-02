@@ -6,9 +6,7 @@ import { shouldPreparePreviewInBackground } from './office-preview';
 import { getPreviewRequestTimeoutMs } from './preview-timeout';
 import {
   fetchPublicPricing,
-  formatPeso,
   formatPricingGuide,
-  type PublicPricingConfig,
 } from '../shared/pricing-guide';
 import {
   destroyPdfLoadingTask,
@@ -883,12 +881,8 @@ const continueBtn = document.getElementById(
 const filePillLabel = document.getElementById(
   'filePillLabel',
 ) as HTMLElement | null;
-const footerSummary = document.getElementById(
-  'footerSummary',
-) as HTMLElement | null;
-const pricingSummary = document.querySelector<HTMLElement>('.pricing-summary');
-const pricingSummaryValue = document.getElementById('pricingSummaryValue');
-const pricingSummaryDetail = document.getElementById('pricingSummaryDetail');
+const footerSummary = document.getElementById('footerSelections') as HTMLElement | null;
+const footerTotal = document.getElementById('footerTotal') as HTMLElement | null;
 const openPricingBtn = document.getElementById('openPricingBtn');
 const closePricingBtn = document.getElementById('closePricingBtn');
 const pricingOverlay = document.getElementById('pricingOverlay');
@@ -1411,42 +1405,6 @@ function currentPreviewConfig(): PreviewConfig {
   };
 }
 
-let publicPricing: PublicPricingConfig | null = null;
-
-function updatePricingSummary(): void {
-  if (!pricingSummary || !pricingSummaryValue || !pricingSummaryDetail) return;
-  if (mode === 'scan') {
-    pricingSummary.hidden = true;
-    return;
-  }
-  pricingSummary.hidden = false;
-  if (!publicPricing) {
-    pricingSummaryValue.textContent = 'Loading rate…';
-    pricingSummaryDetail.textContent = 'Base price per page';
-    return;
-  }
-
-  const cfg = currentPreviewConfig();
-  const profileKey =
-    cfg.paperSize === 'Legal'
-      ? 'longBond'
-      : cfg.paperSize === 'Letter'
-        ? 'shortBond'
-        : 'a4';
-  const basePrice =
-    cfg.colorMode === 'colored'
-      ? publicPricing.paperProfiles[profileKey].baseColorPrice
-      : publicPricing.paperProfiles[profileKey].baseBwPrice;
-  const highQuality = getSelectedQuality() === 'high';
-  const perPage =
-    basePrice + (highQuality ? publicPricing.highQualitySurcharge : 0);
-
-  pricingSummaryValue.textContent = `${formatPeso(perPage)} per page`;
-  pricingSummaryDetail.textContent = highQuality
-    ? `${formatPeso(basePrice)} base + ${formatPeso(publicPricing.highQualitySurcharge)} high-quality upgrade`
-    : `${formatPeso(basePrice)} base · Standard quality`;
-}
-
 function setPricingModalOpen(open: boolean): void {
   if (!pricingOverlay) return;
   pricingOverlay.classList.toggle('is-open', open);
@@ -1466,20 +1424,13 @@ window.addEventListener('keydown', (event) => {
 
 void fetchPublicPricing()
   .then((pricing) => {
-    publicPricing = pricing;
     if (pricingGuideContent)
       pricingGuideContent.innerHTML = formatPricingGuide(pricing);
-    updatePricingSummary();
   })
   .catch(() => {
     if (pricingGuideContent)
       pricingGuideContent.textContent =
         'Printing prices are unavailable right now.';
-    if (pricingSummaryValue)
-      pricingSummaryValue.textContent = 'Rate unavailable';
-    if (pricingSummaryDetail)
-      pricingSummaryDetail.textContent =
-        'Your exact total will still be shown before payment.';
   });
 
 function setPrintContinueState(): void {
@@ -1704,7 +1655,6 @@ function schedulePrintQuoteRefresh(): void {
 }
 
 function updateSummary(): void {
-  updatePricingSummary();
   if (!footerSummary) return;
   if (mode === 'scan') {
     const cfg = currentPreviewConfig();
@@ -1712,6 +1662,7 @@ function updateSummary(): void {
     footerSummary.textContent =
       `Scan mode · ${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
       `Rotate ${cfg.rotationDeg}°`;
+    if (footerTotal) footerTotal.textContent = 'Ready to scan';
     return;
   }
 
@@ -1720,6 +1671,7 @@ function updateSummary(): void {
 
   if (quoteLoading) {
     footerSummary.textContent = 'Calculating price...';
+    if (footerTotal) footerTotal.textContent = '…';
     footerSummary.classList.remove('ready');
     return;
   }
@@ -1727,13 +1679,16 @@ function updateSummary(): void {
   if (currentPrintQuote) {
     footerSummary.classList.add('ready');
     footerSummary.textContent =
-      `Selected ${currentPrintQuote.selectedPages} · ` +
-      `Copies ${n} · Total ₱${currentPrintQuote.requiredAmount}`;
+      `${currentPrintQuote.selectedPages} pages · ${n} ${n === 1 ? 'copy' : 'copies'} · ` +
+      `${currentPrintQuote.effectiveColorMode === 'colored' ? 'Color' : 'B&W'} · ` +
+      `${currentPrintQuote.quality === 'high' ? 'High quality' : 'Standard'}`;
+    if (footerTotal) footerTotal.textContent = `₱${currentPrintQuote.requiredAmount}`;
     return;
   }
 
   if (quoteError) {
     footerSummary.textContent = quoteError;
+    if (footerTotal) footerTotal.textContent = '—';
     footerSummary.classList.remove('ready');
     return;
   }
@@ -1745,6 +1700,7 @@ function updateSummary(): void {
     } else {
       footerSummary.textContent = 'No document detected.';
     }
+    if (footerTotal) footerTotal.textContent = '—';
     return;
   }
 
@@ -1754,6 +1710,7 @@ function updateSummary(): void {
     `Rotate ${cfg.rotationDeg}° · ` +
     `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}` +
     (getSelectedQuality() === 'high' ? ' · High Quality' : '');
+  if (footerTotal) footerTotal.textContent = '—';
 }
 
 const preview = new PrintPreview();
