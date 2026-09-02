@@ -107,3 +107,40 @@ export class PrinterStateProjection {
 }
 
 export const printerStateProjection = new PrinterStateProjection();
+
+export interface PrinterTelemetry {
+  connected: boolean;
+  name: string | null;
+  driverName: string | null;
+  portName: string | null;
+  connectionType: 'usb' | 'network' | 'wsd' | 'virtual' | 'unknown';
+  status: string;
+  statusFlags: string[];
+  ink: Array<{ name: string; level: number | null; status: 'ok' | 'low' | 'empty' | 'unknown'; colorHint?: string }>;
+  inkDetectionMethod: 'snmp' | 'vendor-wmi' | 'printer-property' | 'error-state' | 'none';
+  inkTelemetryAvailable: boolean;
+  lastCheckedAt: string;
+  lastError: string | null;
+}
+
+export function getPrinterTelemetry(): PrinterTelemetry {
+  const s = printerStateProjection.getSnapshot();
+  return {
+    connected: s.connected,
+    name: s.name,
+    driverName: null,
+    portName: null,
+    connectionType: 'usb',
+    status: s.status === 'ready' ? 'Idle' : s.status === 'printing' ? 'Printing' : s.status === 'offline' ? 'Offline' : 'Error',
+    statusFlags: [],
+    ink: [],
+    inkDetectionMethod: 'none',
+    inkTelemetryAvailable: false,
+    lastCheckedAt: s.lastCheckedAt,
+    lastError: s.error,
+  };
+}
+
+export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
+  return getPrinterTelemetry();
+}

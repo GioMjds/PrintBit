@@ -1,13 +1,14 @@
-import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { SUMATRA_PATH } from '@/config';
+import { WORKER_QUEUE_DIR } from '@/config';
 import {
   assertPrintDispatcherReady,
-  printDispatcher,
   type PrintDispatchContext,
   type PrintDispatchResult,
 } from './print-dispatcher';
+import { handoffToWorker } from './worker-handoff';
+import { printerStateProjection } from './printer-state-projection';
 import {
   normalizeRotationDeg,
   preparePrintRotationArtifact,
@@ -36,62 +37,19 @@ export interface PrintJobOptions {
 }
 
 export class PrinterService {
-  private readonly sumatraPath: string;
-
-  constructor() {
-    this.sumatraPath = SUMATRA_PATH;
-  }
-
   async detectDefaultPrinter(): Promise<void> {
     console.log(
       '[PRINTER] -- Detecting default printer ------------------------',
     );
 
-    const sumatraExists = fs.existsSync(this.sumatraPath);
-    console.log(
-      `[PRINTER] Sumatra fallback: ${this.sumatraPath} (exists: ${sumatraExists})`,
-    );
-
-    try {
-      const json = await new Promise<string>((resolve, reject) => {
-        execFile(
-          'powershell.exe',
-          [
-            '-NoProfile',
-            '-Command',
-            'Get-CimInstance -ClassName Win32_Printer | Where-Object {$_.Default -eq $true} | Select-Object Name, DriverName, PortName, PrinterStatus | ConvertTo-Json',
-          ],
-          { timeout: 10_000, windowsHide: true },
-          (error, stdout) => {
-            if (error) return reject(error);
-            resolve(stdout.trim());
-          },
-        );
-      });
-
-      if (!json) {
-        console.log('[PRINTER] No default printer set; printing will fail.');
-        return;
-      }
-
-      const printer = JSON.parse(json) as {
-        Name: string;
-        DriverName: string;
-        PortName: string;
-        PrinterStatus: number;
-      };
-
-      console.log('[PRINTER] Default printer queue found in Windows:');
-      console.log(`[PRINTER]   Name: ${printer.Name}`);
-      console.log(`[PRINTER]   Driver: ${printer.DriverName}`);
-      console.log(`[PRINTER]   Port: ${printer.PortName}`);
-      console.log(`[PRINTER]   Status code: ${printer.PrinterStatus}`);
-      console.log(
-        '[PRINTER]   Physical readiness is still validated by runtime printer telemetry.',
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`[PRINTER] Could not detect default printer: ${msg}`);
+    const snapshot = printerStateProjection.getSnapshot();
+    if (snapshot.name) {
+      console.log('[PRINTER] Default printer from worker projection:');
+      console.log(`[PRINTER]   Name: ${snapshot.name}`);
+      console.log(`[PRINTER]   Status: ${snapshot.status}`);
+      console.log(`[PRINTER]   Connected: ${snapshot.connected}`);
+    } else {
+      console.log('[PRINTER] No printer connected in worker projection.');
     }
   }
 
@@ -149,6 +107,9 @@ export class PrinterService {
     const rotationDeg = normalizeRotationDeg(options.rotationDeg, 0);
     const fileExt = path.extname(filePath).toLowerCase();
 
+    let preparedPdfPath: string;
+    let cleanupPaths: string[] = [];
+
     if (IMAGE_EXTENSIONS.has(fileExt)) {
       const prepared = await preparePrintPdf({
         sourcePath: filePath,
@@ -160,55 +121,49 @@ export class PrinterService {
         duplex: options.duplex,
         quality: options.quality,
       });
-      const dispatchOptions: PrintJobOptions = {
-        ...options,
-        rotationDeg: 0,
-      };
-      try {
-        return await printDispatcher.dispatchFile(
-          prepared.pdfPath,
-          dispatchOptions,
-          context,
-        );
-      } finally {
-        for (const cleanupPath of prepared.cleanupPaths) {
-          try {
-            await fs.promises.unlink(cleanupPath);
-          } catch (error) {
-            console.warn('[PRINTER] Failed to clean up prepared image PDF.', {
-              cleanupPath,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
-        }
-      }
+      preparedPdfPath = prepared.pdfPath;
+      cleanupPaths = prepared.cleanupPaths;
+    } else {
+      const prepared = await preparePrintRotationArtifact({
+        sourcePath: filePath,
+        rotationDeg,
+        targetOrientation: options.orientation,
+      });
+      preparedPdfPath = prepared.printPath;
+      cleanupPaths = prepared.cleanupPaths;
     }
 
-    // Bake rotation AND target orientation physically into the PDF artifact.
-    // This ensures the page geometry in the output file already matches the
-    // requested orientation before the print engine sees it, making landscape
-    // work correctly for every engine (Sumatra, GhostScript, PDFtoPrinter).
-    const prepared = await preparePrintRotationArtifact({
-      sourcePath: filePath,
-      rotationDeg,
-      targetOrientation: options.orientation,
-    });
-    const dispatchOptions: PrintJobOptions = {
-      ...options,
-      rotationDeg: 0, // Already applied in artifact step
-    };
     try {
-      return await printDispatcher.dispatchFile(
-        prepared.printPath,
-        dispatchOptions,
-        context,
-      );
+      const spoolerCorrelationKey =
+        context.spoolerCorrelationKey || randomUUID();
+      const transactionId = context.transactionId || randomUUID();
+      const queueDir =
+        WORKER_QUEUE_DIR || path.resolve('../printbit-worker/queue');
+
+      const handoffResult = await handoffToWorker({
+        sourcePath: preparedPdfPath,
+        queueDir,
+        transactionId,
+        spoolerCorrelationKey,
+        printSettings: {
+          copies: options.copies,
+          color: options.colorMode === 'colored',
+          orientation: options.orientation,
+          pageRange: options.pageRange,
+          quality: options.quality,
+        },
+      });
+
+      return {
+        success: true,
+        fileName: handoffResult.fileName,
+      } as unknown as PrintDispatchResult;
     } finally {
-      for (const cleanupPath of prepared.cleanupPaths) {
+      for (const cleanupPath of cleanupPaths) {
         try {
           await fs.promises.unlink(cleanupPath);
         } catch (error) {
-          console.warn('[PRINTER] Failed to clean up rotated artifact.', {
+          console.warn('[PRINTER] Failed to clean up prepared artifact.', {
             cleanupPath,
             error: error instanceof Error ? error.message : String(error),
           });
