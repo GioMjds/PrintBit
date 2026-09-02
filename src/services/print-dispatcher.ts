@@ -5,9 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import {
   GHOSTSCRIPT_PATH,
-  LIBREOFFICE_PATH,
   PDFTOPRINTER_PATH,
-  PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS,
   PRINT_DISPATCH_MODE,
   PRINT_DISPATCH_TIMEOUT_MS,
   type PrintDispatchMode,
@@ -18,11 +16,7 @@ import type { PrintJobOptions } from './printer';
 
 const execFileAsync = promisify(execFile);
 
-export type PrintDispatchEngine =
-  | 'sumatra'
-  | 'pdftoprinter'
-  | 'ghostscript'
-  | 'libreoffice';
+export type PrintDispatchEngine = 'sumatra' | 'pdftoprinter' | 'ghostscript';
 
 export type PrintDispatchCapability =
   | 'copies'
@@ -122,7 +116,10 @@ const SUMATRA_FALLBACK_COMPATIBLE_EXTENSIONS = new Set([
   '.png',
 ]);
 const CAPABILITY_SKIP_REASON = 'capability_missing';
-const MIME_BY_EXTENSION: Record<string, string> = {
+
+type MimeMap = object & Record<string, string>;
+
+const MIME_BY_EXTENSION = {
   '.pdf': 'application/pdf',
   '.doc': 'application/msword',
   '.docx':
@@ -135,7 +132,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
-};
+} satisfies MimeMap;
 
 function normalizeOptional(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -189,10 +186,7 @@ function resolvePaperSizeArg(size: PrintJobOptions['paperSize']): string {
   return 'a4';
 }
 
-const ENGINE_CAPABILITIES: Record<
-  PrintDispatchEngine,
-  ReadonlySet<PrintDispatchCapability>
-> = {
+const ENGINE_CAPABILITIES = {
   // Lightweight handoff utility; cannot guarantee per-job setting fidelity.
   pdftoprinter: new Set<PrintDispatchCapability>(),
   // GhostScript supports copies, grayscale conversion, duplex, and simple page ranges.
@@ -203,8 +197,6 @@ const ENGINE_CAPABILITIES: Record<
     'duplex',
     'page-range',
   ]),
-  // LibreOffice --pt does not expose robust per-job controls in this path.
-  libreoffice: new Set<PrintDispatchCapability>(),
   // Sumatra can enforce orientation and broad print settings for eligible formats.
   sumatra: new Set<PrintDispatchCapability>([
     'copies',
@@ -213,7 +205,7 @@ const ENGINE_CAPABILITIES: Record<
     'duplex',
     'page-range',
   ]),
-};
+} satisfies Record<PrintDispatchEngine, ReadonlySet<PrintDispatchCapability>>;
 
 function normalizeRequestedOptions(
   options: PrintJobOptions,
@@ -248,7 +240,9 @@ function getMissingCapabilities(
   requiredCapabilities: PrintDispatchCapability[],
 ): PrintDispatchCapability[] {
   const supported = ENGINE_CAPABILITIES[engine];
-  return requiredCapabilities.filter((capability) => !supported.has(capability));
+  return requiredCapabilities.filter(
+    (capability) => !supported.has(capability),
+  );
 }
 
 function describeCapability(capability: PrintDispatchCapability): string {
@@ -272,7 +266,9 @@ function formatCapabilityList(
   capabilities: PrintDispatchCapability[],
 ): string | null {
   if (capabilities.length === 0) return null;
-  return capabilities.map((capability) => describeCapability(capability)).join(', ');
+  return capabilities
+    .map((capability) => describeCapability(capability))
+    .join(', ');
 }
 
 function serializeCapabilities(
@@ -282,7 +278,9 @@ function serializeCapabilities(
   return capabilities.join(',');
 }
 
-function serializeRequestedOptions(options: PrintDispatchRequestedOptions): string {
+function serializeRequestedOptions(
+  options: PrintDispatchRequestedOptions,
+): string {
   return JSON.stringify(options);
 }
 
@@ -304,7 +302,6 @@ function buildSumatraSettings(options: PrintJobOptions): string {
 export class PrintDispatcher {
   private cachedPdfToPrinterPath: string | null | undefined;
   private cachedGhostScriptPath: string | null | undefined;
-  private cachedLibreOfficePath: string | null | undefined;
   private cachedSumatraPath: string | null | undefined;
   private activeModeCache: PrintDispatchMode | null = null;
   private nonProductionFallbackLogged = false;
@@ -339,51 +336,6 @@ export class PrintDispatcher {
     return detected;
   }
 
-  private resolveLibreOfficePath(): string | null {
-    if (this.cachedLibreOfficePath !== undefined) {
-      return this.cachedLibreOfficePath;
-    }
-    const configured = this.resolveConfiguredPath(LIBREOFFICE_PATH);
-    if (configured) {
-      this.cachedLibreOfficePath = configured;
-      return configured;
-    }
-    const candidates = [
-      path.join(
-        process.env.ProgramFiles ?? '',
-        'LibreOffice',
-        'program',
-        'soffice.exe',
-      ),
-      path.join(
-        process.env['ProgramFiles(x86)'] ?? '',
-        'LibreOffice',
-        'program',
-        'soffice.exe',
-      ),
-      path.join(
-        process.env.ProgramFiles ?? '',
-        'LibreOffice',
-        'program',
-        'soffice.com',
-      ),
-      path.join(
-        process.env['ProgramFiles(x86)'] ?? '',
-        'LibreOffice',
-        'program',
-        'soffice.com',
-      ),
-    ];
-    const localFound = candidates.find((candidate) => fs.existsSync(candidate));
-    if (localFound) {
-      this.cachedLibreOfficePath = localFound;
-      return localFound;
-    }
-    const detected = readWhereResult('soffice');
-    this.cachedLibreOfficePath = detected;
-    return detected;
-  }
-
   private resolveSumatraPath(): string | null {
     if (this.cachedSumatraPath !== undefined) {
       return this.cachedSumatraPath;
@@ -396,7 +348,6 @@ export class PrintDispatcher {
     const missing: string[] = [];
     if (!this.resolvePdfToPrinterPath()) missing.push('PDFtoPrinter');
     if (!this.resolveGhostScriptPath()) missing.push('GhostScript');
-    if (!this.resolveLibreOfficePath()) missing.push('LibreOffice');
     return missing;
   }
 
@@ -420,7 +371,7 @@ export class PrintDispatcher {
     const details = `Missing print dependencies: ${missing.join(', ')}. Requested mode=${PRINT_DISPATCH_MODE}.`;
     if (this.isProduction()) {
       throw new Error(
-        `[PRINT_DISPATCH] ${details} Set paths for PDFtoPrinter, GhostScript, and LibreOffice before startup.`,
+        `[PRINT_DISPATCH] ${details} Set paths for PDFtoPrinter and GhostScript, before startup.`,
       );
     }
 
@@ -444,60 +395,32 @@ export class PrintDispatcher {
     }
   }
 
-  async warmLibreOfficeProfile(): Promise<void> {
-    const mode = this.getActiveMode();
-    if (mode === 'legacy') return;
-    const sofficePath = this.resolveLibreOfficePath();
-    if (!sofficePath) return;
-
-    const warmupTimeoutMs = Math.max(
-      10_000,
-      Math.min(20_000, PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS),
-    );
-    const startedAt = Date.now();
-    try {
-      await execFileAsync(
-        sofficePath,
-        ['--headless', '--nologo', '--nodefault', '--version'],
-        {
-          windowsHide: true,
-          timeout: warmupTimeoutMs,
-        },
-      );
-      console.log(
-        `[PRINT_DISPATCH] LibreOffice warm-up completed in ${Date.now() - startedAt}ms`,
-      );
-    } catch (error) {
-      console.warn('[PRINT_DISPATCH] LibreOffice warm-up failed.', {
-        durationMs: Date.now() - startedAt,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
   private resolveMimeFromExtension(extension: string): string {
-    return MIME_BY_EXTENSION[extension] ?? 'application/octet-stream';
+    return (
+      (MIME_BY_EXTENSION as MimeMap)[extension] ?? 'application/octet-stream'
+    );
   }
 
   private resolveEngineChain(
     extension: string,
     mode: PrintDispatchMode,
   ): PrintDispatchEngine[] {
-    if (mode === 'legacy') {
-      return ['sumatra'];
-    }
+    if (mode === 'legacy') return ['sumatra'];
     if (PDF_EXTENSIONS.has(extension)) {
       return mode === 'phased'
         ? ['pdftoprinter', 'ghostscript', 'sumatra']
         : ['pdftoprinter', 'ghostscript'];
     }
     if (OFFICE_EXTENSIONS.has(extension) || IMAGE_EXTENSIONS.has(extension)) {
-      if (mode === 'phased' && SUMATRA_FALLBACK_COMPATIBLE_EXTENSIONS.has(extension)) {
-        return ['libreoffice', 'sumatra'];
+      if (
+        mode === 'phased' &&
+        SUMATRA_FALLBACK_COMPATIBLE_EXTENSIONS.has(extension)
+      ) {
+        return ['sumatra'];
       }
-      return ['libreoffice'];
+      return ['sumatra'];
     }
-    return mode === 'phased' ? ['libreoffice', 'sumatra'] : ['libreoffice'];
+    return mode === 'phased' ? ['sumatra'] : ['ghostscript'];
   }
 
   private async executeCommand(
@@ -553,7 +476,8 @@ export class PrintDispatcher {
     requestedOptions: PrintDispatchRequestedOptions,
     requiredCapabilities: PrintDispatchCapability[],
   ): Promise<void> {
-    const requiredCapabilitiesText = serializeCapabilities(requiredCapabilities);
+    const requiredCapabilitiesText =
+      serializeCapabilities(requiredCapabilities);
     const missingCapabilitiesText = serializeCapabilities(
       attempt.missingCapabilities,
     );
@@ -620,7 +544,10 @@ export class PrintDispatcher {
       timedOut: false,
     });
 
-    const missingCapabilities = getMissingCapabilities(engine, requiredCapabilities);
+    const missingCapabilities = getMissingCapabilities(
+      engine,
+      requiredCapabilities,
+    );
     if (missingCapabilities.length > 0) {
       return skip(
         `${CAPABILITY_SKIP_REASON}:${missingCapabilities.join(',')}`,
@@ -696,7 +623,10 @@ export class PrintDispatcher {
       }
       const range = parseSimplePageRange(options.pageRange);
       if (range) {
-        args.push(`-dFirstPage=${range.firstPage}`, `-dLastPage=${range.lastPage}`);
+        args.push(
+          `-dFirstPage=${range.firstPage}`,
+          `-dLastPage=${range.lastPage}`,
+        );
       }
       // For landscape, instruct GhostScript to use a rotated media orientation.
       // Combined with the pre-rotated PDF artifact this gives robust landscape output.
@@ -708,54 +638,6 @@ export class PrintDispatcher {
         executablePath,
         args,
         PRINT_DISPATCH_TIMEOUT_MS,
-      );
-      const endedAt = new Date().toISOString();
-      return {
-        engine,
-        executablePath,
-        success: runResult.success,
-        skipped: false,
-        skipReason: null,
-        capabilitySkipReason: null,
-        missingCapabilities: [],
-        exitCode: runResult.exitCode,
-        stdout: runResult.stdout,
-        stderr: runResult.stderr,
-        stderrHash: hashOrNull(runResult.stderr),
-        durationMs: Date.now() - startedMs,
-        startedAt,
-        endedAt,
-        timedOut: runResult.timedOut,
-      };
-    }
-
-    if (engine === 'libreoffice') {
-      const executablePath = this.resolveLibreOfficePath();
-      if (!executablePath) return skip('libreoffice_missing');
-      const printerName = options.printerName?.trim();
-      if (!printerName) return skip('libreoffice_missing_printer_name');
-      // LibreOffice --pt does not expose robust per-job advanced controls here.
-      if (
-        options.copies > 1 ||
-        Boolean(options.pageRange?.trim()) ||
-        options.duplex === true
-      ) {
-        return skip('libreoffice_unsupported_advanced_options');
-      }
-      const args = [
-        '--headless',
-        '--nologo',
-        '--nodefault',
-        '--norestore',
-        '--nolockcheck',
-        '--pt',
-        printerName,
-        filePath,
-      ];
-      const runResult = await this.executeCommand(
-        executablePath,
-        args,
-        PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS,
       );
       const endedAt = new Date().toISOString();
       return {
@@ -846,10 +728,13 @@ export class PrintDispatcher {
         requestedOptions,
         requiredCapabilities,
       ).catch((error) => {
-        console.error('[PRINT_DISPATCH] Failed to write dispatch attempt log.', {
-          engine,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        console.error(
+          '[PRINT_DISPATCH] Failed to write dispatch attempt log.',
+          {
+            engine,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       });
       if (attempt.success) {
         const result: PrintDispatchResult = {
@@ -892,27 +777,32 @@ export class PrintDispatcher {
             },
           )
           .catch((error) => {
-            console.error('[PRINT_DISPATCH] Failed to write dispatch summary log.', {
-              error: error instanceof Error ? error.message : String(error),
-            });
+            console.error(
+              '[PRINT_DISPATCH] Failed to write dispatch summary log.',
+              {
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
           });
         return result;
       }
     }
 
-    const allAttemptsSkipped = attempts.length > 0 && attempts.every((attempt) => attempt.skipped);
+    const allAttemptsSkipped =
+      attempts.length > 0 && attempts.every((attempt) => attempt.skipped);
     const allSkippedForCapabilityMismatch =
       requiredCapabilities.length > 0 &&
       attempts.length > 0 &&
       attempts.every(
         (attempt) =>
-          attempt.skipped && attempt.capabilitySkipReason === CAPABILITY_SKIP_REASON,
+          attempt.skipped &&
+          attempt.capabilitySkipReason === CAPABILITY_SKIP_REASON,
       );
     const failureCode =
       requiredCapabilities.length > 0 &&
       (allSkippedForCapabilityMismatch || allAttemptsSkipped)
-      ? 'no_capable_engine'
-      : 'all_attempts_failed';
+        ? 'no_capable_engine'
+        : 'all_attempts_failed';
     const capabilityList = formatCapabilityList(requiredCapabilities);
     const failureMessage =
       failureCode === 'no_capable_engine'
@@ -954,9 +844,12 @@ export class PrintDispatcher {
         failureCode,
       })
       .catch((error) => {
-        console.error('[PRINT_DISPATCH] Failed to write dispatch failure summary.', {
-          error: error instanceof Error ? error.message : String(error),
-        });
+        console.error(
+          '[PRINT_DISPATCH] Failed to write dispatch failure summary.',
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       });
     throw new PrintDispatchError(failureMessage, result);
   }
@@ -966,6 +859,3 @@ export const printDispatcher = new PrintDispatcher();
 
 export const assertPrintDispatcherReady =
   printDispatcher.assertReady.bind(printDispatcher);
-
-export const warmPrintDispatcherProfile =
-  printDispatcher.warmLibreOfficeProfile.bind(printDispatcher);
