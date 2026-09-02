@@ -8,9 +8,10 @@ import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { mountLoadingAnimation } from '../shared/loading-animation';
 import {
-  applyPrintTerminalEvent,
-  PrintTerminalGuard,
-} from './print-terminal-state';
+  applyConfirmationEvidence,
+  createConfirmationOutcomeState,
+  type ConfirmationOutcomeIdentity,
+} from './confirmation-outcome';
 import {
   buildMaintenanceReceiptView,
   isMaintenancePrintFailure,
@@ -393,7 +394,7 @@ const receiptQrExpiry = document.getElementById(
 let currentPrinterError: PrintError | null = null;
 let lastKnownPagesPrinted = 0;
 let lastKnownTotalPages = 0;
-const printTerminalGuard = new PrintTerminalGuard();
+let confirmationOutcome = createConfirmationOutcomeState();
 
 function hasActiveJob(): boolean {
   return (
@@ -401,6 +402,34 @@ function hasActiveJob(): boolean {
     activeSpoolerCorrelationKey !== null ||
     paymentSpoolerCorrelationKey !== null
   );
+}
+
+function restoreConfirmationPending(
+  identity: Partial<ConfirmationOutcomeIdentity>,
+): void {
+  confirmationOutcome = applyConfirmationEvidence(confirmationOutcome, {
+    type: 'restore-pending',
+    identity,
+  });
+}
+
+function recordConfirmationTerminalFailure(
+  identity: Partial<ConfirmationOutcomeIdentity>,
+): void {
+  confirmationOutcome = applyConfirmationEvidence(confirmationOutcome, {
+    type: 'terminal-failure',
+    identity,
+  });
+}
+
+function recordConfirmationTerminalSuccess(
+  identity: Partial<ConfirmationOutcomeIdentity>,
+): boolean {
+  confirmationOutcome = applyConfirmationEvidence(confirmationOutcome, {
+    type: 'terminal-success',
+    identity,
+  });
+  return confirmationOutcome.outcome === 'success';
 }
 
 // NOTE: powerSafetyOverlay is initialized AFTER socket is created (below, inside the
@@ -423,13 +452,10 @@ function renderPrinterError(err: PrintError): void {
 
   const requiresMaintenance = isMaintenancePrintFailure(err.code);
   if (requiresMaintenance) {
-    applyPrintTerminalEvent(printTerminalGuard, {
-      type: 'printErrorRaised',
-      identity: {
-        transactionId: currentTransactionId,
-        spoolerCorrelationKey:
-          err.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
-      },
+    recordConfirmationTerminalFailure({
+      transactionId: currentTransactionId,
+      spoolerCorrelationKey:
+        err.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
     });
   }
 
@@ -1349,8 +1375,6 @@ let latestPrinterStatusLabel = 'Checking...';
 const NETWORK_REQUEST_TIMEOUT_MS = 90_000;
 
 let currentTransactionId: string | null = null;
-let currentReceiptUrl: string | null = null;
-let currentReceiptExpiry: string | null = null;
 let currentScanDownloadUrl: string | null = null;
 let currentScanDownloadExpiry: string | null = null;
 
@@ -1393,14 +1417,21 @@ async function pollCopyJobReceipt(jobId: string): Promise<void> {
         id?: string;
       };
       if (job.receipt?.viewUrl) {
-        captureReceiptCta({
-          receipt: {
-            viewUrl: job.receipt.viewUrl,
-            expiresAt: job.receipt.expiresAt ?? null,
-          },
-        });
         const txId = job.transactionId ?? job.id ?? null;
         if (txId) setTransactionReference(txId);
+        captureReceiptCta(
+          {
+            receipt: {
+              viewUrl: job.receipt.viewUrl,
+              expiresAt: job.receipt.expiresAt ?? null,
+            },
+          },
+          {
+            transactionId: txId,
+            spoolerCorrelationKey:
+              activeSpoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+          },
+        );
         return;
       }
     } catch {
@@ -1413,12 +1444,13 @@ async function pollCopyJobReceipt(jobId: string): Promise<void> {
 }
 
 function renderReceiptCta(): void {
-  if (!receiptCtaContainer || !receiptQrCanvas || !currentReceiptUrl) return;
+  const receipt = confirmationOutcome.receipt;
+  if (!receiptCtaContainer || !receiptQrCanvas || !receipt) return;
   receiptCtaContainer.removeAttribute('hidden');
   if (receiptQrExpiry) {
-    if (currentReceiptExpiry) {
+    if (receipt.expiresAt) {
       try {
-        const expDate = new Date(currentReceiptExpiry);
+        const expDate = new Date(receipt.expiresAt);
         receiptQrExpiry.textContent = `Valid until ${expDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       } catch {
         receiptQrExpiry.textContent = 'Valid for 15 minutes';
@@ -1428,7 +1460,7 @@ function renderReceiptCta(): void {
     }
   }
 
-  QRCode.toCanvas(receiptQrCanvas, currentReceiptUrl, {
+  QRCode.toCanvas(receiptQrCanvas, receipt.url, {
     width: 125,
     margin: 1,
     color: { dark: '#1a1a2e', light: '#ffffff' },
@@ -1438,8 +1470,8 @@ function renderReceiptCta(): void {
 function renderMaintenanceResolution(): void {
   const view = buildMaintenanceReceiptView({
     transactionId: currentTransactionId,
-    receiptUrl: currentReceiptUrl,
-    receiptExpiresAt: currentReceiptExpiry,
+    receiptUrl: confirmationOutcome.receipt?.url ?? null,
+    receiptExpiresAt: confirmationOutcome.receipt?.expiresAt ?? null,
   });
 
   if (maintenanceTransactionId) {
@@ -1472,16 +1504,23 @@ function renderMaintenanceResolution(): void {
   }).catch(console.error);
 }
 
-function captureReceiptCta(payload: ReceiptLinkPayload): void {
+function captureReceiptCta(
+  payload: ReceiptLinkPayload,
+  identity: Partial<ConfirmationOutcomeIdentity> = {
+    transactionId: currentTransactionId,
+    spoolerCorrelationKey:
+      activeSpoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+  },
+): void {
   const receipt = extractReceiptUrl(payload);
   if (!receipt) return;
-  currentReceiptUrl = receipt.url;
-  currentReceiptExpiry = receipt.expiresAt;
+  confirmationOutcome = applyConfirmationEvidence(confirmationOutcome, {
+    type: 'receipt-available',
+    identity,
+    receipt,
+  });
   renderReceiptCta();
-  if (
-    currentPrinterError &&
-    isMaintenancePrintFailure(currentPrinterError.code)
-  ) {
+  if (confirmationOutcome.outcome === 'maintenance') {
     renderMaintenanceResolution();
   }
 }
@@ -1532,15 +1571,7 @@ function finalizePrintSuccess(
     activeSpoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
 ): void {
   const effectiveTxId = transactionId ?? currentTransactionId;
-  if (
-    applyPrintTerminalEvent(printTerminalGuard, {
-      type: 'workerPrintSucceeded',
-      identity: {
-        transactionId: effectiveTxId,
-        spoolerCorrelationKey,
-      },
-    }) !== 'success'
-  ) {
+  if (!recordConfirmationTerminalSuccess({ transactionId: effectiveTxId, spoolerCorrelationKey })) {
     console.warn(
       '[PRINT] Ignoring success event because this job already failed',
       { transactionId: effectiveTxId, spoolerCorrelationKey },
@@ -1647,12 +1678,11 @@ function finalizePrintSuccess(
 function enterWorkerPendingState(transactionId: string | null): void {
   setTransactionReference(transactionId);
   activeSpoolerCorrelationKey = paymentSpoolerCorrelationKey;
-  if (
-    !printTerminalGuard.canFinalizeSuccess({
-      transactionId,
-      spoolerCorrelationKey: activeSpoolerCorrelationKey,
-    })
-  ) {
+  restoreConfirmationPending({
+    transactionId,
+    spoolerCorrelationKey: activeSpoolerCorrelationKey,
+  });
+  if (confirmationOutcome.outcome === 'maintenance') {
     hideOverlay(printingOverlay);
     renderMaintenanceResolution();
     return;
@@ -1839,7 +1869,7 @@ function hideOverlay(el: HTMLElement | null): void {
 }
 
 function clearConfirmSessionStorage(): void {
-  printTerminalGuard.reset();
+  confirmationOutcome = createConfirmationOutcomeState();
   setTransactionReference(null);
   pendingOwedChange = null;
   if (owedChangeAlert) {
@@ -1919,7 +1949,9 @@ modalConfirmBtn?.addEventListener('click', async () => {
       const payload = (await response.json()) as ReceiptLinkPayload & {
         transactionId?: string | null;
       };
-      captureReceiptCta(payload);
+      captureReceiptCta(payload, {
+        transactionId: payload.transactionId ?? null,
+      });
       captureScanDownloadCta(payload.downloadLink);
 
       // Fallback: create wireless link if charge response did not include it
@@ -2005,7 +2037,10 @@ modalConfirmBtn?.addEventListener('click', async () => {
       };
       // For copy jobs, the ID is often in 'id' field of the job object
       const transactionId = payload.transactionId ?? payload.id ?? null;
-      captureReceiptCta(payload);
+      captureReceiptCta(payload, {
+        transactionId,
+        spoolerCorrelationKey,
+      });
       if (!payload.receipt?.viewUrl && payload.id) {
         void pollCopyJobReceipt(payload.id);
       }
@@ -2068,7 +2103,10 @@ modalConfirmBtn?.addEventListener('click', async () => {
       const payload = (await response.json()) as ReceiptLinkPayload & {
         transactionId?: string | null;
       };
-      captureReceiptCta(payload);
+      captureReceiptCta(payload, {
+        transactionId: payload.transactionId ?? null,
+        spoolerCorrelationKey,
+      });
       enterWorkerPendingState(payload.transactionId ?? null);
     }
   } catch (error) {
@@ -2237,13 +2275,10 @@ if (typeof ioFactory === 'function') {
       if (lifecycle.transactionId) {
         setTransactionReference(lifecycle.transactionId);
       }
-      applyPrintTerminalEvent(printTerminalGuard, {
-        type: 'printLifecycleFailed',
-        identity: {
-          transactionId: lifecycle.transactionId ?? currentTransactionId,
-          spoolerCorrelationKey:
-            lifecycle.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
-        },
+      recordConfirmationTerminalFailure({
+        transactionId: lifecycle.transactionId ?? currentTransactionId,
+        spoolerCorrelationKey:
+          lifecycle.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
       });
 
       if (isHardwareError) {
@@ -2347,7 +2382,7 @@ if (typeof ioFactory === 'function') {
   connectedSocket.on('workerPrintStarted', (payload: unknown) => {
     const job = payload as WorkerJobPayload | null;
     if (!matchesPendingWorkerEvent(job ?? {})) return;
-    if (!printTerminalGuard.canFinalizeSuccess(job ?? {})) return;
+    if (confirmationOutcome.outcome === 'maintenance') return;
     setPrintingPhase('printing');
     if (statusMessage) {
       statusMessage.textContent =
@@ -2361,13 +2396,10 @@ if (typeof ioFactory === 'function') {
     const job = payload as WorkerJobPayload | null;
     if (!matchesPendingWorkerEvent(job ?? {})) return;
     if (job?.transactionId) setTransactionReference(job.transactionId);
-    applyPrintTerminalEvent(printTerminalGuard, {
-      type: 'workerJobPaused',
-      identity: {
-        transactionId: job?.transactionId ?? currentTransactionId,
-        spoolerCorrelationKey:
-          job?.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
-      },
+    recordConfirmationTerminalFailure({
+      transactionId: job?.transactionId ?? currentTransactionId,
+      spoolerCorrelationKey:
+        job?.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
     });
     hideOverlay(printingOverlay);
     isProcessingPayment = false;
@@ -2401,13 +2433,10 @@ if (typeof ioFactory === 'function') {
     if (!matchesPendingWorkerEvent(job ?? {})) return;
 
     if (job?.transactionId) setTransactionReference(job.transactionId);
-    applyPrintTerminalEvent(printTerminalGuard, {
-      type: 'workerPrintFailed',
-      identity: {
-        transactionId: job?.transactionId ?? currentTransactionId,
-        spoolerCorrelationKey:
-          job?.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
-      },
+    recordConfirmationTerminalFailure({
+      transactionId: job?.transactionId ?? currentTransactionId,
+      spoolerCorrelationKey:
+        job?.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
     });
 
     // Hardware failures require staff verification and remain terminal for

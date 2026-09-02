@@ -183,6 +183,15 @@ Process-memory state lives in singleton services (e.g. `SessionStore`, `JobStore
 - `PricingAnalysisQueue` — per-session document analysis job queue
 - Hotspot / serial / printer / scanner runtime process flags
 
+**Confirmation outcome:** a pure client-side Print Job state for a settled customer action after
+terminal evidence arrives. It correlates transaction and spooler identities, keeps a terminal
+failure ahead of any late success for the same Print Job, and selects the customer outcome
+(`success` or staff-assisted maintenance) together with receipt availability, including a receipt
+that becomes available after a maintenance outcome. Its interface accepts normalized Print Job
+evidence and returns state and outcome only; it does not own Socket.IO payload translation,
+browser storage, pricing, balance display, printing progress, or DOM rendering. On reload, the
+browser adapter translates persisted payment identity into restoration evidence.
+
 **Schema change rules:**
 
 - New columns → add migration in the relevant `*.model.ts` `migrate()` function and call it from `getSqliteDb()` initialization.
@@ -339,18 +348,18 @@ Defaults shown in `[]`. `PRINTBIT_` prefix is the canonical form; a few keys als
 
 ### Server & Network
 
-| Var                               | Default                                              | Purpose                                            |
-| --------------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
-| `PORT`                            | `3000`                                               | HTTP listen port                                   |
-| `PRINTBIT_NETWORK_PROVIDER`       | `esp32`                                              | `esp32` — selects hotspot/captive flow             |
-| `PRINTBIT_HOTSPOT_SSID`           | `PrintBit`                                           | Hotspot SSID                                       |
-| `PRINTBIT_HOTSPOT_PASSWORD`       | ``                                                   | Hotspot password; empty → `nopass`, else `WPA`     |
-| `PRINTBIT_HOTSPOT_AUTH_TYPE`      | derived                                              | Override derived auth type                         |
-| `PRINTBIT_PUBLIC_URL`             | (unset)                                              | Public base URL override (e.g. Cloudflare Tunnel)  |
-| `PRINTBIT_CAPTIVE_PORTAL`         | `true`                                               | Set `false` to disable captive portal middleware   |
-| `PRINTBIT_KIOSK_LOCKDOWN`         | `false`                                              | Enables Windows Assigned Access lockdown policies  |
-| `PRINTBIT_USB_EXPORT_ENABLED`     | `true` (false in lockdown)                           | Toggle USB mass-storage export                     |
-| `PRINTBIT_SESSION_EXPIRY_ENABLED` | `true`                                               | Enforce 5-min idle TTL on wireless upload sessions |
+| Var                               | Default                    | Purpose                                            |
+| --------------------------------- | -------------------------- | -------------------------------------------------- |
+| `PORT`                            | `3000`                     | HTTP listen port                                   |
+| `PRINTBIT_NETWORK_PROVIDER`       | `esp32`                    | `esp32` — selects hotspot/captive flow             |
+| `PRINTBIT_HOTSPOT_SSID`           | `PrintBit`                 | Hotspot SSID                                       |
+| `PRINTBIT_HOTSPOT_PASSWORD`       | ``                         | Hotspot password; empty → `nopass`, else `WPA`     |
+| `PRINTBIT_HOTSPOT_AUTH_TYPE`      | derived                    | Override derived auth type                         |
+| `PRINTBIT_PUBLIC_URL`             | (unset)                    | Public base URL override (e.g. Cloudflare Tunnel)  |
+| `PRINTBIT_CAPTIVE_PORTAL`         | `true`                     | Set `false` to disable captive portal middleware   |
+| `PRINTBIT_KIOSK_LOCKDOWN`         | `false`                    | Enables Windows Assigned Access lockdown policies  |
+| `PRINTBIT_USB_EXPORT_ENABLED`     | `true` (false in lockdown) | Toggle USB mass-storage export                     |
+| `PRINTBIT_SESSION_EXPIRY_ENABLED` | `true`                     | Enforce 5-min idle TTL on wireless upload sessions |
 
 ### ESP32 bridge
 
