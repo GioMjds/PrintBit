@@ -85,7 +85,10 @@ export class PrinterStateProjection {
 
       case 'PrintSucceeded':
       case 'PrintFailed':
-        this.state.status = 'ready';
+      case 'JobCompleted':
+        if (this.state.status !== 'error' && this.state.status !== 'offline') {
+          this.state.status = 'ready';
+        }
         this.state.lastCheckedAt = timestamp;
         if (evt.printerName) {
           this.state.name = evt.printerName;

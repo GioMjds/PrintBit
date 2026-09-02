@@ -155,6 +155,65 @@ describe('PrinterStateProjection', () => {
       expect(snapshot.status).toBe('ready');
       expect(printerStateProjection.isReady()).toBe(true);
     });
+
+    it('preserves error and offline status when receiving PrintFailed', () => {
+      // 1. Error state followed by PrintFailed
+      printerStateProjection.applyEvent({
+        type: 'PrinterStatusSnapshot',
+        printerName: 'EPSON L5290 Series',
+        timestampUtc: '2026-09-02T12:00:00.000Z',
+      });
+      printerStateProjection.applyEvent({
+        type: 'PrinterError',
+        errorMessage: 'Paper jam',
+        timestampUtc: '2026-09-02T12:01:00.000Z',
+      });
+      expect(printerStateProjection.getSnapshot().status).toBe('error');
+
+      printerStateProjection.applyEvent({
+        type: 'PrintFailed',
+        timestampUtc: '2026-09-02T12:01:05.000Z',
+      });
+      expect(printerStateProjection.getSnapshot().status).toBe('error');
+      expect(printerStateProjection.isReady()).toBe(false);
+
+      // 2. Offline state followed by PrintFailed
+      printerStateProjection.applyEvent({
+        type: 'PrinterOffline',
+        errorMessage: 'Printer disconnected',
+        timestampUtc: '2026-09-02T12:02:00.000Z',
+      });
+      expect(printerStateProjection.getSnapshot().status).toBe('offline');
+
+      printerStateProjection.applyEvent({
+        type: 'PrintFailed',
+        timestampUtc: '2026-09-02T12:02:05.000Z',
+      });
+      expect(printerStateProjection.getSnapshot().status).toBe('offline');
+      expect(printerStateProjection.isReady()).toBe(false);
+    });
+
+    it('handles JobCompleted transitioning printing status to ready when not in error', () => {
+      printerStateProjection.applyEvent({
+        type: 'PrinterStatusSnapshot',
+        printerName: 'EPSON L5290 Series',
+        timestampUtc: '2026-09-02T12:00:00.000Z',
+      });
+      printerStateProjection.applyEvent({
+        type: 'PrintStarted',
+        timestampUtc: '2026-09-02T12:03:00.000Z',
+      });
+      expect(printerStateProjection.getSnapshot().status).toBe('printing');
+
+      printerStateProjection.applyEvent({
+        type: 'JobCompleted',
+        timestampUtc: '2026-09-02T12:03:30.000Z',
+      });
+
+      const snapshot = printerStateProjection.getSnapshot();
+      expect(snapshot.status).toBe('ready');
+      expect(printerStateProjection.isReady()).toBe(true);
+    });
   });
 
   describe('isReady', () => {
