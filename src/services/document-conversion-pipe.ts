@@ -1,11 +1,11 @@
 import net from 'node:net';
-import crypto from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { DOCUMENT_CONVERSION_PIPE_NAME } from '@/config/http.config';
 
 export interface DocumentConversionRequest {
   requestId: string;
   sourcePath: string;
-  outputDirectory?: string | null;
+  outputDirectory?: string;
   targetFormat?: string;
   timeoutSeconds?: number;
 }
@@ -13,132 +13,124 @@ export interface DocumentConversionRequest {
 export interface DocumentConversionResult {
   requestId: string;
   success: boolean;
-  outputPath: string | null;
-  pageCount: number | null;
-  sourceFormat: string | null;
+  outputPath?: string;
+  pageCount?: number;
+  sourceFormat?: string;
   durationMs: number;
-  errorMessage: string | null;
+  errorMessage?: string;
 }
 
 export interface ConvertDocumentOptions {
-  pipeName?: string;
   outputDirectory?: string;
-  targetFormat?: string;
   timeoutSeconds?: number;
-  connectTimeoutMs?: number;
+  pipeName?: string;
 }
 
-const OFFLINE_ERROR_MESSAGE =
-  'Document conversion service is offline or unavailable. Ensure PrintBit Hardware Service is running.';
+const DEFAULT_TIMEOUT_SECONDS = 60;
+// Grace period on top of the worker's own conversion timeout so the client
+// doesn't give up a moment before the worker would have responded.
+const CLIENT_TIMEOUT_GRACE_MS = 5_000;
+
+function toPipePath(pipeName: string): string {
+  return pipeName.startsWith('\\\\.\\pipe\\')
+    ? pipeName
+    : `\\\\.\\pipe\\${pipeName}`;
+}
 
 export async function convertDocumentViaWorker(
   sourcePath: string,
   options?: ConvertDocumentOptions,
 ): Promise<DocumentConversionResult> {
   const pipeName = options?.pipeName ?? DOCUMENT_CONVERSION_PIPE_NAME;
-  const pipePath = pipeName.startsWith('\\\\.\\pipe\\')
-    ? pipeName
-    : `\\\\.\\pipe\\${pipeName}`;
-
-  const timeoutSeconds = options?.timeoutSeconds ?? 60;
-  const timeoutMs =
-    options?.connectTimeoutMs ??
-    (timeoutSeconds > 0 ? timeoutSeconds * 1000 : 60_000);
+  const pipePath = toPipePath(pipeName);
+  const timeoutSeconds = options?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  const timeoutMs = timeoutSeconds * 1000 + CLIENT_TIMEOUT_GRACE_MS;
 
   const request: DocumentConversionRequest = {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     sourcePath,
-    outputDirectory: options?.outputDirectory ?? null,
-    targetFormat: options?.targetFormat ?? 'pdf',
+    outputDirectory: options?.outputDirectory,
+    targetFormat: 'pdf',
     timeoutSeconds,
   };
 
   return new Promise<DocumentConversionResult>((resolve, reject) => {
     let settled = false;
-    let responseBuffer = '';
-
+    let buffer = '';
     const socket = net.connect(pipePath);
 
-    const finish = (callback: () => void) => {
+    const timeoutHandle = setTimeout(() => {
+      settle(() =>
+        reject(
+          new Error(
+            `Document conversion timed out after ${timeoutSeconds}s waiting for the worker.`,
+          ),
+        ),
+      );
+    }, timeoutMs);
+
+    function settle(fn: () => void): void {
       if (settled) return;
       settled = true;
+      clearTimeout(timeoutHandle);
       socket.removeAllListeners();
-      socket.destroy();
-      callback();
-    };
-
-    socket.setTimeout(timeoutMs, () => {
-      finish(() => {
-        reject(new Error(OFFLINE_ERROR_MESSAGE));
-      });
-    });
-
-    socket.on('error', (_err) => {
-      finish(() => {
-        reject(new Error(OFFLINE_ERROR_MESSAGE));
-      });
-    });
+      socket.destroy?.();
+      fn();
+    }
 
     socket.on('connect', () => {
-      try {
-        const frame = JSON.stringify(request) + '\n';
-        socket.write(frame, 'utf-8', (writeErr) => {
-          if (writeErr) {
-            finish(() => {
-              reject(new Error(OFFLINE_ERROR_MESSAGE));
-            });
-          }
-        });
-      } catch (err) {
-        finish(() => {
-          reject(err instanceof Error ? err : new Error(String(err)));
-        });
-      }
+      socket.write(JSON.stringify(request) + '\n', 'utf-8', (err) => {
+        if (err) {
+          settle(() =>
+            reject(
+              new Error(`Failed to send conversion request: ${err.message}`),
+            ),
+          );
+        }
+      });
     });
 
-    socket.on('data', (chunk) => {
-      responseBuffer += chunk.toString('utf-8');
-      const newlineIndex = responseBuffer.indexOf('\n');
-      if (newlineIndex !== -1) {
-        const rawLine = responseBuffer.slice(0, newlineIndex).trim();
+    socket.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf-8');
+      const newlineIndex = buffer.indexOf('\n');
+      if (newlineIndex === -1) return;
+
+      const line = buffer.slice(0, newlineIndex);
+      settle(() => {
         try {
-          const result = JSON.parse(rawLine) as DocumentConversionResult;
-          if (!result.success) {
-            finish(() => {
-              reject(
-                new Error(
-                  result.errorMessage ||
-                    'Document conversion service reported failure.',
-                ),
-              );
-            });
-          } else {
-            finish(() => {
-              resolve(result);
-            });
-          }
-        } catch (parseErr) {
-          finish(() => {
-            reject(
-              new Error(
-                `Failed to parse document conversion response: ${
-                  parseErr instanceof Error
-                    ? parseErr.message
-                    : String(parseErr)
-                }`,
-              ),
-            );
-          });
+          resolve(JSON.parse(line) as DocumentConversionResult);
+        } catch (parseError) {
+          reject(
+            new Error(
+              `Document conversion service returned an unreadable response: ${
+                parseError instanceof Error
+                  ? parseError.message
+                  : String(parseError)
+              }`,
+            ),
+          );
         }
-      }
+      });
+    });
+
+    socket.on('error', (err: Error) => {
+      settle(() =>
+        reject(
+          new Error(
+            `Document conversion service is offline (${pipePath}): ${err.message}`,
+          ),
+        ),
+      );
     });
 
     socket.on('close', () => {
-      if (!settled) {
-        finish(() => {
-          reject(new Error(OFFLINE_ERROR_MESSAGE));
-        });
-      }
+      settle(() =>
+        reject(
+          new Error(
+            'Document conversion service closed the connection before responding.',
+          ),
+        ),
+      );
     });
   });
 }

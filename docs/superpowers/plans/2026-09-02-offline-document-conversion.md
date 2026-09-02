@@ -537,7 +537,42 @@ git commit -m "refactor: remove direct LibreOffice --pt print engine from print-
 
 ---
 
-### Task 8: End-to-End Build & Test Verification
+### Task 8: UI/UX Conversion Transparency in Upload & Print Portals
+
+**Files:**
+
+- Modify: `src/public/upload/index.html`
+- Modify: `src/public/print/index.html`
+- Modify: `src/public/config/app.ts`
+
+**Interfaces:**
+
+- Updates user-facing guidance to clarify that PDF upload is fastest and recommended, but non-PDF office files and images are automatically converted to PDF before printing.
+
+- [ ] **Step 1: Update customer upload portal drop-zone text**
+      In `src/public/upload/index.html`:
+      Update the drop-zone hint paragraph to:
+      `<p class="drop-zone__hint">PDF recommended for fastest processing · Word, Excel, PowerPoint & images are converted automatically</p>`
+
+- [ ] **Step 2: Update kiosk print standby screen guidance**
+      In `src/public/print/index.html`:
+      Add a helpful hint in the connection / upload section:
+      `<div class="upload-tip text-muted"><small>💡 <strong>Tip:</strong> PDFs process instantly. Word, Excel, PowerPoint & images will be converted to PDF automatically.</small></div>`
+
+- [ ] **Step 3: Update configuration preparation status message**
+      In `src/public/config/app.ts`:
+      When preparing non-PDF documents for preview/quote analysis, show a clear conversion preparation status message ("Converting document to PDF for preview and printing...") rather than a generic or blank overlay.
+
+- [ ] **Step 4: Commit UI/UX updates**
+
+```bash
+git add src/public/upload/index.html src/public/print/index.html src/public/config/app.ts
+git commit -m "feat(ui): add upload and conversion guidance in upload portal and print kiosk"
+```
+
+---
+
+### Task 9: End-to-End Build & Test Verification
 
 **Files:**
 

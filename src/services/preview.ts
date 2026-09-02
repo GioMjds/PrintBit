@@ -1,91 +1,28 @@
-import { execFile, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { promisify } from "node:util";
-import * as XLSX from "xlsx";
-import { PREVIEW_CACHE_DIR } from "@/config/http.config";
-
-const execFileAsync = promisify(execFile);
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import * as XLSX from 'xlsx';
+import { PREVIEW_CACHE_DIR } from '@/config/http.config';
+import { convertDocumentViaWorker } from '@/services/document-conversion-pipe';
 
 export class PreviewService {
   private readonly inFlightConversions = new Map<string, Promise<string>>();
-
-  private resolveLibreOfficePath(): string | null {
-    const configured = process.env.PRINTBIT_LIBREOFFICE_PATH;
-    if (configured && fs.existsSync(configured)) {
-      return configured;
-    }
-
-    const candidates = [
-      path.join(
-        process.env.ProgramFiles ?? "",
-        "LibreOffice",
-        "program",
-        "soffice.exe",
-      ),
-      path.join(
-        process.env["ProgramFiles(x86)"] ?? "",
-        "LibreOffice",
-        "program",
-        "soffice.exe",
-      ),
-      path.join(
-        process.env.ProgramFiles ?? "",
-        "LibreOffice",
-        "program",
-        "soffice.com",
-      ),
-      path.join(
-        process.env["ProgramFiles(x86)"] ?? "",
-        "LibreOffice",
-        "program",
-        "soffice.com",
-      ),
-    ];
-
-    for (const candidate of candidates) {
-      if (candidate && fs.existsSync(candidate)) return candidate;
-    }
-
-    const lookup = spawnSync("where.exe", ["soffice"], {
-      windowsHide: true,
-      encoding: "utf8",
-    });
-    if (lookup.status === 0 && lookup.stdout) {
-      const resolved = lookup.stdout
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .find((line) => line.length > 0 && fs.existsSync(line));
-
-      if (resolved) return resolved;
-    }
-
-    return null;
-  }
 
   async convertToPdfPreview(sourcePath: string): Promise<string> {
     fs.mkdirSync(PREVIEW_CACHE_DIR, { recursive: true });
 
     const stats = await fs.promises.stat(sourcePath);
-    const ext = path.extname(sourcePath).toLowerCase();
-    const key = createHash("sha256")
+    const key = createHash('sha256')
       .update(`${sourcePath}|${stats.mtimeMs}`)
-      .digest("hex");
-
-    const cacheSource = path.join(PREVIEW_CACHE_DIR, `${key}${ext}`);
+      .digest('hex');
     const cachePdf = path.join(PREVIEW_CACHE_DIR, `${key}.pdf`);
+
     if (fs.existsSync(cachePdf)) return cachePdf;
 
     const existing = this.inFlightConversions.get(cachePdf);
     if (existing) return existing;
 
-    const conversion = this.convertToPdfPreviewUncached(
-      sourcePath,
-      cacheSource,
-      cachePdf,
-      ext,
-    );
+    const conversion = this.convertToPdfPreviewUncached(sourcePath, cachePdf);
     this.inFlightConversions.set(cachePdf, conversion);
 
     try {
@@ -97,120 +34,32 @@ export class PreviewService {
 
   private async convertToPdfPreviewUncached(
     sourcePath: string,
-    cacheSource: string,
-    cachePdf: string,
-    ext: string,
-  ): Promise<string> {
-    await fs.promises.copyFile(sourcePath, cacheSource);
-
-    const sofficePath = this.resolveLibreOfficePath();
-    let libreOfficeError: unknown;
-    if (sofficePath) {
-      try {
-        return await this.convertViaLibreOffice(cacheSource, cachePdf);
-      } catch (error) {
-        libreOfficeError = error;
-      }
-    }
-
-    if ((ext === ".doc" || ext === ".docx") && process.platform === "win32") {
-      try {
-        await this.convertViaWordCom(
-          path.resolve(cacheSource),
-          path.resolve(cachePdf),
-        );
-        if (fs.existsSync(cachePdf)) return cachePdf;
-      } catch {
-        // Word is a fallback for DOC and DOCX when LibreOffice cannot convert.
-      }
-    }
-
-    if (libreOfficeError) {
-      throw libreOfficeError;
-    }
-
-    throw new Error(
-      "Preview conversion tool not found. Install Microsoft Word or LibreOffice, or set PRINTBIT_LIBREOFFICE_PATH.",
-    );
-  }
-
-  private async convertViaLibreOffice(
-    cacheSource: string,
     cachePdf: string,
   ): Promise<string> {
-    const sofficePath = this.resolveLibreOfficePath();
-    if (!sofficePath) {
-      throw new Error("LibreOffice is not available for preview conversion.");
-    }
-    const ext = path.extname(cacheSource);
+    const result = await convertDocumentViaWorker(sourcePath, {
+      outputDirectory: PREVIEW_CACHE_DIR,
+    });
 
-    try {
-      await execFileAsync(
-        sofficePath,
-        [
-          "--headless",
-          "--nologo",
-          "--nodefault",
-          "--norestore",
-          "--nolockcheck",
-          "--convert-to",
-          "pdf",
-          "--outdir",
-          PREVIEW_CACHE_DIR,
-          cacheSource,
-        ],
-        { timeout: 60000 },
+    if (!result.success || !result.outputPath) {
+      throw new Error(
+        result.errorMessage ?? 'Document preview conversion failed.',
       );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`LibreOffice conversion failed: ${message}`, { cause: err });
     }
 
-    const convertedPdf = path.join(
-      PREVIEW_CACHE_DIR,
-      `${path.basename(cacheSource, ext)}.pdf`,
-    );
-    if (!fs.existsSync(convertedPdf)) {
-      throw new Error("Document preview conversion failed.");
-    }
-
-    if (convertedPdf !== cachePdf) {
-      await fs.promises.copyFile(convertedPdf, cachePdf);
+    if (result.outputPath !== cachePdf) {
+      try {
+        await fs.promises.rename(result.outputPath, cachePdf);
+      } catch {
+        // Cross-volume rename can fail (EXDEV); fall back to copy+delete.
+        await fs.promises.copyFile(result.outputPath, cachePdf);
+        await fs.promises.unlink(result.outputPath).catch(() => {});
+      }
     }
 
     return cachePdf;
   }
 
-  private async convertViaWordCom(
-    absSource: string,
-    absOutput: string,
-  ): Promise<void> {
-    const esc = (p: string) => p.replace(/'/g, "''");
-
-    const script = [
-      "$ErrorActionPreference = 'Stop'",
-      "$word = New-Object -ComObject Word.Application",
-      "$word.Visible = $false",
-      "$word.DisplayAlerts = 0",
-      "$word.AutomationSecurity = 3",
-      "try {",
-      `  $doc = $word.Documents.Open('${esc(absSource)}', $false, $true, $false)`,
-      `  $doc.SaveAs2('${esc(absOutput)}', 17)`,
-      "  $doc.Close([ref]$false)",
-      "} finally {",
-      "  $word.Quit()",
-      "  [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($word)",
-      "}",
-    ].join("\n");
-
-    await execFileAsync(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-Command", script],
-      { timeout: 60_000 },
-    );
-  }
-
-  private static readonly HTML_PREVIEW_EXTENSIONS = new Set([".xls", ".xlsx"]);
+  private static readonly HTML_PREVIEW_EXTENSIONS = new Set(['.xls', '.xlsx']);
 
   supportsHtmlPreview(ext: string): boolean {
     return PreviewService.HTML_PREVIEW_EXTENSIONS.has(ext.toLowerCase());
@@ -233,7 +82,7 @@ export class PreviewService {
   async generateHtmlPreview(sourcePath: string): Promise<string> {
     const ext = path.extname(sourcePath).toLowerCase();
 
-    if (ext === ".xlsx" || ext === ".xls") {
+    if (ext === '.xlsx' || ext === '.xls') {
       const workbook = XLSX.readFile(sourcePath);
       if (workbook.SheetNames.length === 0) {
         return this.wrapPreviewHtml(
@@ -243,9 +92,9 @@ export class PreviewService {
 
       const sections = workbook.SheetNames.map((name) => {
         const sheet = workbook.Sheets[name];
-        const ref = sheet?.["!ref"];
+        const ref = sheet?.['!ref'];
         const tableHtml =
-          sheet && typeof ref === "string"
+          sheet && typeof ref === 'string'
             ? XLSX.utils.sheet_to_html(sheet, {
                 id: `sheet-${name}`,
               })
@@ -253,9 +102,9 @@ export class PreviewService {
         const label =
           workbook.SheetNames.length > 1
             ? `<div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#555;margin-bottom:8px">${name}</div>`
-            : "";
+            : '';
         return `<div style="height:100vh;overflow:hidden;padding:12px;box-sizing:border-box">${label}${tableHtml}</div>`;
-      }).join("");
+      }).join('');
       return this.wrapPreviewHtml(sections);
     }
 
@@ -264,6 +113,9 @@ export class PreviewService {
 }
 
 export const previewService = new PreviewService();
-export const convertToPdfPreview = previewService.convertToPdfPreview.bind(previewService);
-export const generateHtmlPreview = previewService.generateHtmlPreview.bind(previewService);
-export const supportsHtmlPreview = previewService.supportsHtmlPreview.bind(previewService);
+export const convertToPdfPreview =
+  previewService.convertToPdfPreview.bind(previewService);
+export const generateHtmlPreview =
+  previewService.generateHtmlPreview.bind(previewService);
+export const supportsHtmlPreview =
+  previewService.supportsHtmlPreview.bind(previewService);
