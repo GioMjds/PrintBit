@@ -882,6 +882,9 @@ const filePillLabel = document.getElementById(
   'filePillLabel',
 ) as HTMLElement | null;
 const footerSummary = document.getElementById('footerSelections') as HTMLElement | null;
+const footerBreakdown = document.getElementById(
+  'footerBreakdown',
+) as HTMLElement | null;
 const footerTotal = document.getElementById('footerTotal') as HTMLElement | null;
 const openPricingBtn = document.getElementById('openPricingBtn');
 const closePricingBtn = document.getElementById('closePricingBtn');
@@ -1659,9 +1662,12 @@ function updateSummary(): void {
   if (mode === 'scan') {
     const cfg = currentPreviewConfig();
     footerSummary.classList.add('ready');
-    footerSummary.textContent =
-      `Scan mode · ${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
-      `Rotate ${cfg.rotationDeg}°`;
+    footerSummary.textContent = 'Scan ready';
+    if (footerBreakdown) {
+      footerBreakdown.textContent =
+        `${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
+        `Rotation ${cfg.rotationDeg}°`;
+    }
     if (footerTotal) footerTotal.textContent = 'Ready to scan';
     return;
   }
@@ -1670,7 +1676,10 @@ function updateSummary(): void {
   const n = getCopies();
 
   if (quoteLoading) {
-    footerSummary.textContent = 'Calculating price...';
+    footerSummary.textContent = 'Calculating your total';
+    if (footerBreakdown)
+      footerBreakdown.textContent =
+        'Checking selected pages, color, and print quality.';
     if (footerTotal) footerTotal.textContent = '…';
     footerSummary.classList.remove('ready');
     return;
@@ -1678,16 +1687,22 @@ function updateSummary(): void {
 
   if (currentPrintQuote) {
     footerSummary.classList.add('ready');
-    footerSummary.textContent =
-      `${currentPrintQuote.selectedPages} pages · ${n} ${n === 1 ? 'copy' : 'copies'} · ` +
-      `${currentPrintQuote.effectiveColorMode === 'colored' ? 'Color' : 'B&W'} · ` +
-      `${currentPrintQuote.quality === 'high' ? 'High quality' : 'Standard'}`;
+    footerSummary.textContent = 'Ready to print';
+    if (footerBreakdown) {
+      footerBreakdown.textContent =
+        `${currentPrintQuote.selectedPages} ${currentPrintQuote.selectedPages === 1 ? 'page' : 'pages'} × ` +
+        `${n} ${n === 1 ? 'copy' : 'copies'} · ` +
+        `${currentPrintQuote.effectiveColorMode === 'colored' ? 'Color' : 'Grayscale'} · ` +
+        `${cfg.paperSize} · ${currentPrintQuote.quality === 'high' ? 'High quality' : 'Standard quality'}`;
+    }
     if (footerTotal) footerTotal.textContent = `₱${currentPrintQuote.requiredAmount}`;
     return;
   }
 
   if (quoteError) {
-    footerSummary.textContent = quoteError;
+    footerSummary.textContent = 'Price unavailable';
+    if (footerBreakdown)
+      footerBreakdown.textContent = `${quoteError} Check the connection, then change a setting to recalculate.`;
     if (footerTotal) footerTotal.textContent = '—';
     footerSummary.classList.remove('ready');
     return;
@@ -1696,20 +1711,24 @@ function updateSummary(): void {
   if (mode === 'copy') {
     const hasCopyPreview = Boolean(copyPreviewPath);
     if (hasCopyPreview) {
-      footerSummary.textContent = 'Ready to calculate.';
+      footerSummary.textContent = 'Copy ready';
+      if (footerBreakdown)
+        footerBreakdown.textContent = 'Choose settings to calculate your total.';
     } else {
-      footerSummary.textContent = 'No document detected.';
+      footerSummary.textContent = 'No document detected';
+      if (footerBreakdown)
+        footerBreakdown.textContent = 'Go back to scan a document before continuing.';
     }
     if (footerTotal) footerTotal.textContent = '—';
     return;
   }
 
-  footerSummary.textContent =
-    `${n} cop${n === 1 ? 'y' : 'ies'} · ${pageRangeLabel(getPageRange())} · ${cfg.paperSize} · ` +
-    `${cfg.orientation === 'portrait' ? 'Portrait' : 'Landscape'} · ` +
-    `Rotate ${cfg.rotationDeg}° · ` +
-    `${cfg.colorMode === 'colored' ? 'Colour' : 'Grayscale'}` +
-    (getSelectedQuality() === 'high' ? ' · High Quality' : '');
+  footerSummary.textContent = 'Choose your print settings';
+  if (footerBreakdown) {
+    footerBreakdown.textContent =
+      `${pageRangeLabel(getPageRange())} · ${n} ${n === 1 ? 'copy' : 'copies'} · ` +
+      `${cfg.colorMode === 'colored' ? 'Color' : 'Grayscale'} · ${cfg.paperSize}`;
+  }
   if (footerTotal) footerTotal.textContent = '—';
 }
 
@@ -1972,7 +1991,7 @@ function lockColorMode(): void {
     const notice = document.createElement('p');
     notice.className = 'color-lock-notice';
     notice.textContent =
-      'Color printing is unavailable — this document contains only black & white content.';
+      'Color printing is unavailable — this document contains only grayscale content.';
     colorGroup.appendChild(notice);
   }
 }
@@ -2026,8 +2045,8 @@ async function applyColorAnalysis(
     if (colorGroup && !colorGroup.querySelector('.color-lock-notice')) {
       const notice = document.createElement('p');
       notice.className = 'color-lock-notice';
-      notice.textContent =
-        'Auto-detected grayscale. Switch to Colored if your file has color.';
+    notice.textContent =
+      'Auto-detected grayscale. Switch to Color if your file has color.';
       colorGroup.appendChild(notice);
     }
   } catch {

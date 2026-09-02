@@ -61,7 +61,13 @@
         </div>
 
         <div class="topbar-spacer topbar-actions">
-          <button class="pricing-summary__button" id="openPricingBtn" type="button">View all prices</button>
+          <button
+            class="pricing-summary__button"
+            id="openPricingBtn"
+            type="button"
+          >
+            View all prices
+          </button>
         </div>
       </header>
 
@@ -223,8 +229,9 @@
               ></iframe>
             </div>
             <!-- /.paper-sheet -->
-
-            <!-- ── FLOATING: Pager pill (bottom-center of viewport) ── -->
+          </div>
+          <!-- /.paper-viewport -->
+          <div class="preview-toolbar">
             <div
               class="preview-controls"
               id="previewControls"
@@ -238,13 +245,7 @@
                 aria-label="Previous page"
                 disabled
               >
-                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                ‹
               </button>
               <span class="pager-label" id="pagerLabel" aria-live="polite"
                 >1 / 1</span
@@ -255,17 +256,9 @@
                 aria-label="Next page"
                 disabled
               >
-                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                ›
               </button>
             </div>
-
-            <!-- ── FLOATING: Zoom controls (bottom-right of viewport) ── -->
             <div
               class="zoom-controls"
               role="toolbar"
@@ -319,9 +312,7 @@
               </button>
             </div>
           </div>
-          <!-- /.paper-viewport -->
         </section>
-        <!-- /.preview-col -->
 
         <!-- ── RIGHT: settings panel ── -->
         <section
@@ -329,9 +320,12 @@
           id="configSettings"
           aria-label="Print settings"
         >
-          <!-- Scrollable settings options -->
+          <!-- Compact, all-visible settings options -->
           <div class="settings-scroll">
-            <fieldset class="option-group" id="colorModeGroup">
+            <fieldset
+              class="option-group option-group--primary"
+              id="colorModeGroup"
+            >
               <legend class="option-label">Color Mode</legend>
               <div class="option-grid">
                 <label class="option-card">
@@ -367,7 +361,7 @@
                       />
                     </svg>
                   </div>
-                  <span class="option-card__label">Colored</span>
+                  <span class="option-card__label">Color</span>
                   <span class="option-card__radio" aria-hidden="true"></span>
                 </label>
                 <label class="option-card">
@@ -403,7 +397,10 @@
               </div>
             </fieldset>
 
-            <fieldset class="option-group" id="qualityGroup">
+            <fieldset
+              class="option-group option-group--advanced"
+              id="qualityGroup"
+            >
               <legend class="option-label">Print Quality</legend>
               <div class="option-grid">
                 <label class="option-card">
@@ -453,13 +450,16 @@
                       />
                     </svg>
                   </div>
-                  <span class="option-card__label">High Quality</span>
+                  <span class="option-card__label">High quality</span>
                   <span class="option-card__radio" aria-hidden="true"></span>
                 </label>
               </div>
             </fieldset>
 
-            <fieldset class="option-group" id="orientationGroup">
+            <fieldset
+              class="option-group option-group--advanced"
+              id="orientationGroup"
+            >
               <legend class="option-label">Orientation</legend>
               <div class="option-grid">
                 <label class="option-card">
@@ -561,7 +561,10 @@
               </div>
             </fieldset>
 
-            <fieldset class="option-group" id="rotationGroup">
+            <fieldset
+              class="option-group option-group--advanced"
+              id="rotationGroup"
+            >
               <legend class="option-label">Rotation</legend>
               <div class="copies-control rotation-control">
                 <button
@@ -590,274 +593,283 @@
               </div>
             </fieldset>
 
-            <fieldset class="option-group" id="paperSizeGroup">
-              <legend class="option-label">Paper Size</legend>
-              <div class="option-grid option-grid--3">
-                <label class="option-card">
-                  <input
-                    type="radio"
-                    name="paperSize"
-                    value="A4"
-                    checked
-                    class="sr-only"
-                  />
-                  <div class="option-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 36 36" fill="none">
-                      <rect
-                        x="10"
-                        y="3"
-                        width="16"
-                        height="30"
-                        rx="2"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        fill="currentColor"
-                        opacity=".1"
-                      />
-                      <text
-                        x="18"
-                        y="24"
-                        text-anchor="middle"
-                        font-size="9"
-                        font-weight="800"
-                        font-family="Plus Jakarta Sans,sans-serif"
-                        fill="currentColor"
-                        opacity=".65"
-                      >
-                        A4
-                      </text>
-                    </svg>
-                  </div>
-                  <span class="option-card__label">A4 Bond</span>
-                  <span class="option-card__radio" aria-hidden="true"></span>
-                </label>
-                <label class="option-card">
-                  <input
-                    type="radio"
-                    name="paperSize"
-                    value="Letter"
-                    class="sr-only"
-                  />
-                  <div class="option-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 36 36" fill="none">
-                      <rect
-                        x="10"
-                        y="4"
-                        width="16"
-                        height="28"
-                        rx="2"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        fill="currentColor"
-                        opacity=".1"
-                      />
-                      <text
-                        x="18"
-                        y="24"
-                        text-anchor="middle"
-                        font-size="9"
-                        font-weight="800"
-                        font-family="Plus Jakarta Sans,sans-serif"
-                        fill="currentColor"
-                        opacity=".65"
-                      >
-                        S
-                      </text>
-                    </svg>
-                  </div>
-                  <span class="option-card__label">Short Bond</span>
-                  <span class="option-card__radio" aria-hidden="true"></span>
-                </label>
-                <label class="option-card">
-                  <input
-                    type="radio"
-                    name="paperSize"
-                    value="Legal"
-                    class="sr-only"
-                  />
-                  <div class="option-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 36 36" fill="none">
-                      <rect
-                        x="11"
-                        y="2"
-                        width="14"
-                        height="32"
-                        rx="2"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        fill="currentColor"
-                        opacity=".1"
-                      />
-                      <text
-                        x="18"
-                        y="24"
-                        text-anchor="middle"
-                        font-size="7"
-                        font-weight="800"
-                        font-family="Plus Jakarta Sans,sans-serif"
-                        fill="currentColor"
-                        opacity=".65"
-                      >
-                        L
-                      </text>
-                    </svg>
-                  </div>
-                  <span class="option-card__label">Long Bond</span>
-                  <span class="option-card__radio" aria-hidden="true"></span>
-                </label>
-              </div>
-            </fieldset>
+            <div class="document-options-grid">
+              <fieldset
+                class="option-group option-group--primary"
+                id="paperSizeGroup"
+              >
+                <legend class="option-label">Paper Size</legend>
+                <div class="option-grid option-grid--3">
+                  <label class="option-card">
+                    <input
+                      type="radio"
+                      name="paperSize"
+                      value="A4"
+                      checked
+                      class="sr-only"
+                    />
+                    <div class="option-card__icon" aria-hidden="true">
+                      <svg viewBox="0 0 36 36" fill="none">
+                        <rect
+                          x="10"
+                          y="3"
+                          width="16"
+                          height="30"
+                          rx="2"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          fill="currentColor"
+                          opacity=".1"
+                        />
+                        <text
+                          x="18"
+                          y="24"
+                          text-anchor="middle"
+                          font-size="9"
+                          font-weight="800"
+                          font-family="Plus Jakarta Sans,sans-serif"
+                          fill="currentColor"
+                          opacity=".65"
+                        >
+                          A4
+                        </text>
+                      </svg>
+                    </div>
+                    <span class="option-card__label">A4 Bond</span>
+                    <span class="option-card__radio" aria-hidden="true"></span>
+                  </label>
+                  <label class="option-card">
+                    <input
+                      type="radio"
+                      name="paperSize"
+                      value="Letter"
+                      class="sr-only"
+                    />
+                    <div class="option-card__icon" aria-hidden="true">
+                      <svg viewBox="0 0 36 36" fill="none">
+                        <rect
+                          x="10"
+                          y="4"
+                          width="16"
+                          height="28"
+                          rx="2"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          fill="currentColor"
+                          opacity=".1"
+                        />
+                        <text
+                          x="18"
+                          y="24"
+                          text-anchor="middle"
+                          font-size="9"
+                          font-weight="800"
+                          font-family="Plus Jakarta Sans,sans-serif"
+                          fill="currentColor"
+                          opacity=".65"
+                        >
+                          S
+                        </text>
+                      </svg>
+                    </div>
+                    <span class="option-card__label">Short Bond</span>
+                    <span class="option-card__radio" aria-hidden="true"></span>
+                  </label>
+                  <label class="option-card">
+                    <input
+                      type="radio"
+                      name="paperSize"
+                      value="Legal"
+                      class="sr-only"
+                    />
+                    <div class="option-card__icon" aria-hidden="true">
+                      <svg viewBox="0 0 36 36" fill="none">
+                        <rect
+                          x="11"
+                          y="2"
+                          width="14"
+                          height="32"
+                          rx="2"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          fill="currentColor"
+                          opacity=".1"
+                        />
+                        <text
+                          x="18"
+                          y="24"
+                          text-anchor="middle"
+                          font-size="7"
+                          font-weight="800"
+                          font-family="Plus Jakarta Sans,sans-serif"
+                          fill="currentColor"
+                          opacity=".65"
+                        >
+                          L
+                        </text>
+                      </svg>
+                    </div>
+                    <span class="option-card__label">Long Bond</span>
+                    <span class="option-card__radio" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </fieldset>
 
-            <fieldset class="option-group" id="pageRangeGroup">
-              <legend class="option-label">Page Range</legend>
-              <div class="option-grid option-grid--3">
-                <label class="option-card option-card--compact">
-                  <input
-                    id="pageModeAll"
-                    type="radio"
-                    name="pageRangeMode"
-                    value="all"
-                    checked
-                    class="sr-only"
-                  />
-                  <span class="option-card__label">All Pages</span>
-                  <span class="option-card__radio" aria-hidden="true"></span>
-                </label>
-                <label class="option-card option-card--compact">
-                  <input
-                    id="pageModeCustom"
-                    type="radio"
-                    name="pageRangeMode"
-                    value="custom"
-                    class="sr-only"
-                  />
-                  <span class="option-card__label">Custom Range</span>
-                  <span class="option-card__radio" aria-hidden="true"></span>
-                </label>
-                <label class="option-card option-card--compact">
-                  <input
-                    id="pageModeSingle"
-                    type="radio"
-                    name="pageRangeMode"
-                    value="single"
-                    class="sr-only"
-                  />
-                  <span class="option-card__label">Single Page</span>
-                  <span class="option-card__radio" aria-hidden="true"></span>
-                </label>
-              </div>
+              <fieldset
+                class="option-group option-group--advanced"
+                id="pageRangeGroup"
+              >
+                <legend class="option-label">Page Range</legend>
+                <div class="option-grid option-grid--3">
+                  <label class="option-card option-card--compact">
+                    <input
+                      id="pageModeAll"
+                      type="radio"
+                      name="pageRangeMode"
+                      value="all"
+                      checked
+                      class="sr-only"
+                    />
+                    <span class="option-card__label">All Pages</span>
+                    <span class="option-card__radio" aria-hidden="true"></span>
+                  </label>
+                  <label class="option-card option-card--compact">
+                    <input
+                      id="pageModeCustom"
+                      type="radio"
+                      name="pageRangeMode"
+                      value="custom"
+                      class="sr-only"
+                    />
+                    <span class="option-card__label">Custom Range</span>
+                    <span class="option-card__radio" aria-hidden="true"></span>
+                  </label>
+                  <label class="option-card option-card--compact">
+                    <input
+                      id="pageModeSingle"
+                      type="radio"
+                      name="pageRangeMode"
+                      value="single"
+                      class="sr-only"
+                    />
+                    <span class="option-card__label">Single Page</span>
+                    <span class="option-card__radio" aria-hidden="true"></span>
+                  </label>
+                </div>
 
-              <div id="pageRangeCustomWrap" class="page-range-wrap hidden">
-                <div class="page-range-custom-grid">
-                  <div class="page-range-field">
-                    <span class="page-range-field__label">From</span>
-                    <div class="copies-control">
-                      <button
-                        type="button"
-                        id="customRangeStartDec"
-                        class="copies-btn"
-                        aria-label="Decrease custom range start page"
-                      >
-                        -
-                      </button>
-                      <input
-                        id="customRangeStartInput"
-                        type="number"
-                        min="1"
-                        value="1"
-                        class="copies-input"
-                        readonly
-                        aria-label="Custom range start page"
-                      />
-                      <button
-                        type="button"
-                        id="customRangeStartInc"
-                        class="copies-btn"
-                        aria-label="Increase custom range start page"
-                      >
-                        +
-                      </button>
+                <div id="pageRangeCustomWrap" class="page-range-wrap hidden">
+                  <div class="page-range-custom-grid">
+                    <div class="page-range-field">
+                      <span class="page-range-field__label">From</span>
+                      <div class="copies-control">
+                        <button
+                          type="button"
+                          id="customRangeStartDec"
+                          class="copies-btn"
+                          aria-label="Decrease custom range start page"
+                        >
+                          -
+                        </button>
+                        <input
+                          id="customRangeStartInput"
+                          type="number"
+                          min="1"
+                          value="1"
+                          class="copies-input"
+                          readonly
+                          aria-label="Custom range start page"
+                        />
+                        <button
+                          type="button"
+                          id="customRangeStartInc"
+                          class="copies-btn"
+                          aria-label="Increase custom range start page"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                    <div class="page-range-field">
+                      <span class="page-range-field__label">To</span>
+                      <div class="copies-control">
+                        <button
+                          type="button"
+                          id="customRangeEndDec"
+                          class="copies-btn"
+                          aria-label="Decrease custom range end page"
+                        >
+                          -
+                        </button>
+                        <input
+                          id="customRangeEndInput"
+                          type="number"
+                          min="1"
+                          value="1"
+                          class="copies-input"
+                          readonly
+                          aria-label="Custom range end page"
+                        />
+                        <button
+                          type="button"
+                          id="customRangeEndInc"
+                          class="copies-btn"
+                          aria-label="Increase custom range end page"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div class="page-range-field">
-                    <span class="page-range-field__label">To</span>
-                    <div class="copies-control">
-                      <button
-                        type="button"
-                        id="customRangeEndDec"
-                        class="copies-btn"
-                        aria-label="Decrease custom range end page"
-                      >
-                        -
-                      </button>
-                      <input
-                        id="customRangeEndInput"
-                        type="number"
-                        min="1"
-                        value="1"
-                        class="copies-input"
-                        readonly
-                        aria-label="Custom range end page"
-                      />
-                      <button
-                        type="button"
-                        id="customRangeEndInc"
-                        class="copies-btn"
-                        aria-label="Increase custom range end page"
-                      >
-                        +
-                      </button>
-                    </div>
+                  <p
+                    id="customRangeDisplay"
+                    class="page-range-selected"
+                    aria-live="polite"
+                  >
+                    Selected: 1
+                  </p>
+                  <input
+                    id="pageRangeInput"
+                    type="text"
+                    class="page-range-hidden-input"
+                    pattern="\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*"
+                    aria-hidden="true"
+                    tabindex="-1"
+                  />
+                </div>
+
+                <div id="pageRangeSingleWrap" class="page-range-wrap hidden">
+                  <div class="copies-control">
+                    <button
+                      type="button"
+                      id="singlePageDec"
+                      class="copies-btn"
+                      aria-label="Previous page"
+                    >
+                      -
+                    </button>
+                    <input
+                      id="singlePageInput"
+                      type="number"
+                      min="1"
+                      value="1"
+                      class="copies-input"
+                      aria-label="Single page number"
+                    />
+                    <button
+                      type="button"
+                      id="singlePageInc"
+                      class="copies-btn"
+                      aria-label="Next page"
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
-                <p
-                  id="customRangeDisplay"
-                  class="page-range-selected"
-                  aria-live="polite"
-                >
-                  Selected: 1
-                </p>
-                <input
-                  id="pageRangeInput"
-                  type="text"
-                  class="page-range-hidden-input"
-                  pattern="\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*"
-                  aria-hidden="true"
-                  tabindex="-1"
-                />
-              </div>
+              </fieldset>
+              <!-- /.document-options-grid -->
+            </div>
 
-              <div id="pageRangeSingleWrap" class="page-range-wrap hidden">
-                <div class="copies-control">
-                  <button
-                    type="button"
-                    id="singlePageDec"
-                    class="copies-btn"
-                    aria-label="Previous page"
-                  >
-                    -
-                  </button>
-                  <input
-                    id="singlePageInput"
-                    type="number"
-                    min="1"
-                    value="1"
-                    class="copies-input"
-                    aria-label="Single page number"
-                  />
-                  <button
-                    type="button"
-                    id="singlePageInc"
-                    class="copies-btn"
-                    aria-label="Next page"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </fieldset>
-
-            <div class="option-group" id="copiesGroup">
+            <div class="option-group option-group--primary" id="copiesGroup">
               <span class="option-label">Copies</span>
               <div class="copies-control">
                 <button
@@ -882,7 +894,7 @@
                   id="copies"
                   type="number"
                   min="1"
-                  max="99"
+                  max="30"
                   value="1"
                   class="copies-input"
                   aria-label="Number of copies"
@@ -909,40 +921,42 @@
             </div>
           </div>
           <!-- /.settings-scroll -->
+          <div class="config-pane-footer">
+            <div class="footer-price" aria-live="polite">
+              <p class="footer-selections" id="footerSelections">
+                Choose your settings.
+              </p>
+              <p class="footer-breakdown" id="footerBreakdown">
+                Your total updates as you choose.
+              </p>
+              <p class="footer-total" id="footerTotal">—</p>
+            </div>
+            <button
+              id="continueBtn"
+              type="button"
+              class="config-continue-btn"
+              disabled
+              aria-disabled="true"
+            >
+              <span>Continue</span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </button>
+          </div>
         </section>
         <!-- /.settings-col -->
       </div>
       <!-- /.config-layout -->
     </div>
-    <!-- /.page-shell -->
-
-    <!-- ── STICKY FOOTER: summary + Continue button ── -->
-    <footer class="sticky-footer">
-      <div class="footer-price" aria-live="polite">
-        <p class="footer-selections" id="footerSelections">Choose your settings.</p>
-        <p class="footer-total" id="footerTotal">—</p>
-      </div>
-      <button
-        id="continueBtn"
-        type="button"
-        class="continue-btn"
-        disabled
-        aria-disabled="true"
-      >
-        <span>Continue</span>
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M5 12h14M13 6l6 6-6 6" />
-        </svg>
-      </button>
-    </footer>
 
     <div class="pricing-overlay" id="pricingOverlay" aria-hidden="true">
       <section

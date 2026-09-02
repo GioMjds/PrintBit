@@ -44,7 +44,7 @@ let lastKnownOffsetMs: number | null = null;
 let monitorHandle: NodeJS.Timeout | null = null;
 let monitorInFlight = false;
 
-let statusCache: TrustedTimeStatus = {
+let statusCache = {
   source: 'system',
   synced: false,
   offsetMs: null,
@@ -55,7 +55,7 @@ let statusCache: TrustedTimeStatus = {
   detail: 'Trusted time has not been verified yet.',
   ntpSource: null,
   lastSuccessfulSyncAt: null,
-};
+} as TrustedTimeStatus;
 
 function readConfiguredOffsetMs(): number | null {
   const raw = process.env.PRINTBIT_NTP_OFFSET_MS;

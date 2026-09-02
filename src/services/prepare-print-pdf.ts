@@ -23,11 +23,11 @@ import type { PrintQuality } from '@/core/database/shared.schema';
 import type { ColorMode, Orientation, PaperSize } from './printer';
 export type RotationDeg = 0 | 90 | 180 | 270;
 
-export const PAPER_DIMENSIONS_PT: Record<PaperSize, [number, number]> = {
+export const PAPER_DIMENSIONS_PT = {
   A4: [595.28, 841.89],
   Letter: [612.0, 792.0],
   Legal: [612.0, 1008.0],
-};
+} satisfies Record<PaperSize, [number, number]>;
 
 export const SAFE_MARGIN_PT = 14.4; // 0.2 inch / 5.08 mm safe margin from physical printer roller borders
 

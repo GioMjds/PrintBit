@@ -15,3 +15,4 @@ bin/
 .pnpm-store
 
 graphify-out/
+.impeccable
