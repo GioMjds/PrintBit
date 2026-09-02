@@ -6,6 +6,7 @@ import {
   type PowerSafetyState,
   powerSafetyService,
 } from './power-safety';
+import { printerStateProjection } from './printer-state-projection';
 
 export type WorkerPrintEventType =
   | 'PrintStarted'
@@ -19,7 +20,8 @@ export type WorkerPrintEventType =
   | 'JobResumed'
   | 'JobCompleted'
   | 'PowerStatusChanged'
-  | 'PowerStatusSnapshot';
+  | 'PowerStatusSnapshot'
+  | 'PrinterStatusSnapshot';
 
 export type WorkerTerminalOutcome =
   | 'completed'
@@ -154,6 +156,13 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
     case 'PowerStatusChanged':
     case 'PowerStatusSnapshot':
       return { event: 'workerPowerStatusChanged', payload: evt };
+    case 'PrinterStatusSnapshot':
+      return {
+        event: evt.message?.toLowerCase().includes('offline')
+          ? 'workerPrinterOffline'
+          : 'workerPrinterOnline',
+        payload: evt,
+      };
     case 'JobCompleted':
       return {
         event:
@@ -208,6 +217,7 @@ export function startWorkerReturnPipeServer(input: {
         buffer = buffer.slice(index + 1);
         try {
           const evt = parseWorkerEventLine(line, input.maxBytes);
+          printerStateProjection.applyEvent(evt);
           input.onEvent(evt);
         } catch (err) {
           logger.warn(
