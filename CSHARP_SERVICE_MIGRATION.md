@@ -459,27 +459,84 @@ The current `hotspot.ts`, for example, calls `netsh`, alters Windows Firewall, r
 
 ---
 
-# Recommended migration order
+# Phased Migration Roadmap
 
-I would execute the rearchitecture in this order:
+The migration is structured into **6 discrete phases** to ensure zero disruption to live kiosk operations, rapid CPU overhead reduction, and safe incremental verification.
 
-1. **Printer cleanup first**
-   Finish C# ownership of `print-dispatcher`, `print-spooler`, `printer-monitor`, `printer-status`, `windows-printer-edge`, and `printer-fault-lock`. Remove duplicate Node implementations.
+| Phase | Subsystem / Focus Area | Primary Objective | Node Files Affected / Retired | C# Destination / Infrastructure | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Phase 1** | **Printer & Spooler Subsystem** | Eliminate ~150 KB of heavy PowerShell loops & dual-state machines; unify print dispatch on worker queue handoff. | Retire: `print-spooler.ts`, `printer-status.ts`, `printer-monitor.ts`, `windows-printer-edge.ts`, `print-dispatcher.ts`, `printer-fault-lock.ts`<br>New: `printer-state-projection.ts`<br>Modify: `printer.ts`, `copy.service.ts`, `financial.service.ts`, `admin.controller.ts` | `PrinterHealthMonitor.cs`<br>`DocumentPrinter.cs`<br>`PrintQueueWatcher.cs`<br>`ServiceControllerSpoolerController.cs` | **READY FOR EXECUTION**<br>*(Spec & Plan Approved)* |
+| **Phase 2** | **Serial, ESP32, Hopper & Coin Acceptor** | Move COM port lifecycle, ESP32 protocol parser, coin pulse decoding, and hopper dispensing to C#. | Retire/Migrate: `serial.ts`, `serial-ip-protocol.ts`, `hopper.ts`, `hopper-protocol.ts` | `PrintBit.Hardware/Devices/`<br>`PrintBit.Infrastructure/Services/SerialService/`<br>`HardwareOrchestrator.cs` | **BACKLOG (Next)** |
+| **Phase 3** | **Scanner Subsystem** | Migrate NAPS2 / TWAIN / WIA subprocess management and scan acquisition to native C# service. | Migrate: `scanner.ts`<br>Split: `scan-storage.ts` | `PrintBit.Infrastructure.Windows/Scanning/`<br>`Naps2ScannerService.cs` | **BACKLOG** |
+| **Phase 4** | **Windows Security, Storage & Platform** | Migrate Windows Defender (`MpCmdRun`), USB removable disk discovery, and Windows clock (`w32tm`) queries to C#. | Retire/Migrate: `defender-scanner.ts`, `usb-drives.ts`, `powershell-runspace.ts`<br>Split: `time-source.ts`, `hotspot.ts` | `PrintBit.Infrastructure.Windows/Security/`<br>`PrintBit.Infrastructure.Windows/Storage/`<br>`PrintBit.Infrastructure.Windows/Time/` | **BACKLOG** |
+| **Phase 5** | **Document Preprocessing & Rotation** | Consolidate PDF rotation, orientation baking, and printable PDF preparation alongside LibreOffice conversion in C#. | Migrate: `prepare-print-pdf.ts`, `document-rotation.ts` | `PrintBit.Infrastructure/Services/DocumentProcessing/` | **BACKLOG** |
+| **Phase 6** | **IPC Client Consolidation & Clean Architecture** | Consolidate named pipe adapters into a single `WorkerClient` module; retire global barrel exports in `index.ts`. | Consolidate: `worker-command-pipe.ts`, `worker-return-pipe.ts`, `worker-error-pipe.ts`, `worker-handoff.ts`<br>Clean: `src/services/index.ts` | `PrintBit.Infrastructure/IPC/` (stable protocol v2) | **BACKLOG** |
 
-2. **Serial + ESP32 + hopper next**
-   This is the largest missing Worker capability. Implement a proper hosted serial service, protocol parser, hardware event queue integration and C# hopper orchestrator.
+---
 
-3. **Scanner**
-   Move NAPS2/TWAIN/WIA invocation completely into `Infrastructure.Windows`.
+### Phase 1: Printer & Spooler Subsystem (Current Phase)
+* **Goal:** Immediate CPU & overhead relief. Stop Node from running continuous `powershell.exe` runspaces, WMI queries, and Sumatra/PDFtoPrinter child processes.
+* **Documentation & Plan:**
+  * Spec: [`docs/superpowers/specs/2026-09-02-printer-worker-migration-design.md`](docs/superpowers/specs/2026-09-02-printer-worker-migration-design.md)
+  * Implementation Plan: [`docs/superpowers/plans/2026-09-02-printer-worker-migration.md`](docs/superpowers/plans/2026-09-02-printer-worker-migration.md)
+* **Key Actions:**
+  1. Retire 6 files in Node: `print-spooler.ts` (71 KB), `printer-status.ts` (52 KB), `printer-monitor.ts`, `windows-printer-edge.ts`, `print-dispatcher.ts` (28 KB), and `printer-fault-lock.ts`.
+  2. Implement `printer-state-projection.ts` in Node: zero-overhead in-memory singleton populated strictly by C# named-pipe events.
+  3. C# `PrinterHealthMonitor.cs`: broadcasts authoritative `PrinterStatusSnapshot`, `PrinterOnline`, `PrinterOffline`, and `PrinterError` over `\\.\pipe\printbit-worker-events`.
+  4. Converge all print dispatch (Standard Print, Copy, Test Page) on `worker-handoff.ts` (`queue/` sidecars + PDF) monitored by C#'s `PrintQueueWatcher`.
+  5. Replace `monitorSpoolerJob()` in `copy.service.ts` and `financial.service.ts` with reactive listeners on `worker-return-pipe.ts`.
 
-4. **Windows security and platform services**
-   Move Defender, USB drive discovery, trusted-time Windows queries, PowerShell/runspace helpers and network/firewall operations.
+---
 
-5. **Document print preprocessing**
-   Move rotation and final printable-PDF preparation into the same C# pipeline that owns LibreOffice conversion and physical printing.
+### Phase 2: Serial, ESP32, Hopper & Coin Acceptor Subsystem
+* **Goal:** Close the largest hardware capability gap in `printbit-worker`. Remove raw serial port handling, reconnection loops, and device state management from Node.js.
+* **Current Gap in C#:** `PrintBit.Hardware` and `SerialConnection.cs` exist as skeletons but are not registered in `Program.cs` and lack protocol framing, reconnect loops, and error correlation.
+* **Key Actions:**
+  1. Implement a hosted serial service (`SerialHostedService.cs`) in C# using `System.IO.Ports.SerialPort` with automatic COM port detection and background reconnect loops.
+  2. Port `serial-ip-protocol.ts` and `hopper-protocol.ts` into strongly-typed C# frame parsers in `PrintBit.Hardware/Devices/ESP32/Protocol` and `PrintBit.Hardware/Devices/Hopper/Protocol`.
+  3. Register `CoinAcceptorDevice`, `HopperDevice`, and `Esp32Device` in `Program.cs`, routing hardware pulses through `HardwareEventQueue` and `HardwareOrchestrator`.
+  4. Expose named-pipe commands: `DispenseCoinsCommand`, `ResetHardwareCommand`.
+  5. Stream hardware events (`CoinInsertedEvent`, `HopperProgressEvent`, `HopperCompletedEvent`, `HardwareHeartbeatEvent`) over `WorkerEventPipeClient` to Node.
+  6. In Node: Retire `serial.ts`, `serial-ip-protocol.ts`, `hopper-protocol.ts`. Update `hopper.ts` to send dispense IPC commands and listen to completion events.
 
-6. **Reduce Node to IPC projections**
-   Replace machine-facing implementations with one `WorkerClient`, then clean up `src/services/index.ts`.
+---
+
+### Phase 3: Scanner Subsystem (NAPS2 / TWAIN / WIA)
+* **Goal:** Remove `NAPS2.Console.exe` process execution and scanner hardware probing from Node.
+* **Key Actions:**
+  1. Create `PrintBit.Infrastructure.Windows/Scanning` with `IScannerService`, `Naps2ScannerService`, and `ScannerDiscoveryService`.
+  2. Port device capabilities detection, TWAIN/WIA driver querying, profile loading, and scan execution to C#.
+  3. Expose `StartScanCommand` on the C# named pipe command listener.
+  4. C# handles the scanner process, error timeouts, and writes the acquired scan image to disk, emitting `ScanProgress` and `ScanCompleted` events.
+  5. In Node: Retire `scanner.ts`. Update `scan-storage.ts` to accept worker output paths and manage session delivery / QR codes.
+
+---
+
+### Phase 4: Windows Security, Storage & Platform Services
+* **Goal:** Eliminate all remaining Windows OS and CLI invocations (`MpCmdRun.exe`, PowerShell removable drive detection, `w32tm`) from Node.
+* **Key Actions:**
+  1. **Security**: Create `PrintBit.Infrastructure.Windows/Security/WindowsDefenderScanner.cs` to execute `MpCmdRun.exe` natively. Expose `ScanFileSecurityCommand` over IPC. Retire `defender-scanner.ts` in Node.
+  2. **USB Storage**: Create `PrintBit.Infrastructure.Windows/Storage/UsbDriveMonitor.cs` using WMI `Win32_DiskDrive` and `Win32_Volume` queries. Stream `UsbInserted` / `UsbRemoved` events. Retire `usb-drives.ts` in Node.
+  3. **Trusted Time**: Create `PrintBit.Infrastructure.Windows/Time/WindowsTrustedTimeProvider.cs` to query NTP and system clock drift. Node keeps only the business policy ("reject transaction if time is untrusted").
+  4. **Retire `powershell-runspace.ts`**: With all PowerShell operations moved to native C# Win32/WMI APIs, permanently delete `powershell-runspace.ts` from Node.
+
+---
+
+### Phase 5: Document Preprocessing & Orientation Geometry
+* **Goal:** Offload PDF manipulation, page rotation, image rasterization, and printable-PDF preparation to C#.
+* **Key Actions:**
+  1. Migrate PDF page rotation, geometry normalization, and orientation baking (`prepare-print-pdf.ts`, `document-rotation.ts`) into `PrintBit.Infrastructure/Services/DocumentProcessing/`.
+  2. Integrate preprocessing directly into C#'s `JobOrchestrator` before dispatching to `DocumentPrinter`.
+  3. Node passes uploaded files or converted PDFs directly to the worker queue without performing intermediate PDF transformations in JavaScript.
+
+---
+
+### Phase 6: IPC Client Consolidation & Clean Architecture
+* **Goal:** Clean up Node's architecture into cohesive domain modules and replace global barrel exports.
+* **Key Actions:**
+  1. Consolidate `worker-command-pipe.ts`, `worker-return-pipe.ts`, `worker-error-pipe.ts`, and `worker-handoff.ts` into a unified `src/infrastructure/worker/` module.
+  2. Expose a typed `WorkerClient` class encapsulating all IPC communication.
+  3. Remove the monolithic `src/services/index.ts` barrel file, enforcing clean imports (`@/modules/printing`, `@/modules/payments`, `@/infrastructure/worker`).
 
 ## Target architecture
 
