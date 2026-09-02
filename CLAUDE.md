@@ -17,7 +17,7 @@ afterthoughts.
 - **Frontend:** Static HTML/CSS + TypeScript bundles compiled with esbuild → `src/public/`
 - **Hardware IPC:** `serialport` (coin/hopper shared line), named pipes to a C# Windows worker
   (`worker-command-pipe` / `worker-return-pipe`), ESP32 HTTP bridge (STA mode, WiFiManager)
-- **Print dispatch:** PDFtoPrinter / GhostScript / LibreOffice (mode-gated by env var),
+- **Print dispatch:** PDFtoPrinter / GhostScript (mode-gated by env var),
   optional Sumatra fallback
 - **Package manager:** `pnpm@10` only — do not use `npm` or `yarn`
 
@@ -172,8 +172,8 @@ sync is lost; `startTrustedTimeMonitor` publishes transitions to `adminService` 
 | Mode       | Behavior                                                             |
 | ---------- | -------------------------------------------------------------------- |
 | `legacy`   | Sumatra PDF only                                                     |
-| `phased`   | PDFtoPrinter → GhostScript → LibreOffice, Sumatra emergency fallback |
-| `new-only` | PDFtoPrinter → GhostScript → LibreOffice only                        |
+| `phased`   | PDFtoPrinter → GhostScript, Sumatra emergency fallback |
+| `new-only` | PDFtoPrinter → GhostScript only                        |
 
 Binary paths and timeouts: see `agent_docs/print-dispatch.md`. LibreOffice first launch is
 slow — keep `PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS` ≥ 60s in production.

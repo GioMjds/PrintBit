@@ -9,18 +9,15 @@ Controlled by `PRINTBIT_PRINT_DISPATCH_MODE` (default `legacy`):
 | Mode       | Behavior                                                             |
 | ---------- | -------------------------------------------------------------------- |
 | `legacy`   | Sumatra PDF only                                                     |
-| `phased`   | PDFtoPrinter → GhostScript → LibreOffice, Sumatra emergency fallback |
-| `new-only` | PDFtoPrinter → GhostScript → LibreOffice only                        |
+| `phased`   | PDFtoPrinter → GhostScript, Sumatra emergency fallback |
+| `new-only` | PDFtoPrinter → GhostScript only                        |
 
 ## Key binaries and env vars
 
 - `PRINTBIT_PDFTOPRINTER_PATH` — default `bin/PDFtoPrinter.exe`
 - `PRINTBIT_GHOSTSCRIPT_PATH` — explicit path to `gswin64c.exe`
-- `PRINTBIT_LIBREOFFICE_PATH` — explicit path to `soffice.exe`
 - `PRINTBIT_SUMATRA_PATH` — Sumatra fallback path
 - `PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS` — default `60000`
-- `PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS` — default `120000`, min `10000`
-  (LibreOffice is slow on first launch — set this generously in production)
 
 ## Spooler monitoring env vars
 

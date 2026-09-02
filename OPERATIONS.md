@@ -23,7 +23,6 @@
    - `PRINTBIT_PRINT_DISPATCH_MODE=legacy|phased|new-only`
    - `bin/PDFtoPrinter.exe` (or `PRINTBIT_PDFTOPRINTER_PATH`)
    - GhostScript (`gswin64c.exe`) via PATH or `PRINTBIT_GHOSTSCRIPT_PATH`
-   - LibreOffice (`soffice.exe`) via PATH or `PRINTBIT_LIBREOFFICE_PATH`
    - Optional Sumatra fallback (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`) for phased mode
 2. Printer is installed and has a default printer selected.
 3. Serial coin hardware is connected (if coin mode is used).

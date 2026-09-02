@@ -530,7 +530,7 @@ export class WirelessSessionService {
         error instanceof Error ? error.message : 'Unknown preview error';
       res.status(500).json({
         error:
-          'Preview conversion failed. Ensure Microsoft Word or LibreOffice is installed and available.',
+          'Preview conversion failed. Ensure the PrintBit Worker and LibreOffice are installed and available.',
         reason,
         code: 'PREVIEW_CONVERSION_FAILED',
       });

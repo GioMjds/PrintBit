@@ -75,7 +75,7 @@ Troubleshooting:
 - **Backend:** Node.js, Express, Socket.IO, TypeScript
 - **Storage:** SQLite (`printbit.sqlite`) for persisted kiosk state
 - **Upload handling:** Multer
-- **Printing:** Phased dispatcher (`PDFtoPrinter`, `GhostScript`, `LibreOffice`, with optional Sumatra fallback)
+- **Printing:** Phased dispatcher (`PDFtoPrinter`, `GhostScript`, with optional Sumatra fallback)
 - **Serial integration:** `serialport`
 - **Frontend:** Static HTML/CSS + TypeScript bundles under `src/public`
 
@@ -142,7 +142,6 @@ printbit.sqlite             # Runtime persisted machine state (SQLite)
 - Print dispatch dependencies configured for your selected mode:
   - `bin/PDFtoPrinter.exe` (or `PRINTBIT_PDFTOPRINTER_PATH`)
   - GhostScript (`PRINTBIT_GHOSTSCRIPT_PATH` or PATH `gswin64c`)
-  - LibreOffice (`PRINTBIT_LIBREOFFICE_PATH` or PATH `soffice`)
   - Optional Sumatra fallback (`bin/SumatraPDF.exe` or `PRINTBIT_SUMATRA_PATH`) for phased mode
 - Optional but expected in production:
   - Coin acceptor serial device
@@ -153,14 +152,12 @@ printbit.sqlite             # Runtime persisted machine state (SQLite)
 
 - `PRINTBIT_PRINT_DISPATCH_MODE=legacy|phased|new-only` (default `legacy`)
   - `legacy`: Sumatra-only behavior
-  - `phased`: PDFtoPrinter/GhostScript/LibreOffice with Sumatra emergency fallback
-  - `new-only`: PDFtoPrinter/GhostScript/LibreOffice only
+  - `phased`: PDFtoPrinter/GhostScript with Sumatra emergency fallback
+  - `new-only`: PDFtoPrinter/GhostScript only
 - `PRINTBIT_PDFTOPRINTER_PATH` (or `PDFTOPRINTER_PATH`) default: `bin/PDFtoPrinter.exe`
 - `PRINTBIT_GHOSTSCRIPT_PATH` (or `GHOSTSCRIPT_PATH`) optional explicit path to `gswin64c.exe`
-- `PRINTBIT_LIBREOFFICE_PATH` (or `LIBREOFFICE_PATH`) optional explicit path to `soffice.exe`
 - `PRINTBIT_SUMATRA_PATH` (or `SUMATRA_PATH`) optional Sumatra fallback path
 - `PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS` (default `60000`)
-- `PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS` (default `120000`, minimum 10s)
 - `PRINTBIT_PRINT_SPOOLER_MONITOR_WINDOW_MS` (default `180000`, minimum `30000`)
 - `PRINTBIT_PRINT_SPOOLER_POLL_INTERVAL_MS` (default `1500`, minimum `250`)
 - `PRINTBIT_PRINT_SPOOLER_LOOKBACK_MINUTES` (default `3`, minimum `1`)

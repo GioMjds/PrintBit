@@ -3,7 +3,6 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import sharp from 'sharp';
 import { PDFDocument, degrees, rgb } from 'pdf-lib';
 import { GHOSTSCRIPT_PATH, SUMATRA_PATH } from '@/config/http.config';
 import { convertToPdfPreview } from './preview';
@@ -158,63 +157,6 @@ function expandPageRange(range: string | null, totalPages: number): number[] {
   return ordered;
 }
 
-async function prepareImagePrintPdf(input: {
-  sourcePath: string;
-  colorMode: ColorMode;
-  orientation: Orientation;
-  rotationDeg: RotationDeg;
-  paperSize: PaperSize;
-  quality?: PrintQuality;
-}): Promise<{ pdfPath: string; cleanupPaths: string[]; pageCount: number }> {
-  await fs.promises.mkdir(PREPARED_PRINT_DIR, { recursive: true });
-  const pdfPath = path.join(PREPARED_PRINT_DIR, `${randomUUID()}.pdf`);
-
-  let imagePipeline = sharp(input.sourcePath).rotate(); // auto-rotate based on EXIF
-  if (input.rotationDeg !== 0) {
-    imagePipeline = imagePipeline.rotate(input.rotationDeg);
-  }
-  if (input.colorMode === 'grayscale') {
-    imagePipeline = imagePipeline.grayscale();
-  }
-
-  // Convert to PNG buffer to preserve quality and embed cleanly
-  const pngOptions =
-    input.quality === 'high'
-      ? { compressionLevel: 6, adaptiveFiltering: true }
-      : {};
-  const { data, info } = await imagePipeline
-    .png(pngOptions)
-    .toBuffer({ resolveWithObject: true });
-
-  const [pageWidth, pageHeight] = getPaperSizePoints(
-    input.paperSize,
-    input.orientation,
-  );
-
-  const maxW = Math.max(10, pageWidth - 2 * SAFE_MARGIN_PT);
-  const maxH = Math.max(10, pageHeight - 2 * SAFE_MARGIN_PT);
-
-  const scale = Math.min(maxW / info.width, maxH / info.height);
-  const drawW = info.width * scale;
-  const drawH = info.height * scale;
-
-  const x = (pageWidth - drawW) / 2;
-  const y = (pageHeight - drawH) / 2;
-
-  const pdf = await PDFDocument.create();
-  const embeddedImage = await pdf.embedPng(data);
-  const page = pdf.addPage([pageWidth, pageHeight]);
-  page.drawImage(embeddedImage, {
-    x,
-    y,
-    width: drawW,
-    height: drawH,
-  });
-
-  await fs.promises.writeFile(pdfPath, await pdf.save());
-  return { pdfPath, cleanupPaths: [pdfPath], pageCount: 1 };
-}
-
 async function ensurePdfSource(
   sourcePath: string,
 ): Promise<{ pdfPath: string; cleanupPaths: string[] }> {
@@ -302,8 +244,7 @@ async function applyGrayscalePdf(input: {
   }
 
   // Priority 2: Ghostscript is configured and SumatraPDF is not available.
-  // Use Ghostscript to bake the grayscale into the PDF for downstream engines
-  // (PDFtoPrinter, LibreOffice) that cannot enforce monochrome at the driver level.
+  // Use Ghostscript to bake the grayscale into the PDF for PDFtoPrinter.
   if (GHOSTSCRIPT_PATH) {
     await fs.promises.mkdir(PREPARED_PRINT_DIR, { recursive: true });
     const outputPath = path.join(PREPARED_PRINT_DIR, `${randomUUID()}-gray.pdf`);
@@ -353,18 +294,6 @@ export async function preparePrintPdf(
   const ext = path.extname(input.sourcePath).toLowerCase();
 
   try {
-    if (IMAGE_EXTENSIONS.has(ext)) {
-      const imageResult = await prepareImagePrintPdf({
-        sourcePath: input.sourcePath,
-        colorMode: input.colorMode,
-        orientation: input.orientation,
-        rotationDeg: normalizedRotation,
-        paperSize: input.paperSize ?? 'A4',
-        quality: input.quality,
-      });
-      return imageResult;
-    }
-
     const pdfSource = await ensurePdfSource(input.sourcePath);
     cleanupPaths.push(...pdfSource.cleanupPaths);
 

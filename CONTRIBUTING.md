@@ -44,7 +44,7 @@ pnpm run db:migrate:legacy
   - `uploads/`
   - `printbit.sqlite`
 - Printing uses a mode-based dispatcher (`legacy|phased|new-only`) and external binaries
-  (`PDFtoPrinter`, `GhostScript`, `LibreOffice`, optional Sumatra fallback); do not
+  (`PDFtoPrinter`, `GhostScript`, optional Sumatra fallback); do not
   change printer integration casually.
 - Serial/hotspot/scanner behavior should degrade gracefully when hardware is unavailable.
 

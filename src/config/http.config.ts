@@ -191,10 +191,6 @@ export const GHOSTSCRIPT_PATH = readPathEnv(
   'GHOSTSCRIPT_PATH',
 );
 
-export const LIBREOFFICE_PATH = readPathEnv(
-  'PRINTBIT_LIBREOFFICE_PATH',
-  'LIBREOFFICE_PATH',
-);
 
 export const PRINT_DISPATCH_TIMEOUT_MS = readPositiveIntEnv(
   process.env.PRINTBIT_PRINT_DISPATCH_TIMEOUT_MS?.trim(),
@@ -202,11 +198,6 @@ export const PRINT_DISPATCH_TIMEOUT_MS = readPositiveIntEnv(
   5_000,
 );
 
-export const PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS = readPositiveIntEnv(
-  process.env.PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS?.trim(),
-  120_000,
-  10_000,
-);
 
 export const PRINT_SPOOLER_MONITOR_WINDOW_MS = readPositiveIntEnv(
   process.env.PRINTBIT_PRINT_SPOOLER_MONITOR_WINDOW_MS?.trim(),

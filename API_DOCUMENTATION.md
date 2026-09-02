@@ -868,7 +868,7 @@ Response includes dispatch timing metadata:
 
 - `timing.totalElapsedMs` — end-to-end request handling time
 - `timing.dispatchDurationMs` — dispatcher engine handoff duration
-- `timing.dispatchEngine` — selected engine (`sumatra`, `pdftoprinter`, `ghostscript`, `libreoffice`)
+- `timing.dispatchEngine` — selected engine (`sumatra`, `pdftoprinter`, `ghostscript`)
 - `timing.dispatchAttempts` — number of dispatch attempts in the fallback chain
 
 ### `GET /api/admin/logs/system`

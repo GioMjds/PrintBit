@@ -170,9 +170,9 @@ interface PDFViewport {
 }
 
 const PAPER_MM: Record<PaperSize, [number, number]> = {
-  A4: [210, 297],       // A4 Bond Paper
-  Letter: [216, 279],   // Short Bond Paper (8.5" × 11")
-  Legal: [216, 356],    // Long Bond Paper (8.5" × 13")
+  A4: [210, 297], // A4 Bond Paper
+  Letter: [216, 279], // Short Bond Paper (8.5" × 11")
+  Legal: [216, 356], // Long Bond Paper (8.5" × 13")
 };
 
 /** Return [widthPx, heightPx] of the paper sheet at 96 dpi,
@@ -410,7 +410,6 @@ class PrintPreview {
     } else {
       this.sheet.removeAttribute('data-gray');
     }
-
   }
 
   async load(sessionId: string, filename?: string): Promise<void> {
@@ -465,7 +464,7 @@ class PrintPreview {
           reason = `No preview for this file type.`;
         else if (body.code === 'PREVIEW_CONVERSION_FAILED')
           reason =
-            'Conversion failed — ensure Microsoft Word or LibreOffice is installed on this machine.';
+            'Conversion failed — ensure the PrintBit Worker and LibreOffice are installed on this machine.';
         else if (body.error) reason = body.error;
       } catch {
         /* plain text response */
@@ -501,7 +500,6 @@ class PrintPreview {
       this.latestImageInfo = null;
       this.showError('Unsupported preview format.');
     }
-
   }
 
   async loadDocx(sessionId: string, filename: string): Promise<void> {
@@ -608,7 +606,6 @@ class PrintPreview {
         this.showImg(false);
         this.showLoading(false);
         this.setHint(`Page ${pageNum} of ${this.totalPages}`);
-
       } catch (e) {
         console.error('Render error:', e);
         previewLog('renderPage() failed', e);
@@ -2075,6 +2072,12 @@ continueBtn?.addEventListener('click', () => {
 async function prepareDocumentPreview(): Promise<void> {
   preparationLoading.start('Preparing document');
 
+  const isNonPdfPrintDocument =
+    mode === 'print' &&
+    typeof selectedFile === 'string' &&
+    selectedFile.trim().length > 0 &&
+    !selectedFile.toLowerCase().endsWith('.pdf');
+
   if (mode === 'copy') {
     preparationLoading.setMessage(
       'Preparing copy preview',
@@ -2084,6 +2087,11 @@ async function prepareDocumentPreview(): Promise<void> {
     preparationLoading.setMessage(
       'Preparing scan preview',
       'Loading your scanned document…',
+    );
+  } else if (isNonPdfPrintDocument) {
+    preparationLoading.setMessage(
+      'Converting document',
+      'Converting document to PDF for preview and printing...',
     );
   } else {
     preparationLoading.setMessage(

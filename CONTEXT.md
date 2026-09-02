@@ -24,7 +24,7 @@ pipes; it shares `printbit.sqlite` state and never opens HTTP.
 | Storage          | SQLite via `node:sqlite` (`DatabaseSync`), repository pattern, no ORM                                         |
 | Frontend         | Static HTML/CSS + esbuild bundles under `src/public/**` (no React, no SPA)                                    |
 | Hardware bridges | `serialport` (coin acceptor + coin hopper on shared 115200 baud line), ESP32 HTTP bridge                      |
-| Print dispatch   | Pluggable engines — PDFtoPrinter / GhostScript / LibreOffice (+ optional Sumatra fallback), mode-gated by env |
+| Print dispatch   | Pluggable engines — PDFtoPrinter / GhostScript (+ optional Sumatra fallback), mode-gated by env |
 | Scanner          | NAPS2 (`.Console.exe`) integration                                                                            |
 | Package manager  | `pnpm` 10.x (this repo is the `printbit` package inside a `pnpm-workspace.yaml`)                              |
 | OS               | Windows 11 only — hardware, COM ports, WMI, scheduled tasks, PowerShell scripts                               |
@@ -283,7 +283,7 @@ These rules are non-obvious and load-bearing. Violating them is the most common 
 
 - Mode is gated by `PRINTBIT_PRINT_DISPATCH_MODE` (`legacy` | `phased` | `new-only`). See `agent_docs/print_dispatch.md`.
 - The dispatcher is asynchronous — `confirm-payment` returns `print.state: "awaiting_spooler_terminal"` and the spooler monitor (`src/services/print-spooler.ts`) reconciles terminal state via WMI.
-- LibreOffice first-launch is slow; `PRINTBIT_PRINT_DISPATCH_LIBREOFFICE_TIMEOUT_MS` defaults to 120s and is enforced as a minimum of 10s. Do not lower it.
+- LibreOffice conversion runs in the C# worker with its own configured timeout and isolated profile.
 
 ### Pricing engine
 

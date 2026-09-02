@@ -157,7 +157,7 @@ Ephemeral (process memory):
 
 ## External dependencies
 
-- PDFtoPrinter, GhostScript, and LibreOffice binaries for print dispatch
+- PDFtoPrinter and GhostScript binaries for print dispatch; LibreOffice is owned by the C# conversion worker
 - Optional Sumatra fallback in phased mode
 - Serial device for coin input + coin hopper (shared 115200-baud line via Arduino Uno)
 - ESP32 bridge firmware (`esp32-captive-portal.ino`) using WiFiManager STA-first provisioning with captive-portal fallback and long-press reprovision reset
