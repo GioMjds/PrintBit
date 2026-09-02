@@ -458,6 +458,32 @@
               </div>
             </fieldset>
 
+            <section
+              class="pricing-summary"
+              aria-labelledby="pricingSummaryTitle"
+            >
+              <div class="pricing-summary__heading">
+                <div>
+                  <p class="option-label" id="pricingSummaryTitle">
+                    Price for your selection
+                  </p>
+                  <p class="pricing-summary__value" id="pricingSummaryValue">
+                    Loading rate…
+                  </p>
+                </div>
+                <button
+                  class="pricing-summary__button"
+                  id="openPricingBtn"
+                  type="button"
+                >
+                  View all prices
+                </button>
+              </div>
+              <p class="pricing-summary__detail" id="pricingSummaryDetail">
+                Base price per page
+              </p>
+            </section>
+
             <fieldset class="option-group" id="orientationGroup">
               <legend class="option-label">Orientation</legend>
               <div class="option-grid">
@@ -939,6 +965,33 @@
         </svg>
       </button>
     </footer>
+
+    <div class="pricing-overlay" id="pricingOverlay" aria-hidden="true">
+      <section
+        class="pricing-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pricingTitle"
+      >
+        <button
+          class="pricing-close"
+          id="closePricingBtn"
+          type="button"
+          aria-label="Close printing prices"
+        >
+          ×
+        </button>
+        <p class="pricing-modal__eyebrow">PRINT WITH CONFIDENCE</p>
+        <h2 id="pricingTitle">All printing prices</h2>
+        <p class="pricing-modal__intro">
+          Base prices are per page. Your current selection is calculated in the
+          footer.
+        </p>
+        <div id="pricingGuideContent" aria-live="polite">
+          Loading printing prices…
+        </div>
+      </section>
+    </div>
 
     <!-- Idle Warning Overlay (Pure Typography Fullscreen) -->
     <div

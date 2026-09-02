@@ -39,7 +39,11 @@
           <div class="clock-date" id="clockDate">--- --, ----</div>
         </div>
 
-        <div class="topbar-right"></div>
+        <div class="topbar-right">
+          <button class="pricing-link" id="openPricingBtn" type="button">
+            Printing prices
+          </button>
+        </div>
       </header>
 
       <!-- Main Action Area -->
@@ -318,6 +322,16 @@
           </button>
         </div>
       </main>
+    </div>
+
+    <div class="pricing-overlay" id="pricingOverlay" aria-hidden="true">
+      <section class="pricing-modal" role="dialog" aria-modal="true" aria-labelledby="pricingTitle">
+        <button class="pricing-close" id="closePricingBtn" type="button" aria-label="Close printing prices">×</button>
+        <p class="pricing-modal__eyebrow">PRINT WITH CONFIDENCE</p>
+        <h2 id="pricingTitle">Printing prices</h2>
+        <p class="pricing-modal__intro">Base prices are per page. Your total updates after you choose your document and settings.</p>
+        <div id="pricingGuideContent" aria-live="polite">Loading printing prices…</div>
+      </section>
     </div>
 
     <!-- Guide modals -->

@@ -5,6 +5,12 @@ import { createConfigPreparationLoadingController } from './loading-state';
 import { shouldPreparePreviewInBackground } from './office-preview';
 import { getPreviewRequestTimeoutMs } from './preview-timeout';
 import {
+  fetchPublicPricing,
+  formatPeso,
+  formatPricingGuide,
+  type PublicPricingConfig,
+} from '../shared/pricing-guide';
+import {
   destroyPdfLoadingTask,
   type PdfLoadingTask,
 } from '../shared/pdfjs-loading-task-cleanup';
@@ -880,6 +886,13 @@ const filePillLabel = document.getElementById(
 const footerSummary = document.getElementById(
   'footerSummary',
 ) as HTMLElement | null;
+const pricingSummary = document.querySelector<HTMLElement>('.pricing-summary');
+const pricingSummaryValue = document.getElementById('pricingSummaryValue');
+const pricingSummaryDetail = document.getElementById('pricingSummaryDetail');
+const openPricingBtn = document.getElementById('openPricingBtn');
+const closePricingBtn = document.getElementById('closePricingBtn');
+const pricingOverlay = document.getElementById('pricingOverlay');
+const pricingGuideContent = document.getElementById('pricingGuideContent');
 const copiesInput = document.getElementById(
   'copies',
 ) as HTMLInputElement | null;
@@ -1398,6 +1411,77 @@ function currentPreviewConfig(): PreviewConfig {
   };
 }
 
+let publicPricing: PublicPricingConfig | null = null;
+
+function updatePricingSummary(): void {
+  if (!pricingSummary || !pricingSummaryValue || !pricingSummaryDetail) return;
+  if (mode === 'scan') {
+    pricingSummary.hidden = true;
+    return;
+  }
+  pricingSummary.hidden = false;
+  if (!publicPricing) {
+    pricingSummaryValue.textContent = 'Loading rate…';
+    pricingSummaryDetail.textContent = 'Base price per page';
+    return;
+  }
+
+  const cfg = currentPreviewConfig();
+  const profileKey =
+    cfg.paperSize === 'Legal'
+      ? 'longBond'
+      : cfg.paperSize === 'Letter'
+        ? 'shortBond'
+        : 'a4';
+  const basePrice =
+    cfg.colorMode === 'colored'
+      ? publicPricing.paperProfiles[profileKey].baseColorPrice
+      : publicPricing.paperProfiles[profileKey].baseBwPrice;
+  const highQuality = getSelectedQuality() === 'high';
+  const perPage =
+    basePrice + (highQuality ? publicPricing.highQualitySurcharge : 0);
+
+  pricingSummaryValue.textContent = `${formatPeso(perPage)} per page`;
+  pricingSummaryDetail.textContent = highQuality
+    ? `${formatPeso(basePrice)} base + ${formatPeso(publicPricing.highQualitySurcharge)} high-quality upgrade`
+    : `${formatPeso(basePrice)} base · Standard quality`;
+}
+
+function setPricingModalOpen(open: boolean): void {
+  if (!pricingOverlay) return;
+  pricingOverlay.classList.toggle('is-open', open);
+  pricingOverlay.setAttribute('aria-hidden', String(!open));
+  if (open) closePricingBtn?.focus();
+  else openPricingBtn?.focus();
+}
+
+openPricingBtn?.addEventListener('click', () => setPricingModalOpen(true));
+closePricingBtn?.addEventListener('click', () => setPricingModalOpen(false));
+pricingOverlay?.addEventListener('click', (event) => {
+  if (event.target === pricingOverlay) setPricingModalOpen(false);
+});
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') setPricingModalOpen(false);
+});
+
+void fetchPublicPricing()
+  .then((pricing) => {
+    publicPricing = pricing;
+    if (pricingGuideContent)
+      pricingGuideContent.innerHTML = formatPricingGuide(pricing);
+    updatePricingSummary();
+  })
+  .catch(() => {
+    if (pricingGuideContent)
+      pricingGuideContent.textContent =
+        'Printing prices are unavailable right now.';
+    if (pricingSummaryValue)
+      pricingSummaryValue.textContent = 'Rate unavailable';
+    if (pricingSummaryDetail)
+      pricingSummaryDetail.textContent =
+        'Your exact total will still be shown before payment.';
+  });
+
 function setPrintContinueState(): void {
   if (mode !== 'print') return;
   const hasCustomRangeError =
@@ -1620,6 +1704,7 @@ function schedulePrintQuoteRefresh(): void {
 }
 
 function updateSummary(): void {
+  updatePricingSummary();
   if (!footerSummary) return;
   if (mode === 'scan') {
     const cfg = currentPreviewConfig();

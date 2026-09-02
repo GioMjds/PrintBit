@@ -15,6 +15,122 @@
   display: none !important;
 }
 
+.pricing-summary {
+  background: rgba(105, 111, 199, 0.12);
+  border: 1px solid rgba(167, 170, 225, 0.22);
+  border-radius: 14px;
+  margin: 4px 0 16px;
+  padding: 16px;
+}
+
+.pricing-summary__heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.pricing-summary__heading .option-label {
+  margin: 0;
+}
+.pricing-summary__value {
+  color: var(--white);
+  font-size: 20px;
+  font-weight: 800;
+  margin: 5px 0 0;
+}
+.pricing-summary__detail {
+  color: var(--lavender);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 6px 0 0;
+}
+.pricing-summary__button {
+  background: transparent;
+  border: 1px solid rgba(167, 170, 225, 0.32);
+  border-radius: 999px;
+  color: var(--white);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 11px;
+}
+
+.pricing-overlay {
+  align-items: center;
+  background: rgba(8, 7, 19, 0.76);
+  display: none;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 20;
+}
+.pricing-overlay.is-open {
+  display: flex;
+}
+.pricing-modal {
+  background: #201e3d;
+  border: 1px solid rgba(167, 170, 225, 0.3);
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.38);
+  box-sizing: border-box;
+  max-width: 560px;
+  padding: 32px;
+  position: relative;
+  width: 100%;
+}
+.pricing-modal h2 {
+  font-size: 28px;
+  margin: 0 0 8px;
+}
+.pricing-modal__eyebrow {
+  color: var(--peach);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  margin: 0 0 8px;
+}
+.pricing-modal__intro,
+.pricing-quality-note {
+  color: var(--lavender);
+  line-height: 1.5;
+}
+.pricing-close {
+  background: transparent;
+  border: 0;
+  color: var(--white);
+  cursor: pointer;
+  font-size: 30px;
+  line-height: 1;
+  position: absolute;
+  right: 18px;
+  top: 16px;
+}
+.pricing-table {
+  border-collapse: collapse;
+  margin-top: 22px;
+  width: 100%;
+}
+.pricing-table caption {
+  color: var(--ink-muted);
+  margin-bottom: 10px;
+  text-align: left;
+}
+.pricing-table th,
+.pricing-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 11px 8px;
+  text-align: right;
+}
+.pricing-table th:first-child {
+  text-align: left;
+}
+.pricing-table thead {
+  color: var(--lavender);
+  font-size: 13px;
+}
+
 /* ── Base ─────────────────────────────────────────────────── */
 html,
 body {
@@ -154,10 +270,6 @@ body {
   letter-spacing: -0.4px;
   margin: 0;
   color: var(--white);
-}
-
-.topbar-spacer {
-  /* empty right cell keeps title centered */
 }
 
 /* ── Layout: preview | settings ───────────────────────────── */
@@ -1143,5 +1255,4 @@ body {
   .sticky-footer {
     padding-bottom: 24px;
   } /* less gap on mobile — no kiosk bezel */
-
 }
