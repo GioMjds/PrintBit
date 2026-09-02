@@ -598,7 +598,7 @@
 
           <h2 class="modal-title" id="modalTrayTitle">Check the Paper Tray</h2>
           <p class="modal-subtitle" id="modalTraySubtitle">
-            Please check the printer tray and ensure your bond paper is properly loaded and aligned before proceeding.
+            Make sure the paper is loaded straight and ready before you continue.
           </p>
 
           <!-- Paper Tray Safety Alert -->
@@ -618,9 +618,9 @@
               </svg>
             </div>
             <div class="modal-paper-alert__content">
-              <span class="modal-paper-alert__title">Paper Reminder:</span>
+              <span class="modal-paper-alert__title">Load:</span>
               <span class="modal-paper-alert__text" id="modalPaperAlertText">
-                Make sure <strong id="modalPaperAlertSize">A4 Bond Paper</strong> is loaded neatly with enough sheets for your print.
+                <strong id="modalPaperAlertSize">A4 Bond Paper</strong> with enough sheets for this job.
               </span>
             </div>
           </div>
@@ -645,7 +645,7 @@
                 <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
-              <span>Need Help / Adjust</span>
+              <span>Get help with the tray</span>
             </button>
             <button
               id="modalTrayOkBtn"
@@ -814,6 +814,10 @@
             </div>
           </div>
 
+          <p class="modal-charge-note">
+            Confirming will use the coins you have inserted for this job.
+          </p>
+
           <!-- Action Buttons (Massive touch targets) -->
           <div class="modal-actions">
             <button
@@ -832,7 +836,7 @@
               >
                 <path d="M19 12H5M11 6l-6 6 6 6" />
               </svg>
-              <span>Back to Paper Check</span>
+              <span>Back</span>
             </button>
             <button
               id="modalConfirmBtn"
@@ -850,7 +854,7 @@
               >
                 <path d="M20 6L9 17l-5-5" />
               </svg>
-              <span>PRINT NOW</span>
+              <span>Print now</span>
             </button>
           </div>
         </div>
@@ -858,8 +862,7 @@
       </div>
     </div>
 
-    <!-- Tray Issue Overlay — customer-reported concern, distinct from a system-detected jam.
-         Dead-ends to staff contact without touching jamRefundOverlay's hardware-fault state. -->
+    <!-- Tray Issue Overlay — customer-reported concern, distinct from a system-detected jam. -->
     <div
       class="modal modal--fs"
       id="trayIssueOverlay"
@@ -869,39 +872,39 @@
       aria-modal="true"
     >
       <div class="modal-fs">
-        <div class="status-icon status-icon--error" aria-hidden="true">
+        <div class="status-icon status-icon--help" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
-            <circle cx="24" cy="24" r="22" fill="rgba(242,110,107,0.16)" />
+            <circle cx="24" cy="24" r="22" fill="rgba(251,191,36,0.14)" />
             <circle
               cx="24"
               cy="24"
               r="22"
-              stroke="#f26e6b"
+              stroke="#fbbf24"
               stroke-width="2.5"
               fill="none"
             />
             <path
               d="M24 13v14"
-              stroke="#f26e6b"
+              stroke="#fbbf24"
               stroke-width="3"
               stroke-linecap="round"
             />
-            <circle cx="24" cy="33" r="2" fill="#f26e6b" />
+            <circle cx="24" cy="33" r="2" fill="#fbbf24" />
           </svg>
         </div>
-        <h2 class="modal-title" id="trayIssueTitle">Paper Tray Assistance</h2>
+        <h2 class="modal-title" id="trayIssueTitle">Need help with the paper tray?</h2>
         <p class="modal-subtitle" id="trayIssueMessage">
-          If paper is empty, misaligned, or needs adjusting, please notify staff before starting your print.
+          If the paper is empty or misaligned, please ask a staff member before you print.
         </p>
         <p class="modal-subtitle modal-subtitle--hint" id="trayIssueHint">
-          Staff can assist with loading and aligning the correct bond paper.
+          Keep this screen open so staff can check the correct paper size and alignment.
         </p>
         <button
           id="trayIssueDoneBtn"
           type="button"
-          class="modal-btn modal-btn--alert modal-btn--wide"
+          class="modal-btn modal-btn--help modal-btn--wide"
         >
-          <span>Understood</span>
+          <span>Return to paper check</span>
         </button>
       </div>
     </div>
@@ -960,6 +963,9 @@
         <p class="modal-subtitle modal-subtitle--hint" id="printingHint">
           Do not turn off the machine.
         </p>
+        <p class="printing-stage" id="printingStage" aria-live="polite">
+          Preparing your print job…
+        </p>
         <p class="printing-progress-text" id="printingProgressText" hidden>
           Page
           <span id="printingProgressCurrent">0</span>
@@ -1014,6 +1020,12 @@
         <p class="modal-subtitle" id="thankYouSubtitle">
           Your document has been printed successfully.
         </p>
+        <div class="collection-callout" id="collectionCallout" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M6 9V4h12v5" /><path d="M6 18H4v-7h16v7h-2" /><path d="M7 14h10v6H7z" />
+          </svg>
+          <span>Collect your document from the printer tray</span>
+        </div>
         <p
           class="modal-subtitle modal-subtitle--reference"
           id="transactionReference"
@@ -1173,19 +1185,19 @@
             <circle cx="24" cy="33" r="2" fill="#f26e6b" />
           </svg>
         </div>
-        <h2 class="modal-title" id="jamRefundTitle">Printer Issue Detected</h2>
+        <h2 class="modal-title" id="jamRefundTitle">Printing needs staff assistance</h2>
         <p class="modal-subtitle" id="jamRefundMessage">
-          A printer fault was detected while processing your print job.
+          Your document may not have printed completely. Keep this screen open and ask a staff member for help.
         </p>
         <p class="modal-subtitle modal-subtitle--hint" id="jamRefundHint">
-          Please contact staff if you need manual refund assistance.
+          Show the transaction ID and receipt to staff so they can verify the next step.
         </p>
         <button
           id="jamRefundDoneBtn"
           type="button"
           class="modal-btn modal-btn--alert modal-btn--wide"
         >
-          <span>Understood</span>
+          <span>I’ve notified staff</span>
         </button>
       </div>
     </div>

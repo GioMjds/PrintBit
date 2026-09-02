@@ -16,6 +16,8 @@ import {
   buildMaintenanceReceiptView,
   isMaintenancePrintFailure,
 } from './maintenance-receipt';
+import { getMaintenanceGuidance } from './recovery-guidance';
+import { getPrintingStage } from './printing-stage';
 import { presentMaintenanceError } from './maintenance-view';
 import {
   attachPowerSafetyOverlay,
@@ -331,6 +333,7 @@ const confirmLoadingCanvas = document.getElementById(
   'confirmLoadingCanvas',
 ) as HTMLCanvasElement | null;
 const printingProgressText = document.getElementById('printingProgressText');
+const printingStage = document.getElementById('printingStage');
 const printingProgressCurrent = document.getElementById(
   'printingProgressCurrent',
 );
@@ -345,6 +348,7 @@ const thankYouOverlay = document.getElementById('thankYouOverlay');
 const thankYouModalSheet = document.getElementById('thankYouModalSheet');
 const thankYouTitle = document.getElementById('thankYouTitle');
 const thankYouSubtitle = document.getElementById('thankYouSubtitle');
+const collectionCallout = document.getElementById('collectionCallout');
 const thankYouDoneBtn = document.getElementById(
   'thankYouDoneBtn',
 ) as HTMLButtonElement;
@@ -451,6 +455,7 @@ function renderPrinterError(err: PrintError): void {
   if (!printerErrorBlock) return;
 
   const requiresMaintenance = isMaintenancePrintFailure(err.code);
+  const maintenanceGuidance = getMaintenanceGuidance(err.code, err.userMessage);
   if (requiresMaintenance) {
     recordConfirmationTerminalFailure({
       transactionId: currentTransactionId,
@@ -461,13 +466,17 @@ function renderPrinterError(err: PrintError): void {
 
   if (errorTitle) {
     errorTitle.textContent = requiresMaintenance
-      ? 'Printing Problem'
+      ? maintenanceGuidance.title
       : 'Printer Error';
   }
-  if (errorMessage) errorMessage.textContent = err.userMessage;
+  if (errorMessage) {
+    errorMessage.textContent = requiresMaintenance
+      ? maintenanceGuidance.message
+      : err.userMessage;
+  }
   if (errorHint) {
     const hint = requiresMaintenance
-      ? 'Please call maintenance staff and provide the transaction ID below for verification.'
+      ? maintenanceGuidance.hint
       : err.hint || '';
     errorHint.textContent = hint;
     if (hint) errorHint.removeAttribute('hidden');
@@ -735,10 +744,10 @@ const modalConfirmBtnSpan = document.querySelector('#modalConfirmBtn span');
 if (modalConfirmBtnSpan) {
   modalConfirmBtnSpan.textContent =
     config.mode === 'print'
-      ? 'PRINT NOW'
+      ? 'Print now'
       : config.mode === 'copy'
-        ? 'COPY NOW'
-        : 'DOWNLOAD NOW';
+        ? 'Copy now'
+        : 'Download now';
 }
 
 let coinLottiePlayer: DotLottie | null = null;
@@ -1176,6 +1185,9 @@ function setPrintingPhase(
   if (printingSubtitle) printingSubtitle.textContent = copy.subtitle;
   if (printingHint) printingHint.textContent = copy.hint;
   if (printingTitle) printingTitle.textContent = MODE_TITLE[mode];
+  if (phase === 'printing' && printingStage) {
+    printingStage.textContent = 'Preparing your print job…';
+  }
 }
 
 /**
@@ -1211,12 +1223,10 @@ function renderPrintProgress(input: {
       totalPages !== null ? String(totalPages) : '—';
   }
 
-  let pct: number | null = null;
-  if (totalPages !== null) {
-    pct = Math.max(0, Math.min(100, (pagesPrinted / totalPages) * 100));
-  }
-  if (printingProgressFill && pct !== null) {
-    printingProgressFill.style.setProperty('--progress', `${pct}%`);
+  const stage = getPrintingStage({ pagesPrinted, totalPages });
+  if (printingStage) printingStage.textContent = stage.label;
+  if (printingProgressFill && stage.progress !== null) {
+    printingProgressFill.style.setProperty('--progress', `${stage.progress}%`);
   }
 
   if (printingProgressText) printingProgressText.removeAttribute('hidden');
@@ -1606,11 +1616,11 @@ function finalizePrintSuccess(
 
   if (thankYouTitle) {
     if (config.mode === 'copy') {
-      thankYouTitle.textContent = 'Copy Complete!';
+      thankYouTitle.textContent = 'Copy complete';
     } else if (config.mode === 'scan') {
-      thankYouTitle.textContent = 'Scan Complete!';
+      thankYouTitle.textContent = 'Scan complete';
     } else {
-      thankYouTitle.textContent = 'Thank You!';
+      thankYouTitle.textContent = 'Document printed';
     }
   }
 
@@ -1628,12 +1638,14 @@ function finalizePrintSuccess(
   }
 
   if (config.mode === 'scan') {
+    collectionCallout?.setAttribute('hidden', '');
     if (thankYouModalSheet) {
       thankYouModalSheet.classList.add('modal-sheet--dual-qr');
     }
     renderScanDownloadCta();
     renderReceiptCta();
   } else {
+    collectionCallout?.removeAttribute('hidden');
     if (thankYouModalSheet) {
       thankYouModalSheet.classList.remove('modal-sheet--dual-qr');
     }
@@ -1920,6 +1932,7 @@ modalTrayIssueBtn?.addEventListener('click', () => {
 
 trayIssueDoneBtn?.addEventListener('click', () => {
   hideOverlay(trayIssueOverlay);
+  showModal();
 });
 
 modalConfirmBtn?.addEventListener('click', async () => {
