@@ -522,6 +522,10 @@ export class FinancialService {
         shortBond: { baseBwPrice: 3, baseColorPrice: 18 },
         longBond: { baseBwPrice: 4, baseColorPrice: 20 },
       },
+      highQualitySurcharge:
+        config?.highQualitySurcharge ??
+        db.data?.settings?.pricing?.highQualitySurcharge ??
+        2,
       bulkDiscountTiers: config?.bulkDiscountTiers ?? [],
       rounding: config?.rounding ?? 'whole_peso_total_only',
     });
