@@ -23,7 +23,6 @@ export {
   assertPrintDispatcherReady,
   detectDefaultPrinter,
   printFile,
-  warmPrintDispatcherProfile,
 } from './printer';
 export * from './printer-status';
 export * from './pricing-analysis-queue';

@@ -33,7 +33,7 @@ import {
   detectScanner,
   startScanStorageCleanup,
   cleanupTransientFilesOnStartup,
-  convertToPdfPreview,
+  convertToPdfArtifact,
   getHopperStatus,
   getSerialStatus,
   initSerial,
@@ -51,7 +51,6 @@ import {
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
-  warmPrintDispatcherProfile,
   warmPrinterEdgeRunspace,
   isCoinSlotLocked,
   getCoinSlotLockOwnerId,
@@ -335,7 +334,7 @@ registerAppModules(app, {
     };
   },
   resolvePublicBaseUrl,
-  convertToPdfPreview,
+  convertToPdfArtifact,
 });
 
 io.on('connection', (socket) => {
@@ -666,7 +665,6 @@ async function start() {
       (async () => {
         await detectDefaultPrinter();
         await assertPrintDispatcherReady();
-        await warmPrintDispatcherProfile();
         void warmPrinterEdgeRunspace().catch((error: unknown) => {
           console.error(
             '[SERVER] Failed to warm printer-edge PowerShell runspace.',

@@ -142,6 +142,8 @@ function ensureSchema(db: DatabaseSync): void {
       size_bytes INTEGER NOT NULL,
       uploaded_at TEXT NOT NULL,
       file_path TEXT NOT NULL,
+      converted_pdf_path TEXT,
+      content_hash TEXT,
       analysis_json TEXT,
       analysis_status TEXT NOT NULL DEFAULT 'pending',
       analysis_error TEXT,
@@ -415,6 +417,18 @@ function ensureSchema(db: DatabaseSync): void {
       'ALTER TABLE wireless_session_documents ADD COLUMN analysis_requested_at TEXT',
     );
     appliedMigrations.push('wireless_session_documents.analysis_requested_at');
+  }
+  if (!wirelessDocumentColumns.has('converted_pdf_path')) {
+    db.exec(
+      'ALTER TABLE wireless_session_documents ADD COLUMN converted_pdf_path TEXT',
+    );
+    appliedMigrations.push('wireless_session_documents.converted_pdf_path');
+  }
+  if (!wirelessDocumentColumns.has('content_hash')) {
+    db.exec(
+      'ALTER TABLE wireless_session_documents ADD COLUMN content_hash TEXT',
+    );
+    appliedMigrations.push('wireless_session_documents.content_hash');
   }
   addAnalysisVersionColumnIfMissing(
     db,

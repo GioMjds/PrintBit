@@ -57,7 +57,10 @@ export interface AppModuleDeps {
     owedChangeId?: string;
   }>;
   resolvePublicBaseUrl: (req: Request) => URL;
-  convertToPdfPreview: (sourcePath: string) => Promise<string>;
+  convertToPdfArtifact: (
+    sourcePath: string,
+    artifactPath: string,
+  ) => Promise<string>;
 }
 
 /**
@@ -135,7 +138,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     sessionIo: deps.sessionIo,
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
-    convertToPdfPreview: deps.convertToPdfPreview,
+    convertToPdfArtifact: deps.convertToPdfArtifact,
     powerSafetyService,
   });
   registerScannerModule(app, {

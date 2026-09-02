@@ -275,15 +275,12 @@ export function buildPrintQuote(input: {
     };
   }
 
-  const effectiveColorMode: ColorMode =
-    selectedColorPages === 0
-      ? 'grayscale'
-      : input.colorMode === 'grayscale'
-        ? 'grayscale'
-        : 'colored';
-
+  // The selected print mode is the customer's billing choice. Content analysis
+  // remains useful to describe the document, but it must not silently replace
+  // a selected Color job with the B&W price profile.
+  const effectiveColorMode: ColorMode = input.colorMode;
   const billableColorPages =
-    effectiveColorMode === 'colored' ? selectedColorPages : 0;
+    effectiveColorMode === 'colored' ? selectedCount : 0;
   const billableBwPages = selectedCount - billableColorPages;
   const quality: PrintQuality = input.quality ?? 'standard';
   const requiredAmount = adminService.calculateDocumentAmount(

@@ -11,7 +11,6 @@ import type {
   SessionStore,
   UploadedDocument,
 } from '@/services/session';
-import { generateHtmlPreview, supportsHtmlPreview } from '@/services/preview';
 import { detectPdfColorContent } from '@/services/color-detection';
 import { ANALYSIS_ALGORITHM_VERSION } from '@/services/document-analysis';
 import { analyzeDocument } from '@/services/document-analysis';
@@ -34,21 +33,13 @@ export interface WirelessSessionServiceDeps {
   sessionIo: Namespace;
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
-  convertToPdfPreview: (sourcePath: string) => Promise<string>;
+  convertToPdfArtifact: (
+    sourcePath: string,
+    artifactPath: string,
+  ) => Promise<string>;
   powerSafetyService?: PowerSafetyService;
 }
 
-const IMAGE_TYPES = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.bmp': 'image/bmp',
-  '.gif': 'image/gif',
-} satisfies Record<string, string>;
-
-const PDF_CONVERT_EXTENSIONS = new Set(['.doc', '.docx', '.ppt', '.pptx']);
-const POWERPOINT_EXTENSIONS = new Set(['.ppt', '.pptx']);
 const BEARER_SCHEME = 'bearer';
 
 function isWhitespaceCharacter(value: string): boolean {
@@ -442,31 +433,16 @@ export class WirelessSessionService {
       return;
     }
 
-    const absolutePath = path.resolve(target.filePath);
-    const extension = path.extname(absolutePath).toLowerCase();
-    const sourceRequested = req.query.source === '1';
     const startedAt = Date.now();
-    console.log('[preview] request', {
-      sessionId,
-      filename: target.filename,
-      extension,
-    });
 
     try {
-      if (sourceRequested && extension === '.docx') {
-        res.setHeader(
-          'Content-Type',
-          target.contentType ||
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        );
-        console.log('[preview] serving docx source file', {
-          path: absolutePath,
-          tookMs: Date.now() - startedAt,
-        });
-        res.sendFile(absolutePath);
-        return;
-      }
-
+      const absolutePath = await this.resolveCanonicalPdfPath(sessionId, target);
+      const extension = path.extname(absolutePath).toLowerCase();
+      console.log('[preview] request', {
+        sessionId,
+        filename: target.filename,
+        extension,
+      });
       if (extension === '.pdf') {
         res.setHeader('Content-Type', 'application/pdf');
         console.log('[preview] serving pdf file', {
@@ -474,44 +450,6 @@ export class WirelessSessionService {
           tookMs: Date.now() - startedAt,
         });
         res.sendFile(absolutePath);
-        return;
-      }
-
-      const imageContentType =
-        IMAGE_TYPES[extension as keyof typeof IMAGE_TYPES];
-      if (imageContentType) {
-        res.setHeader('Content-Type', imageContentType);
-        console.log('[preview] serving image file', {
-          path: absolutePath,
-          contentType: imageContentType,
-          tookMs: Date.now() - startedAt,
-        });
-        res.sendFile(absolutePath);
-        return;
-      }
-
-      if (supportsHtmlPreview(extension)) {
-        const html = await generateHtmlPreview(absolutePath);
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        console.log('[preview] serving html preview', {
-          extension,
-          htmlChars: html.length,
-          tookMs: Date.now() - startedAt,
-        });
-        res.send(html);
-        return;
-      }
-
-      if (PDF_CONVERT_EXTENSIONS.has(extension)) {
-        const pdfPreviewPath =
-          await this.deps.convertToPdfPreview(absolutePath);
-        res.setHeader('Content-Type', 'application/pdf');
-        console.log('[preview] serving converted pdf', {
-          sourcePath: absolutePath,
-          convertedPath: pdfPreviewPath,
-          tookMs: Date.now() - startedAt,
-        });
-        res.sendFile(pdfPreviewPath);
         return;
       }
 
@@ -582,24 +520,8 @@ export class WirelessSessionService {
       return;
     }
 
-    const absolutePath = path.resolve(target.filePath);
-    const extension = path.extname(absolutePath).toLowerCase();
-
     try {
-      let pdfPath: string;
-
-      if (extension === '.pdf') {
-        pdfPath = absolutePath;
-      } else if (['.doc', '.docx', '.ppt', '.pptx'].includes(extension)) {
-        pdfPath = await this.deps.convertToPdfPreview(absolutePath);
-      } else {
-        res.json({
-          hasColor: true,
-          isGrayscale: false,
-          sampledPages: 0,
-        });
-        return;
-      }
+      const pdfPath = await this.resolveCanonicalPdfPath(sessionId, target);
 
       const result = await detectPdfColorContent(pdfPath);
       res.json({
@@ -1372,6 +1294,17 @@ export class WirelessSessionService {
     }
     const target = targetLookup.target;
     const absoluteFilePath = path.resolve(target.filePath);
+    let analysisFilePath: string;
+    try {
+      analysisFilePath = await this.resolveCanonicalPdfPath(sessionId, target);
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'Unknown conversion error';
+      return {
+        error: `Document conversion failed before analysis: ${reason}`,
+        status: 422,
+      };
+    }
     const configFingerprint = this.buildPricingConfigFingerprint();
     const fileHash = await this.computeFileHash(absoluteFilePath);
 
@@ -1415,36 +1348,10 @@ export class WirelessSessionService {
       }
     }
 
-    const targetExtension = path.extname(target.filename).toLowerCase();
-    let analysisFilePath = absoluteFilePath;
-    let analysisContentType = target.contentType;
-    let analysisFilename = target.filename;
-
-    if (
-      PDF_CONVERT_EXTENSIONS.has(targetExtension) &&
-      POWERPOINT_EXTENSIONS.has(targetExtension)
-    ) {
-      try {
-        analysisFilePath =
-          await this.deps.convertToPdfPreview(absoluteFilePath);
-      } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : 'Unknown conversion error';
-        return {
-          error: `PowerPoint conversion failed before analysis: ${reason}`,
-          status: 422,
-        };
-      }
-
-      analysisContentType = 'application/pdf';
-      analysisFilename = `${path.basename(target.filename, targetExtension)}.pdf`;
-    }
-
     const analysis = await analyzeDocument({
       filePath: analysisFilePath,
-      contentType: analysisContentType,
-      filename: analysisFilename,
-      convertToPdfPreview: this.deps.convertToPdfPreview,
+      contentType: 'application/pdf',
+      filename: `${path.basename(target.filename, path.extname(target.filename))}.pdf`,
     });
 
     const analysisForStore = this.normalizeAnalysisPayload({
@@ -1500,5 +1407,43 @@ export class WirelessSessionService {
       documentId: target.documentId,
       fileName: target.filename,
     };
+  }
+
+  private async resolveCanonicalPdfPath(
+    sessionId: string,
+    target: UploadedDocument,
+  ): Promise<string> {
+    const sourcePath = path.resolve(target.filePath);
+    if (path.extname(sourcePath).toLowerCase() === '.pdf') return sourcePath;
+
+    const artifactPath = path.join(
+      path.dirname(sourcePath),
+      `${path.basename(target.documentId)}.pdf`,
+    );
+    if (
+      target.convertedPdfPath &&
+      path.resolve(target.convertedPdfPath) === artifactPath &&
+      fs.existsSync(artifactPath)
+    ) {
+      return artifactPath;
+    }
+
+    const convertedPdfPath = await this.deps.convertToPdfArtifact(
+      sourcePath,
+      artifactPath,
+    );
+    if (path.resolve(convertedPdfPath) !== artifactPath) {
+      throw new Error('Document conversion returned an unexpected artifact path.');
+    }
+    if (
+      !this.deps.sessionStore.setDocumentConvertedPdfPath(
+        sessionId,
+        target.documentId,
+        artifactPath,
+      )
+    ) {
+      throw new Error('Failed to persist converted PDF artifact.');
+    }
+    return artifactPath;
   }
 }

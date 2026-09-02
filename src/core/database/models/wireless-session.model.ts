@@ -18,6 +18,8 @@ export interface WirelessSessionDocumentStorageEntry {
   sizeBytes: number;
   uploadedAt: string;
   filePath: string;
+  convertedPdfPath: string | null;
+  contentHash: string | null;
   analysisJson: string | null;
   analysisStatus: 'pending' | 'completed' | 'failed';
   analysisError: string | null;
@@ -60,6 +62,8 @@ export class WirelessSessionSqliteStore {
         size_bytes,
         uploaded_at,
         file_path,
+        converted_pdf_path,
+        content_hash,
         analysis_json,
         analysis_status,
         analysis_error,
@@ -113,12 +117,14 @@ export class WirelessSessionSqliteStore {
           size_bytes,
           uploaded_at,
           file_path,
+          converted_pdf_path,
+          content_hash,
           analysis_json,
           analysis_status,
           analysis_error,
           analysis_requested_at,
           analysis_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         );
         for (const doc of snapshot.documents) {
           insertDocument.run(
@@ -129,6 +135,8 @@ export class WirelessSessionSqliteStore {
             Math.max(0, Math.floor(doc.sizeBytes)),
             doc.uploadedAt,
             doc.filePath,
+            doc.convertedPdfPath,
+            doc.contentHash,
             doc.analysisJson,
             doc.analysisStatus,
             doc.analysisError,
@@ -245,6 +253,12 @@ export class WirelessSessionSqliteStore {
           : 0,
       uploadedAt: String(row.uploaded_at ?? ''),
       filePath: String(row.file_path ?? ''),
+      convertedPdfPath:
+        typeof row.converted_pdf_path === 'string'
+          ? row.converted_pdf_path
+          : null,
+      contentHash:
+        typeof row.content_hash === 'string' ? row.content_hash : null,
       analysisJson:
         typeof row.analysis_json === 'string' ? row.analysis_json : null,
       analysisStatus:

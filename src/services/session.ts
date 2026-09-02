@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import os from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import {
   PUBLIC_URL,
@@ -18,7 +17,7 @@ import {
   type WirelessSessionDocumentStorageEntry,
   type WirelessSessionStorageEntry,
 } from '@/core/database/sqlite-storage';
-import { promoteStagedUpload } from '@/services/upload-staging';
+import { discardStagedUpload, promoteStagedUpload } from '@/services/upload-staging';
 
 export interface DocumentPageAnalysis {
   index: number;
@@ -60,6 +59,10 @@ export interface UploadedDocument {
   uploadedAt: Date;
   /** The full path to the uploaded file on the server, e.g. "uploads/abc123" */
   filePath: string;
+  /** Durable session-owned PDF generated from a non-PDF source upload. */
+  convertedPdfPath?: string;
+  /** SHA-256 of the original bytes; used to reject duplicate session uploads. */
+  contentHash?: string;
   analysis?: DocumentAnalysis;
   analysisStatus?: 'pending' | 'completed' | 'failed';
   analysisError?: string | null;
@@ -92,6 +95,21 @@ export interface StoreUploadResult {
   document?: UploadedDocument;
   errorMsg: string;
   errorCode: string;
+}
+
+function getDocumentOwnedFilePaths(document: UploadedDocument): string[] {
+  const sourcePath = path.resolve(document.filePath);
+  const artifactPath = path.join(
+    path.dirname(sourcePath),
+    `${path.basename(document.documentId)}.pdf`,
+  );
+  return [
+    sourcePath,
+    ...(document.convertedPdfPath &&
+    path.resolve(document.convertedPdfPath) === artifactPath
+      ? [artifactPath]
+      : []),
+  ];
 }
 
 export interface RemoveDocumentResult {
@@ -346,6 +364,19 @@ export class SessionStore {
       };
     }
 
+    const contentHash = await this.computeUploadContentHash(file);
+    const existingContentHashes = await Promise.all(
+      existingDocs.map((document) => this.resolveDocumentContentHash(document)),
+    );
+    if (existingContentHashes.includes(contentHash)) {
+      if (file.path) await discardStagedUpload(file);
+      return {
+        isSuccess: false,
+        errorMsg: 'This file is already in the current print session.',
+        errorCode: 'DUPLICATE_FILE',
+      };
+    }
+
     const documentId = randomUUID();
     const safeName = `${documentId}${allowedExt}`;
     const destPath = path.join(this.uploadDir, safeName);
@@ -366,6 +397,7 @@ export class SessionStore {
       sizeBytes: file.size,
       uploadedAt: new Date(),
       filePath: destPath,
+      contentHash,
       analysisStatus: 'pending',
       analysisError: null,
       analysisRequestedAt: new Date(),
@@ -458,6 +490,32 @@ export class SessionStore {
     session.lastActivityAt = new Date();
     this.persistSessionSnapshot(session);
     return stamped;
+  }
+
+  setDocumentConvertedPdfPath(
+    sessionId: string,
+    documentId: string,
+    convertedPdfPath: string,
+  ): UploadedDocument | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    if (this.isSessionExpired(session)) {
+      void this.pruneExpiredSession(sessionId, session);
+      return null;
+    }
+
+    const docs =
+      session.documents ?? (session.document ? [session.document] : []);
+    const target = docs.find((doc) => doc.documentId === documentId);
+    if (!target) return null;
+
+    target.convertedPdfPath = convertedPdfPath;
+    if (session.document?.documentId === documentId) {
+      session.document.convertedPdfPath = convertedPdfPath;
+    }
+    session.lastActivityAt = new Date();
+    this.persistSessionSnapshot(session);
+    return target;
   }
 
   markDocumentAnalysisPending(
@@ -588,13 +646,15 @@ export class SessionStore {
       };
     }
 
-    let deletedFile = true;
-    try {
-      await fs.promises.unlink(removed.filePath);
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code !== 'ENOENT') deletedFile = false;
-    }
+    const filePaths = getDocumentOwnedFilePaths(removed);
+    const deletionResults = await Promise.allSettled(
+      filePaths.map((filePath) => fs.promises.unlink(filePath)),
+    );
+    const deletedFile = deletionResults.every(
+      (result) =>
+        result.status === 'fulfilled' ||
+        (result.reason as NodeJS.ErrnoException | undefined)?.code === 'ENOENT',
+    );
 
     return {
       success: true,
@@ -608,7 +668,7 @@ export class SessionStore {
     let snapshots: Array<{
       session: WirelessSessionStorageEntry;
       documents: WirelessSessionDocumentStorageEntry[];
-    }> = [];
+    }>;
     try {
       snapshots = wirelessSessionStore.listSessionSnapshots();
     } catch (error) {
@@ -729,6 +789,8 @@ export class SessionStore {
       sizeBytes: Math.max(0, Math.floor(entry.sizeBytes)),
       uploadedAt,
       filePath: entry.filePath,
+      convertedPdfPath: entry.convertedPdfPath ?? undefined,
+      contentHash: entry.contentHash ?? undefined,
       analysisStatus: entry.analysisStatus,
       analysisError: entry.analysisError,
       analysisVersion: entry.analysisVersion,
@@ -929,6 +991,29 @@ export class SessionStore {
     });
   }
 
+  private async computeUploadContentHash(
+    file: Express.Multer.File,
+  ): Promise<string> {
+    const content = file.buffer ?? (file.path ? await fs.promises.readFile(file.path) : null);
+    if (!content) {
+      throw new Error('Uploaded file is missing disk path and in-memory buffer.');
+    }
+    return createHash('sha256').update(content).digest('hex');
+  }
+
+  private async resolveDocumentContentHash(
+    document: UploadedDocument,
+  ): Promise<string | null> {
+    if (document.contentHash) return document.contentHash;
+    try {
+      return createHash('sha256')
+        .update(await fs.promises.readFile(document.filePath))
+        .digest('hex');
+    } catch {
+      return null;
+    }
+  }
+
   private toStorageSession(session: Session): WirelessSessionStorageEntry {
     return {
       sessionId: session.sessionId,
@@ -952,6 +1037,8 @@ export class SessionStore {
       sizeBytes: document.sizeBytes,
       uploadedAt: document.uploadedAt.toISOString(),
       filePath: document.filePath,
+      convertedPdfPath: document.convertedPdfPath ?? null,
+      contentHash: document.contentHash ?? null,
       analysisJson: document.analysis
         ? this.serializeDocumentAnalysis(document.analysis)
         : null,
@@ -1178,8 +1265,9 @@ export class SessionStore {
     this.sessions.delete(sessionId);
 
     // Delete uploaded files asynchronously to avoid blocking the event loop.
+    const filePaths = [...new Set(docs.flatMap(getDocumentOwnedFilePaths))];
     const deletionResults = await Promise.allSettled(
-      docs.map((doc) => fs.promises.unlink(doc.filePath)),
+      filePaths.map((filePath) => fs.promises.unlink(filePath)),
     );
 
     // Count successful deletions
@@ -1218,8 +1306,9 @@ export class SessionStore {
 
     const docs =
       session.documents ?? (session.document ? [session.document] : []);
+    const filePaths = [...new Set(docs.flatMap(getDocumentOwnedFilePaths))];
     const deletionResults = await Promise.allSettled(
-      docs.map((doc) => fs.promises.unlink(doc.filePath)),
+      filePaths.map((filePath) => fs.promises.unlink(filePath)),
     );
     const failedDeletes: Array<{
       filePath: string | undefined;
@@ -1232,7 +1321,7 @@ export class SessionStore {
         }
 
         failedDeletes.push({
-          filePath: docs[index]?.filePath,
+          filePath: filePaths[index],
           reason: result.reason,
         });
       }

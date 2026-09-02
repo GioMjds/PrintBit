@@ -5,7 +5,6 @@ import { SUMATRA_PATH } from '@/config';
 import {
   assertPrintDispatcherReady,
   printDispatcher,
-  warmPrintDispatcherProfile,
   type PrintDispatchContext,
   type PrintDispatchResult,
 } from './print-dispatcher';
@@ -223,5 +222,5 @@ export const printerService = new PrinterService();
 export const detectDefaultPrinter =
   printerService.detectDefaultPrinter.bind(printerService);
 export const printFile = printerService.printFile.bind(printerService);
-export { assertPrintDispatcherReady, warmPrintDispatcherProfile };
+export { assertPrintDispatcherReady };
 export type { PrintDispatchContext, PrintDispatchResult };

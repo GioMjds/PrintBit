@@ -77,6 +77,34 @@ describe('PreviewService', () => {
     }
   });
 
+  test('stores a converted document at its durable session PDF artifact path', async () => {
+    const { directory, sourcePath } = createSourceFile();
+    testDirs.push(directory);
+    const artifactPath = path.join(directory, 'document-id.pdf');
+    const workerOutputPath = path.join(directory, 'worker-output.pdf');
+    fs.writeFileSync(workerOutputPath, '%PDF-1.4 durable artifact');
+    mockedConvertDocumentViaWorker.mockResolvedValue({
+      requestId: 'req-artifact',
+      success: true,
+      outputPath: workerOutputPath,
+      pageCount: 2,
+      sourceFormat: 'docx',
+      durationMs: 20,
+    });
+
+    const pdfPath = await new PreviewService().convertToPdfArtifact(
+      sourcePath,
+      artifactPath,
+    );
+
+    expect(pdfPath).toBe(artifactPath);
+    expect(fs.readFileSync(artifactPath, 'utf8')).toBe('%PDF-1.4 durable artifact');
+    expect(mockedConvertDocumentViaWorker).toHaveBeenCalledWith(
+      sourcePath,
+      expect.objectContaining({ outputDirectory: directory }),
+    );
+  });
+
   test('shares one worker conversion when concurrent requests ask for the same file', async () => {
     const { directory, sourcePath } = createSourceFile();
     testDirs.push(directory);

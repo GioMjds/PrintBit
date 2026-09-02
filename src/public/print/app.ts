@@ -14,6 +14,8 @@ type UploadedFile = {
   filename: string;
   size?: number;
   sizeBytes?: number;
+  analysisStatus?: 'pending' | 'completed' | 'failed';
+  analysisError?: string | null;
 };
 
 const bootKioskLocalization = (): void => {
@@ -117,6 +119,15 @@ const modeLocalBtn = document.getElementById(
 const modeInternetBtn = document.getElementById(
   'modeInternetBtn',
 ) as HTMLButtonElement | null;
+const conversionOverlay = document.getElementById(
+  'conversionOverlay',
+) as HTMLElement | null;
+const conversionMessage = document.getElementById(
+  'conversionMessage',
+) as HTMLElement | null;
+const conversionCancelBtn = document.getElementById(
+  'conversionCancel',
+) as HTMLButtonElement | null;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -144,6 +155,9 @@ let sessionCountdownHandle: number | null = null;
 let newSessionCooldownUntilMs = 0;
 let newSessionCooldownHandle: number | null = null;
 let createSessionInFlight = false;
+let conversionWaitCancelled = false;
+let conversionWaitInFlight = false;
+let conversionReturnFocus: HTMLElement | null = null;
 const refreshSessionDefaultLabel =
   refreshSessionBtnLabel?.textContent?.trim() ?? 'New session';
 
@@ -885,6 +899,8 @@ async function checkUploadStatus(): Promise<void> {
     filename: file.filename,
     size: file.size ?? file.sizeBytes,
     sizeBytes: file.sizeBytes,
+    analysisStatus: file.analysisStatus,
+    analysisError: file.analysisError,
   }));
 
   const nextSignature = filesSignature(files);
@@ -900,6 +916,88 @@ function getSessionDetailsUrl(sessionId: string): string {
   const query = params.toString();
   const endpoint = `/api/wireless/sessions/${encodeURIComponent(sessionId)}`;
   return query ? `${endpoint}?${query}` : endpoint;
+}
+
+function isPdfFilename(filename: string): boolean {
+  return filename.trim().toLowerCase().endsWith('.pdf');
+}
+
+function setConversionMessage(message: string): void {
+  if (conversionMessage) conversionMessage.textContent = message;
+}
+
+function showConversionDialog(filename: string): void {
+  const activeElement = document.activeElement;
+  conversionReturnFocus =
+    activeElement instanceof HTMLElement ? activeElement : null;
+  conversionWaitCancelled = false;
+  setConversionMessage(`Converting ${filename} to PDF. This can take a moment.`);
+  conversionOverlay?.classList.add('is-visible');
+  conversionOverlay?.setAttribute('aria-hidden', 'false');
+  conversionCancelBtn?.focus();
+}
+
+function hideConversionDialog(): void {
+  conversionOverlay?.classList.remove('is-visible');
+  conversionOverlay?.setAttribute('aria-hidden', 'true');
+  conversionReturnFocus?.focus();
+  conversionReturnFocus = null;
+}
+
+function setContinueButtonDisabled(disabled: boolean): void {
+  if (!continueBtn) return;
+  continueBtn.disabled = disabled;
+  continueBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+}
+
+type ConversionWaitResult =
+  | { ready: true }
+  | { ready: false; message: string };
+
+async function waitForDocumentAnalysis(
+  sessionId: string,
+  documentId: string,
+): Promise<ConversionWaitResult> {
+  while (!conversionWaitCancelled) {
+    try {
+      const response = await fetch(getSessionDetailsUrl(sessionId));
+      if (!response.ok) {
+        return {
+          ready: false,
+          message: 'Your session expired. Start a new session and upload again.',
+        };
+      }
+
+      const session = (await response.json()) as SessionResponse;
+      const documents =
+        session.documents && session.documents.length > 0
+          ? session.documents
+          : session.document
+            ? [session.document]
+            : [];
+      const document = documents.find(
+        (candidate) => (candidate.documentId || candidate.filename) === documentId,
+      );
+      if (!document) {
+        return { ready: false, message: 'The selected file is no longer available.' };
+      }
+      if (document.analysisStatus === 'completed') return { ready: true };
+      if (document.analysisStatus === 'failed') {
+        return {
+          ready: false,
+          message:
+            document.analysisError ||
+            'PDF conversion could not be completed. Choose another file or try again later.',
+        };
+      }
+    } catch {
+      // A transient network failure must not abandon a conversion still running
+      // in the worker; the next poll will refresh the state.
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 750));
+  }
+
+  return { ready: false, message: '' };
 }
 
 /** Socket: get instant notification when upload lands, no need to wait for poll. */
@@ -1132,8 +1230,41 @@ showWifiModalBtn?.addEventListener('click', () => {
   showStartupOnboardingModal();
 });
 
-continueBtn?.addEventListener('click', () => {
-  if (!activeSessionId || !selectedFilename || !selectedDocumentId) return;
+conversionCancelBtn?.addEventListener('click', () => {
+  conversionWaitCancelled = true;
+  conversionWaitInFlight = false;
+  setContinueButtonDisabled(false);
+  hideConversionDialog();
+});
+
+continueBtn?.addEventListener('click', async () => {
+  if (
+    !activeSessionId ||
+    !selectedFilename ||
+    !selectedDocumentId ||
+    conversionWaitInFlight
+  ) {
+    return;
+  }
+  if (!isPdfFilename(selectedFilename)) {
+    conversionWaitInFlight = true;
+    setContinueButtonDisabled(true);
+    showConversionDialog(selectedFilename);
+    const result = await waitForDocumentAnalysis(
+      activeSessionId,
+      selectedDocumentId,
+    );
+    if (!result.ready) {
+      if (!conversionWaitCancelled) {
+        setConversionMessage(result.message);
+        conversionCancelBtn?.focus();
+      }
+      conversionWaitInFlight = false;
+      setContinueButtonDisabled(false);
+      return;
+    }
+    setConversionMessage('PDF ready. Opening print settings…');
+  }
   const destination =
     `/config?mode=print&sessionId=${encodeURIComponent(activeSessionId)}` +
     `&file=${encodeURIComponent(selectedFilename)}` +

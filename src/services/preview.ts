@@ -8,6 +8,35 @@ import { convertDocumentViaWorker } from '@/services/document-conversion-pipe';
 export class PreviewService {
   private readonly inFlightConversions = new Map<string, Promise<string>>();
 
+  /** Creates a session-owned PDF artifact instead of an evictable preview. */
+  async convertToPdfArtifact(
+    sourcePath: string,
+    artifactPath: string,
+  ): Promise<string> {
+    const resolvedArtifactPath = path.resolve(artifactPath);
+    if (path.extname(resolvedArtifactPath).toLowerCase() !== '.pdf') {
+      throw new Error('Document conversion artifact must be a PDF file.');
+    }
+    if (path.resolve(sourcePath) === resolvedArtifactPath) {
+      throw new Error('Document conversion artifact must not replace its source file.');
+    }
+    if (fs.existsSync(resolvedArtifactPath)) return resolvedArtifactPath;
+
+    const existing = this.inFlightConversions.get(resolvedArtifactPath);
+    if (existing) return existing;
+
+    const conversion = this.convertToPdfArtifactUncached(
+      sourcePath,
+      resolvedArtifactPath,
+    );
+    this.inFlightConversions.set(resolvedArtifactPath, conversion);
+    try {
+      return await conversion;
+    } finally {
+      this.inFlightConversions.delete(resolvedArtifactPath);
+    }
+  }
+
   async convertToPdfPreview(sourcePath: string): Promise<string> {
     fs.mkdirSync(PREVIEW_CACHE_DIR, { recursive: true });
 
@@ -57,6 +86,42 @@ export class PreviewService {
     }
 
     return cachePdf;
+  }
+
+  private async convertToPdfArtifactUncached(
+    sourcePath: string,
+    artifactPath: string,
+  ): Promise<string> {
+    const outputDirectory = path.dirname(artifactPath);
+    await fs.promises.mkdir(outputDirectory, { recursive: true });
+    const result = await convertDocumentViaWorker(sourcePath, { outputDirectory });
+    if (!result.success || !result.outputPath) {
+      throw new Error(result.errorMessage ?? 'Document conversion failed.');
+    }
+
+    const reportedOutputPath = path.resolve(result.outputPath);
+    const resolvedOutputDirectory = path.resolve(outputDirectory);
+    const relativeOutputPath = path.relative(
+      resolvedOutputDirectory,
+      reportedOutputPath,
+    );
+    if (
+      relativeOutputPath === '..' ||
+      relativeOutputPath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeOutputPath)
+    ) {
+      throw new Error('Document conversion worker returned an invalid output path.');
+    }
+
+    if (reportedOutputPath !== artifactPath) {
+      try {
+        await fs.promises.rename(reportedOutputPath, artifactPath);
+      } catch {
+        await fs.promises.copyFile(reportedOutputPath, artifactPath);
+        await fs.promises.unlink(reportedOutputPath).catch(() => {});
+      }
+    }
+    return artifactPath;
   }
 
   private static readonly HTML_PREVIEW_EXTENSIONS = new Set(['.xls', '.xlsx']);
@@ -115,6 +180,8 @@ export class PreviewService {
 export const previewService = new PreviewService();
 export const convertToPdfPreview =
   previewService.convertToPdfPreview.bind(previewService);
+export const convertToPdfArtifact =
+  previewService.convertToPdfArtifact.bind(previewService);
 export const generateHtmlPreview =
   previewService.generateHtmlPreview.bind(previewService);
 export const supportsHtmlPreview =

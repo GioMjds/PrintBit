@@ -137,7 +137,7 @@
 
             <div class="qr-actions">
               <!-- Upload page for testing only -->
-              <!-- <button
+              <button
                 id="openUploadBtn"
                 type="button"
                 class="qr-action-btn qr-action-btn--primary"
@@ -153,7 +153,7 @@
                   />
                 </svg>
                 Open upload page
-              </button> -->
+              </button>
               <button
                 id="refreshSessionBtn"
                 type="button"
@@ -480,6 +480,32 @@
               />
             </svg>
             New Session
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Non-PDF conversion gate -->
+    <div
+      class="modal-overlay conversion-overlay"
+      id="conversionOverlay"
+      aria-hidden="true"
+    >
+      <div
+        class="modal-card conversion-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="conversionTitle"
+        aria-describedby="conversionMessage"
+      >
+        <div class="conversion-spinner" aria-hidden="true"></div>
+        <h3 class="modal-title" id="conversionTitle">Preparing your PDF</h3>
+        <p class="modal-subtitle" id="conversionMessage" aria-live="polite">
+          Converting your document to PDF. This can take a moment.
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn modal-btn--cancel" id="conversionCancel">
+            Back to files
           </button>
         </div>
       </div>

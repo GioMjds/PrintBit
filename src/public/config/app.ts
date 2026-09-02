@@ -2,12 +2,7 @@ import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { createConfigPreparationLoadingController } from './loading-state';
-import {
-  buildDocxSourcePreviewUrl,
-  isDocxPreview,
-  renderDocxPreview,
-  shouldPreparePreviewInBackground,
-} from './office-preview';
+import { shouldPreparePreviewInBackground } from './office-preview';
 import { getPreviewRequestTimeoutMs } from './preview-timeout';
 import {
   destroyPdfLoadingTask,
@@ -57,7 +52,6 @@ type RotationDeg = 0 | 90 | 180 | 270;
 type WorkflowMode = 'print' | 'copy' | 'scan';
 
 const HTML_PREVIEW_LOAD_TIMEOUT_MS = 20_000;
-const DOCX_SOURCE_LOAD_TIMEOUT_MS = 15_000;
 
 type PageRangeSelection =
   | { type: 'all' }
@@ -325,6 +319,7 @@ class PrintPreview {
   }
 
   private renderTask: Promise<void> | null = null;
+  private pendingRenderPage: number | null = null;
   private resizeObserver: ResizeObserver;
 
   constructor() {
@@ -383,8 +378,10 @@ class PrintPreview {
     if (vpW <= 0 || vpH <= 0) return;
     const fitScale = Math.min(vpW / this.naturalW, vpH / this.naturalH);
     const finalScale = fitScale * this.zoomScale;
-    this.sheet.style.width = `${Math.floor(this.naturalW * finalScale)}px`;
-    this.sheet.style.height = `${Math.floor(this.naturalH * finalScale)}px`;
+    // Preserve fractional CSS pixels so the visual paper boundary and the
+    // PDF.js canvas share the same geometry at every zoom level.
+    this.sheet.style.width = `${this.naturalW * finalScale}px`;
+    this.sheet.style.height = `${this.naturalH * finalScale}px`;
   }
 
   applyConfig(cfg: PreviewConfig): void {
@@ -502,35 +499,6 @@ class PrintPreview {
     }
   }
 
-  async loadDocx(sessionId: string, filename: string): Promise<void> {
-    this.iframe.onload = null;
-    this.controls.style.display = 'none';
-    this.showLoading(true);
-    this.showCanvas(false);
-    this.showImg(false);
-    this.showFrame(false);
-    this.setHint('Loading document preview…');
-    this.latestImageInfo = null;
-
-    const url = buildDocxSourcePreviewUrl(sessionId, filename, sessionToken);
-    previewLog('loadDocx() start', { sessionId, filename, url });
-
-    try {
-      const response = await fetchWithTimeout(url, DOCX_SOURCE_LOAD_TIMEOUT_MS);
-      if (!response.ok) {
-        throw new Error(`DOCX source request failed with ${response.status}.`);
-      }
-
-      const source = await response.arrayBuffer();
-      const html = await renderDocxPreview(source);
-      this.latestImageInfo = null;
-      await this.loadHtml(html);
-    } catch (error) {
-      previewLog('loadDocx() failed; falling back to local PDF preview', error);
-      await this.load(sessionId, filename);
-    }
-  }
-
   private async loadPdf(buf: ArrayBuffer): Promise<void> {
     previewLog('loadPdf() start', { bytes: buf.byteLength });
     if (this.pdfLoadingTask) {
@@ -574,16 +542,22 @@ class PrintPreview {
   private async renderPage(pageNum: number): Promise<void> {
     if (!this.pdfDoc) return;
 
-    // Debounce — if already rendering, skip until it completes
-    if (this.renderTask) return;
+    // PDF.js cannot safely paint two pages into the same canvas at once. Keep
+    // one latest request queued, rather than dropping it while a zoom/resize
+    // render is in flight and leaving the canvas sized for the old sheet.
+    if (this.renderTask) {
+      this.pendingRenderPage = pageNum;
+      return;
+    }
 
     this.showLoading(true);
 
     const renderNow = async () => {
       try {
         const page = await this.pdfDoc!.getPage(pageNum);
-        const sheetW = this.sheet.clientWidth || 595;
-        const sheetH = this.sheet.clientHeight || 842;
+        const sheetBounds = this.sheet.getBoundingClientRect();
+        const sheetW = sheetBounds.width || 595;
+        const sheetH = sheetBounds.height || 842;
         const baseVP = page.getViewport({ scale: 1 });
 
         // Scale to fit sheet, accounting for device pixel ratio for crispness
@@ -594,8 +568,8 @@ class PrintPreview {
         const viewport = page.getViewport({ scale });
 
         // Size the canvas in physical pixels; CSS sizes it to 100%/100%
-        this.canvas.width = viewport.width;
-        this.canvas.height = viewport.height;
+        this.canvas.width = Math.max(1, Math.ceil(viewport.width));
+        this.canvas.height = Math.max(1, Math.ceil(viewport.height));
 
         const ctx = this.canvas.getContext('2d')!;
         ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -612,6 +586,9 @@ class PrintPreview {
         this.showError('Render failed.');
       } finally {
         this.renderTask = null;
+        const pendingPage = this.pendingRenderPage;
+        this.pendingRenderPage = null;
+        if (pendingPage !== null) void this.renderPage(pendingPage);
       }
     };
 
@@ -1642,11 +1619,6 @@ function schedulePrintQuoteRefresh(): void {
   }, 120);
 }
 
-function formatPeso(amount: number): string {
-  const rounded = Math.round(amount * 100) / 100;
-  return `₱${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}`;
-}
-
 function updateSummary(): void {
   if (!footerSummary) return;
   if (mode === 'scan') {
@@ -1893,9 +1865,7 @@ async function loadPreview(): Promise<void> {
 
   syncOrientationDetectionContext();
   const filename = selectedFile ?? undefined;
-  const previewPromise = isDocxPreview(filename)
-    ? preview.loadDocx(sessionId, filename!)
-    : preview.load(sessionId, filename);
+  const previewPromise = preview.load(sessionId, filename);
 
   if (shouldPreparePreviewInBackground(filename)) {
     void previewPromise.then(() => {

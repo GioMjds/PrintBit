@@ -104,6 +104,7 @@ const uploadClientId = getOrCreateUploadClientId();
 interface QueuedFile {
   id: string;
   file: File;
+  contentHash?: string;
   status: ItemStatus;
   el: HTMLElement;
 }
@@ -194,6 +195,14 @@ function collectUnsupportedFiles(files: File[]): string[] {
       return !normalized || !allowedMimeTypes.has(normalized);
     })
     .map((file) => file.name);
+}
+
+async function sha256File(file: File): Promise<string | undefined> {
+  if (!crypto.subtle) return undefined;
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
 }
 
 function mapError(r: UploadErrorResponse): string {
@@ -465,7 +474,7 @@ function escHtml(s: string): string {
 
 // ── Add files to queue ────────────────────────────────────────────────────────
 
-function addFilesToQueue(files: FileList | File[]): void {
+async function addFilesToQueue(files: FileList | File[]): Promise<void> {
   const arr = Array.from(files);
   const unsupportedFiles = collectUnsupportedFiles(arr);
   if (unsupportedFiles.length > 0) {
@@ -475,19 +484,27 @@ function addFilesToQueue(files: FileList | File[]): void {
     );
   }
 
+  const duplicateFiles: string[] = [];
   for (const file of arr) {
     const normalizedMime = normalizeMimeByExtension(file.name, file.type);
     if (!normalizedMime) continue;
 
-    // Skip duplicates by name+size
-    const isDupe = queue.some(
-      (q) => q.file.name === file.name && q.file.size === file.size,
-    );
-    if (isDupe) continue;
+    let contentHash: string | undefined;
+    try {
+      contentHash = await sha256File(file);
+    } catch {
+      // The server still performs the authoritative duplicate validation.
+    }
+
+    if (contentHash && queue.some((q) => q.contentHash === contentHash)) {
+      duplicateFiles.push(file.name);
+      continue;
+    }
 
     const qf: QueuedFile = {
       id: String(nextId++),
       file,
+      contentHash,
       status: 'pending',
       el: null as unknown as HTMLElement,
     };
@@ -497,7 +514,12 @@ function addFilesToQueue(files: FileList | File[]): void {
     fileQueue.appendChild(el);
   }
   refreshUploadBtn();
-  if (unsupportedFiles.length === 0) {
+  if (duplicateFiles.length > 0) {
+    setStatus(
+      `${duplicateFiles[0]} is already in the upload list${duplicateFiles.length > 1 ? ` (+${duplicateFiles.length - 1} more)` : ''}.`,
+      'info',
+    );
+  } else if (unsupportedFiles.length === 0) {
     clearStatus();
   }
 }
@@ -618,15 +640,8 @@ function attachSocket(sid: string): void {
     setStatus(`Analyzing ${name}…`, 'info');
   });
 
-  socket.on('AnalysisCompleted', (info: unknown) => {
-    const name =
-      typeof info === 'object' &&
-      info !== null &&
-      'filename' in info &&
-      typeof (info as { filename: unknown }).filename === 'string'
-        ? (info as { filename: string }).filename
-        : 'file';
-    setStatus(`✓ ${name} ready for printing at kiosk.`, 'ok');
+  socket.on('AnalysisCompleted', () => {
+    setStatus(`✓ Your document file is ready for printing at kiosk.`, 'ok');
   });
 
   socket.on('AnalysisFailed', (info: unknown) => {
@@ -765,7 +780,7 @@ dropZone.addEventListener('keydown', (e) => {
 
 fileInput.addEventListener('change', () => {
   if (fileInput.files?.length) {
-    addFilesToQueue(fileInput.files);
+    void addFilesToQueue(fileInput.files);
     fileInput.value = ''; // reset so same files can be re-added after removal
   }
 });
@@ -780,7 +795,7 @@ dropZone.addEventListener('dragleave', () => {
 dropZone.addEventListener('drop', (e: DragEvent) => {
   e.preventDefault();
   dropZone.classList.remove('drag-over');
-  if (e.dataTransfer?.files.length) addFilesToQueue(e.dataTransfer.files);
+  if (e.dataTransfer?.files.length) void addFilesToQueue(e.dataTransfer.files);
 });
 
 retrySessionButton.addEventListener('click', () => {

@@ -1405,7 +1405,19 @@ export class FinancialService {
         analysisConfidence: quoteComputation.quote.analysisConfidence,
       };
 
-      serverFilename = path.basename(target.filePath);
+      const printSourcePath = target.convertedPdfPath ?? target.filePath;
+      if (
+        path.extname(target.filePath).toLowerCase() !== '.pdf' &&
+        !target.convertedPdfPath
+      ) {
+        sendResponse(409, buildAnalysisUnavailablePayload(target));
+        return;
+      }
+      if (!fs.existsSync(printSourcePath)) {
+        sendResponse(409, buildAnalysisUnavailablePayload(target));
+        return;
+      }
+      serverFilename = path.basename(printSourcePath);
       targetDocumentId = target.documentId;
       printOptions = withPrintQuality(
         {

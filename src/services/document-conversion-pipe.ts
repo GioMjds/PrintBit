@@ -13,11 +13,11 @@ export interface DocumentConversionRequest {
 export interface DocumentConversionResult {
   requestId: string;
   success: boolean;
-  outputPath?: string;
-  pageCount?: number;
+  outputPath?: string | null;
+  pageCount?: number | null;
   sourceFormat?: string;
   durationMs: number;
-  errorMessage?: string;
+  errorMessage?: string | null;
 }
 
 export interface ConvertDocumentOptions {

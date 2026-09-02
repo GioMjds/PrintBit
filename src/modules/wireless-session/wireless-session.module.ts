@@ -11,7 +11,10 @@ export interface WirelessSessionModuleDeps extends ModuleContext {
   sessionIo: Namespace;
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
-  convertToPdfPreview: (sourcePath: string) => Promise<string>;
+  convertToPdfArtifact: (
+    sourcePath: string,
+    artifactPath: string,
+  ) => Promise<string>;
   powerSafetyService?: PowerSafetyService;
 }
 
@@ -24,7 +27,7 @@ export function registerWirelessSessionModule(
     sessionIo: deps.sessionIo,
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
-    convertToPdfPreview: deps.convertToPdfPreview,
+    convertToPdfArtifact: deps.convertToPdfArtifact,
     powerSafetyService: deps.powerSafetyService,
   });
   const controller = new WirelessSessionController(

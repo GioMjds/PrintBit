@@ -1113,4 +1113,37 @@ body {
   height: 22px;
 }
 
+/* ── Non-PDF conversion gate ───────────────────────────────── */
+.conversion-overlay {
+  z-index: 130;
+}
+
+.conversion-card {
+  text-align: center;
+}
+
+.conversion-card .modal-actions {
+  justify-content: center;
+}
+
+.conversion-card .modal-btn {
+  flex: 0 1 240px;
+}
+
+.conversion-spinner {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 20px;
+  border: 4px solid rgba(167, 170, 225, 0.22);
+  border-top-color: var(--indigo);
+  border-radius: 50%;
+  animation: conversion-spin 850ms linear infinite;
+}
+
+@keyframes conversion-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ── Idle Warning Modal ──────────────────────────────────────── */

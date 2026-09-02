@@ -4,13 +4,14 @@ import type { Namespace, Server } from 'socket.io';
 import type { SessionStore } from '@/services/session';
 import { WirelessSessionService } from '@/modules/wireless-session/wireless-session.service';
 
-function createPreviewService(convertToPdfPreview = jest.fn()): WirelessSessionService {
+function createPreviewService(convertToPdfArtifact = jest.fn()): WirelessSessionService {
   const sessionStore = {
     tryGetSession: jest.fn(() => ({
       document: {
         documentId: 'document-1',
         filename: 'proposal.docx',
         filePath: 'uploads/proposal.docx',
+        convertedPdfPath: 'uploads/document-1.pdf',
         contentType:
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         sizeBytes: 1024,
@@ -18,6 +19,7 @@ function createPreviewService(convertToPdfPreview = jest.fn()): WirelessSessionS
       documents: [],
     })),
     touchSession: jest.fn(() => true),
+    setDocumentConvertedPdfPath: jest.fn(() => ({})),
   } as unknown as SessionStore;
 
   return new WirelessSessionService({
@@ -25,13 +27,15 @@ function createPreviewService(convertToPdfPreview = jest.fn()): WirelessSessionS
     sessionIo: {} as Namespace,
     sessionStore,
     resolvePublicBaseUrl: () => new URL('http://127.0.0.1:3000'),
-    convertToPdfPreview,
+    convertToPdfArtifact,
   });
 }
 
-test('serves authenticated DOCX source bytes without waiting for PDF conversion', async () => {
-  const convertToPdfPreview = jest.fn();
-  const service = createPreviewService(convertToPdfPreview);
+test('converts a legacy DOCX preview into its canonical PDF artifact', async () => {
+  const convertToPdfArtifact = jest.fn(
+    async (_sourcePath: string, artifactPath: string) => artifactPath,
+  );
+  const service = createPreviewService(convertToPdfArtifact);
   const req = {
     params: { sessionId: 'session-1' },
     query: { filename: 'proposal.docx', source: '1' },
@@ -45,12 +49,10 @@ test('serves authenticated DOCX source bytes without waiting for PDF conversion'
 
   await service.getSessionPreview(req, res, jest.fn());
 
-  expect(convertToPdfPreview).not.toHaveBeenCalled();
-  expect(res.setHeader).toHaveBeenCalledWith(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  );
-  expect(res.sendFile).toHaveBeenCalledWith(
+  expect(convertToPdfArtifact).toHaveBeenCalledWith(
     path.resolve('uploads/proposal.docx'),
+    path.resolve('uploads/document-1.pdf'),
   );
+  expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+  expect(res.sendFile).toHaveBeenCalledWith(path.resolve('uploads/document-1.pdf'));
 });
