@@ -141,15 +141,37 @@ body {
   color: var(--white);
 }
 
-/* Session pill – right */
-.session-pill {
+/* Session pill & Topbar actions – right */
+.topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   justify-content: flex-end;
-  font-size: 13px;
+  min-width: 0;
+}
+
+.session-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--ink-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.12);
+  border-radius: 40px;
+  padding: 6px 14px;
+  max-width: 280px;
+  min-width: 0;
+}
+
+#sessionText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .session-dot {
@@ -202,9 +224,11 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   height: 100%;
   box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(167, 170, 225, 0.2) transparent;
@@ -408,6 +432,47 @@ body {
 
 #uploadLink:hover {
   text-decoration: underline;
+}
+
+/* ── Upload Tip / Disclaimer ──────────────────────────────── */
+.upload-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 13px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.14);
+  border-radius: 14px;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.upload-tip__icon {
+  width: 15px;
+  height: 15px;
+  color: var(--lavender);
+  opacity: 0.85;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.upload-tip__text,
+.upload-tip p {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--ink-muted);
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.upload-tip__badge,
+.upload-tip strong {
+  font-weight: 700;
+  color: var(--lavender);
+  margin-right: 2px;
 }
 
 /* Action buttons */
@@ -785,7 +850,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 48px 48px;
+  padding: 16px 0 24px;
   border-top: 1px solid rgba(167, 170, 225, 0.1);
   flex-shrink: 0;
 }
@@ -870,32 +935,42 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(14, 13, 31, 0.86);
-  backdrop-filter: blur(10px);
+  background: rgba(14, 13, 31, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 220ms ease;
+  transition:
+    opacity 240ms ease,
+    visibility 240ms ease;
 }
 
 .onboarding-overlay.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
 .onboarding-card {
   width: min(680px, 94vw);
   background: #181730;
-  border: 1.5px solid rgba(167, 170, 225, 0.18);
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
   border-radius: 28px;
   padding: 38px 34px 32px;
   box-sizing: border-box;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  transform: translateY(14px) scale(0.98);
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(16px) scale(0.96);
+  transition:
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 240ms ease;
 }
 
 .onboarding-overlay.is-visible .onboarding-card {
   transform: translateY(0) scale(1);
+  opacity: 1;
 }
 
 .onboarding-title {
@@ -1014,14 +1089,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(14, 13, 31, 0.82);
-  backdrop-filter: blur(8px);
+  background: rgba(14, 13, 31, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 250ms ease;
+  transition:
+    opacity 250ms ease,
+    visibility 250ms ease;
 }
 .modal-overlay.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -1029,15 +1109,20 @@ body {
   width: 560px;
   max-width: 92vw;
   background: #181730;
-  border: 1.5px solid rgba(167, 170, 225, 0.18);
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
   border-radius: 28px;
   padding: 44px 40px 36px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-  transform: translateY(16px) scale(0.97);
-  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(16px) scale(0.96);
+  transition:
+    transform 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease;
 }
 .modal-overlay.is-visible .modal-card {
   transform: translateY(0) scale(1);
+  opacity: 1;
 }
 
 .modal-title {
@@ -1147,3 +1232,262 @@ body {
 }
 
 /* ── Idle Warning Modal ──────────────────────────────────────── */
+
+/* ── Wi-Fi Troubleshoot Header Button ─────────────────────── */
+.wifi-troubleshoot-fab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 40px;
+  background: rgba(105, 111, 199, 0.12);
+  border: 1.5px solid rgba(167, 170, 225, 0.28);
+  color: var(--white);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    0 0 12px rgba(105, 111, 199, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  outline: none;
+  flex-shrink: 0;
+}
+
+.wifi-troubleshoot-fab:hover {
+  background: rgba(105, 111, 199, 0.22);
+  border-color: rgba(167, 170, 225, 0.5);
+  transform: translateY(-1.5px);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    0 0 18px rgba(105, 111, 199, 0.3);
+}
+
+.wifi-troubleshoot-fab:active {
+  transform: scale(0.97);
+}
+
+.wifi-troubleshoot-fab:focus-visible {
+  outline: 2px solid var(--secondary-lavender, #a7aae1);
+  outline-offset: 2px;
+}
+
+.wifi-troubleshoot-fab svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  color: var(--secondary-lavender, #a7aae1);
+  transition: color 160ms ease, transform 160ms ease;
+}
+
+.wifi-troubleshoot-fab:hover svg {
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+@media (max-width: 1100px) {
+  .wifi-btn-text {
+    font-size: 12px;
+  }
+  .session-pill {
+    max-width: 180px;
+  }
+}
+
+@media (max-width: 850px) {
+  .topbar {
+    grid-template-columns: auto 1fr auto;
+    gap: 12px;
+  }
+  .wifi-btn-text {
+    display: none;
+  }
+  .wifi-troubleshoot-fab {
+    padding: 8px 10px;
+  }
+}
+
+/* ── Wi-Fi Troubleshooting Modal ──────────────────────────── */
+.wifi-modal-overlay {
+  z-index: 150;
+}
+.wifi-modal-card {
+  width: 640px;
+  max-width: 94vw;
+  padding: 34px 34px 26px;
+}
+.wifi-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.wifi-modal-icon-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(105, 111, 199, 0.18);
+  border: 1.5px solid rgba(105, 111, 199, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9299ff;
+  flex-shrink: 0;
+}
+.wifi-modal-icon-badge svg {
+  width: 24px;
+  height: 24px;
+}
+.wifi-modal-title-group {
+  flex: 1;
+}
+.wifi-modal-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--white);
+}
+.wifi-modal-subtitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+.wifi-modal-body {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 22px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(167, 170, 225, 0.12);
+  border-radius: 20px;
+  padding: 18px;
+  margin-bottom: 22px;
+}
+@media (max-width: 600px) {
+  .wifi-modal-body {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}
+.wifi-modal-qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wifi-qr-frame {
+  width: 190px;
+  height: 190px;
+  background: #ffffff;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+.wifi-qr-frame canvas {
+  width: 180px !important;
+  height: 180px !important;
+  display: block;
+}
+.wifi-modal-qr-caption {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a7aae1;
+  text-align: center;
+}
+.wifi-modal-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wifi-credentials-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.15);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wifi-credential-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.wifi-credential-label {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+.wifi-credential-val {
+  color: var(--white);
+  font-weight: 700;
+  font-family: monospace, sans-serif;
+  background: rgba(167, 170, 225, 0.12);
+  padding: 2px 8px;
+  border-radius: 6px;
+  word-break: break-all;
+}
+.wifi-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wifi-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #c5c8f8;
+}
+.wifi-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(105, 111, 199, 0.35);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.wifi-step-text strong {
+  display: block;
+  color: var(--white);
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}
+.wifi-step-text span {
+  color: var(--ink-muted);
+}
+.wifi-step-text em {
+  color: #a3e6ac;
+  font-style: normal;
+  font-weight: 700;
+}
+.wifi-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.wifi-modal-close-btn {
+  padding: 14px 28px;
+  font-size: 16px;
+  border-radius: 14px;
+}

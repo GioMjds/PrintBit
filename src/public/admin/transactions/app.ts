@@ -454,14 +454,27 @@ function applyFilters(): void {
 }
 
 function openTransactionDrawerShell(): void {
+  txDrawerBackdrop?.classList.remove('is-leaving');
+  txDetailDrawer?.classList.remove('is-leaving');
   txDrawerBackdrop?.classList.remove('hidden');
   txDetailDrawer?.classList.remove('hidden');
 }
 
 function closeTransactionDrawer(): void {
   activeDrawerTransactionId = null;
-  txDrawerBackdrop?.classList.add('hidden');
-  txDetailDrawer?.classList.add('hidden');
+  if (txDrawerBackdrop && !txDrawerBackdrop.classList.contains('hidden')) {
+    txDrawerBackdrop.classList.add('is-leaving');
+    txDetailDrawer?.classList.add('is-leaving');
+    window.setTimeout(() => {
+      txDrawerBackdrop?.classList.add('hidden');
+      txDetailDrawer?.classList.add('hidden');
+      txDrawerBackdrop?.classList.remove('is-leaving');
+      txDetailDrawer?.classList.remove('is-leaving');
+    }, 200);
+  } else {
+    txDrawerBackdrop?.classList.add('hidden');
+    txDetailDrawer?.classList.add('hidden');
+  }
 }
 
 function resetDrawerView(): void {
@@ -622,8 +635,16 @@ async function openTransactionDrawer(transactionId: string): Promise<void> {
 }
 
 function closeReportModal(): void {
-  txReportModal?.classList.add('hidden');
   reportContext = null;
+  if (txReportModal && !txReportModal.classList.contains('hidden')) {
+    txReportModal.classList.add('is-leaving');
+    window.setTimeout(() => {
+      txReportModal?.classList.add('hidden');
+      txReportModal?.classList.remove('is-leaving');
+    }, 200);
+  } else {
+    txReportModal?.classList.add('hidden');
+  }
 }
 
 async function submitQuickReport(): Promise<void> {
@@ -775,6 +796,16 @@ txReportModal?.addEventListener('click', (event) => {
   if (event.target === txReportModal) closeReportModal();
 });
 txReportSubmitBtn?.addEventListener('click', () => void submitQuickReport());
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    if (txDrawerBackdrop && !txDrawerBackdrop.classList.contains('hidden')) {
+      closeTransactionDrawer();
+    } else if (txReportModal && !txReportModal.classList.contains('hidden')) {
+      closeReportModal();
+    }
+  }
+});
 
 initAuth(async () => {
   await loadData();

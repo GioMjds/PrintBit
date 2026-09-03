@@ -21,8 +21,6 @@ import {
   isCoinSlotLocked,
   isCoinSlotLockedBy,
   getCoinSlotLockOwnerId,
-  getPrinterFaultLock,
-  clearPrinterFaultLock,
 } from '@/services';
 import {
   powerSafetyService,
@@ -50,7 +48,6 @@ import {
   type PrintJobOptions,
 } from '@/services/printer';
 import { withPrintQuality } from '@/services/print-job-options';
-import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
 import { buildPrintQuote } from '@/services/print-quote';
@@ -72,7 +69,7 @@ import {
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
-import { PrintDispatchError } from '@/services/print-dispatcher';
+import { PrintDispatchError } from '@/services/printer';
 import {
   normalizeRotationDeg,
   parseRotationDeg,
@@ -1491,81 +1488,8 @@ export class FinancialService {
         : getPrinterTelemetry();
     let jobDispatchedAt: string | null = null;
     let dispatchResult: PrintDispatchResult | null = null;
-    let spoolerMonitorStarted = false;
-    let settlementCompleted = false;
-    let spoolerConfirmedBeforeSettlement = false;
-
-    const runPostSpoolerConfirmedCallbacks = async (): Promise<void> => {
-      try {
-        appendConsumableUsageEvent('print');
-        await evaluateConsumablesForecastAlerts();
-      } catch (error) {
-        console.error(
-          '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
-          error instanceof Error ? error.message : error,
-        );
-      }
-      if (!serverFilename) return;
-      await this.cleanupPrintUploadAfterSpoolerSuccess({
-        transactionId,
-        sessionId: sessionId ?? null,
-        documentId: targetDocumentId ?? null,
-        filename: serverFilename,
-      });
-    };
 
     let receipt: Record<string, unknown> | null = null;
-    const startSpoolerMonitor = (
-      chargedAmount: number,
-      monitorStartPhase: 'post_dispatch' | 'post_settlement',
-    ): void => {
-      if (mode !== 'print' || !jobDispatchedAt || !telemetry.name) return;
-      if (spoolerMonitorStarted) return;
-
-      const captureReceipt = receipt;
-      spoolerMonitorStarted = true;
-      void monitorSpoolerJob({
-        printerName: telemetry.name,
-        chargedAmount,
-        jobDispatchedAt,
-        spoolerCorrelationKey,
-        io: this.deps.io,
-        jobContext: {
-          transactionId,
-          mode,
-          copies,
-          colorMode: printOptions?.colorMode ?? colorMode,
-          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
-          duplex: printOptions?.duplex ?? false,
-          spoolerCorrelationKey,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          filename: serverFilename ?? null,
-          pageRange: printOptions?.pageRange ?? null,
-          dispatchEngine: null,
-          dispatchMode: null,
-          dispatchRequestedMode: null,
-          dispatchDurationMs: null,
-          dispatchMimeType: null,
-          dispatchExtension: null,
-          dispatchAttempts: null,
-          monitorStartPhase,
-        },
-        onConfirmed: async () => {
-          if (!settlementCompleted) {
-            spoolerConfirmedBeforeSettlement = true;
-            return;
-          }
-          await runPostSpoolerConfirmedCallbacks();
-        },
-        receipt: captureReceipt,
-      }).catch((err) => {
-        console.error(
-          '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
-          err instanceof Error ? err.message : err,
-        );
-      });
-    };
 
     if (mode === 'print' && serverFilename && printOptions) {
       if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -1622,11 +1546,6 @@ export class FinancialService {
       // before the local JobProcessor prepares the PDF and hands it to the C# worker.
     }
 
-    // Deferred monitor start until after settlement and receipt generation
-    // if (mode === 'print' && jobDispatchedAt && telemetry.name) {
-    //   startSpoolerMonitor(requiredAmount, 'post_dispatch');
-    // }
-
     try {
       await financialLedgerService.append({
         eventType: 'job_started',
@@ -1676,15 +1595,6 @@ export class FinancialService {
       });
       return;
     }
-    settlementCompleted = true;
-    if (spoolerConfirmedBeforeSettlement) {
-      void runPostSpoolerConfirmedCallbacks().catch((error) => {
-        console.error(
-          '[CONFIRM-PAYMENT] Deferred post-confirmed cleanup failed:',
-          error instanceof Error ? error.message : error,
-        );
-      });
-    }
 
     const settledAt = getTrustedTimestamp().timestamp;
 
@@ -1706,7 +1616,6 @@ export class FinancialService {
       },
     });
 
-    // receipt variable is declared higher up to be captured by startSpoolerMonitor
     try {
       const initialStatus: ReceiptRecordStatus =
         mode === 'print' ? 'settled_pending_terminal' : 'printed';

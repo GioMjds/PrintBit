@@ -664,7 +664,7 @@ class PrintPreview {
 
   private updatePager(): void {
     const multi = this.totalPages > 1;
-    this.controls.style.display = 'flex';
+    this.controls.style.display = multi ? 'flex' : 'none';
     this.pagePrev.hidden = !multi;
     this.pageNext.hidden = !multi;
     this.pagerLabel.hidden = !multi;
@@ -1095,7 +1095,11 @@ function syncCustomRangeInputs(
   const normalizedRange = start === end ? String(start) : `${start}-${end}`;
   pageRangeInput.value = normalizedRange;
   if (customRangeDisplay) {
-    customRangeDisplay.textContent = `Selected: ${normalizedRange}`;
+    if (pageModeAll?.checked) {
+      customRangeDisplay.textContent = `All pages (${max === 1 ? '1 page' : `1–${max}`})`;
+    } else {
+      customRangeDisplay.textContent = `Selected: ${normalizedRange}`;
+    }
   }
 }
 
@@ -1103,6 +1107,7 @@ function updateCustomRangeWithDelta(
   target: 'start' | 'end',
   delta: number,
 ): void {
+  if (pageModeAll?.checked) return;
   const input =
     target === 'start' ? customRangeStartInput : customRangeEndInput;
   if (!input) return;
@@ -1132,6 +1137,7 @@ customRangeStepperControls.forEach(({ el, target, delta }) => {
 });
 
 customRangeStartInput?.addEventListener('change', () => {
+  if (pageModeAll?.checked) return;
   syncCustomRangeInputs('start');
   syncCustomRangeValidity();
   updateSummary();
@@ -1139,13 +1145,22 @@ customRangeStartInput?.addEventListener('change', () => {
 });
 
 customRangeEndInput?.addEventListener('change', () => {
+  if (pageModeAll?.checked) return;
   syncCustomRangeInputs('end');
   syncCustomRangeValidity();
   updateSummary();
   schedulePrintQuoteRefresh();
 });
 
+pageRangeCustomWrap?.addEventListener('click', () => {
+  if (pageModeAll?.checked && pageModeCustom) {
+    pageModeCustom.checked = true;
+    pageModeCustom.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+});
+
 singlePageDec?.addEventListener('click', () => {
+  if (pageModeAll?.checked) return;
   if (!singlePageInput) return;
   const next = Math.max(1, clampSinglePage() - 1);
   singlePageInput.value = String(next);
@@ -1156,6 +1171,7 @@ singlePageDec?.addEventListener('click', () => {
 });
 
 singlePageInc?.addEventListener('click', () => {
+  if (pageModeAll?.checked) return;
   if (!singlePageInput) return;
   const next = Math.min(getPageRangeMaxPages(), clampSinglePage() + 1);
   singlePageInput.value = String(next);
@@ -1166,10 +1182,18 @@ singlePageInc?.addEventListener('click', () => {
 });
 
 singlePageInput?.addEventListener('change', () => {
+  if (pageModeAll?.checked) return;
   const page = clampSinglePage();
   void preview.goToPage(page);
   updateSummary();
   schedulePrintQuoteRefresh();
+});
+
+pageRangeSingleWrap?.addEventListener('click', () => {
+  if (pageModeAll?.checked && pageModeSingle) {
+    pageModeSingle.checked = true;
+    pageModeSingle.dispatchEvent(new Event('change', { bubbles: true }));
+  }
 });
 
 function clampSinglePage(): number {
@@ -1233,10 +1257,47 @@ function syncPageRangeUI(): void {
   const rangeVisible = pageRangeGroup
     ? !pageRangeGroup.classList.contains('hidden')
     : true;
+  const isAll = Boolean(pageModeAll?.checked);
   const isCustom = Boolean(pageModeCustom?.checked);
   const isSingle = Boolean(pageModeSingle?.checked);
-  pageRangeCustomWrap?.classList.toggle('hidden', !(rangeVisible && isCustom));
-  pageRangeSingleWrap?.classList.toggle('hidden', !(rangeVisible && isSingle));
+
+  // If "All Pages" is selected, hide the extra options in Custom Range and Single Page
+  const showCustom = rangeVisible && isCustom && !isAll;
+  const showSingle = rangeVisible && isSingle && !isAll;
+
+  pageRangeCustomWrap?.classList.toggle('hidden', !showCustom);
+  pageRangeSingleWrap?.classList.toggle('hidden', !showSingle);
+
+  const customControls = [
+    customRangeStartDec,
+    customRangeStartInput,
+    customRangeStartInc,
+    customRangeEndDec,
+    customRangeEndInput,
+    customRangeEndInc,
+  ];
+  customControls.forEach((el) => {
+    if (el) {
+      el.disabled = !isCustom;
+      if (!isCustom) {
+        el.setAttribute('aria-disabled', 'true');
+      } else {
+        el.removeAttribute('aria-disabled');
+      }
+    }
+  });
+
+  const singleControls = [singlePageDec, singlePageInput, singlePageInc];
+  singleControls.forEach((el) => {
+    if (el) {
+      el.disabled = !isSingle;
+      if (!isSingle) {
+        el.setAttribute('aria-disabled', 'true');
+      } else {
+        el.removeAttribute('aria-disabled');
+      }
+    }
+  });
 }
 
 function hasMultiplePages(): boolean {
@@ -1676,7 +1737,6 @@ function updateSummary(): void {
   const n = getCopies();
 
   if (quoteLoading) {
-    footerSummary.textContent = 'Calculating your total';
     if (footerBreakdown)
       footerBreakdown.textContent =
         'Checking selected pages, color, and print quality.';
@@ -1687,7 +1747,6 @@ function updateSummary(): void {
 
   if (currentPrintQuote) {
     footerSummary.classList.add('ready');
-    footerSummary.textContent = 'Ready to print';
     if (footerBreakdown) {
       footerBreakdown.textContent =
         `${currentPrintQuote.selectedPages} ${currentPrintQuote.selectedPages === 1 ? 'page' : 'pages'} × ` +

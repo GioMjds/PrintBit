@@ -118,7 +118,10 @@ const INJECTED_CSS = `
   background: rgba(26, 24, 54, 0.9);
   border: 1.5px solid rgba(245, 158, 11, 0.4);
   border-radius: 28px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(245, 158, 11, 0.15);
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 40px rgba(245, 158, 11, 0.15);
   animation: power-safety-arrive 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 

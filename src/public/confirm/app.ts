@@ -23,10 +23,15 @@ import {
   attachPowerSafetyOverlay,
   type PowerSafetyOverlayController,
 } from '../shared/power-safety-overlay';
+import {
+  resolveWifiTroubleshootingDetails,
+  type HotspotConfig,
+} from '../shared/wifi-troubleshooting';
 
 export {};
 
 void initKioskLocalization();
+void loadHotspotConfig();
 
 // Initialize page idle timeout on load with warning modal
 void setupPageIdleWarningButton();
@@ -395,6 +400,75 @@ const receiptQrExpiry = document.getElementById(
   'receiptQrExpiry',
 ) as HTMLElement | null;
 
+// Wi-Fi Troubleshooting Modal Elements
+const confirmWifiHelpBtn = document.getElementById('confirmWifiHelpBtn');
+const maintenanceWifiHelpBtn = document.getElementById('maintenanceWifiHelpBtn');
+const confirmWifiModalOverlay = document.getElementById('confirmWifiModalOverlay');
+const confirmWifiModalCloseBtn = document.getElementById('confirmWifiModalCloseBtn');
+const confirmWifiQrCanvas = document.getElementById('confirmWifiQrCanvas') as HTMLCanvasElement | null;
+const confirmWifiSsidVal = document.getElementById('confirmWifiSsidVal');
+const confirmWifiPasswordVal = document.getElementById('confirmWifiPasswordVal');
+
+let hotspotConfig: HotspotConfig | null = null;
+
+async function loadHotspotConfig(): Promise<void> {
+  try {
+    const res = await fetch('/api/config/hotspot');
+    if (res.ok) {
+      hotspotConfig = (await res.json()) as HotspotConfig;
+    }
+  } catch {
+    /* fallback to defaults */
+  }
+}
+
+function renderConfirmWifiTroubleshoot(): void {
+  const details = resolveWifiTroubleshootingDetails(hotspotConfig);
+  if (confirmWifiSsidVal) confirmWifiSsidVal.textContent = details.ssid;
+  if (confirmWifiPasswordVal) {
+    confirmWifiPasswordVal.textContent = details.isPasswordRequired
+      ? details.password
+      : 'Open (No password required)';
+  }
+  if (confirmWifiQrCanvas) {
+    void QRCode.toCanvas(confirmWifiQrCanvas, details.qrPayload, {
+      width: 180,
+      margin: 1,
+      color: { dark: '#1a1a2e', light: '#ffffff' },
+      errorCorrectionLevel: 'M',
+    });
+  }
+}
+
+function openConfirmWifiModal(): void {
+  renderConfirmWifiTroubleshoot();
+  if (!confirmWifiModalOverlay) return;
+  confirmWifiModalOverlay.classList.add('is-visible');
+  confirmWifiModalOverlay.setAttribute('aria-hidden', 'false');
+  confirmWifiModalCloseBtn?.focus();
+}
+
+function closeConfirmWifiModal(): void {
+  if (!confirmWifiModalOverlay) return;
+  confirmWifiModalOverlay.classList.remove('is-visible');
+  confirmWifiModalOverlay.setAttribute('aria-hidden', 'true');
+}
+
+confirmWifiHelpBtn?.addEventListener('click', openConfirmWifiModal);
+maintenanceWifiHelpBtn?.addEventListener('click', openConfirmWifiModal);
+confirmWifiModalCloseBtn?.addEventListener('click', closeConfirmWifiModal);
+confirmWifiModalOverlay?.addEventListener('click', (e) => {
+  if (e.target === confirmWifiModalOverlay) closeConfirmWifiModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (
+    e.key === 'Escape' &&
+    confirmWifiModalOverlay?.classList.contains('is-visible')
+  ) {
+    closeConfirmWifiModal();
+  }
+});
+
 let currentPrinterError: PrintError | null = null;
 let lastKnownPagesPrinted = 0;
 let lastKnownTotalPages = 0;
@@ -528,6 +602,7 @@ function renderPrinterError(err: PrintError): void {
   }
 
   if (hasActiveJob() && !requiresMaintenance) {
+    printerErrorBlock.classList.remove('is-leaving');
     printerErrorBlock.removeAttribute('hidden');
   }
   applyConfirmGate();
@@ -535,7 +610,17 @@ function renderPrinterError(err: PrintError): void {
 
 function clearPrinterError(): void {
   currentPrinterError = null;
-  if (printerErrorBlock) printerErrorBlock.setAttribute('hidden', '');
+  if (printerErrorBlock) {
+    if (!printerErrorBlock.hasAttribute('hidden')) {
+      printerErrorBlock.classList.add('is-leaving');
+      window.setTimeout(() => {
+        printerErrorBlock?.setAttribute('hidden', '');
+        printerErrorBlock?.classList.remove('is-leaving');
+      }, 240);
+    } else {
+      printerErrorBlock.setAttribute('hidden', '');
+    }
+  }
   if (errorProgressEl) errorProgressEl.setAttribute('hidden', '');
   maintenanceResolution?.setAttribute('hidden', '');
   applyConfirmGate();

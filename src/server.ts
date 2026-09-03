@@ -28,7 +28,6 @@ import { registerAppModules } from '@/app.module';
 import { getJobProcessor } from '@/modules/print-queue';
 import {
   initDB,
-  assertPrintDispatcherReady,
   detectDefaultPrinter,
   detectScanner,
   startScanStorageCleanup,
@@ -42,7 +41,6 @@ import {
   SessionStore,
   resolvePublicBaseUrl,
   runHopperSelfTest,
-  startPrinterMonitor,
   anomalyService,
   adminService,
   startTrustedTimeMonitor,
@@ -51,7 +49,6 @@ import {
   getPrinterTelemetry,
   startWatchdogHealthMonitor,
   stopWatchdogHealthMonitor,
-  warmPrinterEdgeRunspace,
   isCoinSlotLocked,
   getCoinSlotLockOwnerId,
   getCoinSlotLockedAt,
@@ -664,13 +661,6 @@ async function start() {
     await Promise.allSettled([
       (async () => {
         await detectDefaultPrinter();
-        await assertPrintDispatcherReady();
-        void warmPrinterEdgeRunspace().catch((error: unknown) => {
-          console.error(
-            '[SERVER] Failed to warm printer-edge PowerShell runspace.',
-            error instanceof Error ? error.message : String(error),
-          );
-        });
       })(),
       (async () => {
         await detectScanner();
@@ -692,7 +682,6 @@ async function start() {
       startHotspot(),
     ]);
 
-    startPrinterMonitor(io);
     startWatchdogHealthMonitor({
       getSerialStatus,
       getPrinterTelemetry,

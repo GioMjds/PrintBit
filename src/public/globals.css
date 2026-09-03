@@ -163,47 +163,305 @@ html[data-high-contrast='true'] body {
   color: var(--surface-fg);
 }
 
+/* ── Floating Action Buttons (FABs) ───────────────────────── */
+.kiosk-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(14, 13, 31, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  color: var(--white);
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 90;
+  transition:
+    opacity 240ms ease,
+    visibility 240ms ease,
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.kiosk-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.kiosk-fab:active {
+  transform: scale(0.95);
+}
+
+.kiosk-fab:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 3px;
+}
+
+.kiosk-fab__icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+/* Tooltip on hover/focus */
+.kiosk-fab__tooltip {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  white-space: nowrap;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(14, 13, 31, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--white);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: opacity 140ms ease, transform 140ms cubic-bezier(0.2, 0.8, 0.4, 1);
+  z-index: 10001;
+}
+
+.kiosk-fab__tooltip--bottom {
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.kiosk-fab__tooltip--left {
+  right: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+}
+
+.kiosk-fab:hover .kiosk-fab__tooltip,
+.kiosk-fab:focus-visible .kiosk-fab__tooltip {
+  opacity: 1;
+}
+
+.kiosk-fab:hover .kiosk-fab__tooltip--bottom,
+.kiosk-fab:focus-visible .kiosk-fab__tooltip--bottom {
+  transform: translateX(-50%) translateY(0);
+}
+
+.kiosk-fab:hover .kiosk-fab__tooltip--left,
+.kiosk-fab:focus-visible .kiosk-fab__tooltip--left {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Language FAB */
 .printbit-language-fab {
   position: fixed;
-  right: 16px;
-  top: 16px;
-  z-index: 10000;
+  right: 24px;
+  top: 24px;
+  z-index: 90;
+  transition:
+    opacity 240ms ease,
+    visibility 240ms ease,
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .printbit-language-fab__trigger {
   width: 56px;
   height: 56px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 999px;
   background: rgba(14, 13, 31, 0.92);
   color: #fff;
   cursor: pointer;
   font-size: 24px;
   line-height: 1;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition:
+    transform 160ms cubic-bezier(0.2, 0.8, 0.4, 1),
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.printbit-language-fab__trigger:hover {
+  transform: translateY(-2px);
+  border-color: rgba(167, 170, 225, 0.6);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45), 0 0 24px rgba(105, 111, 199, 0.28);
+}
+
+.printbit-language-fab__trigger:active {
+  transform: scale(0.95);
+}
+
+.printbit-language-fab__trigger:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 3px;
 }
 
 .printbit-language-fab__badge {
   position: absolute;
-  right: -6px;
+  right: -5px;
   bottom: -2px;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
   border-radius: 999px;
   background: var(--indigo);
   color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* Pricing FAB */
+.pricing-fab {
+  top: 24px;
+  right: 88px;
+  color: var(--lavender);
+}
+
+.pricing-fab:hover {
+  color: var(--white);
+  border-color: rgba(167, 170, 225, 0.6);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45), 0 0 24px rgba(105, 111, 199, 0.28);
+}
+
+.pricing-fab__badge {
+  position: absolute;
+  right: -5px;
+  bottom: -2px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--indigo);
+  color: #fff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+/* Report Issue FAB */
+.report-fab {
+  bottom: 88px;
+  right: 24px;
+  color: var(--peach);
+  border-color: rgba(245, 211, 196, 0.28);
+  background: rgba(24, 18, 26, 0.92);
+}
+
+.report-fab:hover {
+  border-color: rgba(245, 211, 196, 0.65);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45), 0 0 24px rgba(245, 211, 196, 0.28);
+}
+
+/* Feedback FAB */
+.feedback-fab {
+  bottom: 24px;
+  right: 24px;
+  color: var(--lavender);
+  border-color: rgba(167, 170, 225, 0.28);
+  background: rgba(18, 17, 34, 0.92);
+}
+
+.feedback-fab:hover {
+  border-color: rgba(167, 170, 225, 0.65);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45), 0 0 24px rgba(105, 111, 199, 0.28);
+}
+
+/* Responsive FAB Dock */
+@media (max-width: 640px) {
+  .printbit-language-fab {
+    top: 16px;
+    right: 16px;
+  }
+  .pricing-fab {
+    top: 16px;
+    right: 78px;
+  }
+  .feedback-fab {
+    bottom: 16px;
+    right: 16px;
+  }
+  .report-fab {
+    bottom: 78px;
+    right: 16px;
+  }
+}
+
+/* High-Contrast Mode for FABs */
+html[data-high-contrast='true'] .kiosk-fab,
+html[data-high-contrast='true'] .printbit-language-fab__trigger {
+  background: #000 !important;
+  border: 2px solid #fff !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+html[data-high-contrast='true'] .pricing-fab__badge,
+html[data-high-contrast='true'] .printbit-language-fab__badge {
+  background: #fff !important;
+  color: #000 !important;
+  border-color: #000 !important;
+}
+
+html[data-high-contrast='true'] .kiosk-fab__tooltip {
+  background: #000 !important;
+  border: 1px solid #fff !important;
+  color: #fff !important;
+}
+
+/* ── Auto-hide all FABs when any modal, idle attractor, or idle timeout appears ── */
+body:has(.pricing-overlay.is-open) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.guide-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.report-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.feedback-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.wifi-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.admin-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.modal.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.modal-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.onboarding-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.printer-error-modal-overlay:not([hidden])) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.idle-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.idle-warning-overlay[style*='display: flex']) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.idle-warning-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.idle-warning-overlay:not([hidden]):not([style*='display: none'])) :is(.kiosk-fab, .printbit-language-fab),
+body:has(.power-safety-overlay.is-visible) :is(.kiosk-fab, .printbit-language-fab),
+body[data-modal-open='true'] :is(.kiosk-fab, .printbit-language-fab),
+body[data-idle-active='true'] :is(.kiosk-fab, .printbit-language-fab),
+.kiosk-fab.is-hidden,
+.printbit-language-fab.is-hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: scale(0.85) !important;
 }
 
 /* ── Idle Warning Overlay (Pure Typography Fullscreen) ────────────────────── */
@@ -489,6 +747,141 @@ html[data-kiosk-static='true']
 html[data-kiosk-static='true'] .idle-warning-tap-hint {
   animation: idleHintPulse 2.4s ease-in-out infinite !important;
 }
+
+/* ── Kiosk modal dialog overlays & cards: re-enable smooth fade in/out transitions & depth ── */
+html[data-kiosk-static='true'] :where(
+  .pricing-overlay,
+  .guide-overlay,
+  .report-overlay,
+  .feedback-overlay,
+  .wifi-overlay,
+  .wifi-modal-overlay,
+  .admin-overlay,
+  .modal,
+  .modal-overlay,
+  .onboarding-overlay,
+  .printer-error-modal-overlay,
+  .scan-overlay,
+  .ri-overlay,
+  .tx-report-modal,
+  .tx-drawer-backdrop,
+  .power-safety-overlay
+) {
+  transition:
+    opacity 240ms ease,
+    visibility 240ms ease,
+    backdrop-filter 240ms ease,
+    -webkit-backdrop-filter 240ms ease !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+html[data-kiosk-static='true'] :where(
+  .pricing-modal,
+  .guide-card,
+  .report-modal,
+  .feedback-modal,
+  .wifi-modal,
+  .wifi-modal-card,
+  .admin-modal,
+  .modal-card,
+  .modal-sheet,
+  .modal-fs,
+  .onboarding-card,
+  .printer-error-modal,
+  .scan-overlay__card,
+  .ri-modal,
+  .tx-report-card,
+  .tx-drawer,
+  .power-safety-overlay__content
+) {
+  transition:
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 240ms ease,
+    box-shadow 240ms ease,
+    border-color 240ms ease !important;
+}
+
+html[data-kiosk-static='true'] :where(
+  .kiosk-fab,
+  .printbit-language-fab
+) {
+  transition:
+    opacity 240ms ease,
+    visibility 240ms ease,
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Re-enable active error, loading, and maintenance keyframe animations in kiosk mode */
+html[data-kiosk-static='true'] .printer-error-modal-overlay {
+  animation: error-overlay-in 350ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  backdrop-filter: blur(14px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+}
+
+html[data-kiosk-static='true'] .printer-error-modal {
+  animation: error-card-in 400ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+html[data-kiosk-static='true'] .printer-error-modal__icon-ring {
+  animation: error-icon-pop 500ms 200ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+html[data-kiosk-static='true'] .error-pulse-ring {
+  animation: error-ring-pulse 2.4s ease-in-out infinite !important;
+}
+
+html[data-kiosk-static='true'] .error-excl-line {
+  animation: excl-draw 400ms 400ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+html[data-kiosk-static='true'] .error-excl-dot {
+  animation: excl-dot-pop 250ms 700ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+html[data-kiosk-static='true'] .printer-error-modal-overlay.is-leaving {
+  animation: error-overlay-out 240ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+html[data-kiosk-static='true'] .printer-error-modal-overlay.is-leaving .printer-error-modal {
+  animation: error-card-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+html[data-kiosk-static='true'] .power-safety-overlay__content {
+  animation: power-safety-arrive 400ms cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+
+html[data-kiosk-static='true'] .power-safety-overlay__pulse {
+  animation: power-safety-pulse 2s ease-in-out infinite !important;
+}
+
+/* Reduced motion support: keep gentle opacity fade without spatial transform */
+@media (prefers-reduced-motion: reduce) {
+  html[data-kiosk-static='true'] :where(
+    .pricing-modal,
+    .guide-card,
+    .report-modal,
+    .feedback-modal,
+    .wifi-modal,
+    .wifi-modal-card,
+    .admin-modal,
+    .modal-card,
+    .modal-sheet,
+    .modal-fs,
+    .onboarding-card,
+    .printer-error-modal,
+    .scan-overlay__card,
+    .ri-modal,
+    .tx-report-card,
+    .tx-drawer,
+    .power-safety-overlay__content
+  ) {
+    transform: none !important;
+    transition: opacity 180ms ease !important;
+    animation: none !important;
+  }
+}
+
 
 html[data-kiosk-static='true'] :where(.kiosk-bg, .receipt-bg) {
   background:

@@ -788,13 +788,18 @@ body {
   align-items: center;
   justify-content: center;
   background: rgba(14, 13, 31, 0.88);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 250ms;
+  transition:
+    opacity 260ms ease,
+    visibility 260ms ease;
 }
 .scan-overlay.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -807,21 +812,21 @@ body {
   width: min(620px, calc(100vw - 48px));
   min-height: clamp(360px, 56vh, 480px);
   padding: clamp(44px, 6vh, 64px) clamp(52px, 7vw, 80px);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 32px;
-  backdrop-filter: blur(20px);
-  animation: overlay-card 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: #181730;
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  border-radius: 28px;
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(16px) scale(0.96);
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 260ms ease;
 }
-@keyframes overlay-card {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+
+.scan-overlay.is-visible .scan-overlay__card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
 }
 
 /* Laser-sweep animation */

@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import type { Request } from 'express';
-import { PrintDispatchError } from '@/services/print-dispatcher';
 import { jobStore } from '@/services/job-store';
 import {
   printFile,
+  PrintDispatchError,
   type PrintJobOptions,
 } from '@/services/printer';
 import { withPrintQuality } from '@/services/print-job-options';
@@ -47,8 +47,6 @@ import {
   buildPrintQuote,
   type PrintQuoteResult,
 } from '@/services/print-quote';
-import { monitorSpoolerJob } from '@/services/print-spooler';
-import { PRINT_SPOOLER_MONITOR_WINDOW_MS } from '@/config';
 import {
   buildPrintJobEnqueuePayload,
   getJobProcessor,
@@ -906,38 +904,12 @@ export class CopyService {
             billableBwPages: quote.billableBwPages,
           },
         });
-        const jobDispatchedAt = getTrustedTimestamp().timestamp;
         await printFile(relPath, printOptions, {
           transactionId: jobId,
           mode: 'copy',
           source: 'copy-service',
           spoolerCorrelationKey: normalized.spoolerCorrelationKey,
         });
-
-        if (telemetry.name) {
-          void monitorSpoolerJob({
-            printerName: telemetry.name,
-            chargedAmount: requiredAmount,
-            jobDispatchedAt,
-            spoolerCorrelationKey: normalized.spoolerCorrelationKey,
-            io: this.deps.io,
-            jobContext: {
-              transactionId: jobId,
-              mode: 'copy',
-              copies: quote.copies,
-              colorMode: quote.effectiveColorMode,
-              rotationDeg: normalized.rotationDeg,
-              spoolerCorrelationKey: normalized.spoolerCorrelationKey,
-              filename: previewFilename,
-              monitorStartPhase: 'post_dispatch',
-            },
-            onConfirmed: async () => {
-              // Any post-print cleanup or finalization if needed
-            },
-          }).catch((err) => {
-            console.error('[COPY-SPOOLER-MONITOR] monitorSpoolerJob failed:', err);
-          });
-        }
 
         void watchJobForMalfunction(this.deps.io, {
           jobId,
@@ -1211,10 +1183,13 @@ export class CopyService {
             jobId,
             error: message,
             failureCode:
-              err instanceof PrintDispatchError ? err.result.failureCode : null,
+              err instanceof PrintDispatchError
+                ? (err.result.failureCode ?? null)
+                : null,
             requiredCapabilities:
               err instanceof PrintDispatchError
-                ? err.result.requiredCapabilities.length > 0
+                ? err.result.requiredCapabilities &&
+                  err.result.requiredCapabilities.length > 0
                   ? err.result.requiredCapabilities.join(',')
                   : null
                 : null,

@@ -36,9 +36,48 @@ if (idleBootFlag) {
   window.history.replaceState(null, '', window.location.pathname);
 }
 
+function syncFabVisibility(): void {
+  const isPricingOpen = Boolean(document.getElementById('pricingOverlay')?.classList.contains('is-open'));
+  const isGuideOpen = Boolean(document.getElementById('guideOverlay')?.classList.contains('is-visible'));
+  const isReportOpen = Boolean(document.getElementById('reportOverlay')?.classList.contains('is-visible'));
+  const isFeedbackOpen = Boolean(document.getElementById('feedbackOverlay')?.classList.contains('is-visible'));
+  const isWifiOpen = Boolean(document.getElementById('wifiOverlay')?.classList.contains('is-visible'));
+  const isAdminOpen = Boolean(document.getElementById('adminOverlay')?.classList.contains('is-visible'));
+  const isIdleAttractorOpen = Boolean(
+    document.getElementById('idleOverlay')?.classList.contains('is-visible') ||
+    document.documentElement.classList.contains('kiosk-boot-idle')
+  );
+  const idleWarning = document.querySelector<HTMLElement>('.idle-warning-overlay');
+  const isIdleWarningOpen = Boolean(
+    idleWarning &&
+    (idleWarning.classList.contains('is-visible') ||
+      (idleWarning.style.display && idleWarning.style.display !== 'none'))
+  );
+
+  const shouldHide =
+    isPricingOpen ||
+    isGuideOpen ||
+    isReportOpen ||
+    isFeedbackOpen ||
+    isWifiOpen ||
+    isAdminOpen ||
+    isIdleAttractorOpen ||
+    isIdleWarningOpen;
+
+  document.body?.setAttribute('data-modal-open', String(shouldHide));
+  if (typeof document.querySelectorAll === 'function') {
+    document.querySelectorAll<HTMLElement>('.kiosk-fab, .printbit-language-fab').forEach((fab) => {
+      fab.classList.toggle('is-hidden', shouldHide);
+      fab.setAttribute('aria-hidden', String(shouldHide));
+    });
+  }
+}
+
 initIdleScreen({
   overlayId: 'idleOverlay',
   activateImmediately: idleBootFlag,
+  onShow: () => syncFabVisibility(),
+  onHide: () => syncFabVisibility(),
 });
 
 const ioFactory = (
@@ -74,6 +113,7 @@ function setPricingModalOpen(open: boolean): void {
   if (!pricingOverlay) return;
   pricingOverlay.classList.toggle('is-open', open);
   pricingOverlay.setAttribute('aria-hidden', String(!open));
+  syncFabVisibility();
   if (open) closePricingBtn?.focus();
   else openPricingBtn?.focus();
 }
@@ -152,7 +192,6 @@ window.addEventListener('pagehide', (event) => {
 });
 
 openPrint?.addEventListener('click', () => {
-  sessionStorage.setItem(PRINT_ONBOARDING_TRIGGER_KEY, '1');
   navigateTo('/print');
 });
 openCopy?.addEventListener('click', () => navigateTo('/copy'));
@@ -245,12 +284,14 @@ function openWifiModal(): void {
   renderHomeWifiQr();
   wifiOverlay?.classList.add('is-visible');
   wifiOverlay?.setAttribute('aria-hidden', 'false');
+  syncFabVisibility();
   closeWifiBtn?.focus();
 }
 
 function closeWifiModal(): void {
   wifiOverlay?.classList.remove('is-visible');
   wifiOverlay?.setAttribute('aria-hidden', 'true');
+  syncFabVisibility();
 }
 
 openWifiBtn?.addEventListener('click', openWifiModal);
@@ -552,6 +593,7 @@ function openGuide(name: GuideName): void {
 
   guideOverlay.classList.add('is-visible');
   guideOverlay.setAttribute('aria-hidden', 'false');
+  syncFabVisibility();
 }
 
 function closeGuide(): void {
@@ -559,6 +601,7 @@ function closeGuide(): void {
   guideOverlay.classList.remove('is-visible');
   guideOverlay.setAttribute('aria-hidden', 'true');
   activeGuide = null;
+  syncFabVisibility();
 }
 
 window.addEventListener(KIOSK_LANGUAGE_CHANGED_EVENT, () => {
@@ -751,12 +794,14 @@ async function renderFeedbackQr(): Promise<void> {
 function openFeedbackModal(): void {
   feedbackOverlay?.classList.add('is-visible');
   feedbackOverlay?.setAttribute('aria-hidden', 'false');
+  syncFabVisibility();
   void renderFeedbackQr();
 }
 
 function closeFeedbackModal(): void {
   feedbackOverlay?.classList.remove('is-visible');
   feedbackOverlay?.setAttribute('aria-hidden', 'true');
+  syncFabVisibility();
 }
 
 openFeedbackBtn?.addEventListener('click', openFeedbackModal);
@@ -798,12 +843,14 @@ async function renderReportQr(): Promise<void> {
 function openReportModal(): void {
   reportOverlay?.classList.add('is-visible');
   reportOverlay?.setAttribute('aria-hidden', 'false');
+  syncFabVisibility();
   void renderReportQr();
 }
 
 function closeReportModal(): void {
   reportOverlay?.classList.remove('is-visible');
   reportOverlay?.setAttribute('aria-hidden', 'true');
+  syncFabVisibility();
 }
 
 openReportBtn?.addEventListener('click', openReportModal);
@@ -832,6 +879,7 @@ let tapTimer: number | null = null;
 function openAdminModal(): void {
   adminOverlay?.classList.add('is-visible');
   adminOverlay?.setAttribute('aria-hidden', 'false');
+  syncFabVisibility();
   adminPinInput?.focus();
   if (adminPinError) adminPinError.textContent = '';
   if (adminPinInput) adminPinInput.value = '';
@@ -840,6 +888,7 @@ function openAdminModal(): void {
 function closeAdminModal(): void {
   adminOverlay?.classList.remove('is-visible');
   adminOverlay?.setAttribute('aria-hidden', 'true');
+  syncFabVisibility();
   if (adminPinInput) adminPinInput.value = '';
   if (adminPinError) adminPinError.textContent = '';
 }
@@ -914,3 +963,5 @@ adminPinInput?.addEventListener('keydown', (e) => {
 adminOverlay?.addEventListener('click', (e) => {
   if (e.target === adminOverlay) closeAdminModal();
 });
+
+syncFabVisibility();

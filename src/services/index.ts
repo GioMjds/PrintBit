@@ -13,18 +13,15 @@ export * from './prepare-print-pdf';
 export * from './preview';
 export * from './print-quote';
 export * from './print-lifecycle-state';
-export * from './print-spooler';
-export { warmPrinterEdgeRunspace, cancelPrintJobViaEdge } from './windows-printer-edge';
-export * from './printer-monitor';
-export * from './printer-fault-lock';
+export * from './printer-state-projection';
 export type { Orientation, PaperSize, PrintJobOptions } from './printer';
 export type { PrintDispatchContext, PrintDispatchResult } from './printer';
 export {
+  PrintDispatchError,
   assertPrintDispatcherReady,
   detectDefaultPrinter,
   printFile,
 } from './printer';
-export * from './printer-status';
 export * from './pricing-analysis-queue';
 export * from './report-issue';
 export * from './recovery';

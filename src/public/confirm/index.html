@@ -545,6 +545,29 @@
               class="maintenance-resolution__expiry"
               id="maintenanceReceiptQrExpiry"
             ></p>
+            <button
+              type="button"
+              class="qr-troubleshoot-btn qr-troubleshoot-btn--maintenance"
+              id="maintenanceWifiHelpBtn"
+              aria-haspopup="dialog"
+              aria-controls="confirmWifiModalOverlay"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 8.5a9 9 0 0 1 12 0" />
+                <path d="M1.5 5.5a13 13 0 0 1 17 0" />
+                <path d="M6.8 11.5a5 5 0 0 1 6.4 0" />
+                <circle cx="10" cy="15" r="1" fill="currentColor" />
+              </svg>
+              <span>QR code not opening? Check Wi-Fi</span>
+            </button>
           </div>
 
           <p
@@ -1115,6 +1138,31 @@
           </div>
         </div>
 
+        <!-- Wi-Fi QR troubleshooting helper button -->
+        <button
+          type="button"
+          class="qr-troubleshoot-btn qr-troubleshoot-btn--confirm"
+          id="confirmWifiHelpBtn"
+          aria-haspopup="dialog"
+          aria-controls="confirmWifiModalOverlay"
+        >
+          <svg
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 8.5a9 9 0 0 1 12 0" />
+            <path d="M1.5 5.5a13 13 0 0 1 17 0" />
+            <path d="M6.8 11.5a5 5 0 0 1 6.4 0" />
+            <circle cx="10" cy="15" r="1" fill="currentColor" />
+          </svg>
+          <span>QR code not opening on phone? Check Wi-Fi</span>
+        </button>
+
         <!-- Remaining files continuation prompt (print mode only) -->
         <p
           class="modal-subtitle modal-subtitle--remaining"
@@ -1204,6 +1252,105 @@
 
     <script src="/socket.io/socket.io.js"></script>
 
+
+    <!-- Wi-Fi Troubleshooting Modal -->
+    <div
+      class="modal-overlay wifi-modal-overlay"
+      id="confirmWifiModalOverlay"
+      aria-hidden="true"
+    >
+      <div
+        class="modal-card wifi-modal-card"
+        role="dialog"
+        aria-labelledby="confirmWifiModalTitle"
+        aria-describedby="confirmWifiModalSubtitle"
+        aria-modal="true"
+      >
+        <div class="wifi-modal-header">
+          <div class="wifi-modal-icon-badge" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+              <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+              <line x1="12" y1="20" x2="12.01" y2="20" stroke-width="3" />
+            </svg>
+          </div>
+          <div class="wifi-modal-title-group">
+            <h3 class="modal-title wifi-modal-title" id="confirmWifiModalTitle">
+              QR Code Not Opening?
+            </h3>
+            <p class="modal-subtitle wifi-modal-subtitle" id="confirmWifiModalSubtitle">
+              If the link won't open on your phone, you might not be connected to the kiosk Wi-Fi yet.
+            </p>
+          </div>
+        </div>
+
+        <div class="wifi-modal-body">
+          <div class="wifi-modal-qr-section">
+            <div class="qr-frame qr-frame--sm wifi-qr-frame">
+              <span class="qr-corner qr-corner--tl" aria-hidden="true"></span>
+              <span class="qr-corner qr-corner--tr" aria-hidden="true"></span>
+              <span class="qr-corner qr-corner--bl" aria-hidden="true"></span>
+              <span class="qr-corner qr-corner--br" aria-hidden="true"></span>
+              <canvas
+                id="confirmWifiQrCanvas"
+                width="180"
+                height="180"
+                aria-label="PrintBit Wi-Fi QR Code"
+              ></canvas>
+            </div>
+            <p class="wifi-modal-qr-caption">Scan with phone camera to connect</p>
+          </div>
+
+          <div class="wifi-modal-info-section">
+            <div class="wifi-credentials-card">
+              <div class="wifi-credential-row">
+                <span class="wifi-credential-label">Network (SSID)</span>
+                <span class="wifi-credential-val" id="confirmWifiSsidVal">PrintBit</span>
+              </div>
+              <div class="wifi-credential-row">
+                <span class="wifi-credential-label">Password</span>
+                <span class="wifi-credential-val" id="confirmWifiPasswordVal">Open (No password required)</span>
+              </div>
+            </div>
+
+            <div class="wifi-steps-list">
+              <div class="wifi-step-item">
+                <span class="wifi-step-num">1</span>
+                <div class="wifi-step-text">
+                  <strong>Connect to kiosk Wi-Fi</strong>
+                  <span>Scan the QR code above or join the network in your phone settings.</span>
+                </div>
+              </div>
+              <div class="wifi-step-item">
+                <span class="wifi-step-num">2</span>
+                <div class="wifi-step-text">
+                  <strong>Stay connected</strong>
+                  <span>If your phone prompts "No internet connection", choose <em>Keep Connected</em>.</span>
+                </div>
+              </div>
+              <div class="wifi-step-item">
+                <span class="wifi-step-num">3</span>
+                <div class="wifi-step-text">
+                  <strong>Re-scan QR code</strong>
+                  <span>Return and scan the receipt or download QR code again.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions wifi-modal-actions">
+          <button
+            type="button"
+            class="modal-btn modal-btn--primary wifi-modal-close-btn"
+            id="confirmWifiModalCloseBtn"
+          >
+            Got it, back to QR code
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Idle Warning Overlay (Pure Typography Fullscreen) -->
     <div

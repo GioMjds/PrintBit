@@ -154,6 +154,14 @@ function showIdleOverlay(): void {
   overlayEl.removeAttribute('aria-hidden');
   overlayEl.setAttribute('aria-modal', 'true');
 
+  document.body?.setAttribute('data-idle-active', 'true');
+  if (typeof document.querySelectorAll === 'function') {
+    document.querySelectorAll<HTMLElement>('.kiosk-fab, .printbit-language-fab').forEach((el) => {
+      el.classList.add('is-hidden');
+      el.setAttribute('aria-hidden', 'true');
+    });
+  }
+
   if (onShowCb) onShowCb();
 }
 
@@ -161,6 +169,14 @@ function hideIdleOverlay(): void {
   if (!overlayEl || !isVisible || isLeaving) return;
 
   isLeaving = true;
+
+  document.body?.removeAttribute('data-idle-active');
+  if (typeof document.querySelectorAll === 'function') {
+    document.querySelectorAll<HTMLElement>('.kiosk-fab, .printbit-language-fab').forEach((el) => {
+      el.classList.remove('is-hidden');
+      el.setAttribute('aria-hidden', 'false');
+    });
+  }
 
   // Switch to is-leaving state to trigger the fast fade-out exit animation
   overlayEl.classList.remove('is-visible');

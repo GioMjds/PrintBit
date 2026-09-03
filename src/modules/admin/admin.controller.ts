@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { Router, Request, Response } from 'express';
 import type { Server as SocketIOServer } from 'socket.io';
 import {
@@ -30,18 +31,15 @@ import {
 import { anomalyService } from '@/services/anomaly';
 import { generateTestPagePdf } from '@/services/test-page';
 import {
-  getPrinterTelemetry,
-  refreshPrinterTelemetry,
   listInstalledPrinters,
   runInkTelemetryDiagnostics,
-} from '@/services/printer-status';
+  getPrinterTelemetry,
+  refreshPrinterTelemetry,
+} from '@/services/printer-state-projection';
 import { getExternalWatchdogState } from '@/services/watchdog-health';
 import { detectDefaultPrinter } from '@/services/printer';
-import {
-  PrintDispatchError,
-  assertPrintDispatcherReady,
-  printDispatcher,
-} from '@/services/print-dispatcher';
+import { handoffToWorker } from '@/services/worker-handoff';
+import { WORKER_QUEUE_DIR } from '@/config';
 import { getScannerStatus } from '@/services/scanner';
 import {
   getTrustedTimeStatus,
@@ -1997,29 +1995,26 @@ export class AdminController {
     const tmpAbsPath = path.resolve(this.deps.uploadDir, tmpFilename);
 
     try {
-      assertPrintDispatcherReady();
       const pdfBuffer = generateTestPagePdf(new Date());
       fs.writeFileSync(tmpAbsPath, pdfBuffer);
 
-      // Dispatch directly through the print dispatcher instead of the
-      // user-facing `printFile()` helper. The helper enforces a strict UUID
-      // filename pattern to harden against untrusted upload paths, but the
-      // admin test page is generated server-side under a controlled uploads
-      // directory, so we can safely hand the dispatcher the absolute path.
-      const dispatchResult = await printDispatcher.dispatchFile(
-        tmpAbsPath,
-        {
+      const queueDir =
+        WORKER_QUEUE_DIR || path.resolve('../printbit-worker/queue');
+      const transactionId = randomUUID();
+      const spoolerCorrelationKey = randomUUID();
+
+      const handoffResult = await handoffToWorker({
+        sourcePath: tmpAbsPath,
+        queueDir,
+        transactionId,
+        spoolerCorrelationKey,
+        printSettings: {
           copies: 1,
-          colorMode: 'grayscale',
+          color: false,
           orientation: 'portrait',
-          paperSize: 'A4',
-          printerName: telemetry.name,
+          quality: 'standard',
         },
-        {
-          mode: 'admin-test',
-          source: 'admin-test-print',
-        },
-      );
+      });
       const totalElapsedMs = Date.now() - startedAtMs;
 
       await this.adminService.appendAdminLog(
@@ -2031,26 +2026,9 @@ export class AdminController {
           driverName: telemetry.driverName ?? null,
           portName: telemetry.portName ?? null,
           totalElapsedMs,
-          dispatchDurationMs: dispatchResult.durationMs,
-          dispatchEngine: dispatchResult.selectedEngine ?? null,
-          dispatchAttempts: dispatchResult.attempts.length,
-          dispatchMode: dispatchResult.mode,
-          dispatchRequestedMode: dispatchResult.requestedMode,
-        },
-      );
-      await this.adminService.appendAdminLog(
-        'admin_test_print_timing',
-        `Admin test print timing recorded for "${telemetry.name}".`,
-        {
-          printerName: telemetry.name,
-          totalElapsedMs,
-          dispatchDurationMs: dispatchResult.durationMs,
-          dispatchEngine: dispatchResult.selectedEngine ?? null,
-          dispatchAttempts: dispatchResult.attempts.length,
-          dispatchMode: dispatchResult.mode,
-          dispatchRequestedMode: dispatchResult.requestedMode,
-          dispatchMimeType: dispatchResult.mimeType,
-          dispatchExtension: dispatchResult.fileExtension,
+          queueFileName: handoffResult.fileName,
+          transactionId,
+          spoolerCorrelationKey,
         },
       );
 
@@ -2058,19 +2036,14 @@ export class AdminController {
         ok: true,
         printerName: telemetry.name,
         printerStatus: telemetry.status,
-        message: `Test page sent to "${telemetry.name}". Check the printer output tray.`,
+        message: `Test page queued for "${telemetry.name}". Check the printer output tray.`,
         timing: {
           totalElapsedMs,
-          dispatchDurationMs: dispatchResult.durationMs,
-          dispatchEngine: dispatchResult.selectedEngine,
-          dispatchAttempts: dispatchResult.attempts.length,
         },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       const totalElapsedMs = Date.now() - startedAtMs;
-      const dispatchFailure =
-        err instanceof PrintDispatchError ? err.result : null;
       await this.adminService.appendAdminLog(
         'admin_test_print_failed',
         `Admin test print failed on "${telemetry.name}".`,
@@ -2078,11 +2051,6 @@ export class AdminController {
           printerName: telemetry.name,
           error: message,
           totalElapsedMs,
-          dispatchDurationMs: dispatchFailure?.durationMs ?? null,
-          dispatchEngine: dispatchFailure?.selectedEngine ?? null,
-          dispatchAttempts: dispatchFailure?.attempts.length ?? null,
-          dispatchMode: dispatchFailure?.mode ?? null,
-          dispatchRequestedMode: dispatchFailure?.requestedMode ?? null,
         },
       );
       res.status(500).json({
@@ -2091,9 +2059,6 @@ export class AdminController {
         printerName: telemetry.name,
         timing: {
           totalElapsedMs,
-          dispatchDurationMs: dispatchFailure?.durationMs ?? null,
-          dispatchEngine: dispatchFailure?.selectedEngine ?? null,
-          dispatchAttempts: dispatchFailure?.attempts.length ?? null,
         },
       });
     } finally {

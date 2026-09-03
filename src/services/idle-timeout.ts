@@ -221,6 +221,14 @@ export function showPageIdleWarning(): void {
     cachedModalElement.classList.remove('is-leaving');
     cachedModalElement.style.display = 'flex';
 
+    document.body?.setAttribute('data-idle-active', 'true');
+    if (typeof document.querySelectorAll === 'function') {
+      document.querySelectorAll<HTMLElement>('.kiosk-fab, .printbit-language-fab').forEach((el) => {
+        el.classList.add('is-hidden');
+        el.setAttribute('aria-hidden', 'true');
+      });
+    }
+
     // Tap anywhere on the overlay backdrop to dismiss
     cachedModalElement.removeEventListener('click', handleOverlayClick);
     cachedModalElement.addEventListener('click', handleOverlayClick);
@@ -238,6 +246,14 @@ export function hidePageIdleWarning(onComplete?: () => void): void {
   // Prevent duplicate trigger if already exiting
   if (cachedModalElement.classList?.contains?.('is-leaving')) {
     return;
+  }
+
+  document.body?.removeAttribute('data-idle-active');
+  if (typeof document.querySelectorAll === 'function') {
+    document.querySelectorAll<HTMLElement>('.kiosk-fab, .printbit-language-fab').forEach((el) => {
+      el.classList.remove('is-hidden');
+      el.setAttribute('aria-hidden', 'false');
+    });
   }
 
   // Remove overlay tap listener

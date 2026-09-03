@@ -34,19 +34,22 @@ test('keeps preview navigation and zoom controls in the toolbar, outside the pap
   expect(toolbar.indexOf('id="pagePrev"')).toBeLessThan(toolbar.indexOf('id="zoomOut"'));
 });
 
-test('elevates the lower-right preview toolbar and stacks navigation above zoom', () => {
+test('places the preview toolbar inside the settings footer above the continue action', () => {
   const styles = fs.readFileSync(
     path.resolve('src/public/config/styles.css'),
     'utf8',
   );
 
-  expect(styles).toMatch(/\.preview-toolbar\s*\{[\s\S]*?position:\s*absolute;/);
-  expect(styles).toMatch(/\.preview-toolbar\s*\{[\s\S]*?right:\s*20px;/);
-  expect(styles).toMatch(/\.preview-toolbar\s*\{[\s\S]*?bottom:\s*clamp\(80px,\s*12vh,\s*112px\);/);
-  expect(styles).toMatch(/\.preview-toolbar\s*\{[\s\S]*?flex-direction:\s*column;/);
+  expect(styles).toMatch(/\.preview-toolbar\s*\{[\s\S]*?display:\s*flex;/);
+  expect(styles).toMatch(/\.preview-toolbar\s*\{[\s\S]*?justify-content:\s*space-between;/);
+  const footerStart = page.indexOf('class="config-pane-footer"');
+  const footerEnd = page.indexOf('</section>', footerStart);
+  const footer = page.slice(footerStart, footerEnd);
+  expect(footer).toContain('class="preview-toolbar"');
+  expect(footer.indexOf('class="preview-toolbar"')).toBeLessThan(footer.indexOf('id="continueBtn"'));
 });
 
-test('keeps kiosk configuration non-scrollable and controls touch-sized', () => {
+test('keeps kiosk configuration controls touch-sized and protects numeric fields from virtual keyboard popups', () => {
   const styles = fs.readFileSync(
     path.resolve('src/public/config/styles.css'),
     'utf8',
@@ -54,35 +57,37 @@ test('keeps kiosk configuration non-scrollable and controls touch-sized', () => 
 
   expect(styles).toMatch(/\.settings-scroll\s*\{[\s\S]*?overflow:\s*hidden;/);
   expect(styles).toMatch(/\.preview-toolbar \.pager-btn,[\s\S]*?min-width:\s*44px;/);
-  expect(styles).toContain('.option-card:has(input:focus-visible)');
+  expect(styles).toMatch(/\.copies-input\s*\{[\s\S]*?pointer-events:\s*none;/);
   expect(page).toMatch(/id="copies"[\s\S]*?max="30"/);
+  expect(page).toMatch(/id="copies"[\s\S]*?readonly/);
+  expect(page).toMatch(/id="singlePageInput"[\s\S]*?readonly/);
+  expect(page).toMatch(/id="customRangeStartInput"[\s\S]*?readonly/);
+  expect(page).toMatch(/id="customRangeEndInput"[\s\S]*?readonly/);
 });
 
-test('groups paper size and page range in a color-coded full-width grid', () => {
+test('separates paper size and page range each into its own full-width grid line and hides extra settings for all pages', () => {
   const styles = fs.readFileSync(
     path.resolve('src/public/config/styles.css'),
     'utf8',
   );
-  const groupStart = page.indexOf('class="document-options-grid"');
-  const groupEnd = page.indexOf('<!-- /.document-options-grid -->', groupStart);
-  const documentOptions = page.slice(groupStart, groupEnd);
 
-  expect(groupStart).toBeGreaterThan(-1);
-  expect(documentOptions).toContain('id="paperSizeGroup"');
-  expect(documentOptions).toContain('id="pageRangeGroup"');
-  expect(styles).toMatch(/\.document-options-grid\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
-  expect(styles).toMatch(/\.document-options-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,/);
+  expect(page).not.toContain('class="document-options-grid"');
+  expect(page).toContain('id="paperSizeGroup"');
+  expect(page).toContain('id="pageRangeGroup"');
+  expect(styles).toMatch(/#paperSizeGroup,\s*\n\s*#pageRangeGroup\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
   expect(styles).toContain('#paperSizeGroup .option-card:has(input:checked)');
   expect(styles).toContain('#pageRangeGroup .option-card:has(input:checked)');
+  expect(page).toMatch(/id="pageRangeCustomWrap"[\s\S]*?class="[^"]*hidden/);
+  expect(page).toMatch(/id="pageRangeSingleWrap"[\s\S]*?class="[^"]*hidden/);
 });
 
-test('raises the settings footer above the kiosk bottom edge', () => {
+test('positions the settings footer with compact padding to lower the continue action', () => {
   const styles = fs.readFileSync(
     path.resolve('src/public/config/styles.css'),
     'utf8',
   );
 
-  expect(styles).toMatch(/\.config-pane-footer\s*\{[\s\S]*?padding:\s*18px 20px clamp\(48px,\s*7vh,\s*72px\);/);
+  expect(styles).toMatch(/\.config-pane-footer\s*\{[\s\S]*?padding:\s*12px 18px 14px;/);
 });
 
 test('stacks settings vertically instead of overflowing narrow screens', () => {

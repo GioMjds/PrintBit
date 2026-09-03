@@ -39,11 +39,7 @@
           <div class="clock-date" id="clockDate">--- --, ----</div>
         </div>
 
-        <div class="topbar-right">
-          <button class="pricing-link" id="openPricingBtn" type="button">
-            Printing prices
-          </button>
-        </div>
+        <div class="topbar-right" aria-hidden="true"></div>
       </header>
 
       <!-- Main Action Area -->
@@ -496,22 +492,55 @@
       </div>
     </div>
 
-    <!-- Report floating button -->
-    <button class="report-fab" id="openReportBtn" aria-label="Report an issue">
+    <!-- Floating Action Buttons (FABs) -->
+    <!-- Printing prices floating button (Top-Right) -->
+    <button
+      class="kiosk-fab pricing-fab"
+      id="openPricingBtn"
+      type="button"
+      aria-label="Printing prices"
+      title="Printing prices"
+    >
       <svg
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        width="20"
-        height="20"
+        class="kiosk-fab__icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
       >
-        <path
-          fill-rule="evenodd"
-          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-          clip-rule="evenodd"
-        />
+        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+        <line x1="7" y1="7" x2="7.01" y2="7" />
       </svg>
-      <span>Report Issue</span>
+      <span class="pricing-fab__badge" aria-hidden="true">₱</span>
+      <span class="kiosk-fab__tooltip kiosk-fab__tooltip--bottom">Printing prices</span>
+    </button>
+
+    <!-- Report floating button (Bottom-Right) -->
+    <button
+      class="kiosk-fab report-fab"
+      id="openReportBtn"
+      type="button"
+      aria-label="Report an issue"
+      title="Report an issue"
+    >
+      <svg
+        class="kiosk-fab__icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+        <line x1="12" y1="9" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+      <span class="kiosk-fab__tooltip kiosk-fab__tooltip--left">Report Issue</span>
     </button>
 
     <!-- Report QR modal -->
@@ -546,26 +575,27 @@
       </div>
     </div>
 
-    <!-- Feedback floating button -->
+    <!-- Feedback floating button (Bottom-Right) -->
     <button
-      class="feedback-fab"
+      class="kiosk-fab feedback-fab"
       id="openFeedbackBtn"
-      aria-label="Send feedback or report an issue"
+      type="button"
+      aria-label="Send feedback"
+      title="Feedback"
     >
       <svg
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        width="20"
-        height="20"
+        class="kiosk-fab__icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
       >
-        <path
-          fill-rule="evenodd"
-          d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 010 2H6a1 1 0 01-1-1zm1 3a1 1 0 000 2h3a1 1 0 000-2H6z"
-          clip-rule="evenodd"
-        />
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
-      <span>Feedback</span>
+      <span class="kiosk-fab__tooltip kiosk-fab__tooltip--left">Feedback</span>
     </button>
 
     <!-- Feedback QR modal -->
