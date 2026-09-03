@@ -318,6 +318,7 @@ async function openDetail(id: string): Promise<void> {
     detailResolveBtn.classList.toggle('hidden', issue.status === 'resolved');
     detailReopenBtn.classList.toggle('hidden', issue.status === 'open');
 
+    detailOverlay.classList.remove('is-leaving');
     detailOverlay.classList.remove('hidden');
   } catch {
     setMessage('Network error loading report details.');
@@ -325,8 +326,16 @@ async function openDetail(id: string): Promise<void> {
 }
 
 function closeDetailModal(): void {
-  detailOverlay.classList.add('hidden');
   activeDetailId = null;
+  if (detailOverlay && !detailOverlay.classList.contains('hidden')) {
+    detailOverlay.classList.add('is-leaving');
+    window.setTimeout(() => {
+      detailOverlay.classList.add('hidden');
+      detailOverlay.classList.remove('is-leaving');
+    }, 200);
+  } else {
+    detailOverlay?.classList.add('hidden');
+  }
 }
 
 async function updateDetailStatus(
@@ -382,6 +391,11 @@ nextPageBtn.addEventListener('click', () => {
 closeDetail.addEventListener('click', closeDetailModal);
 detailOverlay.addEventListener('click', (e) => {
   if (e.target === detailOverlay) closeDetailModal();
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && detailOverlay && !detailOverlay.classList.contains('hidden')) {
+    closeDetailModal();
+  }
 });
 
 detailAckBtn.addEventListener(

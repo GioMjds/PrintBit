@@ -460,6 +460,38 @@ body {
   }
 }
 
+.printer-error-modal-overlay.is-leaving {
+  animation: error-overlay-out 240ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+.printer-error-modal-overlay.is-leaving .printer-error-modal {
+  animation: error-card-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+
+@keyframes error-overlay-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0) saturate(1);
+    -webkit-backdrop-filter: blur(0) saturate(1);
+  }
+}
+
+@keyframes error-card-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+}
+
 /* ── Animated error icon ──────────────────────────────────── */
 
 .printer-error-modal__icon-ring {
@@ -1283,6 +1315,7 @@ body {
 }
 
 /* ── Modal shared primitive ───────────────────────────────── */
+/* ── Modal shared primitive ───────────────────────────────── */
 .modal {
   position: fixed;
   inset: 0;
@@ -1290,17 +1323,21 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(14, 13, 31, 0.84);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(14, 13, 31, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 250ms ease;
+  transition:
+    opacity 250ms ease,
+    visibility 250ms ease;
   padding: 16px;
   box-sizing: border-box;
 }
 .modal.is-visible {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -1310,14 +1347,16 @@ body {
   max-height: 94vh;
   overflow: hidden; /* strictly non-scrollable in kiosk mode */
   background: #181730;
-  border: 1.5px solid rgba(167, 170, 225, 0.2);
-  border-radius: 24px;
-  padding: 24px 26px 20px;
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  border-radius: 28px;
+  padding: 26px 28px 22px;
   box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.65),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
-  transform: translateY(14px) scale(0.98);
-  transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1);
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(16px) scale(0.96);
+  transition:
+    transform 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1325,6 +1364,7 @@ body {
 }
 .modal.is-visible .modal-card {
   transform: translateY(0) scale(1);
+  opacity: 1;
 }
 
 .modal-card::-webkit-scrollbar,
@@ -1355,19 +1395,23 @@ body {
   max-height: min(92vh, 740px);
   overflow-y: auto;
   background: #181730;
-  border: 1.5px solid rgba(167, 170, 225, 0.18);
-  border-radius: 26px;
-  padding: 26px 28px 22px;
-  box-shadow: 0 -8px 60px rgba(0, 0, 0, 0.5);
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  border-radius: 28px;
+  padding: 28px 30px 24px;
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   text-align: center;
-  transform: translateY(20px) scale(0.98);
+  transform: translateY(16px) scale(0.96);
   transition:
-    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease,
     max-width 220ms ease;
   box-sizing: border-box;
 }
 .modal.is-visible .modal-sheet {
   transform: translateY(0) scale(1);
+  opacity: 1;
 }
 
 /* When 2 QR codes are present (Scan mode), widen the sheet to comfortably fit side-by-side */
@@ -1393,6 +1437,15 @@ body {
   gap: 16px;
   padding: 0 24px;
   box-sizing: border-box;
+  transform: translateY(16px) scale(0.96);
+  transition:
+    transform 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease;
+}
+
+.modal.is-visible .modal-fs {
+  transform: translateY(0) scale(1);
+  opacity: 1;
 }
 
 /* ── Modal Header ─────────────────────────────────────────── */
@@ -2250,3 +2303,252 @@ body {
   }
 }
 
+/* ── QR Troubleshoot Helper Button ───────────────────────── */
+.qr-troubleshoot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(105, 111, 199, 0.08);
+  border: 1px solid rgba(167, 170, 225, 0.22);
+  border-radius: 12px;
+  color: #c5c8f8;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.qr-troubleshoot-btn:hover {
+  background: rgba(105, 111, 199, 0.16);
+  border-color: rgba(167, 170, 225, 0.4);
+  color: var(--white);
+  transform: translateY(-1px);
+}
+.qr-troubleshoot-btn:active {
+  transform: scale(0.98);
+}
+.qr-troubleshoot-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #8b93f8;
+}
+.qr-troubleshoot-btn--confirm {
+  margin: 14px auto 0;
+}
+.qr-troubleshoot-btn--maintenance {
+  margin-top: 14px;
+  width: 100%;
+}
+
+/* ── Wi-Fi Troubleshooting Modal ──────────────────────────── */
+.wifi-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14, 13, 31, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 250ms ease,
+    visibility 250ms ease;
+}
+.wifi-modal-overlay.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.wifi-modal-card {
+  width: 640px;
+  max-width: 94vw;
+  background: #181730;
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  border-radius: 28px;
+  padding: 34px 34px 26px;
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(16px) scale(0.96);
+  transition:
+    transform 250ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 250ms ease;
+}
+.wifi-modal-overlay.is-visible .wifi-modal-card {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+.wifi-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.wifi-modal-icon-badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(105, 111, 199, 0.18);
+  border: 1.5px solid rgba(105, 111, 199, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9299ff;
+  flex-shrink: 0;
+}
+.wifi-modal-icon-badge svg {
+  width: 24px;
+  height: 24px;
+}
+.wifi-modal-title-group {
+  flex: 1;
+}
+.wifi-modal-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--white);
+}
+.wifi-modal-subtitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+.wifi-modal-body {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 22px;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(167, 170, 225, 0.12);
+  border-radius: 20px;
+  padding: 18px;
+  margin-bottom: 22px;
+}
+@media (max-width: 600px) {
+  .wifi-modal-body {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}
+.wifi-modal-qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wifi-qr-frame {
+  width: 190px;
+  height: 190px;
+  background: #ffffff;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+.wifi-qr-frame canvas {
+  width: 180px !important;
+  height: 180px !important;
+  display: block;
+}
+.wifi-modal-qr-caption {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a7aae1;
+  text-align: center;
+}
+.wifi-modal-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wifi-credentials-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 170, 225, 0.15);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wifi-credential-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.wifi-credential-label {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+.wifi-credential-val {
+  color: var(--white);
+  font-weight: 700;
+  font-family: monospace, sans-serif;
+  background: rgba(167, 170, 225, 0.12);
+  padding: 2px 8px;
+  border-radius: 6px;
+  word-break: break-all;
+}
+.wifi-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wifi-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #c5c8f8;
+}
+.wifi-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(105, 111, 199, 0.35);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.wifi-step-text strong {
+  display: block;
+  color: var(--white);
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}
+.wifi-step-text span {
+  color: var(--ink-muted);
+}
+.wifi-step-text em {
+  color: #a3e6ac;
+  font-style: normal;
+  font-weight: 700;
+}
+.wifi-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.wifi-modal-close-btn {
+  padding: 14px 28px;
+  font-size: 16px;
+  border-radius: 14px;
+}

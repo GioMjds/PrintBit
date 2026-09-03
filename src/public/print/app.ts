@@ -6,6 +6,7 @@ import {
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { attachPowerSafetyOverlay } from '../shared/power-safety-overlay';
+import { resolveWifiTroubleshootingDetails } from '../shared/wifi-troubleshooting';
 
 attachPowerSafetyOverlay();
 
@@ -62,8 +63,6 @@ type HotspotConfig = {
   startsManagedHotspot?: boolean;
 };
 
-const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
-
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const uploadLink = document.getElementById(
@@ -107,6 +106,8 @@ const startupContinueBtn = document.getElementById(
 const showWifiModalBtn = document.getElementById(
   'showWifiModalBtn',
 ) as HTMLButtonElement | null;
+const wifiSsidVal = document.getElementById('wifiSsidVal');
+const wifiPasswordVal = document.getElementById('wifiPasswordVal');
 const mobileGuideTextEl = document.getElementById(
   'mobileGuideText',
 ) as HTMLElement | null;
@@ -625,35 +626,18 @@ function normalizeLocalUploadUrl(uploadUrl: string): string {
   }
 }
 
-function escapeWifiQrValue(value: string): string {
-  return value.replace(/([\\;,:"])/g, '\\$1');
-}
-
-function buildWifiQrPayload(ssid: string, password: string): string {
-  const safeSsid = escapeWifiQrValue(ssid);
-  const safePassword = escapeWifiQrValue(password);
-  const authType = hotspotConfig?.authType?.trim().toLowerCase() ?? '';
-  const isOpenNetwork =
-    authType === 'nopass' ||
-    authType === 'open' ||
-    authType === 'none' ||
-    safePassword.length === 0;
-
-  if (isOpenNetwork) {
-    return `WIFI:T:nopass;S:${safeSsid};;`;
-  }
-  return `WIFI:T:WPA;S:${safeSsid};P:${safePassword};;`;
-}
-
 function renderStartupOnboarding(): void {
-  const configuredSsid = hotspotConfig?.ssid?.trim() ?? '';
-  const ssid = configuredSsid.length > 0 ? configuredSsid : 'PrintBit';
-  const configuredPassword = hotspotConfig?.password?.trim() ?? '';
+  const details = resolveWifiTroubleshootingDetails(hotspotConfig);
+  if (wifiSsidVal) wifiSsidVal.textContent = details.ssid;
+  if (wifiPasswordVal) {
+    wifiPasswordVal.textContent = details.isPasswordRequired
+      ? details.password
+      : 'Open (No password required)';
+  }
 
   if (startupWifiQrCanvas) {
-    const wifiPayload = buildWifiQrPayload(ssid, configuredPassword);
-    void QRCode.toCanvas(startupWifiQrCanvas, wifiPayload, {
-      width: 220,
+    void QRCode.toCanvas(startupWifiQrCanvas, details.qrPayload, {
+      width: 180,
       margin: 1,
       color: { dark: '#1a1a2e', light: '#ffffff' },
       errorCorrectionLevel: 'M',
@@ -1105,13 +1089,6 @@ function hideStartupOnboardingModal(): void {
   startupOnboardingOverlay.setAttribute('aria-hidden', 'true');
 }
 
-function shouldShowStartupOnboardingModal(): boolean {
-  const shouldShow =
-    sessionStorage.getItem(PRINT_ONBOARDING_TRIGGER_KEY) === '1';
-  sessionStorage.removeItem(PRINT_ONBOARDING_TRIGGER_KEY);
-  return shouldShow;
-}
-
 // ── Idle Timeout Detection (uses shared module) ──────────────────────────────
 
 // ── New-session confirmation dialog ───────────────────────────────────────────
@@ -1230,6 +1207,19 @@ showWifiModalBtn?.addEventListener('click', () => {
   showStartupOnboardingModal();
 });
 
+startupOnboardingOverlay?.addEventListener('click', (e) => {
+  if (e.target === startupOnboardingOverlay) hideStartupOnboardingModal();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (
+    e.key === 'Escape' &&
+    startupOnboardingOverlay?.classList.contains('is-visible')
+  ) {
+    hideStartupOnboardingModal();
+  }
+});
+
 conversionCancelBtn?.addEventListener('click', () => {
   conversionWaitCancelled = true;
   conversionWaitInFlight = false;
@@ -1272,10 +1262,6 @@ continueBtn?.addEventListener('click', async () => {
     `&token=${encodeURIComponent(activeSessionToken)}`;
   navigateWithKioskMotion(destination);
 });
-
-if (shouldShowStartupOnboardingModal()) {
-  showStartupOnboardingModal();
-}
 
 hydrateNewSessionCooldownState();
 

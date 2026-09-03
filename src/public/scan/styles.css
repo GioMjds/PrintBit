@@ -368,7 +368,8 @@ body {
   height: 100dvh;
   padding: 24px;
   background: rgba(14, 13, 31, 0.88);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 #stateScanning .scan-overlay__card {
@@ -380,11 +381,12 @@ body {
   width: min(620px, calc(100vw - 48px));
   min-height: clamp(360px, 56vh, 480px);
   padding: clamp(44px, 6vh, 64px) clamp(52px, 7vw, 80px);
-  border-radius: 32px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1.5px solid rgba(167, 170, 225, 0.18);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+  border-radius: 28px;
+  background: #181730;
+  border: 1.5px solid rgba(167, 170, 225, 0.22);
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 #stateScanning .scanning-anim {

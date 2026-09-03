@@ -210,6 +210,7 @@ async function openDetail(id: string): Promise<void> {
   detailResolveBtn.classList.toggle('hidden', incident.status === 'resolved');
   detailReopenBtn.classList.toggle('hidden', incident.status === 'open');
 
+  detailOverlay.classList.remove('is-leaving');
   detailOverlay.classList.remove('hidden');
 }
 
@@ -225,16 +226,29 @@ async function updateStatus(
     setMessage('Failed to update status.');
     return;
   }
-  detailOverlay.classList.add('hidden');
-  activeDetailId = null;
+  closeDetailModal();
   await loadData();
   setMessage('Incident status updated.');
 }
 
 function closeDetailModal(): void {
-  detailOverlay.classList.add('hidden');
   activeDetailId = null;
+  if (detailOverlay && !detailOverlay.classList.contains('hidden')) {
+    detailOverlay.classList.add('is-leaving');
+    window.setTimeout(() => {
+      detailOverlay.classList.add('hidden');
+      detailOverlay.classList.remove('is-leaving');
+    }, 200);
+  } else {
+    detailOverlay?.classList.add('hidden');
+  }
 }
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && detailOverlay && !detailOverlay.classList.contains('hidden')) {
+    closeDetailModal();
+  }
+});
 
 refreshBtn.addEventListener('click', () => {
   setMessage('Refreshing...');
