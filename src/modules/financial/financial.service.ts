@@ -50,7 +50,6 @@ import {
   type PrintJobOptions,
 } from '@/services/printer';
 import { withPrintQuality } from '@/services/print-job-options';
-import { monitorSpoolerJob } from '@/services/print-spooler';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
 import type { SessionStore, UploadedDocument } from '@/services/session';
 import { buildPrintQuote } from '@/services/print-quote';
@@ -1491,7 +1490,6 @@ export class FinancialService {
         : getPrinterTelemetry();
     let jobDispatchedAt: string | null = null;
     let dispatchResult: PrintDispatchResult | null = null;
-    let spoolerMonitorStarted = false;
     let settlementCompleted = false;
     let spoolerConfirmedBeforeSettlement = false;
 
@@ -1515,57 +1513,6 @@ export class FinancialService {
     };
 
     let receipt: Record<string, unknown> | null = null;
-    const startSpoolerMonitor = (
-      chargedAmount: number,
-      monitorStartPhase: 'post_dispatch' | 'post_settlement',
-    ): void => {
-      if (mode !== 'print' || !jobDispatchedAt || !telemetry.name) return;
-      if (spoolerMonitorStarted) return;
-
-      const captureReceipt = receipt;
-      spoolerMonitorStarted = true;
-      void monitorSpoolerJob({
-        printerName: telemetry.name,
-        chargedAmount,
-        jobDispatchedAt,
-        spoolerCorrelationKey,
-        io: this.deps.io,
-        jobContext: {
-          transactionId,
-          mode,
-          copies,
-          colorMode: printOptions?.colorMode ?? colorMode,
-          rotationDeg: printOptions?.rotationDeg ?? rotationDeg,
-          duplex: printOptions?.duplex ?? false,
-          spoolerCorrelationKey,
-          sessionId: sessionId ?? null,
-          documentId: targetDocumentId ?? null,
-          filename: serverFilename ?? null,
-          pageRange: printOptions?.pageRange ?? null,
-          dispatchEngine: null,
-          dispatchMode: null,
-          dispatchRequestedMode: null,
-          dispatchDurationMs: null,
-          dispatchMimeType: null,
-          dispatchExtension: null,
-          dispatchAttempts: null,
-          monitorStartPhase,
-        },
-        onConfirmed: async () => {
-          if (!settlementCompleted) {
-            spoolerConfirmedBeforeSettlement = true;
-            return;
-          }
-          await runPostSpoolerConfirmedCallbacks();
-        },
-        receipt: captureReceipt,
-      }).catch((err) => {
-        console.error(
-          '[SPOOLER-MONITOR] monitorSpoolerJob failed:',
-          err instanceof Error ? err.message : err,
-        );
-      });
-    };
 
     if (mode === 'print' && serverFilename && printOptions) {
       if (!telemetry.connected || BLOCKED_STATUSES.has(telemetry.status)) {
@@ -1621,11 +1568,6 @@ export class FinancialService {
       // Queue handoff replaces direct Node-side dispatch. Payment is settled
       // before the local JobProcessor prepares the PDF and hands it to the C# worker.
     }
-
-    // Deferred monitor start until after settlement and receipt generation
-    // if (mode === 'print' && jobDispatchedAt && telemetry.name) {
-    //   startSpoolerMonitor(requiredAmount, 'post_dispatch');
-    // }
 
     try {
       await financialLedgerService.append({
@@ -1706,7 +1648,6 @@ export class FinancialService {
       },
     });
 
-    // receipt variable is declared higher up to be captured by startSpoolerMonitor
     try {
       const initialStatus: ReceiptRecordStatus =
         mode === 'print' ? 'settled_pending_terminal' : 'printed';
