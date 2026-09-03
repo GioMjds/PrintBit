@@ -9,7 +9,7 @@ import {
   cancelPrintJobViaEdge,
   pausePrintJobViaEdge,
   resumePrintJobViaEdge,
-} from '@/services/windows-printer-edge';
+} from '@/services/printer-state-projection';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
 import { financialLedgerService } from '@/services/financial-ledger';
 import { persistAndEmitPrintLifecycleState } from '@/services/print-lifecycle-state';
@@ -50,15 +50,16 @@ jest.mock('@/services/recovery', () => ({
   recordSpoolerLifecycleTransition: jest.fn(),
 }));
 
-jest.mock('@/services/printer-status', () => ({
-  getPrinterTelemetry: jest.fn().mockReturnValue({ name: 'TestPrinter' }),
-}));
-
-jest.mock('@/services/windows-printer-edge', () => ({
-  cancelPrintJobViaEdge: jest.fn(),
-  pausePrintJobViaEdge: jest.fn(),
-  resumePrintJobViaEdge: jest.fn(),
-}));
+jest.mock('@/services/printer-state-projection', () => {
+  const actual = jest.requireActual('@/services/printer-state-projection');
+  return {
+    ...actual,
+    cancelPrintJobViaEdge: jest.fn(),
+    pausePrintJobViaEdge: jest.fn(),
+    resumePrintJobViaEdge: jest.fn(),
+    getPrinterTelemetry: jest.fn().mockReturnValue({ name: 'TestPrinter' }),
+  };
+});
 
 jest.mock('@/services/transient-scan-file', () => ({
   deleteTransientScanFile: jest.fn(),

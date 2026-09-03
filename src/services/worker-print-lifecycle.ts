@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import type { SessionStore } from '@/services/session';
 import { adminService } from '@/services/admin';
@@ -15,6 +16,10 @@ import {
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
+import { consumablesStore } from '@/core/database/sqlite-storage';
+import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
+import { estimateInkUsageByJob } from '@/services/consumable-estimator';
+import { getTrustedTimestamp } from '@/services/time-source';
 import type { WorkerPrintEvent } from './worker-return-pipe';
 import { jobStore } from './job-store';
 
@@ -72,12 +77,76 @@ async function deleteUploadByStoredFilename(
   }
 }
 
+function appendConsumableUsageEvent(
+  eventMode: 'print',
+  transactionId: string,
+  recoveryContext: Record<string, string | number | boolean | null>,
+): void {
+  try {
+    const copies = typeof recoveryContext.copies === 'number' ? recoveryContext.copies : 1;
+    const duplex = Boolean(recoveryContext.duplex);
+    const selectedPages = typeof recoveryContext.selectedPages === 'number' ? recoveryContext.selectedPages : 1;
+    const colorMode = recoveryContext.colorMode === 'colored' ? 'colored' : 'grayscale';
+    const billableColorPages = typeof recoveryContext.billableColorPages === 'number'
+      ? recoveryContext.billableColorPages
+      : (colorMode === 'colored' ? selectedPages : 0);
+    const billableBwPages = typeof recoveryContext.billableBwPages === 'number'
+      ? recoveryContext.billableBwPages
+      : (colorMode === 'colored' ? 0 : selectedPages);
+    const estimatedSheetsUsed = typeof recoveryContext.estimatedSheetsUsed === 'number'
+      ? recoveryContext.estimatedSheetsUsed
+      : Math.max(1, copies) * Math.ceil(selectedPages / (duplex ? 2 : 1));
+
+    const estimatedInkUnits = estimateInkUsageByJob({
+      selectedColorPages: billableColorPages,
+      selectedBwPages: billableBwPages,
+      copies: Math.max(1, copies),
+      printerName: null,
+    });
+
+    consumablesStore.appendUsageEvent({
+      id: randomUUID(),
+      timestamp: getTrustedTimestamp().timestamp,
+      transactionId,
+      mode: eventMode,
+      copies: Math.max(1, copies),
+      duplex,
+      selectedPages,
+      billableColorPages,
+      billableBwPages,
+      estimatedSheetsUsed,
+      estimatedInkUnits,
+      source: 'worker-return-pipe',
+      billingPageDetection: 'fallback-assumptions',
+      analysisConfidence: 'unknown',
+    });
+  } catch (error) {
+    console.error('[WORKER-LIFECYCLE] Failed to append consumable usage event.', {
+      error: error instanceof Error ? error.message : String(error),
+      transactionId,
+    });
+  }
+}
+
 async function cleanupSuccessfulPrint(input: {
   transactionId: string;
   sessionStore: SessionStore;
   recoveryContext: Record<string, string | number | boolean | null>;
 }): Promise<void> {
   const { transactionId, sessionStore, recoveryContext } = input;
+
+  appendConsumableUsageEvent('print', transactionId, recoveryContext);
+  try {
+    await evaluateConsumablesForecastAlerts();
+  } catch (error) {
+    console.error(
+      '[WORKER-LIFECYCLE] Failed to evaluate consumables forecast alerts.',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        transactionId,
+      },
+    );
+  }
   const filename =
     typeof recoveryContext.filename === 'string' ? recoveryContext.filename : null;
   const sessionId =

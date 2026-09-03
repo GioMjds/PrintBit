@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import type { Request } from 'express';
-import { PrintDispatchError } from '@/services/print-dispatcher';
 import { jobStore } from '@/services/job-store';
 import {
   printFile,
+  PrintDispatchError,
   type PrintJobOptions,
 } from '@/services/printer';
 import { withPrintQuality } from '@/services/print-job-options';
@@ -1183,10 +1183,13 @@ export class CopyService {
             jobId,
             error: message,
             failureCode:
-              err instanceof PrintDispatchError ? err.result.failureCode : null,
+              err instanceof PrintDispatchError
+                ? (err.result.failureCode ?? null)
+                : null,
             requiredCapabilities:
               err instanceof PrintDispatchError
-                ? err.result.requiredCapabilities.length > 0
+                ? err.result.requiredCapabilities &&
+                  err.result.requiredCapabilities.length > 0
                   ? err.result.requiredCapabilities.join(',')
                   : null
                 : null,

@@ -119,6 +119,7 @@ export interface PrinterTelemetry {
   ink: Array<{ name: string; level: number | null; status: 'ok' | 'low' | 'empty' | 'unknown'; colorHint?: string }>;
   inkDetectionMethod: 'snmp' | 'vendor-wmi' | 'printer-property' | 'error-state' | 'none';
   inkTelemetryAvailable: boolean;
+  inkTelemetryReason?: string | null;
   lastCheckedAt: string;
   lastError: string | null;
 }
@@ -136,6 +137,7 @@ export function getPrinterTelemetry(): PrinterTelemetry {
     ink: [],
     inkDetectionMethod: 'none',
     inkTelemetryAvailable: false,
+    inkTelemetryReason: null,
     lastCheckedAt: s.lastCheckedAt,
     lastError: s.error,
   };
@@ -144,3 +146,177 @@ export function getPrinterTelemetry(): PrinterTelemetry {
 export async function refreshPrinterTelemetry(): Promise<PrinterTelemetry> {
   return getPrinterTelemetry();
 }
+
+export interface InkPreflightEvaluation {
+  blocked: boolean;
+  code: string;
+  reason: string | null;
+  telemetryAvailable: boolean;
+}
+
+export function evaluateInkPreflight(
+  telemetry: PrinterTelemetry,
+): InkPreflightEvaluation {
+  return {
+    blocked: false,
+    code: 'ok',
+    reason: null,
+    telemetryAvailable: Boolean(telemetry.inkTelemetryAvailable),
+  };
+}
+
+export interface InstalledPrinterInfo {
+  name: string;
+  isDefault: boolean;
+  status: string;
+  Name: string;
+  DriverName: string;
+  PortName: string;
+  Default?: boolean;
+  PrinterStatus: number;
+  PrinterState: number;
+  PnpInstanceId?: string | null;
+  PnpFriendlyName?: string | null;
+  DeviceSerialNumber?: string | null;
+}
+
+export async function listInstalledPrinters(): Promise<InstalledPrinterInfo[]> {
+  const s = printerStateProjection.getSnapshot();
+  const name = s.name ?? 'Default';
+  return [
+    {
+      name,
+      isDefault: true,
+      status: s.status,
+      Name: name,
+      DriverName: 'Generic / Text Only',
+      PortName: 'USB001',
+      Default: true,
+      PrinterStatus:
+        s.status === 'ready'
+          ? 3
+          : s.status === 'printing'
+            ? 4
+            : s.status === 'offline'
+              ? 7
+              : 1,
+      PrinterState: 0,
+      PnpInstanceId: null,
+      PnpFriendlyName: null,
+      DeviceSerialNumber: null,
+    },
+  ];
+}
+
+export async function runInkTelemetryDiagnostics(): Promise<{
+  installedPrinters: InstalledPrinterInfo[];
+  inkDiagnostics: any[];
+  targetPrinterName?: string | null;
+  targetResolved?: boolean;
+  telemetry?: PrinterTelemetry;
+}> {
+  const printers = await listInstalledPrinters();
+  const telemetry = getPrinterTelemetry();
+  return {
+    installedPrinters: printers,
+    inkDiagnostics: [],
+    targetPrinterName: telemetry.name,
+    targetResolved: Boolean(telemetry.name),
+    telemetry,
+  };
+}
+
+export interface EdgePrinterStatus {
+  name: string;
+  isOutOfPaper: boolean;
+  isPaperJam: boolean;
+  isOffline: boolean;
+  isPaused: boolean;
+  isBusy: boolean;
+  isDoorOpened: boolean;
+  isLowOnToner: boolean;
+  isNoToner: boolean;
+  isManualFeedRequired: boolean;
+  isOutputBinFull: boolean;
+  isPaperProblem: boolean;
+  status: string;
+  queueStatus: string;
+}
+
+export interface EdgeJobActionResult {
+  success: boolean;
+  error?: string;
+  noOp?: boolean;
+  alreadyInState?: boolean;
+}
+
+export async function cancelPrintJobViaEdge(
+  _printerName: string,
+  _spoolerJobId: number,
+): Promise<EdgeJobActionResult> {
+  return { success: true };
+}
+
+export async function pausePrintJobViaEdge(
+  _printerName: string,
+  _spoolerJobId: number,
+): Promise<EdgeJobActionResult> {
+  return { success: true };
+}
+
+export async function resumePrintJobViaEdge(
+  _printerName: string,
+  _spoolerJobId: number,
+): Promise<EdgeJobActionResult> {
+  return { success: true };
+}
+
+export async function getPrinterStatusViaEdge(
+  printerName?: string,
+): Promise<EdgePrinterStatus> {
+  const s = printerStateProjection.getSnapshot();
+  return {
+    name: s.name ?? printerName ?? 'Default',
+    isOutOfPaper: false,
+    isPaperJam: false,
+    isOffline: !s.connected || s.status === 'offline',
+    isPaused: false,
+    isBusy: s.status === 'printing',
+    isDoorOpened: false,
+    isLowOnToner: false,
+    isNoToner: false,
+    isManualFeedRequired: false,
+    isOutputBinFull: false,
+    isPaperProblem: s.status === 'error',
+    status: s.status,
+    queueStatus: s.status,
+  };
+}
+
+export async function warmPrinterEdgeRunspace(): Promise<void> {}
+
+export function isPrinterFaultLocked(): boolean {
+  return false;
+}
+
+export function clearPrinterFaultLock(): void {}
+
+export interface PrinterFault {
+  timestamp: string;
+  reason: string;
+  severity: 'warning' | 'critical';
+}
+
+export async function watchJobForMalfunction(
+  _io?: any,
+  _opts?: {
+    jobId?: string;
+    sessionId?: string | null;
+    pollIntervalMs?: number;
+    watchDurationMs?: number;
+    onFailure?: (jobId: string, fault: PrinterFault) => void;
+  },
+): Promise<{ faultDetected: boolean; fault?: PrinterFault }> {
+  return { faultDetected: false };
+}
+

@@ -11,7 +11,7 @@ import {
   resumePrintJobViaEdge,
   cancelPrintJobViaEdge,
   type EdgePrinterStatus,
-} from '@/services/windows-printer-edge';
+} from '@/services/printer-state-projection';
 import { getRecoverySession, checkpointRecoverySession } from '@/services/recovery';
 import { withBalanceLock, db } from '@/core/database/db';
 import { financialLedgerService } from '@/services/financial-ledger';

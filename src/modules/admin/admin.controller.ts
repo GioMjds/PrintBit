@@ -33,8 +33,6 @@ import { generateTestPagePdf } from '@/services/test-page';
 import {
   listInstalledPrinters,
   runInkTelemetryDiagnostics,
-} from '@/services/printer-status';
-import {
   getPrinterTelemetry,
   refreshPrinterTelemetry,
 } from '@/services/printer-state-projection';

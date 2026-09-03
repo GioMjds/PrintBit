@@ -2,11 +2,56 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { WORKER_QUEUE_DIR } from '@/config';
-import {
-  assertPrintDispatcherReady,
-  type PrintDispatchContext,
-  type PrintDispatchResult,
-} from './print-dispatcher';
+export class PrintDispatchError extends Error {
+  readonly result: {
+    failureCode?: string | null;
+    message?: string;
+    requiredCapabilities?: string[];
+    requestedOptions?: any;
+    [key: string]: any;
+  };
+  constructor(
+    message: string,
+    result: {
+      failureCode?: string | null;
+      message?: string;
+      requiredCapabilities?: string[];
+      requestedOptions?: any;
+      [key: string]: any;
+    } = {},
+  ) {
+    super(message);
+    this.name = 'PrintDispatchError';
+    this.result = result;
+  }
+}
+
+export function assertPrintDispatcherReady(): void {}
+
+export interface PrintDispatchContext {
+  transactionId?: string | null;
+  sessionId?: string | null;
+  documentId?: string | null;
+  spoolerCorrelationKey?: string | null;
+  mode?: 'print' | 'copy' | 'admin-test' | 'legacy-print';
+  source?: string | null;
+}
+
+export interface PrintDispatchResult {
+  success: boolean;
+  selectedEngine?: any;
+  mode?: any;
+  requestedMode?: any;
+  fileExtension?: string;
+  mimeType?: string;
+  requestedOptions?: any;
+  requiredCapabilities?: any;
+  attempts?: any[];
+  durationMs?: number;
+  failureCode?: string | null;
+  fileName?: string;
+}
+
 import { handoffToWorker } from './worker-handoff';
 import { printerStateProjection } from './printer-state-projection';
 import {
@@ -177,5 +222,3 @@ export const printerService = new PrinterService();
 export const detectDefaultPrinter =
   printerService.detectDefaultPrinter.bind(printerService);
 export const printFile = printerService.printFile.bind(printerService);
-export { assertPrintDispatcherReady };
-export type { PrintDispatchContext, PrintDispatchResult };

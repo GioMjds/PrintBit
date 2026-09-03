@@ -21,8 +21,6 @@ import {
   isCoinSlotLocked,
   isCoinSlotLockedBy,
   getCoinSlotLockOwnerId,
-  getPrinterFaultLock,
-  clearPrinterFaultLock,
 } from '@/services';
 import {
   powerSafetyService,
@@ -71,7 +69,7 @@ import {
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
-import { PrintDispatchError } from '@/services/print-dispatcher';
+import { PrintDispatchError } from '@/services/printer';
 import {
   normalizeRotationDeg,
   parseRotationDeg,
@@ -1490,27 +1488,6 @@ export class FinancialService {
         : getPrinterTelemetry();
     let jobDispatchedAt: string | null = null;
     let dispatchResult: PrintDispatchResult | null = null;
-    let settlementCompleted = false;
-    let spoolerConfirmedBeforeSettlement = false;
-
-    const runPostSpoolerConfirmedCallbacks = async (): Promise<void> => {
-      try {
-        appendConsumableUsageEvent('print');
-        await evaluateConsumablesForecastAlerts();
-      } catch (error) {
-        console.error(
-          '[CONFIRM-PAYMENT] Failed to persist print consumable usage event.',
-          error instanceof Error ? error.message : error,
-        );
-      }
-      if (!serverFilename) return;
-      await this.cleanupPrintUploadAfterSpoolerSuccess({
-        transactionId,
-        sessionId: sessionId ?? null,
-        documentId: targetDocumentId ?? null,
-        filename: serverFilename,
-      });
-    };
 
     let receipt: Record<string, unknown> | null = null;
 
@@ -1617,15 +1594,6 @@ export class FinancialService {
         requiredAmount,
       });
       return;
-    }
-    settlementCompleted = true;
-    if (spoolerConfirmedBeforeSettlement) {
-      void runPostSpoolerConfirmedCallbacks().catch((error) => {
-        console.error(
-          '[CONFIRM-PAYMENT] Deferred post-confirmed cleanup failed:',
-          error instanceof Error ? error.message : error,
-        );
-      });
     }
 
     const settledAt = getTrustedTimestamp().timestamp;
