@@ -494,7 +494,7 @@ export class ScannerService {
     await financialLedgerService.append({
       eventType: 'job_completed',
       amount: settlement.chargedAmount,
-      referenceId: filename,
+      referenceId: transactionId,
       meta: {
         mode: 'scan',
         filename,

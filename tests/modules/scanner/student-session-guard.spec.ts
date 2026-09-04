@@ -75,7 +75,9 @@ describe('ScannerService student transaction boundary', () => {
 
   test('returns the same paid scan ID that is attributed exactly once', async () => {
     attribute.mockReturnValue(undefined);
-    jest.spyOn(financialLedgerService, 'append').mockResolvedValue({} as never);
+    const ledger = jest
+      .spyOn(financialLedgerService, 'append')
+      .mockResolvedValue({} as never);
     jest.spyOn(settlementService, 'settle').mockResolvedValue(
       successfulSettlement(),
     );
@@ -98,5 +100,14 @@ describe('ScannerService student transaction boundary', () => {
       result.transactionId,
       'scan',
     );
+    expect(
+      ledger.mock.calls.map(([entry]) => ({
+        eventType: entry.eventType,
+        referenceId: entry.referenceId,
+      })),
+    ).toEqual([
+      { eventType: 'job_started', referenceId: result.transactionId },
+      { eventType: 'job_completed', referenceId: result.transactionId },
+    ]);
   });
 });

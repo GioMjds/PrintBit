@@ -381,11 +381,16 @@ export class CopyService {
     };
 
     const job = jobStore.createCopyJob(settings, null);
-    attributeStudentTransaction(
-      this.deps.studentSessionService,
-      job.id,
-      'copy',
-    );
+    try {
+      attributeStudentTransaction(
+        this.deps.studentSessionService,
+        job.id,
+        'copy',
+      );
+    } catch (error) {
+      jobStore.deleteJob(job.id);
+      throw error;
+    }
     void adminService.appendAdminLog('copy_job_created', 'Copy job created.', {
       jobId: job.id,
       copies: quote.copies,

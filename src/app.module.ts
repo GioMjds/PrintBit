@@ -102,9 +102,9 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     requireKiosk,
   );
   const requireStudent = requireStudentSession(studentSessionService);
-  app.use('/api/copy', requireStudent);
   app.post(
     [
+      '/api/copy/jobs',
       '/api/scanner/scan',
       '/api/scanner/soft-copy/charge',
       '/api/scan/jobs',
