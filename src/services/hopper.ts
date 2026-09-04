@@ -11,13 +11,61 @@ import {
   sendWorkerRequest,
   type WorkerHardwareResponse,
 } from './worker-command-pipe';
-import {
-  computeDispenseCoins,
-  generateRequestId,
-  HopperErrorCode,
-  isRetryableError,
-  type HopperErrorCodeValue,
-} from './hopper-protocol';
+export const HopperErrorCode = {
+  JAM: 'JAM',
+  EMPTY: 'EMPTY',
+  MOTOR_TIMEOUT: 'MOTOR_TIMEOUT',
+  PARTIAL: 'PARTIAL',
+  SENSOR: 'SENSOR',
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
+export type HopperErrorCodeValue =
+  (typeof HopperErrorCode)[keyof typeof HopperErrorCode];
+
+const RETRYABLE_CODES = new Set<string>([
+  HopperErrorCode.JAM,
+  HopperErrorCode.MOTOR_TIMEOUT,
+  HopperErrorCode.PARTIAL,
+]);
+
+export function isRetryableError(code: string): boolean {
+  return RETRYABLE_CODES.has(code);
+}
+
+const REQUEST_ID_ALPHABET = 'abcdef';
+
+export function generateRequestId(): string {
+  let id = '';
+  for (let i = 0; i < 4; i += 1) {
+    const idx = Math.floor(Math.random() * REQUEST_ID_ALPHABET.length);
+    id += REQUEST_ID_ALPHABET[idx];
+  }
+  return id;
+}
+
+export interface ChangeComputation {
+  coins: number;
+  isWholeAmount: boolean;
+  effectiveChange: number;
+  remainder: number;
+}
+
+export function computeDispenseCoins(changeAmount: number): ChangeComputation {
+  if (!Number.isFinite(changeAmount) || changeAmount <= 0) {
+    return { coins: 0, isWholeAmount: true, effectiveChange: 0, remainder: 0 };
+  }
+
+  const coins = Math.floor(changeAmount);
+  const remainder = Number((changeAmount - coins).toFixed(2));
+
+  return {
+    coins,
+    isWholeAmount: remainder === 0,
+    effectiveChange: coins,
+    remainder,
+  };
+}
 import { getTrustedTimestamp } from './time-source';
 import {
   ESP32_AP_BASE_URL,

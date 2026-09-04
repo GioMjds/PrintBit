@@ -15,7 +15,7 @@ import {
   findMatchingIpv4ForSubnet,
   getLocalIPv4,
 } from '@/utils/network';
-import { sendKioskIpAnnouncement } from './serial';
+import { sendKioskIpAnnouncement } from './hardware-state-projection';
 import {
   markWatchdogHeartbeat,
   setWatchdogComponentState,

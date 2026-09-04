@@ -3,7 +3,7 @@ import type { ModuleContext } from '../module.types';
 import { WatchdogService } from './watchdog.service';
 import { WatchdogController } from './watchdog.controller';
 import { ESP32_AP_BASE_URL, ESP32_HEALTH_TOKEN } from '@/config/http.config';
-import { isCoinSlotLocked } from '@/services/serial';
+import { isCoinSlotLocked } from '@/services/hardware-state-projection';
 import { normalizeRemoteIp } from '@/utils/network';
 
 export type WatchdogModuleDeps = ModuleContext;

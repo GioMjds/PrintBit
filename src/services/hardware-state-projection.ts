@@ -73,7 +73,21 @@ export class HardwareStateProjection {
     return Array.from(this.coinSlotLocks.keys());
   }
 
-  public async lockCoinSlot(ownerId: string, reason?: string): Promise<void> {
+  public getCoinSlotLockOwnerId(): string | null {
+    const owners = this.getCoinSlotLockOwners();
+    return owners.length > 0 ? owners[0] : null;
+  }
+
+  public getCoinSlotLockedAt(): string | null {
+    const first = this.coinSlotLocks.values().next();
+    return first.done ? null : first.value;
+  }
+
+  public resetCoinSlotLocks(): void {
+    this.coinSlotLocks.clear();
+  }
+
+  public lockCoinSlot(ownerId: string, reason?: string): void {
     this.coinSlotLocks.set(ownerId, new Date().toISOString());
     try {
       void sendWorkerCommand({
@@ -88,7 +102,7 @@ export class HardwareStateProjection {
     }
   }
 
-  public async unlockOwnedCoinSlot(ownerId: string): Promise<boolean> {
+  public unlockOwnedCoinSlot(ownerId: string): boolean {
     if (!this.coinSlotLocks.has(ownerId)) {
       return false;
     }
@@ -220,11 +234,11 @@ export function getHopperStatus(): HopperStatus {
   return hardwareStateProjection.getHopperStatus();
 }
 
-export function lockCoinSlot(ownerId: string, reason?: string): Promise<void> {
-  return hardwareStateProjection.lockCoinSlot(ownerId, reason);
+export function lockCoinSlot(ownerId: string, reason?: string): void {
+  hardwareStateProjection.lockCoinSlot(ownerId, reason);
 }
 
-export function unlockOwnedCoinSlot(ownerId: string): Promise<boolean> {
+export function unlockOwnedCoinSlot(ownerId: string): boolean {
   return hardwareStateProjection.unlockOwnedCoinSlot(ownerId);
 }
 
@@ -240,6 +254,26 @@ export function getCoinSlotLockOwners(): string[] {
   return hardwareStateProjection.getCoinSlotLockOwners();
 }
 
+export function getCoinSlotLockOwnerId(): string | null {
+  return hardwareStateProjection.getCoinSlotLockOwnerId();
+}
+
+export function getCoinSlotLockedAt(): string | null {
+  return hardwareStateProjection.getCoinSlotLockedAt();
+}
+
+export function resetCoinSlotLocks(): void {
+  hardwareStateProjection.resetCoinSlotLocks();
+}
+
+export async function initSerial(
+  io?: Server | Socket | { emit: (event: string, ...args: unknown[]) => void } | null,
+): Promise<void> {
+  if (io) {
+    hardwareStateProjection.setSocketIo(io);
+  }
+}
+
 export function sendKioskIpAnnouncement(
   kioskIp?: string,
   port = 3000,
@@ -251,3 +285,29 @@ export function sendKioskIpAnnouncement(
     portalPath,
   );
 }
+
+export const serialService = {
+  lockCoinSlot: (ownerId: string, reason?: string) =>
+    hardwareStateProjection.lockCoinSlot(ownerId, reason),
+  unlockOwnedCoinSlot: (ownerId: string) =>
+    hardwareStateProjection.unlockOwnedCoinSlot(ownerId),
+  isCoinSlotLocked: () => hardwareStateProjection.isCoinSlotLocked(),
+  isCoinSlotLockedBy: (ownerId: string) =>
+    hardwareStateProjection.isCoinSlotLockedBy(ownerId),
+  getCoinSlotLockOwners: () => hardwareStateProjection.getCoinSlotLockOwners(),
+  getCoinSlotLockOwnerId: () => hardwareStateProjection.getCoinSlotLockOwnerId(),
+  getCoinSlotLockedAt: () => hardwareStateProjection.getCoinSlotLockedAt(),
+  sendKioskIpAnnouncement: (
+    kioskIp?: string,
+    port = 3000,
+    portalPath = '/api/portal',
+  ) =>
+    hardwareStateProjection.sendKioskIpAnnouncement(
+      kioskIp ?? '127.0.0.1',
+      port,
+      portalPath,
+    ),
+  getSerialStatus: () => hardwareStateProjection.getSerialStatus(),
+  getHopperStatus: () => hardwareStateProjection.getHopperStatus(),
+};
+

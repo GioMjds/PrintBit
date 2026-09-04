@@ -3,7 +3,7 @@ import {
   powerSafetyStore,
   type PowerSafetySqliteStore,
 } from '@/core/database/power-safety-store';
-import { serialService } from './serial';
+import { serialService } from './hardware-state-projection';
 
 export type PowerState =
   | 'Operational'

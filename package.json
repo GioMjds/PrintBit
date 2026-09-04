@@ -49,7 +49,6 @@
   },
   "dependencies": {
     "@lottiefiles/dotlottie-web": "^0.79.2",
-    "@serialport/parser-readline": "^13.0.0",
     "argon2": "^0.44.0",
     "canvas": "^3.2.1",
     "cookie-parser": "^1.4.7",
@@ -69,7 +68,6 @@
     "pdfjs-dist": "^6.2.108",
     "pdfkit": "^0.20.1",
     "qrcode": "^1.5.4",
-    "serialport": "^13.0.0",
     "sharp": "^0.35.0",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5"

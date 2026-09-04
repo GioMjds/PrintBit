@@ -5,7 +5,7 @@ import {
   isCoinSlotLockedBy,
   getCoinSlotLockOwnerId,
   resetCoinSlotLocks,
-} from '../../src/services/serial';
+} from '../../src/services/hardware-state-projection';
 
 describe('Serial Coin Slot Multi-Owner Locking', () => {
   beforeEach(() => {

@@ -13,7 +13,7 @@ import {
   type AnomalyStatus,
   type LogMeta,
 } from './db';
-import { HopperErrorCode } from './hopper-protocol';
+import { HopperErrorCode } from './hopper';
 import type { AdminQueueView } from '@/modules/anomaly/anomaly.schema';
 
 export type { AdminQueueView };

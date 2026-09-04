@@ -4,7 +4,7 @@ import { runPowerShell } from '@/utils';
 import { adminService } from '@/modules/admin/admin.service';
 import { getTrustedTimestamp } from '@/services/time-source';
 import { db } from '@/services/db';
-import { HopperErrorCode } from '@/services/hopper-protocol';
+import { HopperErrorCode } from '@/services/hopper';
 import type {
   LogMeta,
   AlertChannel,
