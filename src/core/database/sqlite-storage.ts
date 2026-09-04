@@ -122,6 +122,35 @@ function ensureSchema(db: DatabaseSync): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS student_roster (
+      student_id_hmac TEXT PRIMARY KEY,
+      active INTEGER NOT NULL CHECK (active IN (0, 1)),
+      imported_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_student_roster_active
+      ON student_roster(active);
+
+    CREATE TABLE IF NOT EXISTS student_kiosk_sessions (
+      id TEXT PRIMARY KEY,
+      student_id_hmac TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('active', 'ended')),
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      end_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_student_kiosk_sessions_active
+      ON student_kiosk_sessions(status, started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS student_transaction_attributions (
+      transaction_id TEXT PRIMARY KEY,
+      kiosk_session_id TEXT NOT NULL,
+      student_id_hmac TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      attributed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_student_transaction_attributions_session
+      ON student_transaction_attributions(kiosk_session_id);
+
     CREATE TABLE IF NOT EXISTS wireless_sessions (
       session_id TEXT PRIMARY KEY,
       token TEXT NOT NULL UNIQUE,
@@ -681,6 +710,18 @@ export {
   WirelessSessionSqliteStore,
   wirelessSessionStore,
 } from './models/wireless-session.model';
+
+export {
+  type StudentRosterEntry,
+  type StudentRosterImportEntry,
+  type StudentKioskSessionEntry,
+  type ClaimStudentKioskSessionInput,
+  type ClaimStudentKioskSessionResult,
+  type StudentTransactionAttributionEntry,
+  type AttributeStudentTransactionInput,
+  StudentSessionSqliteStore,
+  studentSessionStore,
+} from './models/student-session.model';
 
 export {
   type PricingAnalysisCacheEntry,
