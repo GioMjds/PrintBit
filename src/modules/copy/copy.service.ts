@@ -53,6 +53,10 @@ import {
 } from '@/modules/print-queue';
 import { checkpointRecoverySession } from '@/services/recovery';
 import { upsertSpoolerFailureRefund } from '@/services/pending-refund';
+import {
+  attributeStudentTransaction,
+  type StudentSessionTransactionAuthority,
+} from '@/middleware/student-session';
 
 const VALID_COLOR_MODES = new Set(['colored', 'grayscale']);
 const VALID_ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -128,6 +132,7 @@ interface NormalizedCopyJobInput {
 export interface CopyServiceDeps {
   io: Server;
   resolvePublicBaseUrl: (req: Request) => URL;
+  studentSessionService?: StudentSessionTransactionAuthority;
 }
 
 export class CopyService {
@@ -376,6 +381,11 @@ export class CopyService {
     };
 
     const job = jobStore.createCopyJob(settings, null);
+    attributeStudentTransaction(
+      this.deps.studentSessionService,
+      job.id,
+      'copy',
+    );
     void adminService.appendAdminLog('copy_job_created', 'Copy job created.', {
       jobId: job.id,
       copies: quote.copies,
