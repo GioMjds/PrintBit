@@ -75,7 +75,9 @@ export class HardwareStateProjection {
 
   public getCoinSlotLockOwnerId(): string | null {
     const owners = this.getCoinSlotLockOwners();
-    return owners.length > 0 ? owners[0] : null;
+    if (owners.length === 0) return null;
+    const nonPowerSafety = owners.find((o) => o !== 'power-safety');
+    return nonPowerSafety ?? owners[0];
   }
 
   public getCoinSlotLockedAt(): string | null {

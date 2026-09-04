@@ -7,6 +7,11 @@ import {
   resetCoinSlotLocks,
 } from '../../src/services/hardware-state-projection';
 
+jest.mock('../../src/services/worker-command-pipe', () => ({
+  sendWorkerCommand: jest.fn().mockResolvedValue(true),
+  sendWorkerRequest: jest.fn().mockResolvedValue(null),
+}));
+
 describe('Serial Coin Slot Multi-Owner Locking', () => {
   beforeEach(() => {
     resetCoinSlotLocks();
