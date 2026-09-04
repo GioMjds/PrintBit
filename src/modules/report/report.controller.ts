@@ -21,6 +21,7 @@ import type {
   LogMeta,
   ReportIssueCategory,
   ReportIssueStatus,
+  AdminQueueView,
 } from './report.schema';
 
 export interface ReportControllerDeps {
@@ -426,6 +427,19 @@ export class ReportController {
   }
 
   private listAdminReportIssues(req: Request, res: Response): void {
+    const rawView = req.query.view;
+    let view: AdminQueueView | undefined;
+
+    if (rawView !== undefined) {
+      if (rawView !== 'active' && rawView !== 'archived' && rawView !== 'all') {
+        res
+          .status(400)
+          .json({ error: 'view must be active, archived, or all.' });
+        return;
+      }
+      view = rawView as AdminQueueView;
+    }
+
     const {
       status: rawStatus,
       category: rawCategory,
@@ -462,6 +476,7 @@ export class ReportController {
       this.service.listReportIssues({
         status,
         category,
+        view,
         limit,
         offset,
       }),

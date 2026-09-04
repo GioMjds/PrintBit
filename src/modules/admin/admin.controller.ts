@@ -28,7 +28,7 @@ import {
   dismissPendingRefund,
   processPendingRefund,
 } from '@/services/pending-refund';
-import { anomalyService } from '@/services/anomaly';
+import { anomalyService } from '@/modules/anomaly/anomaly.service';
 import { generateTestPagePdf } from '@/services/test-page';
 import {
   listInstalledPrinters,
@@ -59,6 +59,7 @@ import {
 import { hashPassword, verifyPassword } from '@/utils/hash';
 import { createAdminSession, destroyAdminSession } from '@/utils/admin-session';
 import type { AlertSettings } from './admin.schema';
+import type { AdminQueueView } from '@/modules/anomaly/anomaly.schema';
 import { ConsumablesService } from './consumables.service';
 import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
 import { getSqliteDb, writeRuntimeState } from '@/core/database/sqlite-storage';
@@ -2100,6 +2101,18 @@ export class AdminController {
   // ── Anomaly incidents handlers ─────────────────────────────────────────────
 
   private handleGetAnomalyIncidents = (req: Request, res: Response) => {
+    const rawView = req.query.view;
+    let view: AdminQueueView | undefined;
+
+    if (rawView !== undefined) {
+      if (rawView !== 'active' && rawView !== 'archived' && rawView !== 'all') {
+        return res
+          .status(400)
+          .json({ error: 'view must be active, archived, or all.' });
+      }
+      view = rawView as AdminQueueView;
+    }
+
     const statusRaw = req.query.status;
     const severityRaw = req.query.severity;
     const categoryRaw = req.query.category;
@@ -2121,6 +2134,7 @@ export class AdminController {
         status,
         severity,
         category,
+        view,
         limit,
         offset,
       }),

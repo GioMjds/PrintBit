@@ -54,7 +54,7 @@ let currentPage = 1;
 let totalItems = 0;
 let allItems: FeedbackEntry[] = [];
 let displayItems: FeedbackEntry[] = [];
-let activeFilter: 'all' | 'open' | 'resolved' = 'all';
+let activeFilter: 'active' | 'archived' | 'all' = 'active';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -170,7 +170,7 @@ function renderItems(items: FeedbackEntry[]): void {
 // ── Data fetching ────────────────────────────────────────────────────────────
 
 async function loadFeedback(): Promise<void> {
-  const params = new URLSearchParams({ limit: '1000' });
+  const params = new URLSearchParams({ limit: '1000', view: activeFilter });
 
   try {
     const res = await apiFetch(`/api/admin/feedback?${params.toString()}`);
@@ -179,18 +179,26 @@ async function loadFeedback(): Promise<void> {
       return;
     }
     const data = (await res.json()) as FeedbackListResponse;
-    allItems = data.items;
-    displayItems =
-      activeFilter === 'all'
-        ? allItems
-        : allItems.filter((e) => e.status === activeFilter);
-    totalItems = displayItems.length;
+    displayItems = data.items;
+    totalItems = data.total;
     currentPage = 1;
-    updateStats();
     renderPage();
+    await loadAllForStats();
     await loadSummary();
   } catch {
     setMessage('Network error loading feedback.');
+  }
+}
+
+async function loadAllForStats(): Promise<void> {
+  try {
+    const res = await apiFetch('/api/admin/feedback?limit=1000&view=all');
+    if (!res.ok) return;
+    const data = (await res.json()) as FeedbackListResponse;
+    allItems = data.items;
+    updateStats();
+  } catch (error) {
+    console.error('Failed to load all feedback for stats:', error);
   }
 }
 
@@ -208,7 +216,8 @@ async function loadSummary(): Promise<void> {
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 async function handleToggleResolved(id: string): Promise<void> {
-  const entry = allItems.find((e) => e.id === id);
+  const entry =
+    displayItems.find((e) => e.id === id) || allItems.find((e) => e.id === id);
   if (!entry) return;
   const resolved = entry.status === 'open';
   try {
@@ -223,15 +232,7 @@ async function handleToggleResolved(id: string): Promise<void> {
       setMessage('Failed to update feedback status.');
       return;
     }
-    entry.status = resolved ? 'resolved' : 'open';
-    entry.resolvedAt = resolved ? new Date().toISOString() : null;
-    displayItems =
-      activeFilter === 'all'
-        ? allItems
-        : allItems.filter((e) => e.status === activeFilter);
-    totalItems = displayItems.length;
-    updateStats();
-    renderPage();
+    await loadFeedback();
     setMessage(resolved ? 'Marked as resolved.' : 'Reopened.');
   } catch {
     setMessage('Network error.');
@@ -251,15 +252,7 @@ async function handleDelete(id: string): Promise<void> {
       setMessage('Failed to delete feedback.');
       return;
     }
-    allItems = allItems.filter((e) => e.id !== id);
-    displayItems =
-      activeFilter === 'all'
-        ? allItems
-        : allItems.filter((e) => e.status === activeFilter);
-    totalItems = displayItems.length;
-    if (currentPage > totalPages()) currentPage = totalPages();
-    updateStats();
-    renderPage();
+    await loadFeedback();
     setMessage('Feedback deleted.');
   } catch {
     setMessage('Network error.');
@@ -274,12 +267,7 @@ async function handleClearAll(): Promise<void> {
       setMessage('Failed to clear feedback.');
       return;
     }
-    allItems = [];
-    displayItems = [];
-    totalItems = 0;
-    currentPage = 1;
-    updateStats();
-    renderPage();
+    await loadFeedback();
     setMessage('All feedback cleared.');
   } catch {
     setMessage('Network error.');
@@ -294,7 +282,7 @@ function handleExportCsv(): void {
 
 filterBar.querySelectorAll<HTMLButtonElement>('.filter-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    const filter = btn.dataset.filter as 'all' | 'open' | 'resolved';
+    const filter = btn.dataset.filter as 'active' | 'archived' | 'all';
     activeFilter = filter;
     filterBar
       .querySelectorAll('.filter-btn')

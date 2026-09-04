@@ -9,6 +9,7 @@ import {
   type ReportIssueSessionEntry,
   type ReportIssueStatus,
 } from '@/services';
+import type { AdminQueueView } from './report.schema';
 import { serializeForInlineScript } from '@/utils/helpers';
 import { promoteStagedUpload } from '@/services/upload-staging';
 
@@ -84,6 +85,7 @@ export interface CreateAdminReportIssueInput {
 export interface ListReportIssueOptions {
   status?: ReportIssueStatus;
   category?: ReportIssueCategory;
+  view?: AdminQueueView;
   limit?: number;
   offset?: number;
 }

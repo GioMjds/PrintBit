@@ -17,6 +17,8 @@ export type FeedbackCategory =
 
 export type FeedbackStatus = 'open' | 'resolved';
 
+export type AdminQueueView = 'active' | 'archived' | 'all';
+
 export interface FeedbackEntry {
   id: string;
   sessionId: string;

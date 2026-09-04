@@ -68,7 +68,7 @@ const detailReopenBtn = document.getElementById(
 const PAGE_SIZE = 10;
 let currentPage = 1;
 let totalItems = 0;
-let activeFilter: 'all' | 'open' | 'acknowledged' | 'resolved' = 'all';
+let activeFilter: 'active' | 'archived' | 'all' = 'active';
 let activeDetailId: string | null = null;
 let poller: number | null = null;
 
@@ -141,9 +141,9 @@ function renderIncidents(items: AnomalyIncident[]): void {
 
 async function loadData(): Promise<void> {
   const offset = (currentPage - 1) * PAGE_SIZE;
-  const statusParam = activeFilter !== 'all' ? `&status=${activeFilter}` : '';
+  const viewParam = `&view=${activeFilter}`;
   const response = await apiFetch(
-    `/api/admin/anomaly-incidents?limit=${PAGE_SIZE}&offset=${offset}${statusParam}`,
+    `/api/admin/anomaly-incidents?limit=${PAGE_SIZE}&offset=${offset}${viewParam}`,
   );
   if (!response.ok) {
     throw new Error('Failed to load anomaly incidents.');
@@ -226,8 +226,8 @@ async function updateStatus(
     setMessage('Failed to update status.');
     return;
   }
-  closeDetailModal();
   await loadData();
+  closeDetailModal();
   setMessage('Incident status updated.');
 }
 

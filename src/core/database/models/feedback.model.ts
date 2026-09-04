@@ -12,6 +12,8 @@ export type FeedbackCategory =
 
 export type FeedbackStatus = 'open' | 'resolved';
 
+export type AdminQueueView = 'active' | 'archived' | 'all';
+
 export interface FeedbackEntry {
   id: string;
   sessionId: string;
@@ -35,6 +37,7 @@ export interface FeedbackSessionEntry {
 
 export type ListFeedbackOptions = {
   status?: FeedbackEntry['status'];
+  view?: AdminQueueView;
   limit: number;
   offset: number;
 };
@@ -192,42 +195,28 @@ export class FeedbackSqliteStore {
     items: FeedbackEntry[];
   } {
     const db = getSqliteDb();
-    const status = options.status;
     const limit = Math.max(1, Math.floor(options.limit));
     const offset = Math.max(0, Math.floor(options.offset));
 
-    if (!status) {
-      const totalRow = db
-        .prepare('SELECT COUNT(*) AS total FROM feedback_entries')
-        .get() as { total?: unknown };
-      const rows = db
-        .prepare(
-          `SELECT
-            id,
-            session_id,
-            timestamp,
-            comment,
-            category,
-            rating,
-            status,
-            resolved_at,
-            meta_json
-           FROM feedback_entries
-           ORDER BY timestamp DESC
-           LIMIT ? OFFSET ?`,
-        )
-        .all(limit, offset) as Array<Record<string, unknown>>;
-      return {
-        total: Number(totalRow.total ?? 0),
-        items: rows.map((row) => this.toFeedbackEntry(row)),
-      };
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+
+    if (options.view === 'active') {
+      where.push('status = ?');
+      params.push('open');
+    } else if (options.view === 'archived') {
+      where.push('status = ?');
+      params.push('resolved');
+    } else if (options.status) {
+      where.push('status = ?');
+      params.push(options.status);
     }
 
+    const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
     const totalRow = db
-      .prepare(
-        'SELECT COUNT(*) AS total FROM feedback_entries WHERE status = ?',
-      )
-      .get(status) as { total?: unknown };
+      .prepare(`SELECT COUNT(*) AS total FROM feedback_entries ${whereSql}`)
+      .get(...params) as { total?: unknown };
     const rows = db
       .prepare(
         `SELECT
@@ -241,11 +230,11 @@ export class FeedbackSqliteStore {
           resolved_at,
           meta_json
          FROM feedback_entries
-         WHERE status = ?
+         ${whereSql}
          ORDER BY timestamp DESC
          LIMIT ? OFFSET ?`,
       )
-      .all(status, limit, offset) as Array<Record<string, unknown>>;
+      .all(...params, limit, offset) as Array<Record<string, unknown>>;
 
     return {
       total: Number(totalRow.total ?? 0),

@@ -12,6 +12,8 @@ export type ReportIssueCategory =
 
 export type ReportIssueStatus = 'open' | 'acknowledged' | 'resolved';
 
+export type AdminQueueView = 'active' | 'archived' | 'all';
+
 export interface ReportIssueSessionEntry {
   id: string;
   token: string;
@@ -50,6 +52,7 @@ export interface ReportIssueEntry {
 export type ListReportIssueOptions = {
   status?: ReportIssueStatus;
   category?: ReportIssueCategory;
+  view?: AdminQueueView;
   limit: number;
   offset: number;
 };
@@ -339,7 +342,13 @@ export class ReportIssueSqliteStore {
 
     const where: string[] = [];
     const params: Array<string | number> = [];
-    if (options.status) {
+    if (options.view === 'active') {
+      where.push('status != ?');
+      params.push('resolved');
+    } else if (options.view === 'archived') {
+      where.push('status = ?');
+      params.push('resolved');
+    } else if (options.status) {
       where.push('status = ?');
       params.push(options.status);
     }

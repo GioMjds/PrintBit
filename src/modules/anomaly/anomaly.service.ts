@@ -13,6 +13,7 @@ import type {
   AnomalySeverity,
   AnomalyStatus,
   AnomalyIncidentEntry,
+  AdminQueueView,
 } from './anomaly.schema';
 
 const SMTP_PASSWORD_ENV_VAR = 'PRINTBIT_ALERT_SMTP_PASSWORD';
@@ -32,6 +33,7 @@ export interface ListAnomalyOptions {
   status?: AnomalyStatus;
   severity?: AnomalySeverity;
   category?: AnomalyCategory;
+  view?: AdminQueueView;
   limit?: number;
   offset?: number;
 }
@@ -84,7 +86,13 @@ export class AnomalyService {
 
     const filtered = db
       .data!.anomalyIncidents.filter((entry) => {
-        if (options.status && entry.status !== options.status) return false;
+        if (options.view === 'active') {
+          if (entry.status === 'resolved') return false;
+        } else if (options.view === 'archived') {
+          if (entry.status !== 'resolved') return false;
+        } else if (options.status && entry.status !== options.status) {
+          return false;
+        }
         if (options.severity && entry.severity !== options.severity)
           return false;
         if (options.category && entry.category !== options.category)
