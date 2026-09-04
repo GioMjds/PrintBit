@@ -105,6 +105,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
   app.post(
     [
       '/api/copy/jobs',
+      '/api/copy/jobs/:id/cancel',
       '/api/scanner/scan',
       '/api/scanner/soft-copy/charge',
       '/api/scan/jobs',

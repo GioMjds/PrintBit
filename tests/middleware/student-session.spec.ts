@@ -219,6 +219,10 @@ async function createRegisteredRouteTestApp(): Promise<RegisteredRouteTestApp> {
           routeHits('copy-status');
           res.sendStatus(204);
         });
+        app.post('/api/copy/jobs/:id/cancel', (_req, res) => {
+          routeHits('copy-cancel');
+          res.sendStatus(204);
+        });
       },
     }));
     jest.doMock('@/modules/scanner', () => ({
@@ -321,6 +325,7 @@ describe('student transaction route placement', () => {
     try {
       for (const path of [
         '/api/copy/jobs',
+        '/api/copy/jobs/copy-id/cancel',
         '/api/scanner/scan',
         '/api/scanner/soft-copy/charge',
         '/api/scan/jobs',
@@ -334,7 +339,7 @@ describe('student transaction route placement', () => {
           code: 'STUDENT_IDENTIFICATION_REQUIRED',
         });
       }
-      expect(testApp.guardChecks).toHaveBeenCalledTimes(6);
+      expect(testApp.guardChecks).toHaveBeenCalledTimes(7);
       expect(testApp.routeHits).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve, reject) => {
