@@ -82,6 +82,33 @@ test('rejects ID-shaped end reasons before they can be persisted', () => {
   ).toBeUndefined();
 });
 
+test('persists idle timeout and emits the same opaque ended state as explicit end', () => {
+  const { service, io } = makeService();
+  service.replaceRosterCsv('student_id,active\n1234567,true');
+  expect(service.identify('1234567')).toMatchObject({ ok: true });
+  (io.emit as unknown as jest.Mock).mockClear();
+
+  const idleEnded = service.endActiveSession('idle_timeout');
+  const idleRow = getSqliteDb()
+    .prepare('SELECT end_reason FROM student_kiosk_sessions WHERE id = ?')
+    .get('sessionId' in idleEnded ? idleEnded.sessionId : '') as
+    | { end_reason: string }
+    | undefined;
+
+  expect(idleRow?.end_reason).toBe('idle_timeout');
+  expect(io.emit).toHaveBeenCalledWith('kiosk.session.ended', idleEnded);
+
+  expect(service.identify('1234567')).toMatchObject({ ok: true });
+  const explicitEnded = service.endActiveSession('user_ended');
+  const explicitRow = getSqliteDb()
+    .prepare('SELECT end_reason FROM student_kiosk_sessions WHERE id = ?')
+    .get('sessionId' in explicitEnded ? explicitEnded.sessionId : '') as
+    | { end_reason: string }
+    | undefined;
+
+  expect(explicitRow?.end_reason).toBe('user_ended');
+});
+
 test('requires the exact roster CSV header and valid active values', () => {
   const { service } = makeService();
 

@@ -16,6 +16,13 @@ import type {
 import { StudentSessionService } from './student-session.service';
 
 const PORTAL_STATUS_COOKIE = 'printbit_portal_status';
+type BrowserSessionEndReason = 'user_ended' | 'idle_timeout';
+
+function isBrowserSessionEndReason(
+  value: unknown,
+): value is BrowserSessionEndReason {
+  return value === 'user_ended' || value === 'idle_timeout';
+}
 
 const identifyRateLimit = createRateLimit({
   keyPrefix: 'student-portal-identify',
@@ -31,7 +38,7 @@ const rosterUpload = multer({
 export interface StudentSessionControllerService {
   identify(studentId: string): StudentIdentificationResult;
   getKioskState(): StudentKioskState;
-  endActiveSession(reason: 'user_ended'): StudentKioskState;
+  endActiveSession(reason: BrowserSessionEndReason): StudentKioskState;
   replaceRosterCsv(csv: string): RosterReplacementResult;
 }
 
@@ -109,8 +116,13 @@ export class StudentSessionController {
     res.json(this.service.getKioskState());
   };
 
-  private endKioskSession = (_req: Request, res: Response): void => {
-    res.json(this.service.endActiveSession('user_ended'));
+  private endKioskSession = (req: Request, res: Response): void => {
+    const reason: unknown = req.body?.reason;
+    if (!isBrowserSessionEndReason(reason)) {
+      res.status(400).json({ error: 'Invalid session end reason.' });
+      return;
+    }
+    res.json(this.service.endActiveSession(reason));
   };
 
   private importRoster = (req: Request, res: Response): void => {

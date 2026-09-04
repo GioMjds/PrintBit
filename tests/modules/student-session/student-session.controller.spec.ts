@@ -12,7 +12,7 @@ import type {
 interface StudentSessionRouteService {
   identify(studentId: string): StudentIdentificationResult;
   getKioskState(): StudentKioskState;
-  endActiveSession(reason: 'user_ended'): StudentKioskState;
+  endActiveSession(reason: 'user_ended' | 'idle_timeout'): StudentKioskState;
   replaceRosterCsv(csv: string): RosterReplacementResult;
 }
 
@@ -197,6 +197,8 @@ describe('StudentSessionController', () => {
 
     const kioskEnd = await fetch(`${baseUrl}/api/kiosk/student-session/end`, {
       method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'user_ended' }),
     });
     expect(await kioskEnd.json()).toEqual({
       status: 'ended',
@@ -204,6 +206,39 @@ describe('StudentSessionController', () => {
     });
     expect(service.endActiveSession).toHaveBeenCalledWith('user_ended');
   });
+
+  test('forwards idle timeout end reasons', async () => {
+    service.endActiveSession.mockReturnValue({ status: 'idle' });
+
+    const idleEnd = await fetch(`${baseUrl}/api/kiosk/student-session/end`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'idle_timeout' }),
+    });
+
+    expect(idleEnd.status).toBe(200);
+    expect(service.endActiveSession).toHaveBeenCalledWith('idle_timeout');
+  });
+
+  test.each([undefined, '', 'server_restart'])(
+    'rejects unsupported browser end reason %p',
+    async (reason) => {
+      const invalidEnd = await fetch(
+        `${baseUrl}/api/kiosk/student-session/end`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        },
+      );
+
+      expect(invalidEnd.status).toBe(400);
+      expect(await invalidEnd.json()).toEqual({
+        error: 'Invalid session end reason.',
+      });
+      expect(service.endActiveSession).not.toHaveBeenCalled();
+    },
+  );
 
   test('keeps kiosk status and end routes behind the existing kiosk access middleware', () => {
     const req = {
