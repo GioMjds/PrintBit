@@ -91,6 +91,9 @@ export class HardwareStateProjection {
 
   public lockCoinSlot(ownerId: string, reason?: string): void {
     this.coinSlotLocks.set(ownerId, new Date().toISOString());
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
     try {
       void sendWorkerCommand({
         type: 'LockCoinSlot' as any,
@@ -109,6 +112,9 @@ export class HardwareStateProjection {
       return false;
     }
     this.coinSlotLocks.delete(ownerId);
+    if (process.env.NODE_ENV === 'test') {
+      return true;
+    }
     try {
       void sendWorkerCommand({
         type: 'UnlockCoinSlot' as any,

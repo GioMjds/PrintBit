@@ -63,6 +63,7 @@ export async function sendWorkerRequest<TResponse = WorkerHardwareResponse>(
     const finish = (result: TResponse | null) => {
       if (resolved) return;
       resolved = true;
+      socket.setTimeout(0);
       socket.destroy();
       resolve(result);
     };
@@ -143,6 +144,7 @@ export async function sendWorkerCommand(
     const finish = (result: boolean) => {
       if (resolved) return;
       resolved = true;
+      socket.setTimeout(0);
       socket.destroy();
       resolve(result);
     };
