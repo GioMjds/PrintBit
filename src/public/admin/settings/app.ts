@@ -125,6 +125,7 @@ const openAlertBadgeMob = document.getElementById(
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 let refreshTimer: number | null = null;
 let loadedAdminLocalOnly: boolean = false;
+let settingsDirty: boolean = false;
 
 function applySettings(settings: SettingsResponse): void {
   settingAdminPin.value = '';
@@ -277,15 +278,28 @@ async function loadAlertStats(): Promise<void> {
   updateSidebarBadges(summary);
 }
 
-async function loadData(): Promise<void> {
+async function loadData(
+  options: { applyToForm?: boolean } = {},
+): Promise<void> {
+  const applyToForm = options.applyToForm ?? true;
   const res = await apiFetch('/api/admin/settings');
   if (!res.ok) {
     if (res.status === 401) throw new Error('Invalid admin PIN.');
     throw new Error('Failed to load settings.');
   }
   const settings = (await res.json()) as SettingsResponse;
-  applySettings(settings);
+  if (applyToForm) {
+    applySettings(settings);
+  }
 }
+
+settingsForm.addEventListener('input', () => {
+  settingsDirty = true;
+});
+
+settingsForm.addEventListener('change', () => {
+  settingsDirty = true;
+});
 
 settingsForm.addEventListener('submit', (e) => {
   e.preventDefault();
@@ -363,13 +377,61 @@ settingsForm.addEventListener('submit', (e) => {
   const scanDocumentPrice = Number(settingScanDocument?.value ?? 0);
   const highQualitySurcharge = Number(settingHighQualitySurcharge?.value ?? 0);
 
+  const isWholePeso = (n: number): boolean => Number.isInteger(n) && n >= 0;
+
+  if (settingA4BwPrice && !isWholePeso(a4BwPrice)) {
+    setMessage('A4 B&W price must be a whole peso value (no decimals).');
+    return;
+  }
+  if (settingA4ColorPrice && !isWholePeso(a4ColorPrice)) {
+    setMessage('A4 Color price must be a whole peso value (no decimals).');
+    return;
+  }
+  if (settingA4BwPrice && settingA4ColorPrice && a4ColorPrice < a4BwPrice) {
+    setMessage('A4 Color price cannot be less than B&W price.');
+    return;
+  }
+
+  if (settingShortBondBwPrice && !isWholePeso(shortBondBwPrice)) {
+    setMessage('Short (Letter) B&W price must be a whole peso value (no decimals).');
+    return;
+  }
+  if (settingShortBondColorPrice && !isWholePeso(shortBondColorPrice)) {
+    setMessage('Short (Letter) Color price must be a whole peso value (no decimals).');
+    return;
+  }
   if (
-    settingHighQualitySurcharge &&
-    (!Number.isFinite(highQualitySurcharge) || highQualitySurcharge < 0)
+    settingShortBondBwPrice &&
+    settingShortBondColorPrice &&
+    shortBondColorPrice < shortBondBwPrice
   ) {
-    setMessage(
-      'High quality surcharge must be a number greater than or equal to 0.',
-    );
+    setMessage('Short (Letter) Color price cannot be less than B&W price.');
+    return;
+  }
+
+  if (settingLongBondBwPrice && !isWholePeso(longBondBwPrice)) {
+    setMessage('Long (Legal) B&W price must be a whole peso value (no decimals).');
+    return;
+  }
+  if (settingLongBondColorPrice && !isWholePeso(longBondColorPrice)) {
+    setMessage('Long (Legal) Color price must be a whole peso value (no decimals).');
+    return;
+  }
+  if (
+    settingLongBondBwPrice &&
+    settingLongBondColorPrice &&
+    longBondColorPrice < longBondBwPrice
+  ) {
+    setMessage('Long (Legal) Color price cannot be less than B&W price.');
+    return;
+  }
+
+  if (settingScanDocument && !isWholePeso(scanDocumentPrice)) {
+    setMessage('Scan document rate must be a whole peso value (no decimals).');
+    return;
+  }
+  if (settingHighQualitySurcharge && !isWholePeso(highQualitySurcharge)) {
+    setMessage('High quality surcharge must be a whole peso value (no decimals).');
     return;
   }
 
@@ -476,10 +538,27 @@ settingsForm.addEventListener('submit', (e) => {
         !settingsResponse.ok ||
         (alertsResponse !== null && !alertsResponse.ok)
       ) {
-        throw new Error('Failed to save settings.');
+        let serverError: string | undefined;
+        if (!settingsResponse.ok) {
+          try {
+            const errBody = (await settingsResponse.json()) as { error?: string };
+            serverError = errBody.error;
+          } catch {
+            // ignore
+          }
+        } else if (alertsResponse !== null && !alertsResponse.ok) {
+          try {
+            const errBody = (await alertsResponse.json()) as { error?: string };
+            serverError = errBody.error;
+          } catch {
+            // ignore
+          }
+        }
+        throw new Error(serverError || 'Failed to save settings.');
       }
+      settingsDirty = false;
       if (newPin) setAdminPin(newPin);
-      await loadData();
+      await loadData({ applyToForm: true });
       await loadAlertStats();
       setMessage('Settings saved.');
     })
@@ -492,7 +571,8 @@ settingsForm.addEventListener('submit', (e) => {
 
 refreshBtn.addEventListener('click', () => {
   setMessage('Refreshing...');
-  void Promise.all([loadData(), loadAlertStats()])
+  settingsDirty = false;
+  void Promise.all([loadData({ applyToForm: true }), loadAlertStats()])
     .then(() => setMessage('Settings refreshed.'))
     .catch((e: unknown) =>
       setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
@@ -521,12 +601,18 @@ testEmailAlertBtn?.addEventListener('click', () => {
     });
 });
 
+function showRefreshError(error: unknown): void {
+  setMessage(
+    error instanceof Error ? error.message : 'Automatic refresh failed.',
+  );
+}
+
 initAuth(async () => {
-  await loadData();
-  await loadAlertStats();
+  await loadData({ applyToForm: true });
+  await loadAlertStats().catch(showRefreshError);
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(() => {
-    void loadData();
-    void loadAlertStats();
+    void loadData({ applyToForm: !settingsDirty }).catch(showRefreshError);
+    void loadAlertStats().catch(showRefreshError);
   }, 10_000);
 });

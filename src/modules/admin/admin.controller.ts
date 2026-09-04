@@ -1193,11 +1193,11 @@ export class AdminController {
           shortBond?: { baseBwPrice?: number; baseColorPrice?: number };
           longBond?: { baseBwPrice?: number; baseColorPrice?: number };
         };
-        bulkDiscountTiers?: Array<{
+        bulkDiscountTiers?: {
           minPages?: number;
           maxPages?: number;
           discountPerPage?: number;
-        }>;
+        }[];
         rounding?: 'whole_peso_total_only';
         highQualitySurcharge?: number;
       };
@@ -1243,7 +1243,8 @@ export class AdminController {
     }
     if (
       highQualitySurcharge !== undefined &&
-      (!isFiniteNumber(highQualitySurcharge) || !isWholePeso(highQualitySurcharge))
+      (!isFiniteNumber(highQualitySurcharge) ||
+        !isWholePeso(highQualitySurcharge))
     ) {
       return res.status(400).json({
         error: 'highQualitySurcharge must be a whole peso value (no decimals).',
@@ -1301,12 +1302,14 @@ export class AdminController {
             ...originalSettings.pricingEngine.paperProfiles.longBond,
           },
         },
-        bulkDiscountTiers:
-          originalSettings.pricingEngine.bulkDiscountTiers.map((entry) => ({
+        bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers.map(
+          (entry) => ({
             ...entry,
-          })),
+          }),
+        ),
         rounding: originalSettings.pricingEngine.rounding,
-        highQualitySurcharge: originalSettings.pricingEngine.highQualitySurcharge,
+        highQualitySurcharge:
+          originalSettings.pricingEngine.highQualitySurcharge,
       },
       consumableEstimation: {
         defaultCoefficients: {
@@ -1668,10 +1671,11 @@ export class AdminController {
             ...originalSettings.pricingEngine.paperProfiles.longBond,
           },
         },
-        bulkDiscountTiers:
-          originalSettings.pricingEngine.bulkDiscountTiers.map((entry) => ({
+        bulkDiscountTiers: originalSettings.pricingEngine.bulkDiscountTiers.map(
+          (entry) => ({
             ...entry,
-          })),
+          }),
+        ),
         rounding: originalSettings.pricingEngine.rounding,
         highQualitySurcharge: nextSettings.pricingEngine.highQualitySurcharge,
       };
@@ -1696,20 +1700,20 @@ export class AdminController {
       if (incoming.paperProfiles?.a4) {
         if (
           !isFiniteNumber(incoming.paperProfiles.a4.baseBwPrice) ||
-          incoming.paperProfiles.a4.baseBwPrice < 0
+          !isWholePeso(incoming.paperProfiles.a4.baseBwPrice)
         ) {
           return res.status(400).json({
             error:
-              'pricingEngine.paperProfiles.a4.baseBwPrice must be >= 0.',
+              'pricingEngine.paperProfiles.a4.baseBwPrice must be a whole peso value >= 0 (no decimals).',
           });
         }
         if (
           !isFiniteNumber(incoming.paperProfiles.a4.baseColorPrice) ||
-          incoming.paperProfiles.a4.baseColorPrice < 0
+          !isWholePeso(incoming.paperProfiles.a4.baseColorPrice)
         ) {
           return res.status(400).json({
             error:
-              'pricingEngine.paperProfiles.a4.baseColorPrice must be >= 0.',
+              'pricingEngine.paperProfiles.a4.baseColorPrice must be a whole peso value >= 0 (no decimals).',
           });
         }
         next.paperProfiles.a4.baseBwPrice =
@@ -1717,24 +1721,33 @@ export class AdminController {
         next.paperProfiles.a4.baseColorPrice =
           incoming.paperProfiles.a4.baseColorPrice;
       }
+      if (
+        next.paperProfiles.a4.baseColorPrice <
+        next.paperProfiles.a4.baseBwPrice
+      ) {
+        return res.status(400).json({
+          error:
+            'pricingEngine.paperProfiles.a4.baseColorPrice cannot be less than baseBwPrice.',
+        });
+      }
 
       if (incoming.paperProfiles?.shortBond) {
         if (
           !isFiniteNumber(incoming.paperProfiles.shortBond.baseBwPrice) ||
-          incoming.paperProfiles.shortBond.baseBwPrice < 0
+          !isWholePeso(incoming.paperProfiles.shortBond.baseBwPrice)
         ) {
           return res.status(400).json({
             error:
-              'pricingEngine.paperProfiles.shortBond.baseBwPrice must be >= 0.',
+              'pricingEngine.paperProfiles.shortBond.baseBwPrice must be a whole peso value >= 0 (no decimals).',
           });
         }
         if (
           !isFiniteNumber(incoming.paperProfiles.shortBond.baseColorPrice) ||
-          incoming.paperProfiles.shortBond.baseColorPrice < 0
+          !isWholePeso(incoming.paperProfiles.shortBond.baseColorPrice)
         ) {
           return res.status(400).json({
             error:
-              'pricingEngine.paperProfiles.shortBond.baseColorPrice must be >= 0.',
+              'pricingEngine.paperProfiles.shortBond.baseColorPrice must be a whole peso value >= 0 (no decimals).',
           });
         }
         next.paperProfiles.shortBond.baseBwPrice =
@@ -1742,30 +1755,48 @@ export class AdminController {
         next.paperProfiles.shortBond.baseColorPrice =
           incoming.paperProfiles.shortBond.baseColorPrice;
       }
+      if (
+        next.paperProfiles.shortBond.baseColorPrice <
+        next.paperProfiles.shortBond.baseBwPrice
+      ) {
+        return res.status(400).json({
+          error:
+            'pricingEngine.paperProfiles.shortBond.baseColorPrice cannot be less than baseBwPrice.',
+        });
+      }
 
       if (incoming.paperProfiles?.longBond) {
         if (
           !isFiniteNumber(incoming.paperProfiles.longBond.baseBwPrice) ||
-          incoming.paperProfiles.longBond.baseBwPrice < 0
+          !isWholePeso(incoming.paperProfiles.longBond.baseBwPrice)
         ) {
           return res.status(400).json({
             error:
-              'pricingEngine.paperProfiles.longBond.baseBwPrice must be >= 0.',
+              'pricingEngine.paperProfiles.longBond.baseBwPrice must be a whole peso value >= 0 (no decimals).',
           });
         }
         if (
           !isFiniteNumber(incoming.paperProfiles.longBond.baseColorPrice) ||
-          incoming.paperProfiles.longBond.baseColorPrice < 0
+          !isWholePeso(incoming.paperProfiles.longBond.baseColorPrice)
         ) {
           return res.status(400).json({
             error:
-              'pricingEngine.paperProfiles.longBond.baseColorPrice must be >= 0.',
+              'pricingEngine.paperProfiles.longBond.baseColorPrice must be a whole peso value >= 0 (no decimals).',
           });
         }
         next.paperProfiles.longBond.baseBwPrice =
           incoming.paperProfiles.longBond.baseBwPrice;
         next.paperProfiles.longBond.baseColorPrice =
           incoming.paperProfiles.longBond.baseColorPrice;
+      }
+      if (
+        next.paperProfiles.longBond.baseColorPrice <
+        next.paperProfiles.longBond.baseBwPrice
+      ) {
+        return res.status(400).json({
+          error:
+            'pricingEngine.paperProfiles.longBond.baseColorPrice cannot be less than baseBwPrice.',
+        });
       }
 
       if (incoming.bulkDiscountTiers !== undefined) {
@@ -1774,11 +1805,11 @@ export class AdminController {
             error: 'pricingEngine.bulkDiscountTiers must be an array.',
           });
         }
-        const parsedTiers: Array<{
+        const parsedTiers: {
           minPages: number;
           maxPages?: number;
           discountPerPage: number;
-        }> = [];
+        }[] = [];
         for (let i = 0; i < incoming.bulkDiscountTiers.length; i += 1) {
           const candidate = incoming.bulkDiscountTiers[i];
           if (typeof candidate !== 'object' || candidate === null) {
@@ -1795,8 +1826,7 @@ export class AdminController {
             minPages < 1
           ) {
             return res.status(400).json({
-              error:
-                `pricingEngine.bulkDiscountTiers[${i}].minPages must be a whole number >= 1.`,
+              error: `pricingEngine.bulkDiscountTiers[${i}].minPages must be a whole number >= 1.`,
             });
           }
           if (
@@ -1806,14 +1836,12 @@ export class AdminController {
               maxPages < minPages)
           ) {
             return res.status(400).json({
-              error:
-                `pricingEngine.bulkDiscountTiers[${i}].maxPages must be a whole number >= minPages.`,
+              error: `pricingEngine.bulkDiscountTiers[${i}].maxPages must be a whole number >= minPages.`,
             });
           }
           if (!isFiniteNumber(discountPerPage) || discountPerPage < 0) {
             return res.status(400).json({
-              error:
-                `pricingEngine.bulkDiscountTiers[${i}].discountPerPage must be >= 0.`,
+              error: `pricingEngine.bulkDiscountTiers[${i}].discountPerPage must be >= 0.`,
             });
           }
           parsedTiers.push({
@@ -1831,8 +1859,7 @@ export class AdminController {
         incoming.rounding !== 'whole_peso_total_only'
       ) {
         return res.status(400).json({
-          error:
-            'pricingEngine.rounding must be "whole_peso_total_only".',
+          error: 'pricingEngine.rounding must be "whole_peso_total_only".',
         });
       }
 
