@@ -31,6 +31,7 @@ import { registerAnomalyModule } from '@/modules/anomaly';
 import { registerLanguageModule } from '@/modules/language';
 import { registerUploadPortalModule } from '@/modules/upload-portal';
 import { registerPageModule } from '@/modules/page';
+import { registerStudentSessionModule } from '@/modules/student-session';
 
 export interface AppModuleDeps {
   io: SocketIOServer;
@@ -133,6 +134,7 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     portalAssets: PORTAL_ASSETS,
     sessionStore: deps.sessionStore,
   });
+  registerStudentSessionModule(app, { io: deps.io });
   registerWirelessSessionModule(app, {
     io: deps.io,
     sessionIo: deps.sessionIo,

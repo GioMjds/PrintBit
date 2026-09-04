@@ -4,6 +4,11 @@ import { requireAdminLocalAccess } from '@/middleware/admin-auth';
 import type { SessionStore } from '@/services/session';
 import { db } from '@/services/db';
 import {
+  STUDENT_ID_VERIFICATION_ENABLED,
+  STUDENT_PORTAL_ASSETS,
+  STUDENT_PORTAL_DIR,
+} from '@/config';
+import {
   createKioskAccessMiddleware,
   isLoopbackRequest,
   KIOSK_COOKIE_NAME,
@@ -81,6 +86,7 @@ export class PageController {
 
     // Portal never reveals an active upload token; callers must use the QR code.
     this.router.get('/portal', this.handlePortal.bind(this));
+    this.router.get('/portal/:asset', this.serveStudentPortalAsset.bind(this));
 
     // The launcher obtains a one-time credential over loopback, then Edge consumes it.
     this.router.post(
@@ -188,7 +194,26 @@ export class PageController {
   }
 
   private handlePortal(_req: Request, res: Response): void {
+    if (STUDENT_ID_VERIFICATION_ENABLED) {
+      res.sendFile(path.join(STUDENT_PORTAL_DIR, 'index.html'));
+      return;
+    }
     res.type('html').send(PORTAL_WAITING_HTML);
+  }
+
+  private serveStudentPortalAsset(req: Request, res: Response): void {
+    if (!STUDENT_ID_VERIFICATION_ENABLED) {
+      res.sendStatus(404);
+      return;
+    }
+    const { asset } = req.params as { asset: string };
+    if (!STUDENT_PORTAL_ASSETS.has(asset)) {
+      res.sendStatus(404);
+      return;
+    }
+    res.sendFile(path.join(STUDENT_PORTAL_DIR, asset), (error) => {
+      if (error) res.sendStatus(404);
+    });
   }
 
   private handleIdleTimeout(_req: Request, res: Response): void {
