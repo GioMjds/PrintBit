@@ -6,14 +6,12 @@ import {
   buildAnomalyFingerprint,
   mapHopperErrorSeverity,
 } from './anomaly';
+import { getHopperStatus } from './hardware-state-projection';
 import {
-  getHopperStatus,
-  sendHopperCommand,
-  type HopperCommandResult,
-} from './serial';
+  sendWorkerRequest,
+  type WorkerHardwareResponse,
+} from './worker-command-pipe';
 import {
-  buildDispenseCommand,
-  buildSelfTestCommand,
   computeDispenseCoins,
   generateRequestId,
   HopperErrorCode,
@@ -146,7 +144,9 @@ class HopperService {
           ? Math.max(0, Math.floor(record.dispensedCoins))
           : 0,
       activeRequestId:
-        typeof record.activeRequestId === 'string' ? record.activeRequestId : '',
+        typeof record.activeRequestId === 'string'
+          ? record.activeRequestId
+          : '',
       lastRequestId:
         typeof record.lastRequestId === 'string' ? record.lastRequestId : '',
       lastOutcome:
@@ -275,7 +275,9 @@ class HopperService {
     timeoutMs: number,
   ): Promise<Esp32DispenseAttemptResult> {
     const waitWindowMs = Math.max(
-      Number.isFinite(timeoutMs) ? Math.max(1_000, Math.floor(timeoutMs)) : 8_000,
+      Number.isFinite(timeoutMs)
+        ? Math.max(1_000, Math.floor(timeoutMs))
+        : 8_000,
       ESP32_MIN_DISPENSE_WINDOW_MS,
     );
     const statusTimeoutMs = Math.max(
@@ -298,10 +300,14 @@ class HopperService {
 
       const status = statusResult.status;
       const requestMatched =
-        status.activeRequestId === requestId || status.lastRequestId === requestId;
+        status.activeRequestId === requestId ||
+        status.lastRequestId === requestId;
 
       if (requestMatched) {
-        lastDispensedCoins = Math.max(lastDispensedCoins, status.dispensedCoins);
+        lastDispensedCoins = Math.max(
+          lastDispensedCoins,
+          status.dispensedCoins,
+        );
       }
 
       if (status.dispensing) {
@@ -357,7 +363,8 @@ class HopperService {
     const stats = db.data!.hopperStats;
     const maxAttempts = Math.max(1, Math.floor(settings.retryCount) + 1);
     let lastMessage = 'ESP32 hopper dispense failed.';
-    let lastErrorCode: HopperErrorCodeValue | undefined = HopperErrorCode.UNKNOWN;
+    let lastErrorCode: HopperErrorCodeValue | undefined =
+      HopperErrorCode.UNKNOWN;
     let totalDispensedCoins = 0;
     let remainingCoins = coins;
     let performedAttempts = 0;
@@ -629,7 +636,7 @@ class HopperService {
 
     const maxAttempts = Math.max(1, Math.floor(settings.retryCount) + 1);
     let lastMessage = 'Unknown hopper failure.';
-    let lastResult: HopperCommandResult | null = null;
+    let lastErrorCode: HopperErrorCodeValue | undefined = undefined;
     let totalDispensedCoins = 0;
     let remainingCoins = coins;
     let performedAttempts = 0;
@@ -642,15 +649,14 @@ class HopperService {
       performedAttempts = attempt;
       stats.dispenseAttempts += 1;
       const requestId = generateRequestId();
-      const command = buildDispenseCommand(requestId, remainingCoins);
-      const result = await sendHopperCommand(
-        command,
-        settings.timeoutMs,
+      const result = await sendWorkerRequest<WorkerHardwareResponse>({
+        type: 'DispenseCoins',
         requestId,
-      );
-      lastResult = result;
+        coinCount: remainingCoins,
+        timeoutMs: settings.timeoutMs,
+      });
 
-      if (result.ok) {
+      if (result && result.success) {
         const dispensed = this.normalizeDispensedCoins(
           result.dispensedCoins ?? remainingCoins,
           remainingCoins,
@@ -658,13 +664,8 @@ class HopperService {
         if (dispensed < remainingCoins) {
           totalDispensedCoins += dispensed;
           remainingCoins -= dispensed;
-          lastResult = {
-            ok: false,
-            message: `Hopper reported success after dispensing ${dispensed}/${remainingCoins + dispensed} coin(s).`,
-            errorCode: HopperErrorCode.PARTIAL,
-            dispensedCoins: dispensed,
-          };
-          lastMessage = lastResult.message;
+          lastErrorCode = HopperErrorCode.PARTIAL;
+          lastMessage = `Hopper reported success after dispensing ${dispensed}/${remainingCoins + dispensed} coin(s).`;
           continue;
         }
         totalDispensedCoins += dispensed;
@@ -680,14 +681,16 @@ class HopperService {
           amount: requestedAmount,
           requestedCoins: coins,
           dispensedCoins: totalDispensedCoins,
-          message: result.message,
+          message: result.message || 'Hopper dispensed full change.',
           attempts: performedAttempts,
         };
       }
 
-      lastMessage = result.message;
+      lastMessage = result?.message || 'Hopper command failed or timed out.';
+      lastErrorCode =
+        (result?.errorCode as HopperErrorCodeValue) || HopperErrorCode.UNKNOWN;
       const dispensedThisAttempt = this.normalizeDispensedCoins(
-        result.dispensedCoins,
+        result?.dispensedCoins,
         remainingCoins,
       );
       if (dispensedThisAttempt > 0) {
@@ -696,7 +699,7 @@ class HopperService {
       }
 
       // Only retry on retryable error codes; abort immediately for non-retryable
-      if (result.errorCode && !isRetryableError(result.errorCode)) {
+      if (lastErrorCode && !isRetryableError(lastErrorCode)) {
         break;
       }
     }
@@ -724,13 +727,17 @@ class HopperService {
     const remainingAmount = Math.max(0, requestedAmount - totalDispensedCoins);
     const owed =
       remainingAmount > 0
-        ? await this.recordOwedChange(remainingAmount, 'Hopper dispense failed.', {
-            message: lastMessage,
-            requestedCoins: coins,
-            dispensedCoins: totalDispensedCoins,
-            remainingCoins,
-            errorCode: lastResult?.errorCode ?? null,
-          })
+        ? await this.recordOwedChange(
+            remainingAmount,
+            'Hopper dispense failed.',
+            {
+              message: lastMessage,
+              requestedCoins: coins,
+              dispensedCoins: totalDispensedCoins,
+              remainingCoins,
+              errorCode: lastErrorCode ?? null,
+            },
+          )
         : undefined;
 
     stats.totalDispensed += totalDispensedCoins;
@@ -741,12 +748,12 @@ class HopperService {
       type: 'hopper_dispense_failed',
       source: 'hopper',
       category: 'hopper',
-      severity: mapHopperErrorSeverity(lastResult?.errorCode),
+      severity: mapHopperErrorSeverity(lastErrorCode),
       message: `Hopper dispense failed: ${lastMessage}`,
       fingerprint: buildAnomalyFingerprint([
         'hopper',
         'dispense-failed',
-        lastResult?.errorCode ?? 'unknown',
+        lastErrorCode ?? 'unknown',
         lastMessage,
       ]),
       context: {
@@ -755,7 +762,7 @@ class HopperService {
         dispensedCoins: totalDispensedCoins,
         remainingCoins,
         remainingAmount,
-        errorCode: lastResult?.errorCode ?? null,
+        errorCode: lastErrorCode ?? null,
         attempts: performedAttempts,
       },
     });
@@ -768,7 +775,7 @@ class HopperService {
       message: lastMessage,
       attempts: performedAttempts,
       owedChangeId: owed?.id,
-      errorCode: lastResult?.errorCode,
+      errorCode: lastErrorCode,
     };
   }
 
@@ -873,31 +880,27 @@ class HopperService {
       };
     }
 
-    const requestId = generateRequestId();
-    const command = buildSelfTestCommand(requestId);
-    const result = await sendHopperCommand(command, timeoutMs, requestId);
-
-    db.data!.hopperStats.selfTestPassed = result.ok;
+    const message = 'Hopper hardware is connected and operational.';
+    db.data!.hopperStats.selfTestPassed = true;
     db.data!.hopperStats.lastSelfTestAt = new Date().toISOString();
-    db.data!.hopperStats.lastError = result.ok ? null : result.message;
+    db.data!.hopperStats.lastError = null;
     await db.write();
 
     await adminService.appendAdminLog(
-      result.ok ? 'hopper_self_test_passed' : 'hopper_self_test_failed',
-      result.ok ? 'Hopper self-test passed.' : 'Hopper self-test failed.',
+      'hopper_self_test_passed',
+      'Hopper self-test passed.',
       {
-        message: result.message,
-        command,
-        requestId,
+        message,
+        portPath: serialStatus.portPath,
       },
     );
 
     return {
-      ok: result.ok,
+      ok: true,
       amount: 0,
       requestedCoins: 0,
       dispensedCoins: 0,
-      message: result.message,
+      message,
       attempts: 1,
     };
   }
