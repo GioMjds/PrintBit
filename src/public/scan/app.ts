@@ -2,16 +2,19 @@ import { initializePageIdleTimeout } from '@/services/idle-timeout';
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { mountLoadingAnimation } from '../shared/loading-animation';
+import { initializeStudentSessionKiosk } from '../shared/student-session';
 import { getScanTroubleshootingGuide } from './troubleshooting';
 
 export {};
 
+const studentSession = initializeStudentSessionKiosk({ socket: null });
 void initKioskLocalization();
 
 // ── Idle Timeout with Warning Modal (Scan Page) ───────────────────────────────────────────────
 
 void initializePageIdleTimeout({
   showWarningModal: true,
+  beforeTimeout: () => studentSession.endStudentSession('idle_timeout'),
   onTimeout: () => {
     console.log('[PAGE IDLE] Scan page timeout reached, redirecting to home');
     if (scanReleaseToken) {

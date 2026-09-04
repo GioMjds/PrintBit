@@ -46,7 +46,8 @@
       <main class="action-area" role="main" aria-label="Main actions">
         <div
           class="wifi-inline-card"
-          aria-label="Connect to PrintBit Wi-Fi first"
+          id="studentSessionLockedPanel"
+          aria-label="Connect to PrintBit Wi-Fi and verify your student ID"
         >
           <div class="wifi-inline-card__qr">
             <div class="qr-frame qr-frame--sm">
@@ -63,17 +64,17 @@
             </div>
           </div>
           <div class="wifi-inline-card__text">
-            <span class="wifi-inline-card__step">Step 1</span>
-            <h2 class="wifi-inline-card__title">Scan to connect to PrintBit</h2>
-            <p class="wifi-inline-card__sub">Join the kiosk hotspot with your phone camera before printing, copying, or scanning.</p>
+            <span class="wifi-inline-card__step">Start here</span>
+            <h2 class="wifi-inline-card__title">Connect and verify on your phone</h2>
+            <p class="wifi-inline-card__sub">Scan to join PrintBit Wi-Fi, open the verification page, and enter your student ID. This kiosk unlocks automatically.</p>
           </div>
         </div>
 
-        <p class="action-hint">Then select a print method</p>
+        <p class="action-hint" id="studentSessionStatus" role="status" aria-live="polite">Checking kiosk access…</p>
 
-        <div class="action-grid">
+        <div class="action-grid" id="studentSessionActions" hidden aria-hidden="true">
           <!-- Print Card -->
-          <button class="action-card" id="openPrintBtn" aria-label="Open Print">
+          <button class="action-card" id="openPrintBtn" aria-label="Open Print" disabled>
             <span
               class="action-card__help"
               data-guide="print"
@@ -153,6 +154,7 @@
             class="action-card action-card--copy"
             id="openCopyBtn"
             aria-label="Open Copy"
+            disabled
           >
             <span
               class="action-card__help"
@@ -224,6 +226,7 @@
             class="action-card action-card--scan"
             id="openScanBtn"
             aria-label="Open Scan"
+            disabled
           >
             <span
               class="action-card__help"
@@ -317,6 +320,9 @@
             <p class="action-card__sub">Scan to PDF or image</p>
           </button>
         </div>
+        <button class="end-student-session" id="endStudentSessionBtn" type="button" hidden>
+          End session
+        </button>
       </main>
     </div>
 
