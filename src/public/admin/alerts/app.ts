@@ -80,6 +80,12 @@ function escHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function showRefreshError(error: unknown): void {
+  setMessage(
+    error instanceof Error ? error.message : 'Automatic refresh failed.',
+  );
+}
+
 function totalPages(): number {
   return Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 }
@@ -134,7 +140,7 @@ function renderIncidents(items: AnomalyIncident[]): void {
     .querySelectorAll<HTMLButtonElement>('[data-action="view"]')
     .forEach((button) => {
       button.addEventListener('click', () => {
-        void openDetail(button.dataset.id!);
+        void openDetail(button.dataset.id!).catch(showRefreshError);
       });
     });
 }
@@ -269,21 +275,21 @@ filterBar
         .querySelectorAll('.filter-btn')
         .forEach((btn) => btn.classList.remove('filter-btn--active'));
       button.classList.add('filter-btn--active');
-      void loadData();
+      void loadData().catch(showRefreshError);
     });
   });
 
 prevPageBtn.addEventListener('click', () => {
   if (currentPage > 1) {
     currentPage -= 1;
-    void loadData();
+    void loadData().catch(showRefreshError);
   }
 });
 
 nextPageBtn.addEventListener('click', () => {
   if (currentPage < totalPages()) {
     currentPage += 1;
-    void loadData();
+    void loadData().catch(showRefreshError);
   }
 });
 
@@ -292,9 +298,15 @@ detailOverlay.addEventListener('click', (event) => {
   if (event.target === detailOverlay) closeDetailModal();
 });
 
-detailAckBtn.addEventListener('click', () => void updateStatus('acknowledged'));
-detailResolveBtn.addEventListener('click', () => void updateStatus('resolved'));
-detailReopenBtn.addEventListener('click', () => void updateStatus('open'));
+detailAckBtn.addEventListener('click', () => {
+  void updateStatus('acknowledged').catch(showRefreshError);
+});
+detailResolveBtn.addEventListener('click', () => {
+  void updateStatus('resolved').catch(showRefreshError);
+});
+detailReopenBtn.addEventListener('click', () => {
+  void updateStatus('open').catch(showRefreshError);
+});
 
 interface AdminAlertsSocket {
   on(event: string, cb: (...args: unknown[]) => void): void;
@@ -310,7 +322,7 @@ declare const io: (opts?: {
 let socket: AdminAlertsSocket | null = null;
 
 const handleSocketIncident = (): void => {
-  void loadData();
+  void loadData().catch(showRefreshError);
 };
 
 const handleSocketCount = (payload: unknown): void => {
@@ -360,7 +372,10 @@ initAuth(async () => {
   cleanupLiveUpdates();
   await loadData();
   connectSocket();
-  poller = window.setInterval(() => void loadData(), 10_000);
+  poller = window.setInterval(
+    () => void loadData().catch(showRefreshError),
+    10_000,
+  );
 });
 
 document
