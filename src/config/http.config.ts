@@ -146,9 +146,11 @@ export function normalizeStudentId(raw: string): string | null {
   return null;
 }
 
-export function createStudentIdLookupHmac(studentId: string): string {
+export function createStudentIdLookupHmac(studentId: string): string | null {
+  const normalizedStudentId = normalizeStudentId(studentId);
+  if (!normalizedStudentId) return null;
   return createHmac('sha256', STUDENT_ID_HMAC_SECRET)
-    .update(studentId)
+    .update(normalizedStudentId)
     .digest('hex');
 }
 

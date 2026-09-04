@@ -46,3 +46,18 @@ test.each([
 
   expect(normalizeStudentId(raw)).toBe(expected);
 });
+
+test('derives the same HMAC lookup key from either valid student ID format', () => {
+  process.env.PRINTBIT_STUDENT_ID_HMAC_SECRET = 'test-hmac-secret';
+  const { createStudentIdLookupHmac } = loadConfig();
+
+  expect(createStudentIdLookupHmac('1234567')).toBe(
+    createStudentIdLookupHmac('123-4567'),
+  );
+});
+
+test('rejects invalid student IDs before creating a lookup HMAC', () => {
+  const { createStudentIdLookupHmac } = loadConfig();
+
+  expect(createStudentIdLookupHmac('123 4567')).toBeNull();
+});

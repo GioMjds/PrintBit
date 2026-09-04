@@ -140,6 +140,9 @@ function ensureSchema(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_student_kiosk_sessions_active
       ON student_kiosk_sessions(status, started_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_student_kiosk_sessions_one_active
+      ON student_kiosk_sessions(status)
+      WHERE status = 'active';
 
     CREATE TABLE IF NOT EXISTS student_transaction_attributions (
       transaction_id TEXT PRIMARY KEY,

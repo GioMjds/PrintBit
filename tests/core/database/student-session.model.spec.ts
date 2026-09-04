@@ -69,6 +69,22 @@ test('ends all active sessions at startup', () => {
   expect(studentSessionStore.getActiveSession()).toBeNull();
 });
 
+test('rejects a second active kiosk session at the SQLite schema boundary', () => {
+  const studentIdHmac = hmac('schema-constraint');
+  studentSessionStore.replaceRoster([{ studentIdHmac }]);
+  studentSessionStore.claimSession({ id: 'session-1', studentIdHmac });
+
+  expect(() =>
+    getSqliteDb()
+      .prepare(
+        `INSERT INTO student_kiosk_sessions (
+          id, student_id_hmac, status, started_at, ended_at, end_reason
+        ) VALUES (?, ?, 'active', ?, NULL, NULL)`,
+      )
+      .run('session-2', studentIdHmac, '2026-09-03T10:00:00.000Z'),
+  ).toThrow();
+});
+
 test('keeps the first transaction attribution immutable', () => {
   const studentIdHmac = hmac('attribution');
   studentSessionStore.replaceRoster([{ studentIdHmac }]);
