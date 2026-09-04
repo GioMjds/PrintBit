@@ -7,6 +7,7 @@ import {
   powerSafetyService,
 } from './power-safety';
 import { printerStateProjection } from './printer-state-projection';
+import { hardwareStateProjection } from './hardware-state-projection';
 
 export type WorkerPrintEventType =
   | 'PrintStarted'
@@ -21,7 +22,12 @@ export type WorkerPrintEventType =
   | 'JobCompleted'
   | 'PowerStatusChanged'
   | 'PowerStatusSnapshot'
-  | 'PrinterStatusSnapshot';
+  | 'PrinterStatusSnapshot'
+  | 'CoinInserted'
+  | 'CoinRejected'
+  | 'HopperProgress'
+  | 'HopperDispensed'
+  | 'HardwareStatus';
 
 export type WorkerTerminalOutcome =
   | 'completed'
@@ -67,6 +73,13 @@ export interface WorkerPrintEvent {
   acceptingTransactions?: boolean;
   powerSourceInstanceId?: string;
   powerSequence?: number;
+  coinValue?: number;
+  rejectReason?: string;
+  dispensedCoins?: number;
+  totalCoins?: number;
+  errorCode?: string;
+  hardwareRequestId?: string;
+  requestId?: string;
   timestampUtc: string;
 }
 
@@ -131,7 +144,12 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
     | 'workerPrinterError'
     | 'workerJobPaused'
     | 'workerJobResumed'
-    | 'workerPowerStatusChanged';
+    | 'workerPowerStatusChanged'
+    | 'coinAccepted'
+    | 'coinRejected'
+    | 'hopperProgress'
+    | 'hopperDispensed'
+    | 'hardwareStatus';
   payload: WorkerPrintEvent;
 } {
   switch (evt.type) {
@@ -171,6 +189,16 @@ export function mapWorkerEventToSocket(evt: WorkerPrintEvent): {
             : 'workerPrintFailed',
         payload: evt,
       };
+    case 'CoinInserted':
+      return { event: 'coinAccepted', payload: evt };
+    case 'CoinRejected':
+      return { event: 'coinRejected', payload: evt };
+    case 'HopperProgress':
+      return { event: 'hopperProgress', payload: evt };
+    case 'HopperDispensed':
+      return { event: 'hopperDispensed', payload: evt };
+    case 'HardwareStatus':
+      return { event: 'hardwareStatus', payload: evt };
     default: {
       // Exhaustiveness check: if a new WorkerPrintEventType variant is added
       // and not mapped here, fail the type system instead of silently
@@ -218,6 +246,7 @@ export function startWorkerReturnPipeServer(input: {
         try {
           const evt = parseWorkerEventLine(line, input.maxBytes);
           printerStateProjection.applyEvent(evt);
+          void hardwareStateProjection.applyEvent(evt);
           input.onEvent(evt);
         } catch (err) {
           logger.warn(
