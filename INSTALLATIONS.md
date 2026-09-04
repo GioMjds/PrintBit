@@ -133,7 +133,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-watchdog.ps1 -AtStart
 #### Step 7: Configure Assigned Access
 
 Configure Windows Assigned Access for the local user `printbit` to use Microsoft Edge pointing to:
-`http://localhost:3000/loading`
+`http://127.0.0.1:3000/loading`
 
 ---
 

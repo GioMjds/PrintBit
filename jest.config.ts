@@ -4,7 +4,8 @@ const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   moduleFileExtensions: ['ts', 'js'],
-  testMatch: ['**/*.spec.ts', '**/*.int.ts', '**/*.e2e.ts'],
+  testMatch: ['**/*.spec.ts', '**/*.test.ts', '**/*.int.ts', '**/*.e2e.ts'],
+  testPathIgnorePatterns: ['/node_modules/', '/\\.worktrees/', '/dist/'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },

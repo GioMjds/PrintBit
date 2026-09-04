@@ -18,6 +18,7 @@ const char* fallbackKioskIp = "192.168.4.2";
 const uint16_t fallbackKioskPort = 3000;
 const char* fallbackKioskPortalPath = "/portal";
 const char* kioskRegisterToken = "printbit-register-token";
+const char* nodeHealthToken = "printbit-health-token";
 const char* coinBridgeSource = "esp32";
 const char* coinBridgeApiKey = "printbit-coin-bridge-key";
 const char* hopperControlToken = "printbit-coin-bridge-key";
@@ -48,6 +49,13 @@ String kioskPortalPath = fallbackKioskPortalPath;
 String kioskPortalUrl = "";
 String tabletServer = "";
 bool hasKioskRegistration = false;
+
+// Node liveness lease. Coins remain disabled until Node proves it is alive.
+volatile bool coinAcceptorEnabled = false;
+unsigned long lastNodeHealthSuccess = 0;
+unsigned long lastNodeHealthCheck = 0;
+const unsigned long nodeHealthInterval = 2000;
+const unsigned long nodeHealthLease = 6000;
 
 // COIN ACCEPTOR
 volatile byte pulseCount = 0;
@@ -430,6 +438,10 @@ void emitHopperError(
 }
 
 void sendCoinToTablet(int value) {
+  if (!coinAcceptorEnabled) {
+    logCoinSendFailure("node_health_unavailable", 0, "");
+    return;
+  }
   if (!provisioningComplete) {
     logCoinSendFailure("provisioning_required", 0, "");
     return;
@@ -490,6 +502,68 @@ void sendCoinToTablet(int value) {
       return;
     }
     delay(200 * attempt);
+  }
+}
+
+bool jsonBooleanIsTrue(const String& body, const String& key) {
+  String needle = "\"" + key + "\":";
+  int start = body.indexOf(needle);
+  if (start < 0) return false;
+  start += needle.length();
+  while (start < (int)body.length() && body.charAt(start) == ' ') start++;
+  return body.substring(start, start + 4) == "true";
+}
+
+void disableCoinAcceptor(const char* reason) {
+  if (coinAcceptorEnabled) {
+    Serial.print("coin_acceptor_disabled:");
+    Serial.println(reason);
+  }
+  coinAcceptorEnabled = false;
+  noInterrupts();
+  pulseCount = 0;
+  lastPulseMillis = 0;
+  interrupts();
+}
+
+void enableCoinAcceptor() {
+  if (!coinAcceptorEnabled) Serial.println("coin_acceptor_enabled:node_health_ok");
+  coinAcceptorEnabled = true;
+}
+
+void checkNodeHealth() {
+  unsigned long now = millis();
+  if (now - lastNodeHealthCheck < nodeHealthInterval) {
+    if (now - lastNodeHealthSuccess > nodeHealthLease) {
+      disableCoinAcceptor("health_lease_expired");
+    }
+    return;
+  }
+  lastNodeHealthCheck = now;
+
+  if (WiFi.status() != WL_CONNECTED || kioskIp.length() == 0) {
+    disableCoinAcceptor("network_unavailable");
+    return;
+  }
+
+  HTTPClient http;
+  String healthUrl = "http://" + kioskIp + ":" + String(kioskPort) + "/api/health";
+  http.setTimeout(1200);
+  http.begin(healthUrl);
+  if (String(nodeHealthToken).length() > 0) {
+    http.addHeader("x-esp32-health-token", nodeHealthToken);
+  }
+  int code = http.GET();
+  String body = code > 0 ? http.getString() : "";
+  http.end();
+
+  bool healthy = code == 200 && jsonBooleanIsTrue(body, "ok") &&
+                 jsonBooleanIsTrue(body, "coinAccepting");
+  if (healthy) {
+    lastNodeHealthSuccess = now;
+    enableCoinAcceptor();
+  } else {
+    disableCoinAcceptor(code > 0 ? "health_check_failed" : "health_unreachable");
   }
 }
 
@@ -816,6 +890,7 @@ void handleWifiRequest(NetworkClient& client) {
 
 // INTERRUPTS
 void IRAM_ATTR countPulse() {
+  if (!coinAcceptorEnabled) return;
   unsigned long nowMicros = micros();
 
   if (nowMicros - lastPulseMicros > debounceMicros) {
@@ -1019,6 +1094,7 @@ void setup() {
   pinMode(relayPin, OUTPUT);
 
   digitalWrite(relayPin, LOW);
+  coinAcceptorEnabled = false;
 
   Serial.begin(115200);
 
@@ -1073,6 +1149,8 @@ void setup() {
 
 // LOOP
 void loop() {
+  checkNodeHealth();
+
   byte tempCount;
   unsigned long tempLastPulse;
 
@@ -1090,7 +1168,7 @@ void loop() {
     else if (tempCount == 5) value = 10;
     else if (tempCount == 7) value = 20;
 
-    if (value > 0) {
+    if (value > 0 && coinAcceptorEnabled) {
       Serial.print("coin_pulse:");
       Serial.println(value);
       sendCoinToTablet(value);

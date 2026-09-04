@@ -75,6 +75,9 @@ export const ESP32_AP_BASE_URL =
 export const ESP32_REGISTER_TOKEN =
   process.env.PRINTBIT_ESP32_REGISTER_TOKEN?.trim() ||
   'printbit-register-token';
+/** Optional token for the ESP32 liveness probe. Empty keeps firmware compatibility. */
+export const ESP32_HEALTH_TOKEN =
+  process.env.PRINTBIT_ESP32_HEALTH_TOKEN?.trim() || '';
 export const ESP32_KIOSK_SUBNET_PREFIX =
   process.env.PRINTBIT_ESP32_KIOSK_SUBNET_PREFIX?.trim() || '192.168.4.';
 /** Explicit kiosk IP on the ESP32 AP network (bypasses auto-detection). */

@@ -1,7 +1,7 @@
 {
   "name": "printbit",
   "version": "1.0.0",
-  "description": "A self-service printing kiosk application built with Node.js and Express.js.",
+  "description": "A self-service printing kiosk application built with Node.js, Express.js., and C# Worker Service. It allows users to upload documents, select print options, and print their files securely.",
   "main": "index.js",
   "engines": {
     "node": ">=22.5.0"
@@ -17,7 +17,7 @@
     "start": "node dist/server.js",
     "db:reset": "node ./scripts/reset-db.js",
     "kiosk": "node ./scripts/launch-kiosk.js",
-    "install-kiosk": "pnpm run build && pnpm run install-startup && pnpm run watchdog:install && pnpm run lockdown:apply",
+    "install-kiosk": "pnpm run build && pnpm run install-startup && pnpm run watchdog:install && pnpm run lockdown:apply && pnpm run ensure-network",
     "uninstall-kiosk": "pnpm run uninstall-startup && pnpm run watchdog:uninstall && pnpm run lockdown:revert",
     "ensure-network": "powershell -ExecutionPolicy Bypass -File .\\scripts\\ensure-esp32-network.ps1",
     "install-startup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\install-startup.ps1 -AtStartup -MultipleInstances IgnoreNew",
