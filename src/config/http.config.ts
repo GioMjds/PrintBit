@@ -42,7 +42,7 @@ export const DOCUMENT_CONVERSION_PIPE_NAME =
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PUBLIC_DIR = path.resolve('src', 'public');
 export const PORTAL_DIR = path.resolve(PUBLIC_DIR, 'upload');
-export const STUDENT_PORTAL_DIR = path.resolve(PUBLIC_DIR, 'portal');
+export const STUDENT_PORTAL_DIR = path.resolve(PUBLIC_DIR, 'student-portal');
 export const STUDENT_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PREVIEW_CACHE_DIR = path.join(
   os.tmpdir(),

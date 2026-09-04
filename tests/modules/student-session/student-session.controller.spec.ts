@@ -1,6 +1,7 @@
 import http from 'node:http';
 import express, { type Request, type Response } from 'express';
 import cookieParser from 'cookie-parser';
+import type { PageController } from '@/modules/page/page.controller';
 import { StudentSessionController } from '@/modules/student-session/student-session.controller';
 import type {
   RosterReplacementResult,
@@ -39,6 +40,41 @@ function findRouteMiddleware(
     res: Response,
     next: () => void,
   ) => void;
+}
+
+function makePageController(
+  studentIdVerificationEnabled: boolean,
+): PageController {
+  let PageControllerConstructor:
+    | (typeof import('@/modules/page/page.controller'))['PageController']
+    | undefined;
+
+  jest.isolateModules(() => {
+    jest.doMock('@/config', () => ({
+      ...jest.requireActual('@/config'),
+      STUDENT_ID_VERIFICATION_ENABLED: studentIdVerificationEnabled,
+    }));
+    PageControllerConstructor = require('@/modules/page/page.controller').PageController;
+  });
+  jest.dontMock('@/config');
+  if (!PageControllerConstructor) {
+    throw new Error('PageController module did not load.');
+  }
+  return new PageControllerConstructor({
+    sessionStore: {} as never,
+    publicPageRoutes: [],
+    resolvePublicBaseUrl: () => new URL('http://127.0.0.1'),
+  });
+}
+
+function makePageResponse(): Response {
+  const response = {
+    type: jest.fn().mockReturnThis(),
+    send: jest.fn(),
+    sendFile: jest.fn(),
+    sendStatus: jest.fn(),
+  };
+  return response as unknown as Response;
 }
 
 describe('StudentSessionController', () => {
@@ -119,6 +155,27 @@ describe('StudentSessionController', () => {
     expect(await response.json()).toEqual({ error: 'The kiosk is currently in use.' });
   });
 
+  test('rate limits the eleventh portal identification attempt from one IP', async () => {
+    service.identify.mockReturnValue({ ok: true, sessionId: 'session-secret' });
+    const request = () =>
+      fetch(`${baseUrl}/api/portal/identify`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-forwarded-for': '203.0.113.242',
+        },
+        body: JSON.stringify({ studentId: '123-4567' }),
+      });
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      expect((await request()).status).toBe(200);
+    }
+
+    const blocked = await request();
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('cache-control')).toBe('no-store');
+  });
+
   test('keeps portal status phone-safe while the kiosk can read and end its own session', async () => {
     service.getKioskState.mockReturnValue({
       status: 'active',
@@ -190,5 +247,56 @@ describe('StudentSessionController', () => {
     );
     expect(missingPinResponse.status).toBe(401);
     expect(service.replaceRosterCsv).not.toHaveBeenCalled();
+  });
+
+  test('serves the Task 5 student portal from its enabled directory and allowlists only its assets', () => {
+    const controller = makePageController(true) as unknown as {
+      handlePortal(req: Request, res: Response): void;
+      serveStudentPortalAsset(req: Request, res: Response): void;
+    };
+    const pageResponse = makePageResponse();
+
+    controller.handlePortal({} as Request, pageResponse);
+    expect(pageResponse.sendFile).toHaveBeenCalledWith(
+      expect.stringMatching(/[\\/]student-portal[\\/]index\.html$/),
+    );
+
+    const allowedAssetResponse = makePageResponse();
+    controller.serveStudentPortalAsset(
+      { params: { asset: 'app.js' } } as unknown as Request,
+      allowedAssetResponse,
+    );
+    expect(allowedAssetResponse.sendFile).toHaveBeenCalledWith(
+      expect.stringMatching(/[\\/]student-portal[\\/]app\.js$/),
+      expect.any(Function),
+    );
+
+    const blockedAssetResponse = makePageResponse();
+    controller.serveStudentPortalAsset(
+      { params: { asset: 'secrets.txt' } } as unknown as Request,
+      blockedAssetResponse,
+    );
+    expect(blockedAssetResponse.sendStatus).toHaveBeenCalledWith(404);
+  });
+
+  test('retains the upload waiting portal and blocks student assets when verification is disabled', () => {
+    const controller = makePageController(false) as unknown as {
+      handlePortal(req: Request, res: Response): void;
+      serveStudentPortalAsset(req: Request, res: Response): void;
+    };
+    const pageResponse = makePageResponse();
+
+    controller.handlePortal({} as Request, pageResponse);
+    expect(pageResponse.type).toHaveBeenCalledWith('html');
+    expect(pageResponse.send).toHaveBeenCalledWith(
+      expect.stringContaining('No active print upload session was found yet.'),
+    );
+
+    const assetResponse = makePageResponse();
+    controller.serveStudentPortalAsset(
+      { params: { asset: 'app.js' } } as unknown as Request,
+      assetResponse,
+    );
+    expect(assetResponse.sendStatus).toHaveBeenCalledWith(404);
   });
 });
