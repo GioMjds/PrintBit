@@ -12,6 +12,7 @@ printbit.sqlite-wal
 bin/
 .claude
 .superpowers
+.worktrees/
 .pnpm-store
 
 graphify-out/
