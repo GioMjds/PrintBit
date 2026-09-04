@@ -8,6 +8,7 @@ import {
   type ReportIssueSessionEntry,
   type ReportIssueStatus,
 } from './db';
+import type { AdminQueueView } from '@/modules/report/report.schema';
 import { adminService } from './admin';
 import { reportIssueStore } from '@/core/database/sqlite-storage';
 
@@ -57,6 +58,7 @@ export interface CreateAdminReportIssueInput {
 export interface ListReportIssueOptions {
   status?: ReportIssueStatus;
   category?: ReportIssueCategory;
+  view?: AdminQueueView;
   limit?: number;
   offset?: number;
 }
@@ -116,7 +118,9 @@ class ReportIssueService {
         throw new Error('Session has expired');
       if (session.submittedAt) throw new Error('Session already submitted');
 
-      const existingCount = reportIssueStore.countSessionAttachments(session.id);
+      const existingCount = reportIssueStore.countSessionAttachments(
+        session.id,
+      );
       if (existingCount >= MAX_ATTACHMENTS_PER_SESSION)
         throw new Error('Attachment limit reached');
       sessionId = session.id;
@@ -261,13 +265,14 @@ class ReportIssueService {
   listReportIssues(
     options: ListReportIssueOptions = {},
   ): ListReportIssueResult {
-    const { status, category } = options;
+    const { status, category, view } = options;
     const limit = this.clampLimit(options.limit);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
 
     return reportIssueStore.listReportIssues({
       status,
       category,
+      view,
       limit,
       offset,
     });

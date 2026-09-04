@@ -17,6 +17,8 @@ export type ReportIssueCategory =
 
 export type ReportIssueStatus = 'open' | 'acknowledged' | 'resolved';
 
+export type AdminQueueView = 'active' | 'archived' | 'all';
+
 export interface ReportIssueSessionEntry {
   id: string;
   token: string;

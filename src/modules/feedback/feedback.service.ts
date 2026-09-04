@@ -3,6 +3,7 @@ import { adminService } from '@/services/admin';
 import { feedbackStore } from '@/core/database/sqlite-storage';
 import type {
   FeedbackStatus,
+  AdminQueueView,
   FeedbackCategory,
   FeedbackEntry,
   FeedbackSessionEntry,
@@ -33,6 +34,7 @@ export interface SubmitFeedbackInput {
 
 export interface ListFeedbackOptions {
   status?: FeedbackStatus;
+  view?: AdminQueueView;
   limit?: number;
   offset?: number;
 }
@@ -141,9 +143,10 @@ export class FeedbackService {
 
   listFeedback(options: ListFeedbackOptions = {}): ListFeedbackResult {
     const status = options.status;
+    const view = options.view;
     const limit = this.clampLimit(options.limit);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
-    return feedbackStore.listFeedback({ status, limit, offset });
+    return feedbackStore.listFeedback({ status, view, limit, offset });
   }
 
   async toggleResolved(

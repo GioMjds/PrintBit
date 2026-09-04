@@ -1,6 +1,8 @@
 import type { Request, Response } from 'express';
 import { FeedbackController } from './feedback.controller';
-import type { FeedbackService } from './feedback.service';
+import { FeedbackService } from './feedback.service';
+import { feedbackStore } from '@/core/database/sqlite-storage';
+import type { FeedbackEntry } from './feedback.schema';
 
 describe('FeedbackController direct and non-session based endpoints', () => {
   let controller: FeedbackController;
@@ -134,6 +136,131 @@ describe('FeedbackController direct and non-session based endpoints', () => {
 
       expect(res._status).toBe(200);
       expect(res._sent).toEqual({ url: 'http://192.168.4.1:3000/feedback' });
+    });
+  });
+
+  describe('Admin feedback queue views and validation (GET /api/admin/feedback)', () => {
+    let realService: FeedbackService;
+    let adminController: FeedbackController;
+
+    const openItem: FeedbackEntry = {
+      id: 'fb-test-open',
+      sessionId: 'sess-test-open',
+      timestamp: '2026-09-01T10:00:00.000Z',
+      comment: 'Open feedback item',
+      category: 'service',
+      rating: 4,
+      status: 'open',
+      resolvedAt: null,
+    };
+
+    const resolvedItem: FeedbackEntry = {
+      id: 'fb-test-resolved',
+      sessionId: 'sess-test-resolved',
+      timestamp: '2026-09-01T11:00:00.000Z',
+      comment: 'Resolved feedback item',
+      category: 'hardware',
+      rating: 5,
+      status: 'resolved',
+      resolvedAt: '2026-09-01T12:00:00.000Z',
+    };
+
+    beforeEach(() => {
+      realService = new FeedbackService();
+      adminController = new FeedbackController(realService, {
+        resolvePublicBaseUrl: () => new URL('http://192.168.4.1:3000'),
+      });
+      feedbackStore.deleteFeedback(openItem.id);
+      feedbackStore.deleteFeedback(resolvedItem.id);
+      feedbackStore.insertFeedback(openItem);
+      feedbackStore.insertFeedback(resolvedItem);
+    });
+
+    afterEach(() => {
+      feedbackStore.deleteFeedback(openItem.id);
+      feedbackStore.deleteFeedback(resolvedItem.id);
+    });
+
+    it('returns 400 when view parameter is unknown', () => {
+      const req = {
+        query: { view: 'invalid-view' },
+      } as unknown as Request;
+      const res = createMockResponse();
+
+      const listFeedback = (adminController as any).listFeedback;
+      listFeedback(req, res);
+
+      expect(res._status).toBe(400);
+      expect(res._sent).toEqual({ error: 'view must be active, archived, or all.' });
+    });
+
+    it('asserts queue views: no view returns all items (backward compatibility)', () => {
+      const req = { query: {} } as unknown as Request;
+      const res = createMockResponse();
+
+      const listFeedback = (adminController as any).listFeedback;
+      listFeedback(req, res);
+
+      expect(res._status).toBe(200);
+      const ids = res._sent.items.map((e: FeedbackEntry) => e.id);
+      expect(ids).toContain(openItem.id);
+      expect(ids).toContain(resolvedItem.id);
+    });
+
+    it('asserts queue views: view=active excludes only resolved items', () => {
+      const req = { query: { view: 'active' } } as unknown as Request;
+      const res = createMockResponse();
+
+      const listFeedback = (adminController as any).listFeedback;
+      listFeedback(req, res);
+
+      expect(res._status).toBe(200);
+      const ids = res._sent.items.map((e: FeedbackEntry) => e.id);
+      expect(ids).toContain(openItem.id);
+      expect(ids).not.toContain(resolvedItem.id);
+    });
+
+    it('asserts queue views: view=archived returns only resolved items', () => {
+      const req = { query: { view: 'archived' } } as unknown as Request;
+      const res = createMockResponse();
+
+      const listFeedback = (adminController as any).listFeedback;
+      listFeedback(req, res);
+
+      expect(res._status).toBe(200);
+      const ids = res._sent.items.map((e: FeedbackEntry) => e.id);
+      expect(ids).not.toContain(openItem.id);
+      expect(ids).toContain(resolvedItem.id);
+    });
+
+    it('asserts resolving changes result from Active to Archived, and reopening reverses it', async () => {
+      let activeRes = createMockResponse();
+      (adminController as any).listFeedback({ query: { view: 'active' } } as unknown as Request, activeRes);
+      expect(activeRes._sent.items.map((e: FeedbackEntry) => e.id)).toContain(openItem.id);
+
+      let archivedRes = createMockResponse();
+      (adminController as any).listFeedback({ query: { view: 'archived' } } as unknown as Request, archivedRes);
+      expect(archivedRes._sent.items.map((e: FeedbackEntry) => e.id)).not.toContain(openItem.id);
+
+      await realService.toggleResolved(openItem.id, true);
+
+      activeRes = createMockResponse();
+      (adminController as any).listFeedback({ query: { view: 'active' } } as unknown as Request, activeRes);
+      expect(activeRes._sent.items.map((e: FeedbackEntry) => e.id)).not.toContain(openItem.id);
+
+      archivedRes = createMockResponse();
+      (adminController as any).listFeedback({ query: { view: 'archived' } } as unknown as Request, archivedRes);
+      expect(archivedRes._sent.items.map((e: FeedbackEntry) => e.id)).toContain(openItem.id);
+
+      await realService.toggleResolved(openItem.id, false);
+
+      activeRes = createMockResponse();
+      (adminController as any).listFeedback({ query: { view: 'active' } } as unknown as Request, activeRes);
+      expect(activeRes._sent.items.map((e: FeedbackEntry) => e.id)).toContain(openItem.id);
+
+      archivedRes = createMockResponse();
+      (adminController as any).listFeedback({ query: { view: 'archived' } } as unknown as Request, archivedRes);
+      expect(archivedRes._sent.items.map((e: FeedbackEntry) => e.id)).not.toContain(openItem.id);
     });
   });
 });

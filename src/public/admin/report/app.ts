@@ -89,7 +89,7 @@ let currentPage = 1;
 let allItems: ReportIssueEntry[] = [];
 let displayItems: ReportIssueEntry[] = [];
 let totalItems = 0;
-let activeFilter: 'all' | 'open' | 'acknowledged' | 'resolved' = 'all';
+let activeFilter: 'active' | 'archived' | 'all' = 'active';
 let activeDetailId: string | null = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,9 +179,9 @@ function renderPage(): void {
 async function loadReports(): Promise<void> {
   try {
     const offset = (currentPage - 1) * PAGE_SIZE;
-    const statusParam = activeFilter !== 'all' ? `&status=${activeFilter}` : '';
+    const viewParam = `&view=${activeFilter}`;
     const res = await apiFetch(
-      `/api/admin/report-issues?limit=${PAGE_SIZE}&offset=${offset}${statusParam}`,
+      `/api/admin/report-issues?limit=${PAGE_SIZE}&offset=${offset}${viewParam}`,
     );
     if (!res.ok) {
       setMessage('Failed to load reports.');
@@ -201,7 +201,7 @@ async function loadReports(): Promise<void> {
 
 async function loadAllForStats(): Promise<void> {
   try {
-    const res = await apiFetch('/api/admin/report-issues?limit=1000');
+    const res = await apiFetch('/api/admin/report-issues?limit=1000&view=all');
     if (!res.ok) return;
     const data = (await res.json()) as ListResponse;
     allItems = data.items;
@@ -354,7 +354,7 @@ async function updateDetailStatus(
 
     const entry = allItems.find((e) => e.id === activeDetailId);
     if (entry) entry.status = status;
-    void loadReports();
+    await loadReports();
     closeDetailModal();
     setMessage('Status updated.');
   } catch {

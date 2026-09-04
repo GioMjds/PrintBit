@@ -743,7 +743,15 @@ exportLogsBtn.addEventListener('click', () => {
     });
 });
 
-clearLogsBtn.addEventListener('click', () => void clearAllTransactionLogs());
+function showRefreshError(error: unknown): void {
+  setMessage(
+    error instanceof Error ? error.message : 'Automatic refresh failed.',
+  );
+}
+
+clearLogsBtn.addEventListener('click', () => {
+  void clearAllTransactionLogs().catch(showRefreshError);
+});
 applyFiltersBtn.addEventListener('click', applyFilters);
 clearFiltersBtn.addEventListener('click', () => {
   resetFilterState();
@@ -810,5 +818,9 @@ window.addEventListener('keydown', (event) => {
 initAuth(async () => {
   await loadData();
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
-  refreshTimer = window.setInterval(() => void loadData(), 10_000);
+  refreshTimer = window.setInterval(
+    () => void loadData().catch(showRefreshError),
+    10_000,
+  );
 });
+

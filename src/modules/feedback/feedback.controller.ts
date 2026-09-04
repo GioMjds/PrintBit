@@ -8,7 +8,7 @@ import {
 import { createRateLimit } from '@/middleware/rate-limit';
 import { serializeForInlineScript } from '@/utils/helpers';
 import { FeedbackService } from './feedback.service';
-import type { FeedbackStatus } from './feedback.schema';
+import type { FeedbackStatus, AdminQueueView } from './feedback.schema';
 
 const FEEDBACK_PORTAL_DIR = path.resolve('src', 'public', 'feedback');
 const FEEDBACK_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
@@ -275,6 +275,19 @@ export class FeedbackController {
 
   // Admin handlers
   private listFeedback = (req: Request, res: Response): void => {
+    const rawView = req.query.view;
+    let view: AdminQueueView | undefined;
+
+    if (rawView !== undefined) {
+      if (rawView !== 'active' && rawView !== 'archived' && rawView !== 'all') {
+        res
+          .status(400)
+          .json({ error: 'view must be active, archived, or all.' });
+        return;
+      }
+      view = rawView as AdminQueueView;
+    }
+
     const statusParam = req.query.status;
     const status: FeedbackStatus | undefined =
       statusParam === 'open' || statusParam === 'resolved'
@@ -287,7 +300,12 @@ export class FeedbackController {
     const rawOffset = Number(req.query.offset ?? 0);
     const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
 
-    const result = this.feedbackService.listFeedback({ status, limit, offset });
+    const result = this.feedbackService.listFeedback({
+      status,
+      view,
+      limit,
+      offset,
+    });
     res.json(result);
   };
 

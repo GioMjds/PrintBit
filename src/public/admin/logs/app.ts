@@ -151,7 +151,9 @@ exportLogsBtn.addEventListener('click', () => {
     });
 });
 
-clearLogsBtn.addEventListener('click', () => void clearAllLogs());
+clearLogsBtn.addEventListener('click', () => {
+  void clearAllLogs().catch(showRefreshError);
+});
 
 prevPageBtn.addEventListener('click', () => {
   if (currentPage > 1) {
@@ -167,8 +169,18 @@ nextPageBtn.addEventListener('click', () => {
   }
 });
 
+function showRefreshError(error: unknown): void {
+  setMessage(
+    error instanceof Error ? error.message : 'Automatic refresh failed.',
+  );
+}
+
 initAuth(async () => {
   await loadData();
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
-  refreshTimer = window.setInterval(() => void loadData(), 10_000);
+  refreshTimer = window.setInterval(
+    () => void loadData().catch(showRefreshError),
+    10_000,
+  );
 });
+

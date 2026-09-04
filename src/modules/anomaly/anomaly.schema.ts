@@ -19,6 +19,8 @@ export type {
   AlertSettings,
 };
 
+export type AdminQueueView = 'active' | 'archived' | 'all';
+
 export interface AnomalyIncidentEntry {
   id: string;
   type: string;
