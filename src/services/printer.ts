@@ -2,6 +2,16 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { WORKER_QUEUE_DIR } from '@/config';
+import { handoffToWorker } from './worker-handoff';
+import { printerStateProjection } from './printer-state-projection';
+import {
+  normalizeRotationDeg,
+  preparePrintRotationArtifact,
+  type RotationDeg,
+} from './document-rotation';
+import type { PrintQuality } from '@/core/database/shared.schema';
+import { preparePrintPdf, IMAGE_EXTENSIONS } from './prepare-print-pdf';
+
 export class PrintDispatchError extends Error {
   readonly result: {
     failureCode?: string | null;
@@ -51,19 +61,6 @@ export interface PrintDispatchResult {
   failureCode?: string | null;
   fileName?: string;
 }
-
-import { handoffToWorker } from './worker-handoff';
-import { printerStateProjection } from './printer-state-projection';
-import {
-  normalizeRotationDeg,
-  preparePrintRotationArtifact,
-  type RotationDeg,
-} from './document-rotation';
-import type { PrintQuality } from '@/core/database/shared.schema';
-import {
-  preparePrintPdf,
-  IMAGE_EXTENSIONS,
-} from './prepare-print-pdf';
 
 export type ColorMode = 'colored' | 'grayscale';
 export type Orientation = 'portrait' | 'landscape';
