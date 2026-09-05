@@ -1,0 +1,162 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    'Plus Jakarta Sans', Inter, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  background: #0e0d1f;
+  color: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(105, 111, 199, 0.24), transparent 38%),
+    radial-gradient(circle at 90% 90%, rgba(242, 174, 187, 0.12), transparent 35%),
+    #0e0d1f;
+}
+
+.portal-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1rem;
+}
+
+.portal-card {
+  width: min(100%, 30rem);
+  padding: clamp(1.5rem, 7vw, 2.5rem);
+  border: 1px solid rgba(167, 170, 225, 0.28);
+  border-radius: 1.25rem;
+  background: rgba(24, 23, 48, 0.94);
+  box-shadow: 0 1.25rem 3.5rem rgba(0, 0, 0, 0.38);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: 1.125rem;
+  font-weight: 750;
+}
+
+.brand__mark {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.5rem;
+  background: #696fc7;
+}
+
+.eyebrow {
+  margin: 2rem 0 0.5rem;
+  color: #a7aae1;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 8vw, 2.5rem);
+  line-height: 1.12;
+}
+
+.intro,
+.privacy-note {
+  color: #c9c9dc;
+  line-height: 1.55;
+}
+
+form {
+  display: grid;
+  gap: 0.625rem;
+  margin-top: 1.75rem;
+}
+
+label {
+  font-weight: 700;
+}
+
+input,
+button {
+  width: 100%;
+  min-height: 3.25rem;
+  border-radius: 0.75rem;
+  font: inherit;
+}
+
+input {
+  border: 1px solid #6f7192;
+  padding: 0.75rem 1rem;
+  background: #100f26;
+  color: #ffffff;
+  font-size: 1.25rem;
+  letter-spacing: 0.1em;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 3px solid #f2aebb;
+  outline-offset: 3px;
+}
+
+button {
+  margin-top: 0.625rem;
+  border: 0;
+  padding: 0.75rem 1rem;
+  background: #777ed9;
+  color: #ffffff;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.field-help,
+.field-error,
+.portal-status,
+.privacy-note {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.field-help,
+.privacy-note {
+  color: #b9b9cd;
+}
+
+.field-error {
+  color: #ffb4bd;
+  font-weight: 650;
+}
+
+.portal-status {
+  min-height: 1.5rem;
+  margin-top: 1rem;
+  color: #a9f0ce;
+  font-weight: 650;
+}
+
+.privacy-note {
+  margin-top: 1.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -349,6 +349,44 @@ body {
   max-width: 1100px;
 }
 
+.action-grid[hidden],
+.wifi-inline-card[hidden],
+.end-student-session[hidden] {
+  display: none;
+}
+
+.action-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.end-student-session {
+  min-height: 48px;
+  padding: 12px 24px;
+  border: 1px solid rgba(242, 174, 187, 0.6);
+  border-radius: 12px;
+  background: rgba(242, 174, 187, 0.12);
+  color: var(--white);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.end-student-session:hover,
+.end-student-session:focus-visible {
+  background: rgba(242, 174, 187, 0.22);
+}
+
+.end-student-session:focus-visible {
+  outline: 3px solid var(--pink);
+  outline-offset: 3px;
+}
+
+.end-student-session:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 /* ── Action card (button) ─────────────────────────────────── */
 .action-card {
   position: relative;

@@ -1,0 +1,53 @@
+import type { Server as SocketIOServer } from 'socket.io';
+import type {
+  StudentKioskSessionEntry,
+  StudentSessionSqliteStore,
+} from '@/core/database/models/student-session.model';
+
+export interface StudentSessionServiceDeps {
+  io: Pick<SocketIOServer, 'emit'>;
+  store: StudentSessionSqliteStore;
+}
+
+export type StudentIdentificationResult =
+  | { ok: true; sessionId: string }
+  | { ok: false; code: 'IDENTIFICATION_FAILED' | 'KIOSK_IN_USE' };
+
+export type StudentKioskState =
+  | { status: 'idle'; verificationEnabled?: boolean }
+  | { status: 'active'; sessionId: string; verificationEnabled?: boolean }
+  | { status: 'ended'; sessionId: string; verificationEnabled?: boolean };
+
+export type StudentSessionEndReason =
+  | 'user_ended'
+  | 'idle_timeout'
+  | 'server_restart'
+  | 'startup_recovery';
+
+export interface ActiveStudentSession {
+  sessionId: string;
+}
+
+export interface StudentTransactionAttribution {
+  transactionId: string;
+  kioskSessionId: string;
+  operation: string;
+  attributedAt: string;
+}
+
+export interface RosterReplacementResult {
+  rowCount: number;
+  activeCount: number;
+  inactiveCount: number;
+}
+
+export class StudentSessionServiceError extends Error {
+  constructor(
+    public readonly code: 'ACTIVE_SESSION_REQUIRED' | 'INVALID_END_REASON',
+  ) {
+    super(code);
+    this.name = 'StudentSessionServiceError';
+  }
+}
+
+export type InternalStudentSession = StudentKioskSessionEntry;

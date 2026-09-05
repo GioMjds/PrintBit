@@ -200,33 +200,7 @@ export class AdminLogSqliteStore {
   append(entry: AdminLogEntry, maxRows: number): void {
     try {
       withTransaction(() => {
-        const db = getSqliteDb();
-        db.prepare(
-          `INSERT INTO admin_logs (
-            id,
-            timestamp,
-            timestamp_meta_json,
-            type,
-            message,
-            meta_json
-          ) VALUES (?, ?, ?, ?, ?, ?)`,
-        ).run(
-          entry.id,
-          entry.timestamp,
-          jsonOrNull(entry.timestampMeta),
-          entry.type,
-          entry.message,
-          jsonOrNull(entry.meta),
-        );
-        db.prepare(
-          `DELETE FROM admin_logs
-           WHERE rowid NOT IN (
-             SELECT rowid
-             FROM admin_logs
-             ORDER BY timestamp DESC, rowid DESC
-             LIMIT ?
-           )`,
-        ).run(Math.max(1, Math.floor(maxRows)));
+        this.appendInCurrentTransaction(entry, maxRows);
       });
     } catch (error) {
       console.error('[SQLITE] Failed to append admin log.', {
@@ -235,6 +209,36 @@ export class AdminLogSqliteStore {
       });
       throw error;
     }
+  }
+
+  appendInCurrentTransaction(entry: AdminLogEntry, maxRows: number): void {
+    const db = getSqliteDb();
+    db.prepare(
+      `INSERT INTO admin_logs (
+        id,
+        timestamp,
+        timestamp_meta_json,
+        type,
+        message,
+        meta_json
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      entry.id,
+      entry.timestamp,
+      jsonOrNull(entry.timestampMeta),
+      entry.type,
+      entry.message,
+      jsonOrNull(entry.meta),
+    );
+    db.prepare(
+      `DELETE FROM admin_logs
+       WHERE rowid NOT IN (
+         SELECT rowid
+         FROM admin_logs
+         ORDER BY timestamp DESC, rowid DESC
+         LIMIT ?
+       )`,
+    ).run(Math.max(1, Math.floor(maxRows)));
   }
 
   list(limit: number): AdminLogEntry[] {

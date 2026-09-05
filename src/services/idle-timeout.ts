@@ -19,6 +19,7 @@ export interface IdleTimeoutConfig {
   modalId?: string;
   countdownId?: string;
   buttonId?: string;
+  beforeTimeout?: () => Promise<void> | void;
   onTimeout?: () => Promise<void> | void;
   onWarningShown?: () => void;
   onWarningHidden?: () => void;
@@ -324,6 +325,9 @@ function handleKeepActiveClick(event?: Event): void {
 async function handlePageIdleTimeout(): Promise<void> {
   console.log('[PAGE IDLE] Timeout reached');
   hidePageIdleWarning();
+  if (idleConfig.beforeTimeout) {
+    await idleConfig.beforeTimeout();
+  }
   if (idleConfig.onTimeout) {
     await idleConfig.onTimeout();
   }

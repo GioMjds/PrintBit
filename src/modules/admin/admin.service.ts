@@ -11,7 +11,10 @@ import {
 import { type PrintQuality } from '@/core/database/shared.schema';
 import { db } from '@/services/db';
 import { getTrustedTimestamp } from '@/services/time-source';
-import { adminLogStore } from '@/core/database/sqlite-storage';
+import {
+  adminLogStore,
+  getSqliteDb,
+} from '@/core/database/sqlite-storage';
 
 export type EarningsAnalyticsView = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type EarningsMode = 'print' | 'copy' | 'scan';
@@ -125,6 +128,25 @@ export class AdminService {
     month: 'long',
     year: 'numeric',
   });
+
+  getStudentTransactionContext(
+    transactionId: string,
+  ): { id: string; status: 'active' | 'ended' } | null {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT sessions.id, sessions.status
+         FROM student_transaction_attributions AS attributions
+         INNER JOIN student_kiosk_sessions AS sessions
+           ON sessions.id = attributions.kiosk_session_id
+         WHERE attributions.transaction_id = ?`,
+      )
+      .get(transactionId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: String(row.id ?? ''),
+      status: row.status === 'ended' ? 'ended' : 'active',
+    };
+  }
 
   getPricingSettings(): PricingSettings {
     return db.data!.settings.pricing;

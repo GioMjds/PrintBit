@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { createHmac } from 'node:crypto';
 
 const DEFAULT_PORT = 3000;
 const rawPort = process.env.PORT?.trim();
@@ -41,6 +42,8 @@ export const DOCUMENT_CONVERSION_PIPE_NAME =
 export const PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PUBLIC_DIR = path.resolve('src', 'public');
 export const PORTAL_DIR = path.resolve(PUBLIC_DIR, 'upload');
+export const STUDENT_PORTAL_DIR = path.resolve(PUBLIC_DIR, 'student-portal');
+export const STUDENT_PORTAL_ASSETS = new Set(['styles.css', 'app.js']);
 export const PREVIEW_CACHE_DIR = path.join(
   os.tmpdir(),
   'printbit-preview-cache',
@@ -113,6 +116,48 @@ export const ESP32_ALWAYS_ACCEPT_COINS = alwaysAcceptCoinTokens.has(
 );
 export const CAPTIVE_PORTAL_ENABLED =
   process.env.PRINTBIT_CAPTIVE_PORTAL !== 'false';
+
+const STUDENT_ID_VERIFICATION_ENABLED_TOKENS = new Set([
+  '1',
+  'true',
+  'yes',
+  'on',
+]);
+export const STUDENT_ID_VERIFICATION_ENABLED =
+  STUDENT_ID_VERIFICATION_ENABLED_TOKENS.has(
+    process.env.PRINTBIT_STUDENT_ID_VERIFICATION?.trim().toLowerCase() ?? '',
+  );
+const rawStudentIdHmacSecret =
+  process.env.PRINTBIT_STUDENT_ID_HMAC_SECRET?.trim() ?? '';
+if (
+  STUDENT_ID_VERIFICATION_ENABLED &&
+  rawStudentIdHmacSecret.length === 0 &&
+  process.env.NODE_ENV !== 'test'
+) {
+  throw new Error(
+    'PRINTBIT_STUDENT_ID_HMAC_SECRET must be set when student ID verification is enabled.',
+  );
+}
+export const STUDENT_ID_HMAC_SECRET =
+  rawStudentIdHmacSecret.length > 0
+    ? rawStudentIdHmacSecret
+    : process.env.NODE_ENV === 'test'
+      ? 'printbit-student-id-test-secret'
+      : '';
+
+export function normalizeStudentId(raw: string): string | null {
+  if (/^2\d{6}$/.test(raw)) return `${raw.slice(0, 3)}-${raw.slice(3)}`;
+  if (/^2\d{2}-\d{4}$/.test(raw)) return raw;
+  return null;
+}
+
+export function createStudentIdLookupHmac(studentId: string): string | null {
+  const normalizedStudentId = normalizeStudentId(studentId);
+  if (!normalizedStudentId) return null;
+  return createHmac('sha256', STUDENT_ID_HMAC_SECRET)
+    .update(normalizedStudentId)
+    .digest('hex');
+}
 
 /** Kiosk lockdown controls */
 export const KIOSK_LOCKDOWN_ENABLED =

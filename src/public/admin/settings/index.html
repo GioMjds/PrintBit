@@ -654,6 +654,34 @@
                 </div>
               </div>
 
+              <div class="sg">
+                <div class="sg__head">
+                  <h3 class="sg__title">Student roster</h3>
+                </div>
+                <div class="fields">
+                  <div class="field">
+                    <label class="field__lbl" for="studentRosterFile"
+                      >Roster CSV</label
+                    >
+                    <input
+                      id="studentRosterFile"
+                      type="file"
+                      accept=".csv,text/csv"
+                      class="field__input"
+                    />
+                    <p class="field__hint">
+                      Upload a CSV with student_id,active columns. Student IDs are not retained in this page.
+                    </p>
+                  </div>
+                  <div class="field">
+                    <button id="studentRosterImportBtn" type="button" class="topbar-btn topbar-btn--accent">
+                      Import roster
+                    </button>
+                    <p id="studentRosterImportResult" class="field__hint" aria-live="polite"></p>
+                  </div>
+                </div>
+              </div>
+
               <div class="settings-footer">
                 <button type="submit" class="save-btn">
                   <svg

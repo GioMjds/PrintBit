@@ -47,6 +47,7 @@ function copyDotLottieWasm() {
 
 const entryPoints = [
   { in: 'src/public/app.ts', out: 'src/public/bundle.js' },
+  { in: 'src/public/student-portal/app.ts', out: 'src/public/student-portal/app.js' },
   { in: 'src/public/print/app.ts', out: 'src/public/print/app.js' },
   { in: 'src/public/copy/app.ts', out: 'src/public/copy/app.js' },
   { in: 'src/public/config/app.ts', out: 'src/public/config/app.js' },
