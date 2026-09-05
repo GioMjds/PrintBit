@@ -5,7 +5,6 @@ import {
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { mountLoadingAnimation } from '../shared/loading-animation';
-import { initializeStudentSessionKiosk } from '../shared/student-session';
 import {
   destroyPdfLoadingTask,
   type PdfLoadingTask,
@@ -13,7 +12,6 @@ import {
 
 export {};
 
-const studentSession = initializeStudentSessionKiosk({ socket: null });
 void initKioskLocalization();
 
 // ── Idle Timeout with Warning Modal (Copy Page) ───────────────────────────────────────────────
@@ -22,7 +20,6 @@ void initKioskLocalization();
 void setupPageIdleWarningButton();
 void initializePageIdleTimeout({
   showWarningModal: true,
-  beforeTimeout: () => studentSession.endStudentSession('idle_timeout'),
   onTimeout: () => {
     console.log('[PAGE IDLE] Copy page timeout reached, redirecting to home');
     if (previewReleaseToken) {

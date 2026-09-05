@@ -123,15 +123,6 @@ const openAlertBadgeMob = document.getElementById(
 ) as HTMLElement | null;
 
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
-const studentRosterFile = document.getElementById(
-  'studentRosterFile',
-) as HTMLInputElement | null;
-const studentRosterImportBtn = document.getElementById(
-  'studentRosterImportBtn',
-) as HTMLButtonElement | null;
-const studentRosterImportResult = document.getElementById(
-  'studentRosterImportResult',
-) as HTMLElement | null;
 let refreshTimer: number | null = null;
 let loadedAdminLocalOnly: boolean = false;
 let settingsDirty: boolean = false;
@@ -607,54 +598,6 @@ testEmailAlertBtn?.addEventListener('click', () => {
           ? error.message
           : 'Failed to send test email alert.',
       );
-    });
-});
-
-studentRosterImportBtn?.addEventListener('click', () => {
-  const file = studentRosterFile?.files?.[0];
-  if (!file) {
-    if (studentRosterImportResult) {
-      studentRosterImportResult.textContent = 'Select a CSV file first.';
-    }
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('file', file);
-  studentRosterImportBtn.disabled = true;
-  if (studentRosterImportResult) {
-    studentRosterImportResult.textContent = 'Importing roster…';
-  }
-
-  const token = sessionStorage.getItem('adminSessionToken');
-  const headers = new Headers();
-  if (token) headers.set('x-admin-token', token);
-  void fetch('/api/admin/student-roster/import', {
-    method: 'POST',
-    body: formData,
-    headers,
-    credentials: 'include',
-  })
-    .then(async (response) => {
-      const body = (await response.json()) as {
-        acceptedCount?: number;
-        disabledCount?: number;
-        error?: string;
-      };
-      if (!response.ok) throw new Error(body.error ?? 'Roster import failed.');
-      if (studentRosterImportResult) {
-        studentRosterImportResult.textContent = `Accepted: ${body.acceptedCount ?? 0}. Disabled: ${body.disabledCount ?? 0}.`;
-      }
-      studentRosterFile.value = '';
-    })
-    .catch((error: unknown) => {
-      if (studentRosterImportResult) {
-        studentRosterImportResult.textContent =
-          error instanceof Error ? error.message : 'Roster import failed.';
-      }
-    })
-    .finally(() => {
-      studentRosterImportBtn.disabled = false;
     });
 });
 

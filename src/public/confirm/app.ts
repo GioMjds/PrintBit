@@ -7,7 +7,6 @@ import {
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { mountLoadingAnimation } from '../shared/loading-animation';
-import { initializeStudentSessionKiosk } from '../shared/student-session';
 import {
   applyConfirmationEvidence,
   createConfirmationOutcomeState,
@@ -31,7 +30,6 @@ import {
 
 export {};
 
-const studentSession = initializeStudentSessionKiosk({ socket: null });
 void initKioskLocalization();
 void loadHotspotConfig();
 
@@ -39,7 +37,6 @@ void loadHotspotConfig();
 void setupPageIdleWarningButton();
 void initializePageIdleTimeout({
   showWarningModal: true,
-  beforeTimeout: () => studentSession.endStudentSession('idle_timeout'),
   onTimeout: async () => {
     console.log(
       '[PAGE IDLE] Confirm page timeout reached, redirecting to home',

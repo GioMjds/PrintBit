@@ -119,10 +119,6 @@ class JobStore {
     return this.jobs.get(id);
   }
 
-  deleteJob(id: string): boolean {
-    return this.jobs.delete(id);
-  }
-
   updateJobState(id: string, state: JobState, extra?: UpdateExtra): void {
     const job = this.jobs.get(id);
     if (!job) return;

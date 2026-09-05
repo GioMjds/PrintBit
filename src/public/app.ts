@@ -10,10 +10,6 @@ import { initIdleScreen } from './shared/idle-screen';
 import { isMobileViewport } from './shared/device-mode';
 import { attachPowerSafetyOverlay } from './shared/power-safety-overlay';
 import { fetchPublicPricing, formatPricingGuide } from './shared/pricing-guide';
-import {
-  initializeStudentSessionKiosk,
-  type StudentSessionKioskState,
-} from './shared/student-session';
 
 type SocketLike = {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
@@ -107,50 +103,11 @@ const PRINT_ONBOARDING_TRIGGER_KEY = 'printbit.showPrintOnboardingModal';
 const openPrint = document.getElementById('openPrintBtn');
 const openCopy = document.getElementById('openCopyBtn');
 const openScan = document.getElementById('openScanBtn');
-const studentSessionLockedPanel = document.getElementById(
-  'studentSessionLockedPanel',
-);
-const studentSessionActions = document.getElementById('studentSessionActions');
-const studentSessionStatus = document.getElementById('studentSessionStatus');
-const endStudentSessionBtn = document.getElementById(
-  'endStudentSessionBtn',
-) as HTMLButtonElement | null;
 const powerOff = document.getElementById('powerOffBtn');
 const openPricingBtn = document.getElementById('openPricingBtn');
 const closePricingBtn = document.getElementById('closePricingBtn');
 const pricingOverlay = document.getElementById('pricingOverlay');
 const pricingGuideContent = document.getElementById('pricingGuideContent');
-
-function renderStudentSessionState(state: StudentSessionKioskState): void {
-  const isActive = state === 'active';
-  if (studentSessionLockedPanel) studentSessionLockedPanel.hidden = isActive;
-  if (studentSessionActions) {
-    studentSessionActions.hidden = !isActive;
-    studentSessionActions.setAttribute('aria-hidden', String(!isActive));
-  }
-  [openPrint, openCopy, openScan].forEach((element) => {
-    if (element instanceof HTMLButtonElement) element.disabled = !isActive;
-  });
-  if (endStudentSessionBtn) endStudentSessionBtn.hidden = !isActive;
-  if (studentSessionStatus) {
-    studentSessionStatus.textContent = isActive
-      ? 'Student verified. Choose a service.'
-      : state === 'checking'
-        ? 'Checking kiosk access…'
-        : 'Verify your student ID on your phone to unlock this kiosk.';
-  }
-}
-
-const studentSession = initializeStudentSessionKiosk({
-  socket: homeSocket,
-  onStateChange: renderStudentSessionState,
-});
-
-endStudentSessionBtn?.addEventListener('click', async () => {
-  endStudentSessionBtn.disabled = true;
-  await studentSession.endStudentSession('user_ended');
-  endStudentSessionBtn.disabled = false;
-});
 
 function setPricingModalOpen(open: boolean): void {
   if (!pricingOverlay) return;
@@ -235,14 +192,10 @@ window.addEventListener('pagehide', (event) => {
 });
 
 openPrint?.addEventListener('click', () => {
-  studentSession.navigateWhenActive('/print', navigateTo);
+  navigateTo('/print');
 });
-openCopy?.addEventListener('click', () =>
-  studentSession.navigateWhenActive('/copy', navigateTo),
-);
-openScan?.addEventListener('click', () =>
-  studentSession.navigateWhenActive('/scan', navigateTo),
-);
+openCopy?.addEventListener('click', () => navigateTo('/copy'));
+openScan?.addEventListener('click', () => navigateTo('/scan'));
 
 // ── Hotspot Wi-Fi connection modal (Public ESP32 Hotspot) ─────────────────────
 

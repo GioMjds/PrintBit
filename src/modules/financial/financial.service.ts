@@ -83,17 +83,12 @@ import {
   enqueuePrintJob,
   PrintJobEnqueueError,
 } from '@/modules/print-queue';
-import {
-  attributeStudentTransaction,
-  type StudentSessionTransactionAuthority,
-} from '@/middleware/student-session';
 
 export interface FinancialServiceDeps {
   io: Server;
   sessionStore: SessionStore;
   resolvePublicBaseUrl: (req: Request) => URL;
   powerSafetyService?: PowerSafetyService;
-  studentSessionService?: StudentSessionTransactionAuthority;
 }
 
 interface UploadDeletionResult {
@@ -1181,11 +1176,6 @@ export class FinancialService {
     }
 
     const transactionId = randomUUID();
-    attributeStudentTransaction(
-      this.deps.studentSessionService,
-      transactionId,
-      req.body?.mode === 'copy' ? 'copy' : 'print',
-    );
 
     const sendResponse = (status: number, body: unknown): void => {
       if (idempotencyClaimed) {

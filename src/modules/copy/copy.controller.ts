@@ -52,27 +52,12 @@ export class CopyController {
       return;
     }
 
-    let result: Awaited<ReturnType<CopyService['createCopyJob']>>;
-    try {
-      result = await this.copyService.createCopyJob(
-        req.body as CreateCopyJobInput,
-        true,
-        idempotencyKey,
-        req,
-      );
-    } catch (error) {
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'ACTIVE_SESSION_REQUIRED'
-      ) {
-        this.copyService.releaseIdempotencyKey(idempotencyKey);
-        res.status(403).json({ code: 'STUDENT_IDENTIFICATION_REQUIRED' });
-        return;
-      }
-      throw error;
-    }
+    const result = await this.copyService.createCopyJob(
+      req.body as CreateCopyJobInput,
+      true,
+      idempotencyKey,
+      req,
+    );
 
     if (result.cacheIdempotencyResponse) {
       this.copyService.storeIdempotencyResponse(

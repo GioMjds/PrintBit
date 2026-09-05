@@ -6,11 +6,9 @@ import {
 import { initKioskLocalization } from '../shared/kiosk-i18n';
 import { navigateWithKioskMotion } from '../shared/kiosk-navigation';
 import { attachPowerSafetyOverlay } from '../shared/power-safety-overlay';
-import { initializeStudentSessionKiosk } from '../shared/student-session';
 import { resolveWifiTroubleshootingDetails } from '../shared/wifi-troubleshooting';
 
 attachPowerSafetyOverlay();
-const studentSession = initializeStudentSessionKiosk({ socket: null });
 
 type UploadedFile = {
   documentId?: string;
@@ -1278,7 +1276,6 @@ if (savedSessionId) {
 void setupPageIdleWarningButton();
 void initializePageIdleTimeout({
   showWarningModal: true,
-  beforeTimeout: () => studentSession.endStudentSession('idle_timeout'),
   onTimeout: async () => {
     // Attempt to cancel session on server
     if (activeSessionId && activeSessionToken) {

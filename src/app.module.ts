@@ -31,11 +31,6 @@ import { registerAnomalyModule } from '@/modules/anomaly';
 import { registerLanguageModule } from '@/modules/language';
 import { registerUploadPortalModule } from '@/modules/upload-portal';
 import { registerPageModule } from '@/modules/page';
-import {
-  registerStudentSessionModule,
-  StudentSessionService,
-} from '@/modules/student-session';
-import { requireStudentSession } from '@/middleware/student-session';
 
 export interface AppModuleDeps {
   io: SocketIOServer;
@@ -74,7 +69,6 @@ export interface AppModuleDeps {
  */
 export function registerAppModules(app: Express, deps: AppModuleDeps): void {
   const requireKiosk = createKioskAccessMiddleware();
-  const studentSessionService = new StudentSessionService({ io: deps.io });
   app.use(
     [
       '/api/scanner',
@@ -100,19 +94,6 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
       '/print',
     ],
     requireKiosk,
-  );
-  const requireStudent = requireStudentSession(studentSessionService);
-  app.post(
-    [
-      '/api/copy/jobs',
-      '/api/copy/jobs/:id/cancel',
-      '/api/scanner/scan',
-      '/api/scanner/soft-copy/charge',
-      '/api/scan/jobs',
-      '/api/confirm-payment',
-      '/print',
-    ],
-    requireStudent,
   );
   // The tokenized GET /upload/:token portal is public. Only the legacy
   // upload API is kiosk-only, so protect it with a method-specific guard.
@@ -144,7 +125,6 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     sessionStore: deps.sessionStore,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
     powerSafetyService,
-    studentSessionService,
   });
   registerReceiptModule(app);
   registerUploadPortalModule(app, {
@@ -152,10 +132,6 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     portalDir: PORTAL_DIR,
     portalAssets: PORTAL_ASSETS,
     sessionStore: deps.sessionStore,
-  });
-  registerStudentSessionModule(app, {
-    io: deps.io,
-    studentSessionService,
   });
   registerWirelessSessionModule(app, {
     io: deps.io,
@@ -169,13 +145,11 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
     powerSafetyService,
-    studentSessionService,
   });
   registerCopyModule(app, {
     io: deps.io,
     resolvePublicBaseUrl: deps.resolvePublicBaseUrl,
     powerSafetyService,
-    studentSessionService,
   });
   registerPrinterModule(app, {
     io: deps.io,

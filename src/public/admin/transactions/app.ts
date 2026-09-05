@@ -180,11 +180,6 @@ type TransactionContextPayload = {
     timestamp: string;
     meta: Record<string, string | number | boolean | null>;
   }>;
-  studentSession?: {
-    id: string;
-    status: 'active' | 'ended';
-    studentIdMasked: 'Student verified';
-  };
 };
 
 type FilterState = {
@@ -592,10 +587,7 @@ function renderDrawer(context: TransactionContextPayload): void {
     (context.contextFlags.hasIncompleteContext
       ? 'Some transaction context is incomplete.'
       : 'Transaction context is complete.');
-  const studentSessionHint = context.studentSession
-    ? ` Student session: ${context.studentSession.studentIdMasked}.`
-    : '';
-  setField(dContextHint, `${hint}${studentSessionHint}`);
+  setField(dContextHint, hint);
 
   if (dMissingReasons) {
     dMissingReasons.innerHTML = '';

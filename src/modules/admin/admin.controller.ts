@@ -475,6 +475,7 @@ export class AdminController {
       requireAdminPin,
       this.handleUpdateSettings,
     );
+
     // ── Alert settings routes ──────────────────────────────────────────────────
     this.router.get(
       '/alert-settings',
@@ -2359,11 +2360,6 @@ export class AdminController {
       timestamp: string;
       meta: LogMeta;
     }>;
-    studentSession?: {
-      id: string;
-      status: 'active' | 'ended';
-      studentIdMasked: 'Student verified';
-    };
   } | null {
     const logs = this.adminService.listAllTransactionLogs({ transactionId });
     const ledgerEntries = db.data!.financialLedger.filter(
@@ -2463,9 +2459,6 @@ export class AdminController {
     if (missingTransactionMeta) {
       missingReasons.push('Some logs are missing transactionId metadata.');
     }
-    const studentSession = this.adminService.getStudentTransactionContext(
-      transactionId,
-    );
 
     return {
       transactionId,
@@ -2549,14 +2542,6 @@ export class AdminController {
         timestamp: entry.timestamp,
         meta: entry.meta ?? {},
       })),
-      ...(studentSession
-        ? {
-            studentSession: {
-              ...studentSession,
-              studentIdMasked: 'Student verified' as const,
-            },
-          }
-        : {}),
     };
   }
 

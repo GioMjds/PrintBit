@@ -38,10 +38,6 @@ import {
   prepareScanRotationArtifact,
 } from '@/services/document-rotation';
 import type { Server as SocketIOServer } from 'socket.io';
-import {
-  attributeStudentTransaction,
-  type StudentSessionTransactionAuthority,
-} from '@/middleware/student-session';
 
 const VALID_SOURCES = new Set(['adf', 'flatbed']);
 const VALID_DPI = new Set([150, 300, 600]);
@@ -151,16 +147,10 @@ interface ScanOutputTransformInput {
   rotationDeg?: number;
 }
 
-export interface ScannerServiceDeps {
-  studentSessionService?: StudentSessionTransactionAuthority;
-}
-
 export class ScannerService {
   private readonly chargedScanFiles = new Map<string, number>();
   private readonly releaseTokens = new Map<string, ScanReleaseTokenRecord>();
   private readonly receiptService = new ReceiptService();
-
-  constructor(private readonly deps: ScannerServiceDeps = {}) {}
 
   toSafeScanFilename(raw: unknown): string | null {
     return toSafeTransientScanFileName(raw);
@@ -444,17 +434,10 @@ export class ScannerService {
       };
     }
 
-    const transactionId = `scan-${filename}-${randomUUID().slice(0, 8)}`;
-    attributeStudentTransaction(
-      this.deps.studentSessionService,
-      transactionId,
-      'scan',
-    );
-
     await financialLedgerService.append({
       eventType: 'job_started',
       amount: requiredAmount,
-      referenceId: transactionId,
+      referenceId: filename,
       meta: {
         mode: 'scan',
         filename,
@@ -464,7 +447,7 @@ export class ScannerService {
     const settlement = await settlementService.settle({
       requiredAmount,
       io,
-      jobContext: { transactionId, mode: 'scan', filename },
+      jobContext: { mode: 'scan', filename },
     });
 
     if (!settlement.ok) {
@@ -495,7 +478,7 @@ export class ScannerService {
     await financialLedgerService.append({
       eventType: 'job_completed',
       amount: settlement.chargedAmount,
-      referenceId: transactionId,
+      referenceId: filename,
       meta: {
         mode: 'scan',
         filename,
@@ -535,6 +518,7 @@ export class ScannerService {
     }
 
     // Generate receipt snapshot and mint token for scan charge
+    const transactionId = `scan-${filename}-${randomUUID().slice(0, 8)}`;
     let receipt: { viewUrl: string; expiresAt: string } | undefined;
     try {
       this.receiptService.upsertReceiptSnapshot({
