@@ -12,7 +12,7 @@ afterEach(() => {
 
 describe('admin student transaction context', () => {
   test('looks up the attributed session without selecting or exposing the student HMAC', () => {
-    const studentIdHmac = createStudentIdLookupHmac('123-4567');
+    const studentIdHmac = createStudentIdLookupHmac('234-5678');
     if (!studentIdHmac) throw new Error('Expected test student HMAC.');
     studentSessionStore.replaceRoster([{ studentIdHmac }]);
     studentSessionStore.claimSession({ id: 'session-opaque', studentIdHmac });
@@ -34,6 +34,6 @@ describe('admin student transaction context', () => {
     const context = service.getStudentTransactionContext('transaction-opaque');
     expect(context).toEqual({ id: 'session-opaque', status: 'active' });
     expect(JSON.stringify(context)).not.toContain(studentIdHmac);
-    expect(JSON.stringify(context)).not.toContain('123-4567');
+    expect(JSON.stringify(context)).not.toContain('234-5678');
   });
 });

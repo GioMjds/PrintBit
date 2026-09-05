@@ -14,9 +14,9 @@ export type StudentIdentificationResult =
   | { ok: false; code: 'IDENTIFICATION_FAILED' | 'KIOSK_IN_USE' };
 
 export type StudentKioskState =
-  | { status: 'idle' }
-  | { status: 'active'; sessionId: string }
-  | { status: 'ended'; sessionId: string };
+  | { status: 'idle'; verificationEnabled?: boolean }
+  | { status: 'active'; sessionId: string; verificationEnabled?: boolean }
+  | { status: 'ended'; sessionId: string; verificationEnabled?: boolean };
 
 export type StudentSessionEndReason =
   | 'user_ended'

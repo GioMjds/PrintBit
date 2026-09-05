@@ -29,6 +29,15 @@ function hasStatus(payload: unknown, expected: string): boolean {
   );
 }
 
+function isVerificationDisabled(payload: unknown): boolean {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'verificationEnabled' in payload &&
+    (payload as { verificationEnabled?: unknown }).verificationEnabled === false
+  );
+}
+
 function resolveSocket(
   provided: StudentSessionSocket | null | undefined,
 ): StudentSessionSocket | null {
@@ -83,7 +92,7 @@ export function initializeStudentSessionKiosk(
       if (!response.ok) throw new Error('Student session state unavailable');
       const payload: unknown = await response.json();
       if (stateRevision !== fetchRevision) return;
-      if (hasStatus(payload, 'active')) {
+      if (hasStatus(payload, 'active') || isVerificationDisabled(payload)) {
         endRequest = null;
         setState('active');
       } else {

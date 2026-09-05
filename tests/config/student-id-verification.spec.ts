@@ -36,12 +36,13 @@ test('uses a test-only secret fallback when student ID verification is enabled',
 });
 
 test.each([
-  ['1234567', '123-4567'],
-  ['123-4567', '123-4567'],
-  ['123 4567', null],
-  ['0123456', '012-3456'],
-  ['12345678', null],
-])('normalizes only valid seven-digit student IDs: %s', (raw, expected) => {
+  ['2345678', '234-5678'],
+  ['234-5678', '234-5678'],
+  ['234 5678', null],
+  ['1345678', null],
+  ['0345678', null],
+  ['23456789', null],
+])('normalizes only valid 2-prefixed seven-digit student IDs: %s', (raw, expected) => {
   const { normalizeStudentId } = loadConfig();
 
   expect(normalizeStudentId(raw)).toBe(expected);
@@ -51,13 +52,14 @@ test('derives the same HMAC lookup key from either valid student ID format', () 
   process.env.PRINTBIT_STUDENT_ID_HMAC_SECRET = 'test-hmac-secret';
   const { createStudentIdLookupHmac } = loadConfig();
 
-  expect(createStudentIdLookupHmac('1234567')).toBe(
-    createStudentIdLookupHmac('123-4567'),
+  expect(createStudentIdLookupHmac('2345678')).toBe(
+    createStudentIdLookupHmac('234-5678'),
   );
 });
 
 test('rejects invalid student IDs before creating a lookup HMAC', () => {
   const { createStudentIdLookupHmac } = loadConfig();
 
-  expect(createStudentIdLookupHmac('123 4567')).toBeNull();
+  expect(createStudentIdLookupHmac('234 5678')).toBeNull();
+  expect(createStudentIdLookupHmac('134-5678')).toBeNull();
 });

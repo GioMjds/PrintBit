@@ -247,6 +247,49 @@ Troubleshooting mobile captive onboarding:
 - If session is expired/owned by another device, generate a new kiosk print session and scan again.
 - If logs show `no adapter IP matches 192.168.4.x`, set `PRINTBIT_ESP32_KIOSK_IP` to the kiosk's current IP on the ESP32 network (for example `192.168.4.3`).
 
+## Student ID Verification (Kiosk Access Gate)
+
+PrintBit can require an active, locally verified Student ID before allowing users to start print, copy, or scan transactions.
+
+### Environment variables
+
+```env
+# Enable or disable student verification gate (default: false)
+PRINTBIT_STUDENT_ID_VERIFICATION=false
+
+# High-entropy HMAC secret (required when verification is enabled in production)
+PRINTBIT_STUDENT_ID_HMAC_SECRET=generate-a-secure-random-secret-here
+```
+
+### Operator workflow
+
+1. **Generate a high-entropy secret:**
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+2. **Configure environment:**
+   Set `PRINTBIT_STUDENT_ID_HMAC_SECRET` in `.env`.
+3. **Import student roster:**
+   Before enabling verification, sign into **Admin -> Settings -> Student Roster** and upload a CSV file with format:
+   ```csv
+   student_id,active
+   234-5678,true
+   234-5679,true
+   ```
+   Student IDs must follow the `2XX-XXXX` seven-digit format.
+4. **Enable verification:**
+   Set `PRINTBIT_STUDENT_ID_VERIFICATION=true` and restart the kiosk service.
+5. **Secret rotation requirement:**
+   All stored roster entries and session lookups use keyed HMAC-SHA256 hashes (`HMAC-SHA256(secret, normalizedStudentId)`). If `PRINTBIT_STUDENT_ID_HMAC_SECRET` is rotated, all existing stored HMACs become invalid; a fresh student roster CSV must be imported immediately.
+
+### Captive portal & mobile flow
+
+- When a student connects to the PrintBit ESP32 hotspot, the captive portal sheet automatically appears at `http://192.168.4.2:3000/portal`.
+- **Manual fallback:** If an OS captive probe does not trigger automatic popup, the student can open any browser and navigate directly to `http://192.168.4.2:3000/portal` (or `http://printbit.local/portal`).
+- Entering a valid active Student ID emits `kiosk.session.started` over Socket.IO and automatically unlocks the tablet kiosk.
+- Inactive kiosks display the Wi-Fi QR code and keep transaction buttons locked until an active student session is established.
+- Sessions end on explicit user tap ("End Session"), idle timeout, or server restart.
+
 ## Important notes
 
 - Upload and machine state are persisted in `uploads/` and `printbit.sqlite`; do not delete these unintentionally during operation.

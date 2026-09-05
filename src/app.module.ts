@@ -153,7 +153,10 @@ export function registerAppModules(app: Express, deps: AppModuleDeps): void {
     portalAssets: PORTAL_ASSETS,
     sessionStore: deps.sessionStore,
   });
-  registerStudentSessionModule(app, { io: deps.io });
+  registerStudentSessionModule(app, {
+    io: deps.io,
+    studentSessionService,
+  });
   registerWirelessSessionModule(app, {
     io: deps.io,
     sessionIo: deps.sessionIo,

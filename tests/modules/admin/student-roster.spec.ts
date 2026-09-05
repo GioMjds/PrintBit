@@ -76,7 +76,7 @@ describe('admin student roster import', () => {
       importRoster(req: Request, res: Response): void;
     }).importRoster(
       {
-        file: { buffer: Buffer.from('student_id,active\n123-4567,true') },
+        file: { buffer: Buffer.from('student_id,active\n234-5678,true') },
       } as Request,
       res,
     );
@@ -86,6 +86,6 @@ describe('admin student roster import', () => {
       acceptedCount: 2,
       disabledCount: 1,
     });
-    expect(JSON.stringify(res.body)).not.toContain('123-4567');
+    expect(JSON.stringify(res.body)).not.toContain('234-5678');
   });
 });

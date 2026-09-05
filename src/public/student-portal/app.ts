@@ -15,7 +15,7 @@ export async function identifyStudent(
   fetcher: typeof fetch = fetch,
 ): Promise<StudentIdentificationView> {
   const studentId = normalizeStudentIdInput(rawStudentId);
-  if (!/^\d{3}-\d{4}$/.test(studentId)) return 'rejected';
+  if (!/^2\d{2}-\d{4}$/.test(studentId)) return 'rejected';
 
   try {
     const response = await fetcher('/api/portal/identify', {
@@ -43,7 +43,8 @@ function initializeStudentPortal(): void {
   if (!form || !input || !submit || !error || !status) return;
 
   const updateSubmitState = (): void => {
-    submit.disabled = normalizeStudentIdInput(input.value).length !== 8;
+    const val = normalizeStudentIdInput(input.value);
+    submit.disabled = val.length !== 8 || !val.startsWith('2');
   };
 
   input.addEventListener('input', () => {

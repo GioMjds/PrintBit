@@ -143,8 +143,8 @@ export const STUDENT_ID_HMAC_SECRET =
       : '';
 
 export function normalizeStudentId(raw: string): string | null {
-  if (/^\d{7}$/.test(raw)) return `${raw.slice(0, 3)}-${raw.slice(3)}`;
-  if (/^\d{3}-\d{4}$/.test(raw)) return raw;
+  if (/^2\d{6}$/.test(raw)) return `${raw.slice(0, 3)}-${raw.slice(3)}`;
+  if (/^2\d{2}-\d{4}$/.test(raw)) return raw;
   return null;
 }
 

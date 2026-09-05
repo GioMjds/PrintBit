@@ -77,6 +77,34 @@ describe('student session kiosk helper', () => {
     expect(states).toEqual(['checking', 'active']);
   });
 
+  test('preserves the unlocked legacy kiosk when verification is disabled', async () => {
+    const fetcher = jest.fn().mockResolvedValue(
+      jsonResponse({ status: 'idle', verificationEnabled: false }),
+    );
+    const states: StudentSessionKioskState[] = [];
+
+    const session = initializeStudentSessionKiosk({
+      socket: null,
+      fetcher,
+      onStateChange: (state) => states.push(state),
+    });
+    await session.ready;
+
+    expect(session.isActive()).toBe(true);
+    expect(states).toEqual(['checking', 'active']);
+  });
+
+  test('keeps an enabled kiosk locked while no student session is active', async () => {
+    const fetcher = jest.fn().mockResolvedValue(
+      jsonResponse({ status: 'idle', verificationEnabled: true }),
+    );
+
+    const session = initializeStudentSessionKiosk({ socket: null, fetcher });
+    await session.ready;
+
+    expect(session.isActive()).toBe(false);
+  });
+
   test('keeps guarded navigation inert until the kiosk session is active', () => {
     const socketHarness = createSocketHarness();
     const navigate = jest.fn();

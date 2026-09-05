@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   createStudentIdLookupHmac,
   normalizeStudentId,
+  STUDENT_ID_VERIFICATION_ENABLED,
 } from '@/config';
 import { getTrustedTimestamp } from '@/services/time-source';
 import { studentSessionStore } from '@/core/database/models/student-session.model';
@@ -69,8 +70,15 @@ export class StudentSessionService {
   getKioskState(): StudentKioskState {
     const active = this.deps.store.getActiveSession();
     return active
-      ? { status: 'active', sessionId: active.id }
-      : { status: 'idle' };
+      ? {
+          status: 'active',
+          sessionId: active.id,
+          verificationEnabled: STUDENT_ID_VERIFICATION_ENABLED,
+        }
+      : {
+          status: 'idle',
+          verificationEnabled: STUDENT_ID_VERIFICATION_ENABLED,
+        };
   }
 
   endActiveSession(reason: StudentSessionEndReason): StudentKioskState {
@@ -78,7 +86,12 @@ export class StudentSessionService {
       throw new StudentSessionServiceError('INVALID_END_REASON');
     }
     const active = this.deps.store.getActiveSession();
-    if (!active) return { status: 'idle' };
+    if (!active) {
+      return {
+        status: 'idle',
+        verificationEnabled: STUDENT_ID_VERIFICATION_ENABLED,
+      };
+    }
 
     const ended = this.deps.store.endSession(active.id, reason);
     if (!ended || ended.status !== 'ended') return this.getKioskState();
@@ -86,6 +99,7 @@ export class StudentSessionService {
     const state: StudentKioskState = {
       status: 'ended',
       sessionId: ended.id,
+      verificationEnabled: STUDENT_ID_VERIFICATION_ENABLED,
     };
     this.deps.io.emit('kiosk.session.ended', state);
     return state;

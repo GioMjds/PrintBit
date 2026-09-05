@@ -114,7 +114,7 @@ describe('StudentSessionController', () => {
     const response = await fetch(`${baseUrl}/api/portal/identify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ studentId: '123-4567' }),
+      body: JSON.stringify({ studentId: '234-5678' }),
     });
 
     expect(response.status).toBe(200);
@@ -125,7 +125,7 @@ describe('StudentSessionController', () => {
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('SameSite=Lax');
     expect(cookie).not.toContain('session-secret');
-    expect(cookie).not.toContain('123-4567');
+    expect(cookie).not.toContain('234-5678');
   });
 
   test('returns the same generic response for invalid identification', async () => {
