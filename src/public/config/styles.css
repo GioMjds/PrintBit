@@ -1175,6 +1175,16 @@ body {
 }
 .footer-total { color: var(--white); font-size: 25px; font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1.1; margin: 3px 0 0; }
 
+.large-print-disclaimer {
+  margin: 0 24px 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 183, 117, 0.45);
+  border-radius: 12px;
+  color: var(--peach);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* ════════════════════════════════════════════════════════════
    Responsive
    ════════════════════════════════════════════════════════════ */

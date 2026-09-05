@@ -217,9 +217,6 @@ function renderSessionCountdown(remainingSeconds: number): void {
     return;
   }
 
-  footerHint.textContent = selectedFilename
-    ? `"${selectedFilename}" selected.`
-    : 'Select a file above to continue.';
   footerHint.classList.add('ready');
 }
 
@@ -397,6 +394,7 @@ function setWaitingForFilesState(): void {
   knownFiles = new Set<string>();
   lastRenderedFileSignature = '';
   sessionStorage.removeItem('printbit.uploadedFiles');
+  sessionStorage.removeItem('printbit.largePrintNoticeShown');
   setFilesCount(0);
   filesEmpty?.classList.remove('hidden');
   fileList?.classList.add('hidden');
@@ -405,7 +403,6 @@ function setWaitingForFilesState(): void {
     continueBtn.setAttribute('aria-disabled', 'true');
   }
   if (footerHint) {
-    footerHint.textContent = 'Select a file above to continue.';
     footerHint.classList.remove('ready');
   }
 }
@@ -433,7 +430,6 @@ function selectFile(file: UploadedFile): void {
   }
 
   if (footerHint) {
-    footerHint.textContent = `"${file.filename}" selected.`;
     footerHint.classList.add('ready');
   }
 }
@@ -819,6 +815,7 @@ async function createSession(): Promise<void> {
     sessionStorage.removeItem('printbit.uploadedFile');
     sessionStorage.removeItem('printbit.uploadedDocumentId');
     sessionStorage.removeItem('printbit.uploadedFiles');
+    sessionStorage.removeItem('printbit.largePrintNoticeShown');
 
     setSessionText(session.sessionId);
     setSessionActive(true);
@@ -910,12 +907,12 @@ function setConversionMessage(message: string): void {
   if (conversionMessage) conversionMessage.textContent = message;
 }
 
-function showConversionDialog(filename: string): void {
+function showConversionDialog(): void {
   const activeElement = document.activeElement;
   conversionReturnFocus =
     activeElement instanceof HTMLElement ? activeElement : null;
   conversionWaitCancelled = false;
-  setConversionMessage(`Converting ${filename} to PDF. This can take a moment.`);
+  setConversionMessage(`Converting your document to PDF. This can take a moment.`);
   conversionOverlay?.classList.add('is-visible');
   conversionOverlay?.setAttribute('aria-hidden', 'false');
   conversionCancelBtn?.focus();
@@ -1239,7 +1236,7 @@ continueBtn?.addEventListener('click', async () => {
   if (!isPdfFilename(selectedFilename)) {
     conversionWaitInFlight = true;
     setContinueButtonDisabled(true);
-    showConversionDialog(selectedFilename);
+    showConversionDialog();
     const result = await waitForDocumentAnalysis(
       activeSessionId,
       selectedDocumentId,

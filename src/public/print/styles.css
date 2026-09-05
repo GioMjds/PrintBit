@@ -475,6 +475,16 @@ body {
   margin-right: 2px;
 }
 
+.upload-tip--print-limit {
+  background: rgba(255, 183, 117, 0.1);
+  border-color: rgba(255, 183, 117, 0.35);
+}
+
+.upload-tip--print-limit .upload-tip__icon,
+.upload-tip--print-limit .upload-tip__badge {
+  color: var(--peach);
+}
+
 /* Action buttons */
 .qr-actions {
   display: flex;

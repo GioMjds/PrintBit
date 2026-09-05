@@ -176,6 +176,27 @@
                 </p>
               </div>
 
+              <div class="upload-tip upload-tip--print-limit" role="note">
+                <svg
+                  class="upload-tip__icon"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <p class="upload-tip__text">
+                  <strong class="upload-tip__badge">Print limit:</strong>
+                  A maximum of 30 pages can be printed in this session. Your
+                  selected page range multiplied by copies must stay within 30
+                  pages.
+                </p>
+              </div>
+
             </div>
 
             <div class="qr-actions">
@@ -293,9 +314,7 @@
 
       <!-- Footer -->
       <footer class="print-footer">
-        <div class="footer-hint" id="footerHint">
-          Select a file above to continue.
-        </div>
+        <div class="footer-hint" id="footerHint"></div>
         <button
           id="continueBtn"
           type="button"
@@ -542,7 +561,7 @@
         aria-describedby="conversionMessage"
       >
         <div class="conversion-spinner" aria-hidden="true"></div>
-        <h3 class="modal-title" id="conversionTitle">Preparing your PDF</h3>
+        <h3 class="modal-title" id="conversionTitle">Preparing your file</h3>
         <p class="modal-subtitle" id="conversionMessage" aria-live="polite">
           Converting your document to PDF. This can take a moment.
         </p>

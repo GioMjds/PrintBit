@@ -1,5 +1,9 @@
 export {};
 import { initKioskLocalization } from '../shared/kiosk-i18n';
+import {
+  formatLargePrintDisclaimer,
+  isLargePrintDocument,
+} from '../shared/large-print-warning';
 
 void initKioskLocalization();
 
@@ -82,6 +86,7 @@ let countdownBaselineSeconds: number | null = null;
 let countdownSyncedAtMs: number | null = null;
 let countdownHandle: number | null = null;
 let isSessionUnavailable = false;
+let largePrintWarningShown = false;
 
 function getOrCreateUploadClientId(): string {
   const generated =
@@ -640,7 +645,18 @@ function attachSocket(sid: string): void {
     setStatus(`Analyzing ${name}…`, 'info');
   });
 
-  socket.on('AnalysisCompleted', () => {
+  socket.on('AnalysisCompleted', (info: unknown) => {
+    const analysis =
+      typeof info === 'object' && info !== null && 'analysis' in info
+        ? (info as { analysis?: { pageCount?: unknown; totalPages?: unknown } })
+            .analysis
+        : undefined;
+    const pageCount = analysis?.totalPages ?? analysis?.pageCount;
+    if (!largePrintWarningShown && isLargePrintDocument(pageCount)) {
+      largePrintWarningShown = true;
+      setStatus(formatLargePrintDisclaimer(pageCount), 'info');
+      return;
+    }
     setStatus(`✓ Your document file is ready for printing at kiosk.`, 'ok');
   });
 

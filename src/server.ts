@@ -65,6 +65,7 @@ import {
   mapWorkerEventToSocket,
 } from '@/services/worker-return-pipe';
 import { handleWorkerReturnPrintEvent } from '@/services/worker-print-lifecycle';
+import { translateHardwarePrinterError } from '@/services/printer-error-translation';
 import {
   powerSafetyService,
   type WorkerPowerEvent,
@@ -102,132 +103,6 @@ function markStartupReady(): void {
   startupReadinessState.readyAt = new Date().toISOString();
   startupReadinessState.failedAt = null;
   startupReadinessState.message = null;
-}
-
-/**
- * Translates the worker's generic `PrinterError` message into a specific
- * `PrintError` payload that the confirm page can act on. The worker emits a
- * `DetectedErrorState` from WMI (1–11) inside a parenthesised segment of the
- * message, e.g. "(No Paper, code 4)". Without this translation the modal
- * would always render as `PRINTER_HARDWARE_ERROR` (fatal) and never expose
- * the Pause/Resume controls — even when the underlying condition is
- * recoverable (paper-out, paper-jam). Returns a fatal-staff-help payload
- * when the message can't be classified.
- */
-function translateHardwarePrinterError(message: string | null): {
-  code: string;
-  severity: 'warning' | 'recoverable' | 'fatal';
-  userMessage: string;
-  canRetry: boolean;
-  canDismiss: boolean;
-} {
-  const lower = (message ?? '').toLowerCase();
-  if (
-    lower.includes('no paper') ||
-    lower.includes('low paper') ||
-    lower.includes('paper_out') ||
-    lower.includes('paper out')
-  ) {
-    return {
-      code: 'PAPER_TRAY_EMPTY',
-      severity: 'recoverable',
-      userMessage:
-        'Printer Out of Paper. Please load paper and click Resume.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (
-    lower.includes('jammed') ||
-    lower.includes('paper_jam') ||
-    lower.includes('paper jam')
-  ) {
-    return {
-      code: 'PAPER_JAM_PRINT',
-      severity: 'recoverable',
-      userMessage:
-        'Paper jam detected. Clear the jam and click Resume to continue.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (
-    lower.includes('door open') ||
-    lower.includes('door_open') ||
-    lower.includes('cover open')
-  ) {
-    return {
-      code: 'PRINTER_DOOR_OPEN',
-      severity: 'recoverable',
-      userMessage:
-        'Printer door or cover is open. Please close the cover and click Resume.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (
-    lower.includes('paper_problem') ||
-    lower.includes('paper problem')
-  ) {
-    return {
-      code: 'PAPER_INSUFFICIENT_PRE_DISPATCH',
-      severity: 'recoverable',
-      userMessage:
-        'Paper feed problem detected. Please check the paper tray and click Resume.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (
-    lower.includes('output_bin_full') ||
-    lower.includes('output bin full')
-  ) {
-    return {
-      code: 'OUTPUT_BIN_FULL',
-      severity: 'recoverable',
-      userMessage:
-        'The printer output tray is full. Please remove printed pages and click Resume.',
-      canRetry: true,
-      canDismiss: false,
-    };
-  }
-  if (
-    lower.includes('no toner') ||
-    lower.includes('low toner') ||
-    lower.includes('no_toner')
-  ) {
-    return {
-      code: 'PRINTER_OUT_OF_TONER',
-      severity: 'fatal',
-      userMessage:
-        'The printer is out of toner. Please ask staff to replace the cartridge.',
-      canRetry: false,
-      canDismiss: false,
-    };
-  }
-  if (
-    lower.includes('offline') ||
-    lower.includes('not available') ||
-    lower.includes('stopped printing') ||
-    lower.includes('not found')
-  ) {
-    return {
-      code: 'PRINTER_OFFLINE',
-      severity: 'fatal',
-      userMessage:
-        'The printer is offline or not found. Please check printer power and USB connection.',
-      canRetry: false,
-      canDismiss: false,
-    };
-  }
-  return {
-    code: 'PRINTER_HARDWARE_ERROR',
-    severity: 'fatal',
-    userMessage:
-      'The printer reported a hardware error. Please ask staff for help.',
-    canRetry: false,
-    canDismiss: false,
-  };
 }
 
 function markStartupFailed(message: string): void {
@@ -488,16 +363,22 @@ async function start() {
         // modal. The worker formats the message as:
         //   "Printer hardware error detected (<Description>, code <N>). ..."
         if (evt.type === 'PrinterError') {
-          const translated = translateHardwarePrinterError(evt.message ?? null);
+          const translated = translateHardwarePrinterError({
+            message: evt.errorMessage ?? evt.message ?? null,
+            errorCode: evt.errorCode ?? null,
+          });
           io.emit('printerMalfunction', {
             printError: {
               code: translated.code,
               severity: translated.severity,
               userMessage: translated.userMessage,
-              hint: evt.message ?? null,
+              hint: evt.errorMessage ?? evt.message ?? null,
               canRetry: translated.canRetry,
               canDismiss: translated.canDismiss,
+              spoolerCorrelationKey: evt.spoolerCorrelationKey ?? null,
             },
+            transactionId: evt.transactionId ?? null,
+            spoolerCorrelationKey: evt.spoolerCorrelationKey ?? null,
           });
         }
 

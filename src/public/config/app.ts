@@ -12,6 +12,10 @@ import {
   destroyPdfLoadingTask,
   type PdfLoadingTask,
 } from '../shared/pdfjs-loading-task-cleanup';
+import {
+  formatLargePrintDisclaimer,
+  isLargePrintDocument,
+} from '../shared/large-print-warning';
 
 export {};
 
@@ -886,6 +890,9 @@ const footerBreakdown = document.getElementById(
   'footerBreakdown',
 ) as HTMLElement | null;
 const footerTotal = document.getElementById('footerTotal') as HTMLElement | null;
+const largePrintDisclaimer = document.getElementById(
+  'largePrintDisclaimer',
+) as HTMLElement | null;
 const openPricingBtn = document.getElementById('openPricingBtn');
 const closePricingBtn = document.getElementById('closePricingBtn');
 const pricingOverlay = document.getElementById('pricingOverlay');
@@ -1719,6 +1726,17 @@ function schedulePrintQuoteRefresh(): void {
 }
 
 function updateSummary(): void {
+  if (largePrintDisclaimer) {
+    const shouldShow =
+      mode === 'print' && isLargePrintDocument(preview.pageCount);
+    largePrintDisclaimer.hidden = !shouldShow;
+    largePrintDisclaimer.textContent = shouldShow
+      ? formatLargePrintDisclaimer(preview.pageCount)
+      : '';
+    if (shouldShow) {
+      sessionStorage.setItem('printbit.largePrintNoticeShown', 'true');
+    }
+  }
   if (!footerSummary) return;
   if (mode === 'scan') {
     const cfg = currentPreviewConfig();
