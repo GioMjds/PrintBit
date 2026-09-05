@@ -123,6 +123,7 @@ async function handleCoinClick(btn: HTMLButtonElement): Promise<void> {
     });
 
     if (res.ok) {
+      setMessage('Simulated coin confirmed by the worker.');
       incrementCounter(denom);
       renderCounters();
       await refreshLiveBalance();
@@ -141,17 +142,19 @@ async function handleCoinClick(btn: HTMLButtonElement): Promise<void> {
           reason?: string;
           details?: string;
         };
-        if (body?.reason) reason = body.reason;
-        else if (body?.details) reason = body.details;
+        if (body?.details) reason = body.details;
+        else if (body?.reason) reason = body.reason;
       } catch {
         /* ignore body parse errors */
       }
-      setMessage(`Coin rejected by safety gate: ${reason}. Retry may succeed.`);
+      setMessage(`Coin rejected: ${reason}`);
       return;
     }
 
     if (res.status >= 500) {
-      setMessage('Failed to process test coin. See server logs.');
+      const body = await res.json().catch(() => ({})) as { details?: string };
+      setMessage(body.details ?? 'Coin simulation failed. Check the worker and server logs.');
+      await refreshLiveBalance();
       return;
     }
 

@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { coinSimulation, CoinSimulationError } from '@/services/coin-simulation';
 import path from 'node:path';
 import fs from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -864,8 +865,16 @@ export class FinancialService {
     }
     let balance: number;
     try {
-      balance = await this.creditCoinBalance(coinValue, 'test-ui');
+      if (isCoinSlotLockedBy('power-safety') || !this.powerSafety.canAcceptCustomerWork()) {
+        throw new CoinSimulationError(409, 'power_emergency', 'Power emergency active; coin simulation suspended.');
+      }
+      balance = await coinSimulation.insert(coinValue);
     } catch (error) {
+      if (error instanceof CoinSimulationError) {
+        return res.status(error.statusCode).json({
+          error: 'Coin simulation failed', reason: error.reason, details: error.message,
+        });
+      }
       if (error instanceof CoinCreditRejectedError) {
         return res.status(error.statusCode).json({
           error: 'Coin rejected',

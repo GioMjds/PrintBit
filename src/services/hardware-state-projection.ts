@@ -4,6 +4,7 @@ import { adminService } from './admin';
 import { financialLedgerService } from './financial-ledger';
 import type { WorkerPrintEvent } from './worker-return-pipe';
 import { sendWorkerCommand } from './worker-command-pipe';
+import { coinSimulation } from './coin-simulation';
 
 export interface SerialStatus {
   connected: boolean;
@@ -148,39 +149,41 @@ export class HardwareStateProjection {
     }
   }
 
+  private async creditWorkerCoin(evt: WorkerPrintEvent): Promise<number> {
+    const value = evt.coinValue ?? 0;
+    if (value <= 0 || !db.data) {
+      if (evt.simulated) throw new Error('Balance storage unavailable');
+      return db.data?.balance ?? 0;
+    }
+    db.data.balance += value;
+    const balance = db.data.balance;
+    await db.write?.();
+    await adminService.incrementCoinStats(value);
+    await adminService.appendAdminLog('coin_accepted',
+      `${evt.simulated ? 'Simulated' : 'Accepted'} coin: ${value}`, {
+        coinValue: value, balance,
+        ...(evt.simulated ? { simulated: true, requestId: evt.requestId } : {}),
+      });
+    await financialLedgerService.append({
+      eventType: 'coin_inserted', amount: value,
+      meta: {
+        source: evt.simulated ? 'worker-simulation' : 'worker', balance,
+        ...(evt.simulated ? { simulated: true, requestId: evt.requestId } : {}),
+      },
+    });
+    this.io?.emit('balance', db.data.balance);
+    this.io?.emit('coinAccepted', { value, balance: db.data.balance });
+    return balance;
+  }
+
   public async applyEvent(evt: WorkerPrintEvent): Promise<void> {
+    if (evt.simulated === true && (evt.type === 'CoinInserted' || evt.type === 'CoinRejected')) {
+      await coinSimulation.applyEvent(evt, () => this.creditWorkerCoin(evt));
+      return;
+    }
     switch (evt.type) {
       case 'CoinInserted': {
-        const value = evt.coinValue ?? 0;
-        if (value > 0 && db.data) {
-          db.data.balance += value;
-          await db.write?.();
-
-          await adminService.incrementCoinStats(value);
-          await adminService.appendAdminLog(
-            'coin_accepted',
-            `Accepted coin: ${value}`,
-            {
-              coinValue: value,
-              balance: db.data.balance,
-            },
-          );
-
-          await financialLedgerService.append({
-            eventType: 'coin_inserted',
-            amount: value,
-            meta: {
-              source: 'worker',
-              balance: db.data.balance,
-            },
-          });
-
-          this.io?.emit('balance', db.data.balance);
-          this.io?.emit('coinAccepted', {
-            value,
-            balance: db.data.balance,
-          });
-        }
+        await this.creditWorkerCoin(evt);
         break;
       }
 
@@ -318,4 +321,3 @@ export const serialService = {
   getSerialStatus: () => hardwareStateProjection.getSerialStatus(),
   getHopperStatus: () => hardwareStateProjection.getHopperStatus(),
 };
-

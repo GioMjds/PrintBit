@@ -74,6 +74,7 @@ export interface WorkerPrintEvent {
   powerSourceInstanceId?: string;
   powerSequence?: number;
   coinValue?: number;
+  simulated?: boolean;
   rejectReason?: string;
   dispensedCoins?: number;
   totalCoins?: number;
