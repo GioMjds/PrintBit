@@ -15,8 +15,6 @@ import {
   adminLogStore,
   getSqliteDb,
 } from '@/core/database/sqlite-storage';
-import { studentSessionStore } from '@/core/database/models/student-session.model';
-import { createStudentIdLookupHmac, normalizeStudentId } from '@/config';
 
 export type EarningsAnalyticsView = 'daily' | 'weekly' | 'monthly' | 'yearly';
 type EarningsMode = 'print' | 'copy' | 'scan';
@@ -130,56 +128,6 @@ export class AdminService {
     month: 'long',
     year: 'numeric',
   });
-
-  async replaceStudentRosterCsv(csvText: string): Promise<{
-    acceptedCount: number;
-    disabledCount: number;
-  }> {
-    const lines = csvText.replace(/^\uFEFF/, '').split(/\r?\n/);
-    if (lines.at(-1) === '') lines.pop();
-    if (lines[0] !== 'student_id,active') {
-      throw new Error('Roster CSV is invalid.');
-    }
-
-    const rosterEntries: Array<{ studentIdHmac: string }> = [];
-    const hmacs = new Set<string>();
-    let disabledCount = 0;
-    for (let index = 1; index < lines.length; index += 1) {
-      const cells = lines[index].split(',');
-      if (cells.length !== 2) throw new Error('Roster CSV is invalid.');
-
-      const studentId = normalizeStudentId(cells[0].trim());
-      const active = cells[1].trim().toLowerCase();
-      const studentIdHmac = studentId
-        ? createStudentIdLookupHmac(studentId)
-        : null;
-      if (
-        !studentIdHmac ||
-        hmacs.has(studentIdHmac) ||
-        (active !== 'true' && active !== 'false')
-      ) {
-        throw new Error('Roster CSV is invalid.');
-      }
-      hmacs.add(studentIdHmac);
-      if (active === 'true') {
-        rosterEntries.push({ studentIdHmac });
-      } else {
-        disabledCount += 1;
-      }
-    }
-
-    studentSessionStore.replaceRoster(rosterEntries);
-    const result = {
-      acceptedCount: rosterEntries.length,
-      disabledCount,
-    };
-    await this.appendAdminLog(
-      'student_roster_replaced',
-      'Student roster replaced.',
-      result,
-    );
-    return result;
-  }
 
   getStudentTransactionContext(
     transactionId: string,

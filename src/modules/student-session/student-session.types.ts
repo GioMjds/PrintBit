@@ -4,18 +4,9 @@ import type {
   StudentSessionSqliteStore,
 } from '@/core/database/models/student-session.model';
 
-export interface StudentSessionAuditLogger {
-  appendAdminLog(
-    type: string,
-    message: string,
-    meta?: Record<string, string | number | boolean | null>,
-  ): Promise<unknown>;
-}
-
 export interface StudentSessionServiceDeps {
   io: Pick<SocketIOServer, 'emit'>;
   store: StudentSessionSqliteStore;
-  adminService: StudentSessionAuditLogger;
 }
 
 export type StudentIdentificationResult =

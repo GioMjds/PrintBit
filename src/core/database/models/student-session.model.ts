@@ -1,4 +1,5 @@
 import { getSqliteDb, withTransaction } from '../sqlite-storage';
+import { adminLogStore, type AdminLogEntry } from './admin.model';
 
 export interface StudentRosterEntry {
   studentIdHmac: string;
@@ -49,19 +50,18 @@ export interface AttributeStudentTransactionInput {
 export class StudentSessionSqliteStore {
   replaceRoster(entries: StudentRosterImportEntry[]): void {
     withTransaction(() => {
-      const db = getSqliteDb();
-      db.prepare('UPDATE student_roster SET active = 0').run();
-      const upsert = db.prepare(
-        `INSERT INTO student_roster (student_id_hmac, active, imported_at)
-         VALUES (?, 1, ?)
-         ON CONFLICT(student_id_hmac) DO UPDATE SET
-           active = 1,
-           imported_at = excluded.imported_at`,
-      );
-      const importedAt = new Date().toISOString();
-      for (const entry of entries) {
-        upsert.run(entry.studentIdHmac, entry.importedAt ?? importedAt);
-      }
+      this.replaceRosterInCurrentTransaction(entries);
+    });
+  }
+
+  replaceRosterAndAppendAudit(
+    entries: StudentRosterImportEntry[],
+    auditEntry: AdminLogEntry,
+    maxAuditRows: number,
+  ): void {
+    withTransaction(() => {
+      this.replaceRosterInCurrentTransaction(entries);
+      adminLogStore.appendInCurrentTransaction(auditEntry, maxAuditRows);
     });
   }
 
@@ -182,6 +182,24 @@ export class StudentSessionSqliteStore {
       active: Number(row.active) === 1,
       importedAt: String(row.imported_at ?? ''),
     };
+  }
+
+  private replaceRosterInCurrentTransaction(
+    entries: StudentRosterImportEntry[],
+  ): void {
+    const db = getSqliteDb();
+    db.prepare('UPDATE student_roster SET active = 0').run();
+    const upsert = db.prepare(
+      `INSERT INTO student_roster (student_id_hmac, active, imported_at)
+       VALUES (?, 1, ?)
+       ON CONFLICT(student_id_hmac) DO UPDATE SET
+         active = 1,
+         imported_at = excluded.imported_at`,
+    );
+    const importedAt = new Date().toISOString();
+    for (const entry of entries) {
+      upsert.run(entry.studentIdHmac, entry.importedAt ?? importedAt);
+    }
   }
 
   private toSessionEntry(

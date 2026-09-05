@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
 import { AdminController } from '@/modules/admin/admin.controller';
-import { AdminService } from '@/modules/admin/admin.service';
-import { studentSessionStore } from '@/core/database/models/student-session.model';
+import { StudentSessionController } from '@/modules/student-session/student-session.controller';
 import {
   requireAdminLocalAccess,
   requireAdminPin,
@@ -23,8 +22,8 @@ function createResponse(): Response & { body?: unknown; statusCode: number } {
 }
 
 describe('admin student roster import', () => {
-  test('registers the import behind local-admin and PIN middleware', () => {
-    const controller = new AdminController(
+  test('keeps the import route in the canonical student-session controller behind local-admin and PIN middleware', () => {
+    const adminController = new AdminController(
       {} as never,
       {} as never,
       {
@@ -35,11 +34,24 @@ describe('admin student roster import', () => {
         runHopperSelfTest: jest.fn(),
       } as never,
     );
+    expect(
+      adminController.router.stack.find(
+        (candidate: { route?: { path?: string } }) =>
+          candidate.route?.path === '/student-roster/import',
+      ),
+    ).toBeUndefined();
+
+    const controller = new StudentSessionController({
+      identify: jest.fn(),
+      getKioskState: jest.fn(),
+      endActiveSession: jest.fn(),
+      replaceRosterCsv: jest.fn(),
+    });
     const layer = controller.router.stack.find(
       (candidate: {
         route?: { path?: string; stack?: Array<{ handle: unknown }> };
       }) =>
-        candidate.route?.path === '/student-roster/import',
+        candidate.route?.path === '/api/admin/student-roster/import',
     );
 
     expect(layer?.route?.stack).toHaveLength(4);
@@ -48,63 +60,21 @@ describe('admin student roster import', () => {
     );
   });
 
-  test('returns accepted and disabled counts without returning roster values', async () => {
-    const service = new AdminService();
-    const replaceRoster = service as unknown as {
-      replaceStudentRosterCsv?: (
-        csv: string,
-      ) => Promise<{ acceptedCount: number; disabledCount: number }>;
-    };
-    const replaceStore = jest
-      .spyOn(studentSessionStore, 'replaceRoster')
-      .mockImplementation(() => undefined);
-    const appendLog = jest
-      .spyOn(service, 'appendAdminLog')
-      .mockResolvedValue({} as never);
-
-    expect(replaceRoster.replaceStudentRosterCsv).toBeDefined();
-    if (!replaceRoster.replaceStudentRosterCsv) return;
-
-    await expect(
-      replaceRoster.replaceStudentRosterCsv(
-        'student_id,active\n123-4567,true\n765-4321,false',
-      ),
-    ).resolves.toEqual({ acceptedCount: 1, disabledCount: 1 });
-    expect(replaceStore).toHaveBeenCalledWith([
-      expect.objectContaining({ studentIdHmac: expect.any(String) }),
-    ]);
-    expect(appendLog).toHaveBeenCalledWith(
-      'student_roster_replaced',
-      'Student roster replaced.',
-      { acceptedCount: 1, disabledCount: 1 },
-    );
-    const auditMeta = appendLog.mock.calls[0]?.[2] ?? {};
-    expect(JSON.stringify(auditMeta)).not.toContain('123-4567');
-    expect(JSON.stringify(auditMeta)).not.toMatch(/hmac/i);
-  });
-
-  test('returns only counts from the upload handler', async () => {
-    const adminService = {
-      replaceStudentRosterCsv: jest
+  test('returns only Task 6 UI counts from the canonical upload handler', () => {
+    const studentSessionService = {
+      replaceRosterCsv: jest
         .fn()
-        .mockResolvedValue({ acceptedCount: 2, disabledCount: 1 }),
+        .mockReturnValue({ rowCount: 3, activeCount: 2, inactiveCount: 1 }),
+      identify: jest.fn(),
+      getKioskState: jest.fn(),
+      endActiveSession: jest.fn(),
     };
-    const controller = new AdminController(
-      adminService as never,
-      {} as never,
-      {
-        io: { emit: jest.fn() },
-        uploadDir: 'tmp',
-        getSerialStatus: jest.fn(),
-        getHopperStatus: jest.fn(),
-        runHopperSelfTest: jest.fn(),
-      } as never,
-    );
+    const controller = new StudentSessionController(studentSessionService);
     const res = createResponse();
 
-    await (controller as unknown as {
-      handleImportStudentRoster(req: Request, res: Response): Promise<void>;
-    }).handleImportStudentRoster(
+    (controller as unknown as {
+      importRoster(req: Request, res: Response): void;
+    }).importRoster(
       {
         file: { buffer: Buffer.from('student_id,active\n123-4567,true') },
       } as Request,

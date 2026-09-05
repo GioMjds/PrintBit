@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import multer from 'multer';
 import { Router, Request, Response } from 'express';
 import type { Server as SocketIOServer } from 'socket.io';
 import {
@@ -64,7 +63,6 @@ import type { AdminQueueView } from '@/modules/anomaly/anomaly.schema';
 import { ConsumablesService } from './consumables.service';
 import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
 import { getSqliteDb, writeRuntimeState } from '@/core/database/sqlite-storage';
-import { handleMulterError } from '@/middleware/file-validation';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -370,11 +368,6 @@ const adminStorageClearRateLimit = createRateLimit({
   max: 3,
 });
 
-const rosterUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 1024 * 1024, files: 1 },
-});
-
 export class AdminController {
   public readonly router: Router;
   private readonly adminService: AdminService;
@@ -482,15 +475,6 @@ export class AdminController {
       requireAdminPin,
       this.handleUpdateSettings,
     );
-    this.router.post(
-      '/student-roster/import',
-      requireAdminLocalAccess,
-      requireAdminPin,
-      rosterUpload.single('file'),
-      this.handleImportStudentRoster,
-    );
-    this.router.use('/student-roster/import', handleMulterError);
-
     // ── Alert settings routes ──────────────────────────────────────────────────
     this.router.get(
       '/alert-settings',
@@ -2307,24 +2291,6 @@ export class AdminController {
       return res.status(404).json({ error: 'Transaction not found.' });
     }
     return res.json(context);
-  };
-
-  private handleImportStudentRoster = async (
-    req: Request,
-    res: Response,
-  ): Promise<void> => {
-    if (!req.file) {
-      res.status(400).json({ error: 'Roster CSV file is required.' });
-      return;
-    }
-    try {
-      const result = await this.adminService.replaceStudentRosterCsv(
-        req.file.buffer.toString('utf8'),
-      );
-      res.json({ ok: true, ...result });
-    } catch {
-      res.status(400).json({ error: 'Roster import was rejected.' });
-    }
   };
 
   private buildTransactionContextResponse(transactionId: string): {

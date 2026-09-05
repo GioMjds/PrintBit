@@ -3,7 +3,7 @@ import {
   createStudentIdLookupHmac,
   normalizeStudentId,
 } from '@/config';
-import { adminService } from '@/services/admin';
+import { getTrustedTimestamp } from '@/services/time-source';
 import { studentSessionStore } from '@/core/database/models/student-session.model';
 import type {
   ActiveStudentSession,
@@ -18,6 +18,7 @@ import type {
 import { StudentSessionServiceError } from './student-session.types';
 
 const ROSTER_CSV_HEADER = 'student_id,active';
+const MAX_ADMIN_LOGS = 1000;
 const STUDENT_SESSION_END_REASONS = new Set<StudentSessionEndReason>([
   'user_ended',
   'idle_timeout',
@@ -35,7 +36,6 @@ export class StudentSessionService {
     this.deps = {
       io: deps.io,
       store: deps.store ?? studentSessionStore,
-      adminService: deps.adminService ?? adminService,
     };
   }
 
@@ -117,20 +117,28 @@ export class StudentSessionService {
 
   replaceRosterCsv(csvText: string): RosterReplacementResult {
     const activeStudentHmacs = this.parseRosterCsv(csvText);
-    this.deps.store.replaceRoster(activeStudentHmacs.entries);
-
     const result: RosterReplacementResult = {
       rowCount: activeStudentHmacs.rowCount,
       activeCount: activeStudentHmacs.entries.length,
       inactiveCount: activeStudentHmacs.rowCount - activeStudentHmacs.entries.length,
     };
-    void this.deps.adminService
-      .appendAdminLog('student_roster_replaced', 'Student roster replaced.', {
-        rowCount: result.rowCount,
-        activeCount: result.activeCount,
-        inactiveCount: result.inactiveCount,
-      })
-      .catch(() => undefined);
+    const trusted = getTrustedTimestamp();
+    this.deps.store.replaceRosterAndAppendAudit(
+      activeStudentHmacs.entries,
+      {
+        id: randomUUID(),
+        timestamp: trusted.timestamp,
+        timestampMeta: trusted.meta,
+        type: 'student_roster_replaced',
+        message: 'Student roster replaced.',
+        meta: {
+          rowCount: result.rowCount,
+          activeCount: result.activeCount,
+          inactiveCount: result.inactiveCount,
+        },
+      },
+      MAX_ADMIN_LOGS,
+    );
     return result;
   }
 

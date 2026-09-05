@@ -133,7 +133,11 @@ export class StudentSessionController {
 
     try {
       const result = this.service.replaceRosterCsv(req.file.buffer.toString('utf8'));
-      res.json({ ok: true, ...result });
+      res.json({
+        ok: true,
+        acceptedCount: result.activeCount,
+        disabledCount: result.inactiveCount,
+      });
     } catch {
       // Do not echo CSV validation details because they could contain ID-shaped input.
       res.status(400).json({ error: 'Roster import was rejected.' });

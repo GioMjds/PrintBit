@@ -1,5 +1,6 @@
 import type { Server as SocketIOServer } from 'socket.io';
 import {
+  adminLogStore,
   getSqliteDb,
   studentSessionStore,
 } from '@/core/database/sqlite-storage';
@@ -7,20 +8,18 @@ import { StudentSessionService } from '@/modules/student-session/student-session
 
 const makeService = () => {
   const io = { emit: jest.fn() } as unknown as SocketIOServer;
-  const appendAdminLog = jest.fn().mockResolvedValue(undefined);
   return {
     service: new StudentSessionService({
       io,
       store: studentSessionStore,
-      adminService: { appendAdminLog },
     }),
     io,
-    appendAdminLog,
   };
 };
 
 afterEach(() => {
   const db = getSqliteDb();
+  db.exec('DELETE FROM admin_logs;');
   db.exec('DELETE FROM student_transaction_attributions;');
   db.exec('DELETE FROM student_kiosk_sessions;');
   db.exec('DELETE FROM student_roster;');
@@ -124,6 +123,23 @@ test('rejects duplicate student IDs after normalization', () => {
   ).toThrow();
 });
 
+test('records roster audit metadata as counts without student identifiers or HMACs', () => {
+  const { service } = makeService();
+  const result = service.replaceRosterCsv(
+    'student_id,active\n1234567,true\n7654321,false',
+  );
+
+  const audit = adminLogStore.listByTypes(['student_roster_replaced']);
+  expect(audit).toHaveLength(1);
+  expect(audit[0]?.meta).toEqual({
+    rowCount: result.rowCount,
+    activeCount: result.activeCount,
+    inactiveCount: result.inactiveCount,
+  });
+  expect(JSON.stringify(audit[0]?.meta)).not.toContain('1234567');
+  expect(JSON.stringify(audit[0]?.meta)).not.toMatch(/hmac/i);
+});
+
 test('does not partially replace the roster when a later CSV row is invalid', () => {
   const { service } = makeService();
   service.replaceRosterCsv('student_id,active\n7654321,true');
@@ -131,6 +147,34 @@ test('does not partially replace the roster when a later CSV row is invalid', ()
   expect(() =>
     service.replaceRosterCsv('student_id,active\n1234567,true\ninvalid,false'),
   ).toThrow();
+
+  expect(service.identify('7654321')).toMatchObject({ ok: true });
+  expect(service.endActiveSession('user_ended')).toMatchObject({ status: 'ended' });
+  expect(service.identify('1234567')).toEqual({
+    ok: false,
+    code: 'IDENTIFICATION_FAILED',
+  });
+});
+
+test('rolls back a roster replacement when its audit insert fails', () => {
+  const { service } = makeService();
+  service.replaceRosterCsv('student_id,active\n7654321,true');
+
+  const auditStore = adminLogStore as unknown as {
+    appendInCurrentTransaction?: (...args: unknown[]) => void;
+  };
+  expect(typeof auditStore.appendInCurrentTransaction).toBe('function');
+  if (!auditStore.appendInCurrentTransaction) return;
+  const appendAudit = jest
+    .spyOn(auditStore, 'appendInCurrentTransaction')
+    .mockImplementation(() => {
+      throw new Error('audit unavailable');
+    });
+
+  expect(() =>
+    service.replaceRosterCsv('student_id,active\n1234567,true'),
+  ).toThrow('audit unavailable');
+  appendAudit.mockRestore();
 
   expect(service.identify('7654321')).toMatchObject({ ok: true });
   expect(service.endActiveSession('user_ended')).toMatchObject({ status: 'ended' });
