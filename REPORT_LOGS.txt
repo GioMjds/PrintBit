@@ -1,8 +1,0 @@
-[JOB-PROCESSOR] Enqueued job 1e131a34-6ba9-4cbb-bb8e-651d166e8da0 for transaction cb8bab2e-a13e-4db2-86cb-176352a2eb3c
-[JOB-PROCESSOR] Picking up pending job 1e131a34-6ba9-4cbb-bb8e-651d166e8da0 for transaction cb8bab2e-a13e-4db2-86cb-176352a2eb3c
-[JOB-PROCESSOR] Job 1e131a34-6ba9-4cbb-bb8e-651d166e8da0 completed successfully
-
-info: PrintBit.HardwareService.Services.PrintQueueWatcher[0]
-      Detected print job: C:\Users\printbit\printbit-worker\queue\cb8bab2e-a13e-4db2-86cb-176352a2eb3c_bead6cc3-b6c0-47f9-afb5-c377b3353b7a_1787023448791.pdf
-warn: PrintBit.HardwareService.Services.PrintQueueWatcher[0]
-      Print job failed. Files moved to failed directory.
