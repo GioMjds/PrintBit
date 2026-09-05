@@ -8,7 +8,11 @@ export type WorkerCommandType =
   | 'DispenseCoins'
   | 'LockCoinSlot'
   | 'UnlockCoinSlot'
-  | 'AnnounceKioskIp';
+  | 'AnnounceKioskIp'
+  | 'GetScannerStatus'
+  | 'ProbeScanner'
+  | 'StartScan'
+  | 'CancelScan';
 
 export interface WorkerCommandPayload {
   type: WorkerCommandType;

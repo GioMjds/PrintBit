@@ -1,7 +1,9 @@
 import path from 'node:path';
-import fs from 'node:fs';
-import { execFile, type ChildProcess } from 'node:child_process';
 import type { ScanJobSettings, PageSource } from './job-store';
+import {
+  sendWorkerRequest,
+  type SendWorkerCommandOptions,
+} from './worker-command-pipe';
 
 export interface ScannerJobResult {
   outputPath: string;
@@ -46,108 +48,81 @@ export interface ScannerRuntimeStatus {
   };
 }
 
-const NAPS2_PATH =
-  process.env.PRINTBIT_NAPS2_PATH ??
-  'C:\\Program Files\\NAPS2\\NAPS2.Console.exe';
-const SCAN_TIMEOUT_MS = 90_000;
+interface WorkerScannerStatusResponse {
+  requestId: string;
+  type: string;
+  connected: boolean;
+  adapter?: string;
+  driver?: string;
+  deviceName?: string;
+  capabilities?: {
+    available: boolean;
+    sources?: string[];
+    colorModes?: string[];
+    dpiOptions?: number[];
+    duplex?: boolean;
+  };
+  error?: string;
+}
+
+interface WorkerStartScanResponse {
+  requestId: string;
+  type: string;
+  success: boolean;
+  outputPath?: string;
+  pageCount?: number;
+  format?: string;
+  errorCode?: string;
+  message?: string;
+}
+
+interface WorkerCancelScanResponse {
+  requestId: string;
+  type: string;
+  success: boolean;
+  message?: string;
+}
+
 const PREFERRED_SCANNER_NAME =
   process.env.PRINTBIT_SCANNER_NAME ?? 'EPSON L5290 Series';
+const SCAN_COMMAND_TIMEOUT_MS = 100_000; // 100s (giving 90s worker scan headroom)
 
-let runtimeStatus: ScannerRuntimeStatus = {
+let cachedRuntimeStatus: ScannerRuntimeStatus = {
   connected: false,
-  adapter: 'stub',
+  adapter: 'naps2',
   driver: 'none',
   deviceName: null,
   preferredName: PREFERRED_SCANNER_NAME,
   probes: { twain: [], wia: [] },
   capabilities: null,
-  usingStub: true,
+  usingStub: false,
   lastCheckedAt: new Date().toISOString(),
   lastError: null,
   preflight: {
-    naps2Path: NAPS2_PATH,
-    naps2Exists: false,
+    naps2Path: 'Managed by C# Worker',
+    naps2Exists: true,
     scanDir: path.resolve('uploads', 'scans'),
   },
 };
 
-export class StubScannerAdapter implements ScannerAdapter {
-  private cancelled = false;
+/**
+ * WorkerScannerAdapter delegates scanner execution and probing to the
+ * native C# PrintBit.Infrastructure.Windows.Scanning service over Named Pipe IPC.
+ */
+export class WorkerScannerAdapter implements ScannerAdapter {
+  private activeRequestId: string | null = null;
 
   async probe(): Promise<ScannerCapabilities> {
-    const caps: ScannerCapabilities = {
-      available: true,
-      sources: ['adf', 'flatbed'],
-      colorModes: ['colored', 'grayscale'],
-      dpiOptions: [150, 300, 600],
-      duplex: false,
-    };
-    console.log('[SCANNER] Stub capabilities:', JSON.stringify(caps));
-    return caps;
-  }
-
-  async scan(
-    settings: ScanJobSettings,
-    outputDir: string,
-  ): Promise<ScannerJobResult> {
-    this.cancelled = false;
-    console.log('[SCANNER] ── New stub scan job ─────────────────────────');
-    console.log('[SCANNER] Settings:', JSON.stringify(settings));
-    console.log('[SCANNER] Output dir:', outputDir);
-
-    fs.mkdirSync(outputDir, { recursive: true });
-
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, 2_000);
-      const check = setInterval(() => {
-        if (this.cancelled) {
-          clearTimeout(timer);
-          clearInterval(check);
-          reject(new Error('Scan cancelled by user'));
-        }
-      }, 100);
-      timer.unref?.();
-      void new Promise<void>((r) => setTimeout(r, 2_000)).then(() =>
-        clearInterval(check),
-      );
-    });
-
-    const filename = `stub-scan-${Date.now()}.${settings.format}`;
-    const outputPath = path.join(outputDir, filename);
-    fs.writeFileSync(outputPath, 'Stub scan output', 'utf-8');
-    console.log(`[SCANNER] ✓ Stub scan complete → ${outputPath}`);
-
-    return {
-      outputPath,
-      pageCount: 1,
-      format: settings.format,
-    };
-  }
-
-  cancel(): void {
-    this.cancelled = true;
-  }
-}
-
-// ── NAPS2 adapter (real hardware via NAPS2.Console.exe) ──────────────
-
-export class Naps2ScannerAdapter implements ScannerAdapter {
-  private readonly deviceName: string;
-  private readonly driver: ScannerDriver;
-  private childProc: ChildProcess | null = null;
-
-  constructor(deviceName: string, driver: ScannerDriver) {
-    this.deviceName = deviceName;
-    this.driver = driver;
-  }
-
-  async probe(): Promise<ScannerCapabilities> {
-    const devices = await listNaps2Devices(this.driver);
-    const found = devices.some(
-      (d) => d.toLowerCase() === this.deviceName.toLowerCase(),
+    const requestId = `probe-${Date.now()}`;
+    const resp = await sendWorkerRequest<WorkerScannerStatusResponse>(
+      {
+        type: 'ProbeScanner',
+        requestId,
+      },
+      { timeoutMs: 20_000 },
     );
 
-    if (!found) {
+    if (!resp) {
       return {
         available: false,
         sources: [],
@@ -157,12 +132,16 @@ export class Naps2ScannerAdapter implements ScannerAdapter {
       };
     }
 
+    const caps = resp.capabilities;
     return {
-      available: true,
-      sources: ['adf', 'flatbed'],
-      colorModes: ['colored', 'grayscale'],
-      dpiOptions: [150, 300, 600],
-      duplex: false,
+      available: Boolean(resp.connected && caps?.available),
+      sources: (caps?.sources as PageSource[]) ?? ['flatbed', 'adf'],
+      colorModes: (caps?.colorModes as ('colored' | 'grayscale')[]) ?? [
+        'colored',
+        'grayscale',
+      ],
+      dpiOptions: caps?.dpiOptions ?? [150, 300, 600],
+      duplex: Boolean(caps?.duplex),
     };
   }
 
@@ -170,161 +149,70 @@ export class Naps2ScannerAdapter implements ScannerAdapter {
     settings: ScanJobSettings,
     outputDir: string,
   ): Promise<ScannerJobResult> {
-    fs.mkdirSync(outputDir, { recursive: true });
-
-    const ext =
-      settings.format === 'jpg'
-        ? 'jpg'
-        : settings.format === 'png'
-          ? 'png'
-          : 'pdf';
-    const filename = `scan-${Date.now()}.${ext}`;
-    const outputPath = path.join(outputDir, filename);
-    const args = buildNaps2Args(
-      this.deviceName,
-      this.driver,
-      settings,
-      outputPath,
-    );
+    const requestId = `scan-${Date.now()}`;
+    this.activeRequestId = requestId;
 
     const startMs = Date.now();
+    const opts: SendWorkerCommandOptions = {
+      timeoutMs: SCAN_COMMAND_TIMEOUT_MS,
+    };
 
-    return new Promise<ScannerJobResult>((resolve, reject) => {
-      const proc = execFile(
-        NAPS2_PATH,
-        args,
-        { timeout: SCAN_TIMEOUT_MS, windowsHide: true },
-        (error, stdout, stderr) => {
-          this.childProc = null;
-          const elapsed = Date.now() - startMs;
+    const resp = await sendWorkerRequest<WorkerStartScanResponse>(
+      {
+        type: 'StartScan',
+        requestId,
+        source: settings.source === 'adf' ? 'adf' : 'flatbed',
+        dpi: settings.dpi,
+        colorMode: settings.colorMode,
+        format: settings.format,
+        paperSize: settings.paperSize,
+        outputDir: path.resolve(outputDir),
+      },
+      opts,
+    );
 
-          if (stdout) console.log(`[SCANNER] stdout: ${stdout.trim()}`);
-          if (stderr) console.warn(`[SCANNER] stderr: ${stderr.trim()}`);
+    this.activeRequestId = null;
+    const elapsed = Date.now() - startMs;
 
-          if (error) {
-            return reject(
-              new Error(
-                `Scan failed: ${error.message}${stderr ? ` — ${stderr.trim()}` : ''}`,
-              ),
-            );
-          }
-
-          if (!fs.existsSync(outputPath)) {
-            return reject(
-              new Error('Scan completed but no output file was created'),
-            );
-          }
-
-          const stat = fs.statSync(outputPath);
-          console.log(
-            `[SCANNER] ✓ Scan complete in ${elapsed}ms → ${outputPath} (${stat.size} bytes)`,
-          );
-
-          resolve({
-            outputPath,
-            pageCount: 1,
-            format: settings.format,
-          });
-        },
+    if (!resp) {
+      throw new Error(
+        'Scan failed: No response received from C# Worker (IPC timeout or disconnected).',
       );
+    }
 
-      this.childProc = proc;
-    });
+    if (!resp.success || !resp.outputPath) {
+      const detail = resp.message || resp.errorCode || 'Unknown scanning error';
+      throw new Error(`Scan failed: ${detail}`);
+    }
+
+    console.log(
+      `[SCANNER] ✓ C# Worker scan complete in ${elapsed}ms → ${resp.outputPath}`,
+    );
+
+    return {
+      outputPath: resp.outputPath,
+      pageCount: resp.pageCount ?? 1,
+      format: resp.format ?? settings.format,
+    };
   }
 
   cancel(): void {
-    if (this.childProc && !this.childProc.killed) {
-      this.childProc.kill('SIGTERM');
-      this.childProc = null;
-    }
+    if (!this.activeRequestId) return;
+    const targetId = this.activeRequestId;
+    this.activeRequestId = null;
+
+    void sendWorkerRequest<WorkerCancelScanResponse>({
+      type: 'CancelScan',
+      requestId: `cancel-${Date.now()}`,
+      targetRequestId: targetId,
+    }).catch((err) => {
+      console.warn(`[SCANNER] Failed sending CancelScan to worker: ${err}`);
+    });
   }
-}
-
-function buildNaps2Args(
-  deviceName: string,
-  driver: ScannerDriver,
-  settings: ScanJobSettings,
-  outputPath: string,
-): string[] {
-  const args = [
-    '-o',
-    outputPath,
-    '--driver',
-    driver,
-    '--device',
-    deviceName,
-    '--source',
-    settings.source === 'adf' ? 'feeder' : 'glass',
-    '--dpi',
-    String(settings.dpi),
-    '--bitdepth',
-    settings.colorMode === 'colored' ? 'color' : 'gray',
-    '--force',
-    '--verbose',
-  ];
-
-  if (settings.paperSize) {
-    args.push('--pagesize', settings.paperSize.toLowerCase());
-  }
-
-  return args;
-}
-
-function parseDeviceLines(stdout: string): string[] {
-  return stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-async function listNaps2Devices(driver: ScannerDriver): Promise<string[]> {
-  return new Promise((resolve) => {
-    execFile(
-      NAPS2_PATH,
-      ['--listdevices', '--driver', driver],
-      { timeout: 15_000, windowsHide: true },
-      (error, stdout) => {
-        if (error) {
-          console.log(
-            `[SCANNER] ⚠ NAPS2 --listdevices (${driver}) failed: ${error.message}`,
-          );
-          resolve([]);
-          return;
-        }
-        resolve(parseDeviceLines(stdout));
-      },
-    );
-  });
-}
-
-function selectPreferredDevice(
-  devices: string[],
-  preferredName: string,
-): string | null {
-  if (devices.length === 0) return null;
-
-  const preferredLower = preferredName.toLowerCase();
-  const exact = devices.find(
-    (device) => device.toLowerCase() === preferredLower,
-  );
-  if (exact) return exact;
-
-  const partial = devices.find((device) =>
-    device.toLowerCase().includes(preferredLower),
-  );
-  if (partial) return partial;
-
-  const epson = devices.find((device) =>
-    device.toLowerCase().includes('epson'),
-  );
-  if (epson) return epson;
-
-  return devices[0] ?? null;
 }
 
 class ScannerService {
-  private runtimeStatus: ScannerRuntimeStatus = runtimeStatus;
-  private activeAdapter: ScannerAdapter = new StubScannerAdapter();
+  private activeAdapter: ScannerAdapter = new WorkerScannerAdapter();
 
   setAdapter(adapter: ScannerAdapter): void {
     this.activeAdapter = adapter;
@@ -335,26 +223,68 @@ class ScannerService {
   }
 
   getStatus(): ScannerRuntimeStatus {
-    return {
-      ...this.runtimeStatus,
-      probes: {
-        twain: [...this.runtimeStatus.probes.twain],
-        wia: [...this.runtimeStatus.probes.wia],
-      },
-      capabilities: this.runtimeStatus.capabilities
-        ? { ...this.runtimeStatus.capabilities }
-        : null,
-    };
+    return cachedRuntimeStatus;
   }
 
   async detect(): Promise<void> {
-    console.log('[SCANNER] ── Detecting scanner ──────────────────────────');
+    console.log('[SCANNER] ── Detecting scanner via C# Worker ─────────────');
+    const requestId = `detect-${Date.now()}`;
 
-    const scanDir = path.resolve('uploads', 'scans');
-    fs.mkdirSync(scanDir, { recursive: true });
+    try {
+      const resp = await sendWorkerRequest<WorkerScannerStatusResponse>(
+        {
+          type: 'GetScannerStatus',
+          requestId,
+        },
+        { timeoutMs: 15_000 },
+      );
 
-    const naps2Exists = fs.existsSync(NAPS2_PATH);
-    runtimeStatus = {
+      if (resp) {
+        const caps: ScannerCapabilities | null = resp.capabilities
+          ? {
+              available: Boolean(resp.capabilities.available),
+              sources: (resp.capabilities.sources as PageSource[]) ?? [
+                'flatbed',
+                'adf',
+              ],
+              colorModes: (resp.capabilities.colorModes as (
+                | 'colored'
+                | 'grayscale'
+              )[]) ?? ['colored', 'grayscale'],
+              dpiOptions: resp.capabilities.dpiOptions ?? [150, 300, 600],
+              duplex: Boolean(resp.capabilities.duplex),
+            }
+          : null;
+
+        cachedRuntimeStatus = {
+          connected: resp.connected,
+          adapter: (resp.adapter as 'naps2' | 'stub') ?? 'naps2',
+          driver: (resp.driver as ScannerDriver | 'stub' | 'none') ?? 'none',
+          deviceName: resp.deviceName ?? null,
+          preferredName: PREFERRED_SCANNER_NAME,
+          probes: { twain: [], wia: [] },
+          capabilities: caps,
+          usingStub: resp.adapter === 'stub',
+          lastCheckedAt: new Date().toISOString(),
+          lastError: resp.error ?? null,
+          preflight: {
+            naps2Path: 'Managed by C# Worker',
+            naps2Exists: true,
+            scanDir: path.resolve('uploads', 'scans'),
+          },
+        };
+
+        console.log(
+          `[SCANNER] C# Worker reports scanner connected: ${resp.connected} (${resp.deviceName ?? 'No device'})`,
+        );
+        return;
+      }
+    } catch (err) {
+      console.warn(`[SCANNER] Failed querying scanner status from C#: ${err}`);
+    }
+
+    // Fallback status if worker unreachable
+    cachedRuntimeStatus = {
       connected: false,
       adapter: 'stub',
       driver: 'none',
@@ -364,79 +294,13 @@ class ScannerService {
       capabilities: null,
       usingStub: true,
       lastCheckedAt: new Date().toISOString(),
-      lastError: null,
+      lastError: 'Unable to connect to PrintBit.HardwareService worker pipe',
       preflight: {
-        naps2Path: NAPS2_PATH,
-        naps2Exists,
-        scanDir,
+        naps2Path: 'Managed by C# Worker',
+        naps2Exists: false,
+        scanDir: path.resolve('uploads', 'scans'),
       },
     };
-
-    if (naps2Exists) {
-      for (const driver of ['twain', 'wia'] as const) {
-        try {
-          const devices = await listNaps2Devices(driver);
-          this.runtimeStatus.probes[driver] = devices;
-          console.log(
-            `[SCANNER] NAPS2 ${driver.toUpperCase()} devices: [${devices.join(', ')}]`,
-          );
-
-          const deviceName = selectPreferredDevice(
-            devices,
-            PREFERRED_SCANNER_NAME,
-          );
-          if (!deviceName) continue;
-
-          const adapter = new Naps2ScannerAdapter(deviceName, driver);
-          const caps = await adapter.probe();
-          if (!caps.available) continue;
-
-          this.setAdapter(adapter);
-          this.runtimeStatus = {
-            ...this.runtimeStatus,
-            connected: true,
-            adapter: 'naps2',
-            driver,
-            deviceName,
-            capabilities: caps,
-            usingStub: false,
-            lastCheckedAt: new Date().toISOString(),
-            lastError: null,
-          };
-
-          console.log(
-            `[SCANNER] ✓ Using ${driver.toUpperCase()} scanner: "${deviceName}"`,
-          );
-          return;
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          this.runtimeStatus = {
-            ...this.runtimeStatus,
-            lastError: message,
-            lastCheckedAt: new Date().toISOString(),
-          };
-        }
-      }
-    }
-
-    this.setAdapter(new StubScannerAdapter());
-    const caps = await this.activeAdapter.probe();
-    this.runtimeStatus = {
-      ...this.runtimeStatus,
-      connected: false,
-      adapter: 'stub',
-      driver: 'stub',
-      deviceName: 'Stub scanner',
-      capabilities: caps,
-      usingStub: true,
-      lastCheckedAt: new Date().toISOString(),
-      lastError:
-        this.runtimeStatus.lastError ??
-        (naps2Exists
-          ? 'No TWAIN/WIA scanner device was found.'
-          : `NAPS2 not found at ${NAPS2_PATH}`),
-    };
-    console.log('[SCANNER] \u26a0 Falling back to stub scanner adapter');
   }
 }
 

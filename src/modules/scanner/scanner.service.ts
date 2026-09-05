@@ -288,7 +288,8 @@ export class ScannerService {
     );
 
     const connected =
-      runtime.adapter === 'naps2' && Boolean(probeCaps?.available);
+      (runtime.connected || runtime.usingStub) &&
+      Boolean(probeCaps?.available ?? runtime.capabilities?.available);
     const error = connected
       ? undefined
       : (runtime.lastError ??
@@ -314,7 +315,7 @@ export class ScannerService {
     const { source, color, dpi } = input;
 
     const runtime = getScannerStatus();
-    if (runtime.adapter !== 'naps2') {
+    if (!runtime.connected && !runtime.usingStub) {
       throw new Error(
         runtime.lastError ??
           'No scanner device is currently available. Please check your Epson scanner connection.',
