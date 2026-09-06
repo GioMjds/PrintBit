@@ -16,7 +16,10 @@ import {
   upsertSpoolerFailureRefund,
 } from '@/services/pending-refund';
 import { deleteTransientScanFile } from '@/services/transient-scan-file';
-import { consumablesStore } from '@/core/database/sqlite-storage';
+import {
+  ADMIN_TEST_PAGE_USAGE_SOURCE,
+  consumablesStore,
+} from '@/core/database/sqlite-storage';
 import { evaluateConsumablesForecastAlerts } from '@/modules/admin/consumables.service';
 import { estimateInkUsageByJob } from '@/services/consumable-estimator';
 import { getTrustedTimestamp } from '@/services/time-source';
@@ -103,9 +106,12 @@ function appendConsumableUsageEvent(
       copies: Math.max(1, copies),
       printerName: null,
     });
+    const isAdminTestPrint = recoveryContext.adminTestPrint === true;
 
     consumablesStore.appendUsageEvent({
-      id: randomUUID(),
+      id: isAdminTestPrint
+        ? `${ADMIN_TEST_PAGE_USAGE_SOURCE}:${transactionId}`
+        : randomUUID(),
       timestamp: getTrustedTimestamp().timestamp,
       transactionId,
       mode: eventMode,
@@ -116,7 +122,9 @@ function appendConsumableUsageEvent(
       billableBwPages,
       estimatedSheetsUsed,
       estimatedInkUnits,
-      source: 'worker-return-pipe',
+      source: isAdminTestPrint
+        ? ADMIN_TEST_PAGE_USAGE_SOURCE
+        : 'worker-return-pipe',
       billingPageDetection: 'fallback-assumptions',
       analysisConfidence: 'unknown',
     });

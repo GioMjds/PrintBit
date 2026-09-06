@@ -697,6 +697,7 @@ export {
 
 export {
   ConsumablesSqliteStore,
+  ADMIN_TEST_PAGE_USAGE_SOURCE,
   consumablesStore,
   type ConsumableUsageEventEntry,
   type ConsumableInkSnapshotSupply,

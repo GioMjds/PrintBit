@@ -28,8 +28,25 @@ function normalizeOptionalValue(value: string | null | undefined): string | null
   return normalized.length > 0 ? normalized : null;
 }
 
-export function isMaintenancePrintFailure(code: string): boolean {
-  return MAINTENANCE_PRINT_FAILURE_CODES.has(code);
+export function isMaintenancePrintFailure(
+  code?: string | null,
+  message?: string | null,
+): boolean {
+  if (code && MAINTENANCE_PRINT_FAILURE_CODES.has(code)) return true;
+  if (!code && !message) return false;
+  if (code === 'PRINTER_LOW_INK' && !message) return false;
+  const combined = `${code ?? ''} ${message ?? ''}`.toLowerCase();
+  return (
+    combined.includes('hardware error') ||
+    combined.includes('post-clear') ||
+    combined.includes('paper out') ||
+    combined.includes('paper_out') ||
+    combined.includes('incorrect loading') ||
+    combined.includes('paper jam') ||
+    combined.includes('paper_jam') ||
+    combined.includes('door open') ||
+    combined.includes('cover open')
+  );
 }
 
 export function buildMaintenanceReceiptView(

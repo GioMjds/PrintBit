@@ -203,6 +203,19 @@ function normalizeRotationDeg(value: unknown): RotationDeg {
   return 0;
 }
 
+function truncateFilename(name: string, maxLen = 32): string {
+  if (!name || name.length <= maxLen) return name;
+  const lastDot = name.lastIndexOf('.');
+  if (lastDot > 0 && name.length - lastDot <= 8) {
+    const ext = name.slice(lastDot);
+    const avail = maxLen - ext.length - 3;
+    if (avail > 4) {
+      return `${name.slice(0, avail)}...${ext}`;
+    }
+  }
+  return `${name.slice(0, maxLen - 3)}...`;
+}
+
 const modeValue = document.getElementById('modeValue');
 const priceValue = document.getElementById('priceValue');
 const balanceValue = document.getElementById('balanceValue');
@@ -216,7 +229,9 @@ const coinInsertNote = document.getElementById('coinInsertNote');
 const footerNote = document.getElementById('footerNote');
 const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
 
-// Bento Summary DOM Refs
+// Summary Table DOM Refs
+const fileValue = document.getElementById('fileValue');
+const mainSummaryFileRow = document.getElementById('mainSummaryFileRow');
 const pagesCard = document.getElementById('pagesCard');
 const pagesRangeValue = document.getElementById('pagesRangeValue');
 const pagesTotalCount = document.getElementById('pagesTotalCount');
@@ -226,10 +241,12 @@ const colorPagesChip = document.getElementById('colorPagesChip');
 const pagesColorCount = document.getElementById('pagesColorCount');
 
 const settingsGrid = document.getElementById('settingsGrid');
+const colorCard = document.getElementById('colorCard');
 const colorModePrimary = document.getElementById('colorModePrimary');
 const colorDetectedBadge = document.getElementById('colorDetectedBadge');
 const colorSelectedBadge = document.getElementById('colorSelectedBadge');
 
+const paperCard = document.getElementById('paperCard');
 const paperSizePrimary = document.getElementById('paperSizePrimary');
 const copiesTag = document.getElementById('copiesTag');
 const orientationTag = document.getElementById('orientationTag');
@@ -246,10 +263,14 @@ const coinLottieWrapper = document.getElementById('coinLottieWrapper');
 const actionPriceValue = document.getElementById('actionPriceValue');
 const actionCol = document.querySelector<HTMLElement>('.action-col');
 
-// Printer Error Elements (Issue 124)
+// Printer Error Elements (Issue 124 & UX Enhancement)
 const printerErrorBlock = document.getElementById('printerErrorBlock');
+const printerErrorModal = document.getElementById('printerErrorModal');
 const errorTitle = document.getElementById('errorTitle');
+const errorSubtitle = document.getElementById('errorSubtitle');
 const errorMessage = document.getElementById('errorMessage');
+const maintenanceIssueDesc = document.getElementById('maintenanceIssueDesc');
+const errorStepsList = document.getElementById('errorStepsList');
 const errorHint = document.getElementById('errorHint');
 const errorCloseBtn = document.getElementById(
   'errorCloseBtn',
@@ -260,9 +281,6 @@ const errorProgressEl = document.getElementById(
 ) as HTMLParagraphElement | null;
 const maintenanceResolution = document.getElementById(
   'maintenanceResolution',
-) as HTMLElement | null;
-const maintenanceTransactionId = document.getElementById(
-  'maintenanceTransactionId',
 ) as HTMLElement | null;
 const maintenanceReceiptContainer = document.getElementById(
   'maintenanceReceiptContainer',
@@ -528,8 +546,14 @@ function renderPrinterError(err: PrintError): void {
   currentPrinterError = err;
   if (!printerErrorBlock) return;
 
-  const requiresMaintenance = isMaintenancePrintFailure(err.code);
-  const maintenanceGuidance = getMaintenanceGuidance(err.code, err.userMessage);
+  const requiresMaintenance = isMaintenancePrintFailure(
+    err.code,
+    err.userMessage,
+  );
+  const maintenanceGuidance = getMaintenanceGuidance(
+    err.code,
+    err.userMessage,
+  );
   if (requiresMaintenance) {
     recordConfirmationTerminalFailure({
       transactionId: currentTransactionId,
@@ -543,17 +567,38 @@ function renderPrinterError(err: PrintError): void {
       ? maintenanceGuidance.title
       : 'Printer Error';
   }
+  if (errorSubtitle) {
+    errorSubtitle.textContent = requiresMaintenance
+      ? (maintenanceGuidance.subtitle ||
+        'The printer encountered an issue and requires attention.')
+      : 'Please check the printer to continue.';
+  }
   if (errorMessage) {
-    errorMessage.textContent = requiresMaintenance
-      ? maintenanceGuidance.message
-      : err.userMessage;
+    if (requiresMaintenance) {
+      // Message is already shown inside the callout banner (maintenanceIssueDesc) — hide the top-level copy to save vertical space
+      errorMessage.setAttribute('hidden', '');
+    } else {
+      errorMessage.textContent = err.userMessage;
+      errorMessage.removeAttribute('hidden');
+    }
+  }
+  if (maintenanceIssueDesc) {
+    maintenanceIssueDesc.textContent = maintenanceGuidance.message;
+  }
+  if (errorStepsList && maintenanceGuidance.actionSteps) {
+    errorStepsList.innerHTML = '';
+    for (const step of maintenanceGuidance.actionSteps) {
+      const li = document.createElement('li');
+      li.textContent = step;
+      errorStepsList.appendChild(li);
+    }
   }
   if (errorHint) {
     const hint = requiresMaintenance
       ? maintenanceGuidance.hint
       : err.hint || '';
     errorHint.textContent = hint;
-    if (hint) errorHint.removeAttribute('hidden');
+    if (hint && !requiresMaintenance) errorHint.removeAttribute('hidden');
     else errorHint.setAttribute('hidden', '');
   }
 
@@ -568,7 +613,7 @@ function renderPrinterError(err: PrintError): void {
       fatal: 'Fatal Error',
     };
     errorSeverityText.textContent = requiresMaintenance
-      ? 'Staff Assistance'
+      ? (maintenanceGuidance.badge || 'Staff Assistance')
       : severityLabels[err.severity] ?? err.severity;
   }
 
@@ -590,6 +635,9 @@ function renderPrinterError(err: PrintError): void {
   }
 
   if (requiresMaintenance) {
+    printerErrorBlock.classList.add('printer-error-modal--wide');
+    printerErrorBlock.classList.add('printer-error-modal-overlay--wide');
+    printerErrorModal?.classList.add('printer-error-modal--wide');
     renderMaintenanceResolution();
     presentMaintenanceError({
       thankYouOverlay,
@@ -598,6 +646,9 @@ function renderPrinterError(err: PrintError): void {
       doneButton: maintenanceDoneBtn,
     });
   } else {
+    printerErrorBlock.classList.remove('printer-error-modal--wide');
+    printerErrorBlock.classList.remove('printer-error-modal-overlay--wide');
+    printerErrorModal?.classList.remove('printer-error-modal--wide');
     maintenanceResolution?.setAttribute('hidden', '');
   }
 
@@ -611,6 +662,9 @@ function renderPrinterError(err: PrintError): void {
 function clearPrinterError(): void {
   currentPrinterError = null;
   if (printerErrorBlock) {
+    printerErrorBlock.classList.remove('printer-error-modal--wide');
+    printerErrorBlock.classList.remove('printer-error-modal-overlay--wide');
+    printerErrorModal?.classList.remove('printer-error-modal--wide');
     if (!printerErrorBlock.hasAttribute('hidden')) {
       printerErrorBlock.classList.add('is-leaving');
       window.setTimeout(() => {
@@ -622,6 +676,7 @@ function clearPrinterError(): void {
     }
   }
   if (errorProgressEl) errorProgressEl.setAttribute('hidden', '');
+  if (errorTechDetails) errorTechDetails.setAttribute('hidden', '');
   maintenanceResolution?.setAttribute('hidden', '');
   applyConfirmGate();
 }
@@ -867,9 +922,24 @@ function initCoinLottieAnimation(): void {
 export function populateJobSummary(cfg: PrintConfig): void {
   if (modeValue) modeValue.textContent = cfg.mode.toUpperCase();
 
+  // Populate Document filename for main summary table
+  if (fileValue) {
+    const rawFileName =
+      cfg.mode === 'print'
+        ? (uploadedFile ?? 'No uploaded file')
+        : cfg.mode === 'copy'
+          ? 'Physical document copy'
+          : (cfg.scanFilename ?? 'Scanned document');
+    fileValue.textContent = truncateFilename(rawFileName, 32);
+    fileValue.setAttribute('title', rawFileName);
+    fileValue.setAttribute('aria-label', `Document: ${rawFileName}`);
+  }
+
   if (cfg.mode === 'scan') {
-    // Hide print/copy bento cards, show scan card
+    // Hide print/copy table rows, show scan row
     pagesCard?.setAttribute('hidden', '');
+    colorCard?.setAttribute('hidden', '');
+    paperCard?.setAttribute('hidden', '');
     settingsGrid?.setAttribute('hidden', '');
     scanCard?.removeAttribute('hidden');
 
@@ -887,6 +957,8 @@ export function populateJobSummary(cfg: PrintConfig): void {
 
   // Print / Copy mode:
   pagesCard?.removeAttribute('hidden');
+  colorCard?.removeAttribute('hidden');
+  paperCard?.removeAttribute('hidden');
   settingsGrid?.removeAttribute('hidden');
   scanCard?.setAttribute('hidden', '');
 
@@ -1028,6 +1100,20 @@ function updateChangeDisplay(balance: number): void {
   }
 }
 
+function sanitizeStatusBadgeMessage(msg: string): string {
+  if (!msg) return msg;
+  if (
+    msg.length > 50 ||
+    msg.includes('|') ||
+    msg.toLowerCase().includes('post-clear') ||
+    msg.toLowerCase().includes('hardware error') ||
+    msg.toLowerCase().includes('epson popup')
+  ) {
+    return 'Printer attention needed. See instructions.';
+  }
+  return msg;
+}
+
 function applyConfirmGate(statusOverride?: string): void {
   if (!confirmBtn || !statusMessage) return;
   if (isProcessingPayment) {
@@ -1044,8 +1130,9 @@ function applyConfirmGate(statusOverride?: string): void {
   ) {
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
-    statusMessage.textContent =
-      statusOverride ?? currentPrinterError.userMessage;
+    statusMessage.textContent = sanitizeStatusBadgeMessage(
+      statusOverride ?? currentPrinterError.userMessage,
+    );
     if (statusBadge) statusBadge.dataset.state = 'error';
     return;
   }
@@ -1089,9 +1176,10 @@ function applyConfirmGate(statusOverride?: string): void {
     const needed = totalPrice - currentBalance;
     confirmBtn.disabled = true;
     confirmBtn.setAttribute('aria-disabled', 'true');
-    statusMessage.textContent =
-      statusOverride ?? `Insert more coins: ₱ ${needed} remaining.`;
-    if (statusBadge) statusBadge.dataset.state = 'waiting';
+    statusMessage.textContent = sanitizeStatusBadgeMessage(
+      statusOverride ?? `Insert more coins: ₱ ${needed} remaining.`,
+    );
+    if (statusBadge) statusBadge.dataset.state = statusOverride ? 'error' : 'waiting';
   }
 }
 
@@ -1569,10 +1657,6 @@ function renderMaintenanceResolution(): void {
     receiptExpiresAt: confirmationOutcome.receipt?.expiresAt ?? null,
   });
 
-  if (maintenanceTransactionId) {
-    maintenanceTransactionId.textContent = view.transactionId;
-  }
-
   if (!view.receipt || !maintenanceReceiptQrCanvas) {
     maintenanceReceiptContainer?.setAttribute('hidden', '');
     maintenanceReceiptPending?.removeAttribute('hidden');
@@ -1896,13 +1980,17 @@ function showModal(): void {
     confirmModal.dataset.step = config.mode === 'scan' ? 'review' : 'tray';
   }
 
-  if (modalFile)
-    modalFile.textContent =
+  if (modalFile) {
+    const rawFileName =
       config.mode === 'print'
         ? (uploadedFile ?? 'No file')
         : config.mode === 'copy'
           ? 'Physical document copy'
           : (config.scanFilename ?? 'Scanned document');
+    modalFile.textContent = truncateFilename(rawFileName, 32);
+    modalFile.setAttribute('title', rawFileName);
+    modalFile.setAttribute('aria-label', `Document: ${rawFileName}`);
+  }
   if (modalMode) modalMode.textContent = config.mode.toUpperCase();
 
   if (config.mode !== 'scan') {
@@ -2012,7 +2100,6 @@ modalTrayOkBtn?.addEventListener('click', () => {
 
 modalTrayIssueBtn?.addEventListener('click', () => {
   hideModal();
-  showOverlay(trayIssueOverlay);
 });
 
 trayIssueDoneBtn?.addEventListener('click', () => {
@@ -2343,9 +2430,19 @@ if (typeof ioFactory === 'function') {
     }
     const isHardwareError = Boolean(
       (lifecycle.printError &&
-        isMaintenancePrintFailure(lifecycle.printError.code)) ||
+        isMaintenancePrintFailure(
+          lifecycle.printError.code,
+          lifecycle.printError.userMessage,
+        )) ||
         (currentPrinterError &&
-          isMaintenancePrintFailure(currentPrinterError.code)),
+          isMaintenancePrintFailure(
+            currentPrinterError.code,
+            currentPrinterError.userMessage,
+          )) ||
+        isMaintenancePrintFailure(undefined, lifecycle.reason) ||
+        lifecycle.failureStage === 'HardwareError' ||
+        lifecycle.failureStage === 'IncompleteOutput' ||
+        lifecycle.errorType === 'HardwareError',
     );
 
     // Live progress updates — only 'processing' transitions carry
@@ -2388,6 +2485,19 @@ if (typeof ioFactory === 'function') {
           renderPrinterError(lifecycle.printError);
         } else if (currentPrinterError) {
           renderPrinterError(currentPrinterError);
+        } else {
+          renderPrinterError({
+            code: 'WORKER_HARDWARE_ERROR',
+            severity: 'recoverable',
+            userMessage:
+              lifecycle.reason ||
+              'The printer encountered an issue and could not complete printing.',
+            hint: 'Please call maintenance staff and provide the transaction ID below.',
+            canRetry: false,
+            canDismiss: false,
+            spoolerCorrelationKey:
+              lifecycle.spoolerCorrelationKey ?? paymentSpoolerCorrelationKey,
+          });
         }
         return;
       }
@@ -2544,7 +2654,14 @@ if (typeof ioFactory === 'function') {
       job?.failureStage === 'IncompleteOutput' ||
       job?.errorType === 'HardwareError' ||
       job?.reason === 'HardwareError' ||
-      (job?.printError && isMaintenancePrintFailure(job.printError.code));
+      (job?.printError &&
+        isMaintenancePrintFailure(
+          job.printError.code,
+          job.printError.userMessage,
+        )) ||
+      isMaintenancePrintFailure(undefined, job?.message) ||
+      isMaintenancePrintFailure(undefined, job?.errorMessage) ||
+      isMaintenancePrintFailure(undefined, job?.reason);
 
     if (isHardwareError) {
       hideOverlay(printingOverlay);

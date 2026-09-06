@@ -46,6 +46,7 @@ import {
   verifyTrustedClockSync,
 } from '@/services/time-source';
 import {
+  checkpointRecoverySession,
   getRecoveryStatusSnapshot,
   getSpoolerLifecycleRecord,
 } from '@/services/recovery';
@@ -62,7 +63,12 @@ import type { AlertSettings } from './admin.schema';
 import type { AdminQueueView } from '@/modules/anomaly/anomaly.schema';
 import { ConsumablesService } from './consumables.service';
 import { ReceiptService, type ReceiptPayload } from '@/modules/receipt';
-import { getSqliteDb, writeRuntimeState } from '@/core/database/sqlite-storage';
+import {
+  ADMIN_TEST_PAGE_USAGE_SOURCE,
+  consumablesStore,
+  getSqliteDb,
+  writeRuntimeState,
+} from '@/core/database/sqlite-storage';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -817,12 +823,22 @@ export class AdminController {
         .get() as Record<string, unknown> | undefined;
 
       const baseline = db.data!.inkRefillBaseline;
-      const totalColor = Number(totalRow?.colorSum ?? 0);
-      const totalBw = Number(totalRow?.bwSum ?? 0);
+      const todayAdminTestPages = consumablesStore.sumUsagePagesBySource(
+        ADMIN_TEST_PAGE_USAGE_SOURCE,
+        startIso,
+      );
+      const totalAdminTestPages = consumablesStore.sumUsagePagesBySource(
+        ADMIN_TEST_PAGE_USAGE_SOURCE,
+      );
+      const totalColor =
+        Number(totalRow?.colorSum ?? 0) + totalAdminTestPages.colorPages;
+      const totalBw = Number(totalRow?.bwSum ?? 0) + totalAdminTestPages.bwPages;
 
       const pageCounts = {
-        todayColorPages: Number(todayRow?.colorSum ?? 0),
-        todayBwPages: Number(todayRow?.bwSum ?? 0),
+        todayColorPages:
+          Number(todayRow?.colorSum ?? 0) + todayAdminTestPages.colorPages,
+        todayBwPages:
+          Number(todayRow?.bwSum ?? 0) + todayAdminTestPages.bwPages,
         totalColorPages: totalColor,
         totalBwPages: totalBw,
         refillColorPages: Math.max(0, totalColor - baseline.colorPages),
@@ -2031,6 +2047,24 @@ export class AdminController {
       const transactionId = randomUUID();
       const spoolerCorrelationKey = randomUUID();
 
+      await checkpointRecoverySession({
+        transactionId,
+        mode: 'print',
+        phase: 'preflight_passed',
+        requiredAmount: 0,
+        spoolerCorrelationKey,
+        context: {
+          adminTestPrint: true,
+          copies: 1,
+          duplex: false,
+          selectedPages: 1,
+          billableColorPages: 0,
+          billableBwPages: 1,
+          estimatedSheetsUsed: 1,
+          colorMode: 'grayscale',
+        },
+      });
+
       const handoffResult = await handoffToWorker({
         sourcePath: tmpAbsPath,
         queueDir,
@@ -2042,6 +2076,14 @@ export class AdminController {
           orientation: 'portrait',
           quality: 'standard',
         },
+      });
+      await checkpointRecoverySession({
+        transactionId,
+        mode: 'print',
+        phase: 'job_dispatched',
+        requiredAmount: 0,
+        spoolerCorrelationKey,
+        jobDispatchedAt: new Date().toISOString(),
       });
       const totalElapsedMs = Date.now() - startedAtMs;
 
@@ -2655,8 +2697,12 @@ export class AdminController {
         )
         .get() as Record<string, unknown> | undefined;
 
-      const totalColor = Number(totalRow?.colorSum ?? 0);
-      const totalBw = Number(totalRow?.bwSum ?? 0);
+      const adminTestPages = consumablesStore.sumUsagePagesBySource(
+        ADMIN_TEST_PAGE_USAGE_SOURCE,
+      );
+      const totalColor =
+        Number(totalRow?.colorSum ?? 0) + adminTestPages.colorPages;
+      const totalBw = Number(totalRow?.bwSum ?? 0) + adminTestPages.bwPages;
 
       await this.adminService.resetInkRefillBaseline(totalColor, totalBw);
 

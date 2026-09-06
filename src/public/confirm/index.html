@@ -257,91 +257,104 @@
             <span class="summary-mode-badge" id="modeValue">PRINT</span>
           </div>
 
-          <div class="summary-bento" id="summaryBento">
-            <!-- 1. Pages Breakdown Card (Print & Copy) -->
-            <div class="summary-bento__card summary-bento__card--pages" id="pagesCard">
-              <div class="summary-bento__card-header">
-                <div class="summary-bento__card-label">
-                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" />
-                  </svg>
-                  <span>Pages &amp; Range</span>
-                </div>
-                <span class="summary-bento__range-tag" id="pagesRangeValue">All Pages</span>
-              </div>
-              <div class="summary-bento__metrics" id="pagesMetrics">
-                <div class="metric-pill metric-pill--total">
-                  <span class="metric-pill__label">Total Sheets</span>
-                  <span class="metric-pill__value" id="pagesTotalCount">1 page</span>
-                </div>
-                <div class="metric-pill metric-pill--bw" id="bwPagesChip">
-                  <span class="metric-pill__dot"></span>
-                  <span class="metric-pill__label">B&amp;W</span>
-                  <span class="metric-pill__value" id="pagesBwCount">1</span>
-                </div>
-                <div class="metric-pill metric-pill--color" id="colorPagesChip">
-                  <span class="metric-pill__dot"></span>
-                  <span class="metric-pill__label">Color</span>
-                  <span class="metric-pill__value" id="pagesColorCount">0</span>
-                </div>
-              </div>
-            </div>
+          <!-- Table-Based Job Summary Listing -->
+          <div class="summary-table-wrap">
+            <table class="summary-table" role="table" aria-label="Job Summary Details">
+              <tbody>
+                <!-- Pages & Range Row (Print & Copy) -->
+                <tr id="pagesCard" class="summary-table-row">
+                  <th scope="row" class="summary-table-label">
+                    <div class="summary-table-label__inner">
+                      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1 1H4a1 1 0 01-1-1V7z" />
+                      </svg>
+                      <span>Pages &amp; Range</span>
+                    </div>
+                  </th>
+                  <td class="summary-table-value">
+                    <div class="summary-table-pages-cell">
+                      <span class="summary-table-primary-text" id="pagesTotalCount">1 page</span>
+                      <span class="summary-table-range-tag" id="pagesRangeValue">All Pages</span>
+                    </div>
+                    <div class="summary-table-breakdown" id="pagesMetrics">
+                      <span class="summary-mini-chip summary-mini-chip--bw" id="bwPagesChip">
+                        <span class="summary-mini-chip__dot"></span>
+                        B&amp;W: <strong id="pagesBwCount">1</strong>
+                      </span>
+                      <span class="summary-mini-chip summary-mini-chip--color" id="colorPagesChip">
+                        <span class="summary-mini-chip__dot"></span>
+                        Color: <strong id="pagesColorCount">0</strong>
+                      </span>
+                    </div>
+                  </td>
+                </tr>
 
-            <!-- 2. Dual Sub-Cards Grid: Color Mode & Paper Layout -->
-            <div class="summary-bento__grid" id="settingsGrid">
-              <!-- Color Mode Card -->
-              <div class="summary-bento__card summary-bento__card--color" id="colorCard">
-                <div class="summary-bento__card-label">
-                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <circle cx="5" cy="8" r="3" opacity=".6" />
-                    <circle cx="11" cy="8" r="3" opacity=".4" />
-                    <circle cx="8" cy="11" r="3" opacity=".5" />
-                  </svg>
-                  <span>Color Mode</span>
-                </div>
-                <div class="summary-bento__content-block">
-                  <span class="summary-bento__primary-val" id="colorModePrimary">Black &amp; White</span>
-                  <div class="summary-bento__badges-wrap" id="colorBadgesWrap">
-                    <span class="sub-badge sub-badge--detected" id="colorDetectedBadge" hidden>Detected: Color</span>
-                    <span class="sub-badge sub-badge--selected" id="colorSelectedBadge" hidden>Selected: B&amp;W</span>
-                  </div>
-                </div>
-              </div>
+                <!-- Color Mode Row -->
+                <tr id="colorCard" class="summary-table-row">
+                  <th scope="row" class="summary-table-label">
+                    <div class="summary-table-label__inner">
+                      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <circle cx="5" cy="8" r="3" opacity=".6" />
+                        <circle cx="11" cy="8" r="3" opacity=".4" />
+                        <circle cx="8" cy="11" r="3" opacity=".5" />
+                      </svg>
+                      <span>Color Mode</span>
+                    </div>
+                  </th>
+                  <td class="summary-table-value">
+                    <div class="summary-table-color-cell">
+                      <span class="summary-table-primary-text summary-table-primary-text--color" id="colorModePrimary">Black &amp; White</span>
+                      <div class="summary-table-badges" id="colorBadgesWrap">
+                        <span class="sub-badge sub-badge--detected" id="colorDetectedBadge" hidden>Detected: Color</span>
+                        <span class="sub-badge sub-badge--selected" id="colorSelectedBadge" hidden>Selected: B&amp;W</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
 
-              <!-- Paper & Layout Card -->
-              <div class="summary-bento__card summary-bento__card--paper" id="paperCard">
-                <div class="summary-bento__card-label">
-                  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <rect x="3" y="1" width="10" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
-                  </svg>
-                  <span>Paper &amp; Layout</span>
-                </div>
-                <div class="summary-bento__content-block">
-                  <span class="summary-bento__primary-val" id="paperSizePrimary">A4 Bond Paper</span>
-                  <div class="summary-bento__tags-wrap">
-                    <span class="info-tag" id="copiesTag">1 Copy</span>
-                    <span class="info-tag" id="orientationTag">Portrait</span>
-                    <span class="info-tag" id="qualityTag">Standard</span>
-                    <span class="info-tag" id="rotationTag" hidden>0°</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+                <!-- Paper & Layout Row -->
+                <tr id="paperCard" class="summary-table-row">
+                  <th scope="row" class="summary-table-label">
+                    <div class="summary-table-label__inner">
+                      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <rect x="3" y="1" width="10" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.5" />
+                      </svg>
+                      <span>Paper &amp; Layout</span>
+                    </div>
+                  </th>
+                  <td class="summary-table-value">
+                    <div class="summary-table-paper-cell">
+                      <span class="summary-table-primary-text" id="paperSizePrimary">A4 Bond Paper</span>
+                      <div class="summary-table-tags" id="settingsGrid">
+                        <span class="info-tag" id="copiesTag">1 Copy</span>
+                        <span class="info-tag" id="orientationTag">Portrait</span>
+                        <span class="info-tag" id="qualityTag">Standard</span>
+                        <span class="info-tag" id="rotationTag" hidden>0°</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
 
-            <!-- Scan Info Card (Visible only in scan mode) -->
-            <div class="summary-bento__card summary-bento__card--scan" id="scanCard" hidden>
-              <div class="summary-bento__card-label">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                  <polyline points="22,6 12,13 2,6" />
-                </svg>
-                <span>Scan Service</span>
-              </div>
-              <div class="summary-bento__content-block">
-                <span class="summary-bento__primary-val">High-Resolution Soft Copy</span>
-                <span class="scan-card__subtext">Direct QR code download to your phone</span>
-              </div>
-            </div>
+                <!-- Scan Service Row (Scan Mode Only) -->
+                <tr id="scanCard" class="summary-table-row" hidden>
+                  <th scope="row" class="summary-table-label">
+                    <div class="summary-table-label__inner">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                        <polyline points="22,6 12,13 2,6" />
+                      </svg>
+                      <span>Scan Service</span>
+                    </div>
+                  </th>
+                  <td class="summary-table-value">
+                    <div class="summary-table-scan-cell">
+                      <span class="summary-table-primary-text">High-Resolution Soft Copy</span>
+                      <span class="scan-card__subtext">Direct QR code download to your phone</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <!-- Grounded Financial Summary -->
@@ -406,7 +419,7 @@
       aria-describedby="errorMessage"
       aria-modal="true"
     >
-      <div class="printer-error-modal">
+      <div class="printer-error-modal" id="printerErrorModal">
         <!-- Animated Error Icon -->
         <div class="printer-error-modal__icon-ring">
           <svg
@@ -462,6 +475,11 @@
           Printer Error
         </h2>
 
+        <!-- Subtitle for clear context -->
+        <p class="printer-error-modal__subtitle" id="errorSubtitle">
+          The printer encountered an issue and requires attention.
+        </p>
+
         <!-- Severity pill badge -->
         <div
           class="printer-error-modal__severity-badge"
@@ -475,7 +493,7 @@
           >
         </div>
 
-        <!-- Error message -->
+        <!-- Error message (standard view for warnings / non-maintenance) -->
         <p class="printer-error-modal__message" id="errorMessage">
           Please check the printer.
         </p>
@@ -507,84 +525,128 @@
           <span>Dismiss</span>
         </button>
 
+        <!-- Staff-Assisted Maintenance Resolution Section (Structured Bento Grid) -->
         <section
           class="maintenance-resolution"
           id="maintenanceResolution"
           aria-labelledby="maintenanceHeading"
           hidden
         >
-          <div class="maintenance-resolution__callout">
-            <h3 id="maintenanceHeading">Call maintenance staff</h3>
-            <p>
-              Keep this screen open and provide the transaction ID for
-              verification of the printing problem.
-            </p>
-          </div>
+          <div class="maintenance-resolution__bento">
+            <!-- Left: Info, Guidance, & Reference -->
+            <div class="maintenance-resolution__info-col">
+              <!-- Issue Callout Banner -->
+              <div class="error-callout-banner" role="alert">
+                <div class="error-callout-banner__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </div>
+                <div class="error-callout-banner__body">
+                  <div class="error-callout-banner__header">
+                    <span class="error-callout-banner__title" id="maintenanceHeading">Staff Assistance Needed</span>
+                  </div>
+                  <p class="error-callout-banner__text" id="maintenanceIssueDesc">
+                    The printer encountered a problem and could not complete printing.
+                  </p>
+                </div>
+              </div>
 
-          <div class="maintenance-resolution__reference">
-            <span>Transaction ID</span>
-            <code id="maintenanceTransactionId">Pending verification</code>
-          </div>
+              <!-- Next Steps List -->
+              <div class="error-guidance-card">
+                <span class="error-guidance-card__title">What you should do</span>
+                <ul class="error-guidance-card__steps" id="errorStepsList">
+                  <li>Keep this screen open and notify kiosk staff.</li>
+                  <li>Scan the QR code on the right to save your transaction receipt.</li>
+                  <li>Show the receipt to staff for verification or refund assistance.</li>
+                </ul>
+              </div>
+            </div>
 
-          <div
-            class="maintenance-resolution__receipt"
-            id="maintenanceReceiptContainer"
-            hidden
-          >
-            <div class="maintenance-resolution__receipt-header">
-              Transaction e-receipt
-            </div>
-            <p>Scan to view or save the receipt for staff verification.</p>
-            <div class="maintenance-resolution__qr-box">
-              <canvas
-                id="maintenanceReceiptQrCanvas"
-                aria-label="Transaction receipt QR code"
-              ></canvas>
-            </div>
-            <p
-              class="maintenance-resolution__expiry"
-              id="maintenanceReceiptQrExpiry"
-            ></p>
-            <button
-              type="button"
-              class="qr-troubleshoot-btn qr-troubleshoot-btn--maintenance"
-              id="maintenanceWifiHelpBtn"
-              aria-haspopup="dialog"
-              aria-controls="confirmWifiModalOverlay"
-            >
-              <svg
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
+            <!-- Right: Receipt QR Card (Matches Success Modal QR Card Design) -->
+            <div class="maintenance-resolution__qr-col">
+              <div
+                class="qr-card qr-card--receipt qr-card--maintenance"
+                id="maintenanceReceiptContainer"
+                hidden
               >
-                <path d="M4 8.5a9 9 0 0 1 12 0" />
-                <path d="M1.5 5.5a13 13 0 0 1 17 0" />
-                <path d="M6.8 11.5a5 5 0 0 1 6.4 0" />
-                <circle cx="10" cy="15" r="1" fill="currentColor" />
-              </svg>
-              <span>QR code not opening? Check Wi-Fi</span>
+                <div class="qr-card__header">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"
+                    />
+                    <path d="M16 8h-8M16 12h-8M12 16h-4" />
+                  </svg>
+                  <span>Transaction E-Receipt</span>
+                </div>
+                <p class="qr-card__hint">Scan to view/save receipt for staff verification</p>
+                <div class="qr-card__canvas-box">
+                  <canvas
+                    id="maintenanceReceiptQrCanvas"
+                    class="scan-qr-canvas"
+                    aria-label="Transaction receipt QR code"
+                  ></canvas>
+                </div>
+                <p
+                  class="scan-qr-expiry"
+                  id="maintenanceReceiptQrExpiry"
+                ></p>
+                <button
+                  type="button"
+                  class="qr-troubleshoot-btn qr-troubleshoot-btn--maintenance"
+                  id="maintenanceWifiHelpBtn"
+                  aria-haspopup="dialog"
+                  aria-controls="confirmWifiModalOverlay"
+                >
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M4 8.5a9 9 0 0 1 12 0" />
+                    <path d="M1.5 5.5a13 13 0 0 1 17 0" />
+                    <path d="M6.8 11.5a5 5 0 0 1 6.4 0" />
+                    <circle cx="10" cy="15" r="1" fill="currentColor" />
+                  </svg>
+                  <span>QR code not opening? Check Wi-Fi</span>
+                </button>
+              </div>
+
+              <div
+                class="maintenance-resolution__pending"
+                id="maintenanceReceiptPending"
+                role="status"
+              >
+                <div class="maintenance-pending-spinner" aria-hidden="true"></div>
+                <span>Preparing transaction receipt QR code…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Actions -->
+          <div class="maintenance-resolution__actions">
+            <button
+              id="maintenanceDoneBtn"
+              type="button"
+              class="modal-btn modal-btn--confirm modal-btn--wide"
+            >
+              <span>Done</span>
             </button>
           </div>
-
-          <p
-            class="maintenance-resolution__pending"
-            id="maintenanceReceiptPending"
-            role="status"
-          >
-            Preparing the transaction receipt QR code…
-          </p>
-
-          <button
-            id="maintenanceDoneBtn"
-            type="button"
-            class="maintenance-resolution__done"
-          >
-            Done
-          </button>
         </section>
       </div>
     </div>
@@ -613,15 +675,16 @@
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M7 8h10" />
+              <path d="M7 12h10" />
+              <path d="M7 16h6" />
             </svg>
           </div>
 
           <h2 class="modal-title" id="modalTrayTitle">Check the Paper Tray</h2>
           <p class="modal-subtitle" id="modalTraySubtitle">
-            Make sure the paper is loaded straight and ready before you continue.
+            Please ensure the tray is properly loaded before proceeding to print.
           </p>
 
           <!-- Paper Tray Safety Alert -->
@@ -641,11 +704,49 @@
               </svg>
             </div>
             <div class="modal-paper-alert__content">
-              <span class="modal-paper-alert__title">Load:</span>
+              <span class="modal-paper-alert__title">Required Paper:</span>
               <span class="modal-paper-alert__text" id="modalPaperAlertText">
-                <strong id="modalPaperAlertSize">A4 Bond Paper</strong> with enough sheets for this job.
+                <strong id="modalPaperAlertSize">A4 Bond Paper</strong> with enough sheets for this print job.
               </span>
             </div>
+          </div>
+
+          <!-- Tray Checklist for Customers -->
+          <div class="modal-tray-checklist" role="list">
+            <div class="modal-tray-check-item" role="listitem">
+              <div class="modal-tray-check-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+              <div class="modal-tray-check-item__content">
+                <strong>Loaded Straight:</strong> Paper is aligned snug against the guides with no slant.
+              </div>
+            </div>
+
+            <div class="modal-tray-check-item" role="listitem">
+              <div class="modal-tray-check-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+              <div class="modal-tray-check-item__content">
+                <strong>Clean &amp; Decluttered:</strong> Sheets are fanned out, unwrinkled, and free of clips or staples.
+              </div>
+            </div>
+          </div>
+
+          <!-- Inline Tray Help & Coin Notice -->
+          <div class="modal-tray-help-banner">
+            <div class="modal-tray-help-banner__header">
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+              </svg>
+              <span>Need help with the tray?</span>
+            </div>
+            <p class="modal-tray-help-banner__body">
+              If the tray is empty, jammed, or misaligned, please ask assistance from a staff member before continuing.
+            </p>
           </div>
 
           <!-- Tray-check step actions -->
@@ -654,6 +755,7 @@
               id="modalTrayIssueBtn"
               type="button"
               class="modal-btn modal-btn--cancel"
+              aria-label="Back to Job Summary"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -664,11 +766,9 @@
                 stroke-linejoin="round"
                 aria-hidden="true"
               >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
+                <path d="M19 12H5M11 6l-6 6 6 6" />
               </svg>
-              <span>Get help with the tray</span>
+              <span>Back</span>
             </button>
             <button
               id="modalTrayOkBtn"
@@ -691,7 +791,7 @@
           </div>
         </div>
 
-        <!-- ══ STEP 2: Review & Pay (unchanged content, existing IDs preserved) ══ -->
+        <!-- ══ STEP 2: Review & Pay (Table-based listing) ══ -->
         <div class="modal-step modal-step--review" id="modalStepReview">
           <!-- Header -->
           <div class="modal-header">
@@ -713,104 +813,83 @@
             <div class="modal-header__text">
               <h2 class="modal-title" id="modalTitle">Ready to Print?</h2>
               <p class="modal-subtitle" id="modalSubtitle">
-                Review your settings and total before printing.
+                Review your print details and total before confirming.
               </p>
             </div>
           </div>
 
-          <!-- Bento Grid: Job Configuration -->
-          <div class="modal-bento-grid">
-            <!-- Item 1: File & Mode -->
-            <div
-              class="modal-bento-card modal-bento-card--file"
-              id="modalFileRow"
-            >
-              <div class="modal-bento-card__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    fill-rule="evenodd"
-                    d="M4 2a2 2 0 012-2h4.586A2 2 0 0112 2.586L14.414 5A2 2 0 0115 6.414V14a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2zm4.5 5.5a.5.5 0 000 1H9v1.5a.5.5 0 001 0V8.5h1.5a.5.5 0 000-1H10V6a.5.5 0 00-1 0v1.5H8.5z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
-                <span>Document</span>
-                <span class="modal-bento-badge" id="modalMode">PRINT</span>
-              </div>
-              <div class="modal-bento-card__value" id="modalFile">—</div>
-            </div>
+          <!-- Table-Based Job Summary Listing -->
+          <div class="modal-details-table-wrap">
+            <table class="modal-details-table" role="table" aria-label="Print job details">
+              <tbody>
+                <!-- Row 1: Color Mode -->
+                <tr id="modalColorRow" class="modal-details-row">
+                  <th scope="row" class="modal-details-label">
+                    <div class="modal-details-label__inner">
+                      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <circle cx="5" cy="8" r="3" opacity=".6" />
+                        <circle cx="11" cy="8" r="3" opacity=".4" />
+                        <circle cx="8" cy="11" r="3" opacity=".5" />
+                      </svg>
+                      <span>Color Mode</span>
+                    </div>
+                  </th>
+                  <td class="modal-details-value">
+                    <span class="modal-details-value--color" id="modalColor">—</span>
+                  </td>
+                </tr>
 
-            <!-- Item 2: Color Mode -->
-            <div
-              class="modal-bento-card modal-bento-card--color"
-              id="modalColorRow"
-            >
-              <div class="modal-bento-card__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <circle cx="5" cy="8" r="3" opacity=".6" />
-                  <circle cx="11" cy="8" r="3" opacity=".4" />
-                  <circle cx="8" cy="11" r="3" opacity=".5" />
-                </svg>
-                <span>Color Mode</span>
-              </div>
-              <div
-                class="modal-bento-card__value modal-bento-card__value--color"
-                id="modalColor"
-              >
-                —
-              </div>
-            </div>
+                <!-- Row 3: Pages & Copies -->
+                <tr id="modalPagesRow" class="modal-details-row">
+                  <th scope="row" class="modal-details-label">
+                    <div class="modal-details-label__inner">
+                      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <path
+                          d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"
+                        />
+                      </svg>
+                      <span>Pages &amp; Copies</span>
+                    </div>
+                  </th>
+                  <td class="modal-details-value">
+                    <span id="modalPages">—</span>
+                    <span class="modal-details-subvalue" id="modalCopiesRow"
+                      >(<strong id="modalCopies">1</strong> copy)</span
+                    >
+                  </td>
+                </tr>
 
-            <!-- Item 3: Pages & Copies -->
-            <div
-              class="modal-bento-card modal-bento-card--pages"
-              id="modalPagesRow"
-            >
-              <div class="modal-bento-card__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M3 4a1 1 0 011-1h8a1 1 0 011 1v1H3V4zm0 3h10v5a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"
-                  />
-                </svg>
-                <span>Pages &amp; Copies</span>
-              </div>
-              <div class="modal-bento-card__value">
-                <span id="modalPages">—</span>
-                <span class="modal-bento-subvalue" id="modalCopiesRow"
-                  >(<strong id="modalCopies">1</strong> copy)</span
-                >
-              </div>
-            </div>
-
-            <!-- Item 4: Paper & Layout -->
-            <div
-              class="modal-bento-card modal-bento-card--paper"
-              id="modalPaperRow"
-            >
-              <div class="modal-bento-card__label">
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <rect
-                    x="3"
-                    y="1"
-                    width="10"
-                    height="14"
-                    rx="1"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                  />
-                </svg>
-                <span>Paper &amp; Layout</span>
-              </div>
-              <div class="modal-bento-card__value">
-                <span id="modalPaper">A4</span>
-                <span class="modal-bento-subvalue" id="modalOrientationRow"
-                  >• <span id="modalOrientation">Portrait</span></span
-                >
-                <span class="modal-bento-subvalue" id="modalRotationRow" hidden
-                  >(<span id="modalRotation">0°</span>)</span
-                >
-              </div>
-            </div>
+                <!-- Row 4: Paper & Layout -->
+                <tr id="modalPaperRow" class="modal-details-row">
+                  <th scope="row" class="modal-details-label">
+                    <div class="modal-details-label__inner">
+                      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                        <rect
+                          x="3"
+                          y="1"
+                          width="10"
+                          height="14"
+                          rx="1"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.5"
+                        />
+                      </svg>
+                      <span>Paper &amp; Layout</span>
+                    </div>
+                  </th>
+                  <td class="modal-details-value">
+                    <span id="modalPaper">A4</span>
+                    <span class="modal-details-subvalue" id="modalOrientationRow"
+                      >• <span id="modalOrientation">Portrait</span></span
+                    >
+                    <span class="modal-details-subvalue" id="modalRotationRow" hidden
+                      >(<span id="modalRotation">0°</span>)</span
+                    >
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <!-- Financial Breakdown Bar (3-Column Strip) -->

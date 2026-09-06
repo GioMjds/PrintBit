@@ -1,17 +1,26 @@
 const persistAndEmitPrintLifecycleState = jest.fn();
 const getSpoolerLifecycleRecord = jest.fn();
+const getRecoverySession = jest.fn();
+const appendUsageEvent = jest.fn();
 
 jest.mock('../../src/services', () => ({
   checkpointRecoverySession: jest.fn(),
-  getRecoverySession: jest.fn(() => ({
-    mode: 'print',
-    requiredAmount: 10,
-    sessionId: 'session-paper-out',
-    documentId: 'document-paper-out',
-    context: {},
-  })),
+  getRecoverySession,
   getSpoolerLifecycleRecord,
   persistAndEmitPrintLifecycleState,
+}));
+
+jest.mock('../../src/core/database/sqlite-storage', () => ({
+  ADMIN_TEST_PAGE_USAGE_SOURCE: 'admin-test-page',
+  consumablesStore: { appendUsageEvent },
+}));
+
+jest.mock('../../src/services/consumable-estimator', () => ({
+  estimateInkUsageByJob: jest.fn(() => ({ k: 0.015 })),
+}));
+
+jest.mock('../../src/modules/admin/consumables.service', () => ({
+  evaluateConsumablesForecastAlerts: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../src/modules/receipt/receipt.service', () => ({
@@ -43,6 +52,15 @@ describe('worker PrinterError lifecycle', () => {
   beforeEach(() => {
     persistAndEmitPrintLifecycleState.mockClear();
     getSpoolerLifecycleRecord.mockReset();
+    appendUsageEvent.mockClear();
+    getRecoverySession.mockReset();
+    getRecoverySession.mockReturnValue({
+      mode: 'print',
+      requiredAmount: 10,
+      sessionId: 'session-paper-out',
+      documentId: 'document-paper-out',
+      context: {},
+    });
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
@@ -191,5 +209,118 @@ describe('worker PrinterError lifecycle', () => {
     });
 
     expect(persistAndEmitPrintLifecycleState).toHaveBeenCalledTimes(1);
+  });
+
+  test('records one grayscale admin test page only after print success', async () => {
+    getRecoverySession.mockReturnValue({
+      mode: 'print',
+      requiredAmount: 0,
+      sessionId: null,
+      documentId: null,
+      context: {
+        adminTestPrint: true,
+        copies: 1,
+        selectedPages: 1,
+        billableColorPages: 0,
+        billableBwPages: 1,
+      },
+    });
+
+    await handleWorkerReturnPrintEvent({
+      evt: {
+        type: 'PrintStarted',
+        transactionId: 'tx-admin-test',
+        spoolerCorrelationKey: 'spool-admin-test',
+        printerName: 'EPSON L5290 Series',
+        timestampUtc: '2026-09-06T01:00:00.000Z',
+      },
+      io: {} as never,
+      sessionStore: {} as never,
+    });
+
+    expect(appendUsageEvent).not.toHaveBeenCalled();
+
+    await handleWorkerReturnPrintEvent({
+      evt: {
+        type: 'PrintSucceeded',
+        transactionId: 'tx-admin-test',
+        spoolerCorrelationKey: 'spool-admin-test',
+        printerName: 'EPSON L5290 Series',
+        timestampUtc: '2026-09-06T01:00:01.000Z',
+      },
+      io: {} as never,
+      sessionStore: {} as never,
+    });
+
+    expect(appendUsageEvent).toHaveBeenCalledTimes(1);
+    expect(appendUsageEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transactionId: 'tx-admin-test',
+        billableColorPages: 0,
+        billableBwPages: 1,
+        source: 'admin-test-page',
+      }),
+    );
+  });
+
+  test('does not record an admin test page after a print failure', async () => {
+    getRecoverySession.mockReturnValue({
+      mode: 'print',
+      requiredAmount: 0,
+      sessionId: null,
+      documentId: null,
+      context: { adminTestPrint: true },
+    });
+
+    await handleWorkerReturnPrintEvent({
+      evt: {
+        type: 'PrintFailed',
+        transactionId: 'tx-admin-test-failed',
+        spoolerCorrelationKey: 'spool-admin-test-failed',
+        printerName: 'EPSON L5290 Series',
+        failureStage: 'spooler',
+        message: 'Test page did not print.',
+        timestampUtc: '2026-09-06T01:00:02.000Z',
+      },
+      io: {} as never,
+      sessionStore: {} as never,
+    });
+
+    expect(appendUsageEvent).not.toHaveBeenCalled();
+  });
+
+  test('uses an idempotent usage id for repeated admin test success events', async () => {
+    getRecoverySession.mockReturnValue({
+      mode: 'print',
+      requiredAmount: 0,
+      sessionId: null,
+      documentId: null,
+      context: {
+        adminTestPrint: true,
+        copies: 1,
+        selectedPages: 1,
+        billableColorPages: 0,
+        billableBwPages: 1,
+      },
+    });
+    const successEvent = {
+      evt: {
+        type: 'PrintSucceeded' as const,
+        transactionId: 'tx-admin-test-repeat',
+        spoolerCorrelationKey: 'spool-admin-test-repeat',
+        printerName: 'EPSON L5290 Series',
+        timestampUtc: '2026-09-06T01:00:03.000Z',
+      },
+      io: {} as never,
+      sessionStore: {} as never,
+    };
+
+    await handleWorkerReturnPrintEvent(successEvent);
+    await handleWorkerReturnPrintEvent(successEvent);
+
+    expect(appendUsageEvent).toHaveBeenCalledTimes(2);
+    expect(appendUsageEvent.mock.calls[0][0].id).toBe(
+      appendUsageEvent.mock.calls[1][0].id,
+    );
   });
 });

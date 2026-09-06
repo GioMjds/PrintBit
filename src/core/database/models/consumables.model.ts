@@ -67,6 +67,8 @@ export interface InkRefillBaseline {
   updatedAt: string | null;
 }
 
+export const ADMIN_TEST_PAGE_USAGE_SOURCE = 'admin-test-page';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CONSUMABLE_TELEMETRY_RETENTION_DAYS = parsePositiveIntEnv(
   process.env.PRINTBIT_CONSUMABLE_TELEMETRY_RETENTION_DAYS,
@@ -165,6 +167,28 @@ export class ConsumablesSqliteStore {
     return rows.map((row) => this.toUsageEventEntry(row));
   }
 
+  sumUsagePagesBySource(
+    source: string,
+    sinceTimestamp?: string,
+  ): { colorPages: number; bwPages: number } {
+    const row = getSqliteDb()
+      .prepare(
+        `SELECT
+          SUM(COALESCE(billable_color_pages, 0)) AS color_sum,
+          SUM(COALESCE(billable_bw_pages, 0)) AS bw_sum
+         FROM consumable_usage_events
+         WHERE source = ?${sinceTimestamp ? ' AND timestamp >= ?' : ''}`,
+      )
+      .get(...(sinceTimestamp ? [source, sinceTimestamp] : [source])) as
+      | Record<string, unknown>
+      | undefined;
+
+    return {
+      colorPages: Number(row?.color_sum ?? 0),
+      bwPages: Number(row?.bw_sum ?? 0),
+    };
+  }
+
   appendInkSnapshot(entry: ConsumableInkSnapshotEntry): void {
     getSqliteDb()
       .prepare(
@@ -246,9 +270,10 @@ export class ConsumablesSqliteStore {
     ).toISOString();
     try {
       const db = getSqliteDb();
-      db.prepare('DELETE FROM consumable_usage_events WHERE timestamp < ?').run(
-        cutoffIso,
-      );
+      db.prepare(
+        `DELETE FROM consumable_usage_events
+         WHERE timestamp < ? AND source <> ?`,
+      ).run(cutoffIso, ADMIN_TEST_PAGE_USAGE_SOURCE);
       db.prepare(
         'DELETE FROM consumable_ink_snapshots WHERE timestamp < ?',
       ).run(cutoffIso);
