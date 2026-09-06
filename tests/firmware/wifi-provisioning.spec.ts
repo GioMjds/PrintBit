@@ -25,6 +25,12 @@ describe('ESP32 Wi-Fi provisioning contract', () => {
     );
   });
 
+  test('redirects every otherwise-unhandled GET request to the registered kiosk portal', () => {
+    expect(firmware).toContain(
+      'if (method == "GET") {\n    replyRedirect(client, kioskPortalUrl);',
+    );
+  });
+
   test('provides an explicit factory-reset command', () => {
     expect(firmware).toContain('WIFI_FACTORY_RESET');
     expect(firmware).toContain('wifiManager.resetSettings()');

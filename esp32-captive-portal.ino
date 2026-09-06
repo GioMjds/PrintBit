@@ -884,6 +884,15 @@ void handleWifiRequest(NetworkClient& client) {
     startDispense(coins, buildHopperRequestId(), "legacy_query");
   }
 
+  // Captive-network detectors vary by device and OS. Redirect every remaining
+  // GET request (including a user browsing to the AP gateway) so an unknown
+  // probe cannot strand the customer on the ESP32's plain-text response.
+  if (method == "GET") {
+    replyRedirect(client, kioskPortalUrl);
+    client.stop();
+    return;
+  }
+
   replyPlain(client, 200, "OK", "PRINTBIT OK");
   client.stop();
 }
