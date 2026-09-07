@@ -110,6 +110,32 @@ describe('PrinterStateProjection', () => {
       expect(printerStateProjection.isReady()).toBe(false);
     });
 
+    it('returns to ready when the worker reports that a hardware error cleared', () => {
+      printerStateProjection.applyEvent({
+        type: 'PrinterStatusSnapshot',
+        printerName: 'EPSON L5290 Series',
+        timestampUtc: '2026-09-02T12:00:00.000Z',
+      });
+      printerStateProjection.applyEvent({
+        type: 'PrinterError',
+        printerName: 'EPSON L5290 Series',
+        errorMessage: 'Transient WMI hardware error',
+        timestampUtc: '2026-09-02T12:01:00.000Z',
+      });
+      expect(printerStateProjection.isReady()).toBe(false);
+
+      printerStateProjection.applyEvent({
+        type: 'PrinterOnline',
+        printerName: 'EPSON L5290 Series',
+        message: 'Printer is online',
+        timestampUtc: '2026-09-02T12:01:02.000Z',
+      });
+
+      expect(printerStateProjection.isReady()).toBe(true);
+      expect(printerStateProjection.getSnapshot().status).toBe('ready');
+      expect(printerStateProjection.getSnapshot().error).toBeNull();
+    });
+
     it('handles PrintStarted and PrintProgress events', () => {
       printerStateProjection.applyEvent({
         type: 'PrinterStatusSnapshot',

@@ -785,7 +785,7 @@ async function renderFeedbackQr(): Promise<void> {
       margin: 1,
       color: { dark: '#000000', light: '#ffffff' },
     });
-    setFeedbackStatus('');
+    setFeedbackStatus('Use your phone camera to scan.');
   } catch {
     setFeedbackStatus('Could not generate QR code. Please try again.');
   }
@@ -834,7 +834,7 @@ async function renderReportQr(): Promise<void> {
       margin: 1,
       color: { dark: '#000000', light: '#ffffff' },
     });
-    setReportStatus('');
+    setReportStatus('Use your phone camera to scan.');
   } catch {
     setReportStatus('Could not generate QR code. Please try again.');
   }

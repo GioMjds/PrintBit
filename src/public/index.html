@@ -551,12 +551,18 @@
         aria-labelledby="reportModalTitle"
         aria-modal="true"
       >
+        <div class="report-modal__badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" />
+            <path d="M8 8h3v3H8zM13 13h3v3h-3z" />
+          </svg>
+        </div>
+        <p class="report-modal__eyebrow">Report an issue</p>
         <h3 class="report-modal__title" id="reportModalTitle">
-          Report an Issue
+          View your report on your phone
         </h3>
         <p class="report-modal__sub">
-          Scan with your phone to describe the problem and attach photos as
-          evidence.
+          Use your phone camera to scan and tell us what happened.
         </p>
         <div class="report-modal__qr-wrap" id="reportQrWrap">
           <canvas id="reportQrCanvas"></canvas>
@@ -606,11 +612,18 @@
         aria-labelledby="feedbackModalTitle"
         aria-modal="true"
       >
+        <div class="feedback-modal__badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.7 8.7 0 0 1-3.5-.7L4 20l1.7-3.7A7.3 7.3 0 0 1 4.5 12 7.5 7.5 0 0 1 12 4.5a7.5 7.5 0 0 1 8 7Z" />
+            <path d="M8 12h.01M12 12h.01M16 12h.01" stroke-linecap="round" />
+          </svg>
+        </div>
+        <p class="feedback-modal__eyebrow">Share feedback</p>
         <h3 class="feedback-modal__title" id="feedbackModalTitle">
-          Leave Feedback
+          Tell us how we did
         </h3>
         <p class="feedback-modal__sub">
-          Scan with your phone to share your experience or report an issue.
+          Use your phone camera to scan and share your experience.
         </p>
         <div class="feedback-modal__qr-wrap" id="feedbackQrWrap">
           <canvas id="feedbackQrCanvas"></canvas>

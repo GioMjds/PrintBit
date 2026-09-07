@@ -16,6 +16,10 @@ import {
   formatLargePrintDisclaimer,
   isLargePrintDocument,
 } from '../shared/large-print-warning';
+import {
+  buildColorDetectionEvidence,
+  buildOrientationDetectionEvidence,
+} from './detection-evidence';
 
 export {};
 
@@ -983,6 +987,33 @@ const rotateRightBtn = document.getElementById(
   'rotateRightBtn',
 ) as HTMLButtonElement | null;
 const rotationValue = document.getElementById('rotationValue');
+const colorDetectionEvidence = document.getElementById(
+  'colorDetectionEvidence',
+) as HTMLElement | null;
+const colorDetectionSummary = document.getElementById(
+  'colorDetectionSummary',
+) as HTMLElement | null;
+const colorDetectionMeter = document.getElementById(
+  'colorDetectionMeter',
+) as HTMLElement | null;
+const colorDetectionMeterFill = document.getElementById(
+  'colorDetectionMeterFill',
+) as HTMLElement | null;
+const colorDetectionCounts = document.getElementById(
+  'colorDetectionCounts',
+) as HTMLElement | null;
+const colorDetectionConfidence = document.getElementById(
+  'colorDetectionConfidence',
+) as HTMLElement | null;
+const orientationDetectionEvidence = document.getElementById(
+  'orientationDetectionEvidence',
+) as HTMLElement | null;
+const orientationDetectionSummary = document.getElementById(
+  'orientationDetectionSummary',
+) as HTMLElement | null;
+const orientationDetectionDetails = document.getElementById(
+  'orientationDetectionDetails',
+) as HTMLElement | null;
 
 const qualityRadios = document.querySelectorAll<HTMLInputElement>(
   'input[name="printQuality"]',
@@ -1067,6 +1098,58 @@ let analysisPendingQuoteRetryHandle: number | null = null;
 const QUOTE_409_RETRY_ATTEMPTS = 20;
 const QUOTE_409_RETRY_DELAY_MS = 500;
 const ANALYSIS_PENDING_QUOTE_RETRY_DELAY_MS = 2_000;
+
+const detectionConfidenceLabels: Record<
+  PrintQuote['analysisConfidence'],
+  string
+> = {
+  high: 'High-confidence page analysis',
+  medium: 'Review recommended — some pages used a fallback',
+  low: 'Lower-confidence analysis — review the preview',
+};
+
+function renderColorDetectionEvidence(): void {
+  if (!colorDetectionEvidence) return;
+
+  const quote = currentPrintQuote;
+  const shouldShow =
+    mode !== 'scan' && Boolean(quote) && !quoteLoading && !quoteError;
+  colorDetectionEvidence.hidden = !shouldShow;
+  if (!shouldShow || !quote) return;
+
+  const evidence = buildColorDetectionEvidence({
+    selectedColorPages: quote.selectedColorPages,
+    selectedBwPages: quote.selectedBwPages,
+    analysisConfidence: quote.analysisConfidence,
+  });
+  const pageLabel = evidence.selectedPages === 1 ? 'page' : 'pages';
+
+  if (colorDetectionSummary) {
+    colorDetectionSummary.textContent =
+      `Color detected on ${evidence.colorPercentage}% of selected ${pageLabel}`;
+  }
+  if (colorDetectionMeter) {
+    colorDetectionMeter.setAttribute(
+      'aria-valuenow',
+      String(evidence.colorPercentage),
+    );
+    colorDetectionMeter.setAttribute(
+      'aria-label',
+      `${evidence.colorPercentage}% of selected pages contain color`,
+    );
+  }
+  if (colorDetectionMeterFill) {
+    colorDetectionMeterFill.style.width = `${evidence.colorPercentage}%`;
+  }
+  if (colorDetectionCounts) {
+    colorDetectionCounts.textContent =
+      `${evidence.colorPages} Color · ${evidence.grayscalePages} Grayscale`;
+  }
+  if (colorDetectionConfidence) {
+    colorDetectionConfidence.textContent =
+      detectionConfidenceLabels[evidence.confidence];
+  }
+}
 
 function getPageRangeMaxPages(): number {
   return Math.max(1, preview.pageCount || 1);
@@ -1380,6 +1463,7 @@ function orientationDetectionKey(): string | null {
 
 function clearOrientationNotice(): void {
   document.querySelector('.orientation-detect-notice')?.remove();
+  if (orientationDetectionEvidence) orientationDetectionEvidence.hidden = true;
 }
 
 function syncOrientationDetectionContext(): string | null {
@@ -1393,23 +1477,32 @@ function syncOrientationDetectionContext(): string | null {
 }
 
 function showOrientationNotice(detected: Orientation): void {
-  const orientationGroup = document.querySelector<HTMLElement>(
-    '.option-group:has(input[name="orientation"])',
-  );
-  if (!orientationGroup) return;
+  if (!orientationDetectionEvidence) return;
 
-  let notice = orientationGroup.querySelector<HTMLElement>(
-    '.orientation-detect-notice',
-  );
-  if (!notice) {
-    notice = document.createElement('p');
-    notice.className = 'orientation-detect-notice';
-    orientationGroup.appendChild(notice);
+  const imageInfo = preview.imageInfo;
+  const evidence = imageInfo
+    ? buildOrientationDetectionEvidence(
+        detected,
+        imageInfo.naturalWidth,
+        imageInfo.naturalHeight,
+      )
+    : null;
+  if (!evidence) {
+    orientationDetectionEvidence.hidden = true;
+    return;
   }
 
-  const detectedLabel = detected === 'landscape' ? 'landscape' : 'portrait';
-  const oppositeLabel = detected === 'landscape' ? 'Portrait' : 'Landscape';
-  notice.textContent = `Auto-detected ${detectedLabel} orientation. Switch to ${oppositeLabel} if this looks wrong.`;
+  orientationDetectionEvidence.hidden = false;
+  if (orientationDetectionSummary) {
+    const detectedLabel = detected === 'landscape' ? 'Landscape' : 'Portrait';
+    orientationDetectionSummary.textContent = `${detectedLabel} detected`;
+  }
+  if (orientationDetectionDetails) {
+    orientationDetectionDetails.textContent =
+      `Based on preview: ${evidence.width.toLocaleString()} × ` +
+      `${evidence.height.toLocaleString()} px · ` +
+      `${evidence.aspectRatio.toFixed(2)}:1 aspect ratio`;
+  }
 }
 
 function applyImageOrientationDetection(): void {
@@ -1726,6 +1819,7 @@ function schedulePrintQuoteRefresh(): void {
 }
 
 function updateSummary(): void {
+  renderColorDetectionEvidence();
   if (largePrintDisclaimer) {
     const shouldShow =
       mode === 'print' && isLargePrintDocument(preview.pageCount);
@@ -2116,16 +2210,6 @@ async function applyColorAnalysis(
       grayRadio.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    const colorGroup = document.querySelector<HTMLElement>(
-      '.option-group:has(input[name="colorMode"])',
-    );
-    if (colorGroup && !colorGroup.querySelector('.color-lock-notice')) {
-      const notice = document.createElement('p');
-      notice.className = 'color-lock-notice';
-    notice.textContent =
-      'Auto-detected grayscale. Switch to Color if your file has color.';
-      colorGroup.appendChild(notice);
-    }
   } catch {
     detectedColorMode = null;
   }

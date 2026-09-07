@@ -375,6 +375,39 @@
               </div>
             </fieldset>
 
+            <aside
+              class="detection-evidence"
+              id="colorDetectionEvidence"
+              hidden
+              role="status"
+              aria-live="polite"
+            >
+              <div class="detection-evidence__eyebrow">Document check</div>
+              <div class="detection-evidence__summary" id="colorDetectionSummary">
+                Color analysis unavailable
+              </div>
+              <div
+                class="detection-evidence__meter"
+                role="progressbar"
+                aria-label="Color pages detected"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <span id="colorDetectionMeterFill"></span>
+              </div>
+              <div class="detection-evidence__counts" id="colorDetectionCounts"></div>
+              <div class="detection-evidence__confidence" id="colorDetectionConfidence"></div>
+              <details class="detection-evidence__details">
+                <summary>How is this detected?</summary>
+                <p>
+                  A page is marked Color when the analysis finds colored content
+                  or an embedded color image. This percentage describes pages,
+                  not the amount of ink on each page.
+                </p>
+              </details>
+            </aside>
+
             <fieldset
               class="option-group option-group--advanced"
               id="orientationGroup"
@@ -537,6 +570,33 @@
                 </button>
               </div>
             </fieldset>
+
+            <aside
+              class="detection-evidence detection-evidence--orientation"
+              id="orientationDetectionEvidence"
+              hidden
+              role="status"
+              aria-live="polite"
+            >
+              <div class="detection-evidence__eyebrow">Document check</div>
+              <div
+                class="detection-evidence__summary"
+                id="orientationDetectionSummary"
+              >
+                Orientation unavailable
+              </div>
+              <div
+                class="detection-evidence__counts"
+                id="orientationDetectionDetails"
+              ></div>
+              <details class="detection-evidence__details">
+                <summary>How is this detected?</summary>
+                <p>
+                  Orientation is estimated from the document preview dimensions.
+                  Switch the setting if the preview does not look right.
+                </p>
+              </details>
+            </aside>
 
             <fieldset
               class="option-group option-group--primary"

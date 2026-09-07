@@ -29,6 +29,29 @@ let currentPage = 1;
 let totalLogs = 0;
 let allLogs: LogsResponse['logs'] = [];
 
+export function inferLogBadge(type: string, message: string): { label: string; className: string } {
+  const normType = (type || '').toLowerCase();
+  const normMsg = (message || '').toLowerCase();
+
+  if (normType.includes('error') || normType.includes('fail') || normMsg.startsWith('[error]')) {
+    return { label: 'ERROR', className: 'log-badge--error' };
+  }
+  if (normType.includes('warn') || normMsg.startsWith('[warn]')) {
+    return { label: 'WARN', className: 'log-badge--warn' };
+  }
+  if (normType.includes('print') || normMsg.startsWith('[print]')) {
+    return { label: 'PRINT', className: 'log-badge--print' };
+  }
+  if (normType.includes('coin') || normType.includes('bill') || normType.includes('money') || normMsg.startsWith('[coin]')) {
+    return { label: 'COIN', className: 'log-badge--coin' };
+  }
+  if (normType.includes('info') || normMsg.startsWith('[info]')) {
+    return { label: 'INFO', className: 'log-badge--info' };
+  }
+  const label = normType ? normType.toUpperCase() : 'SYSTEM';
+  return { label, className: 'log-badge--system' };
+}
+
 function setOpenAlertBadge(openCount: number): void {
   const value = openCount > 0 ? String(openCount) : '';
   if (openAlertBadge) openAlertBadge.textContent = value;
@@ -58,17 +81,24 @@ function applyLogs(logs: LogsResponse['logs']): void {
 
   if (logs.length === 0) {
     const tr = document.createElement('tr');
+    tr.className = 'logs-empty';
     tr.innerHTML = `<td colspan="2" style="text-align:center;color:var(--ink-muted);padding:24px">No system log entries.</td>`;
     logsBody.appendChild(tr);
     return;
   }
 
   for (const log of logs) {
+    const badge = inferLogBadge(log.type, log.message);
     const tr = document.createElement('tr');
     tr.dataset.logId = log.id;
     tr.innerHTML = `
       <td class="logs-td logs-td--ts" data-label="Timestamp">${new Date(log.timestamp).toLocaleString()}</td>
-      <td class="logs-td logs-td--msg" data-label="Message">${escapeHtml(log.message)}</td>
+      <td class="logs-td logs-td--msg" data-label="Message">
+        <div class="logs-msg-wrap">
+          <span class="log-badge ${badge.className}">${escapeHtml(badge.label)}</span>
+          <span class="logs-msg-text">${escapeHtml(log.message)}</span>
+        </div>
+      </td>
     `;
     logsBody.appendChild(tr);
   }
@@ -183,4 +213,3 @@ initAuth(async () => {
     10_000,
   );
 });
-

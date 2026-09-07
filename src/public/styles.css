@@ -951,6 +951,34 @@ body {
   margin: 0;
 }
 
+.report-modal__badge,
+.feedback-modal__badge {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: var(--peach);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.report-modal__badge svg,
+.feedback-modal__badge svg {
+  width: 26px;
+  height: 26px;
+}
+
+.report-modal__eyebrow,
+.feedback-modal__eyebrow {
+  margin: 0 -4px -8px;
+  color: var(--peach);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .report-modal__sub {
   font-size: 14px;
   color: var(--ink-muted);
@@ -961,7 +989,8 @@ body {
 .report-modal__qr-wrap {
   background: #fff;
   border-radius: 16px;
-  padding: 16px;
+  padding: 18px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1074,7 +1103,8 @@ body {
 .feedback-modal__qr-wrap {
   background: #fff;
   border-radius: 16px;
-  padding: 16px;
+  padding: 18px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
