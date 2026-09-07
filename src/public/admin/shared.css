@@ -747,3 +747,75 @@ html.admin-session-active #adminDashboard.hidden {
     display: none !important;
   }
 }
+
+/* PWA Offline Banner & Install UI */
+#adminOfflineBanner {
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#adminOfflineBanner.hidden {
+  display: none !important;
+}
+
+body.kiosk-offline .btn-action,
+body.kiosk-offline button[data-mutation="true"],
+body.kiosk-offline .btn-danger,
+body.kiosk-offline .action-btn {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.btn-pwa-install {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(79, 70, 229, 0.15);
+  border: 1px solid rgba(79, 70, 229, 0.4);
+  color: #a5b4fc;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-pwa-install:hover {
+  background: rgba(79, 70, 229, 0.3);
+  color: #ffffff;
+  border-color: #6366f1;
+}
+
+.btn-pwa-install.hidden {
+  display: none !important;
+}
+
+#pwaUpdateToast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10000;
+  background: #1e1b4b;
+  border: 1px solid #4338ca;
+  color: #e0e7ff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.88rem;
+}

@@ -1,0 +1,74 @@
+{
+  "name": "PrintBit Admin",
+  "short_name": "PB Admin",
+  "description": "Self-service kiosk administration, telemetry, and hardware diagnostics portal.",
+  "start_url": "/admin/dashboard",
+  "scope": "/admin/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0a1a",
+  "theme_color": "#111827",
+  "categories": ["utilities", "productivity", "business"],
+  "icons": [
+    {
+      "src": "/admin/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/admin/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/admin/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Overview",
+      "url": "/admin/dashboard",
+      "icons": [
+        {
+          "src": "/admin/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Earnings",
+      "url": "/admin/earnings",
+      "icons": [
+        {
+          "src": "/admin/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "System Status",
+      "url": "/admin/system",
+      "icons": [
+        {
+          "src": "/admin/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Alerts",
+      "url": "/admin/alerts",
+      "icons": [
+        {
+          "src": "/admin/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

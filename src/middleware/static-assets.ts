@@ -32,6 +32,20 @@ export function registerStaticAssets(app: Express) {
       },
     ),
   );
+  // Dedicated PWA route headers for service worker and manifest
+  app.get('/admin/sw.js', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Service-Worker-Allowed', '/admin/');
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    next();
+  });
+
+  app.get('/admin/manifest.webmanifest', (_req, res, next) => {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    next();
+  });
+
   app.use(express.static(path.resolve('src', 'public')));
   app.use(express.static(path.resolve('dist', 'public')));
 }

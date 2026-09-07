@@ -556,6 +556,9 @@ export function initAuth(arg: InitAuthArg): () => void {
     showDashboard(true);
   }
 
+  // Initialize PWA features (service worker, offline banner, install trigger)
+  initPWA();
+
   // On startup, check for an existing valid session (httpOnly cookie sent
   // automatically) and show the dashboard immediately if authenticated.
   void ensureAuth()
@@ -574,4 +577,124 @@ export function initAuth(arg: InitAuthArg): () => void {
 
   // Return no-op cleanup (pages manage their own timers)
   return () => {};
+}
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+};
+
+interface NavigatorWithStandalone extends Navigator {
+  standalone?: boolean;
+}
+
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
+
+export function initPWA(): void {
+  if (typeof window === 'undefined') return;
+
+  // 1. Offline banner management
+  let banner = document.getElementById('adminOfflineBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'adminOfflineBanner';
+    banner.className = 'hidden';
+    banner.innerHTML =
+      '<span>⚠️ You are currently offline. Real-time telemetry and hardware controls are paused.</span>';
+    document.body.prepend(banner);
+  }
+
+  const updateOnlineStatus = () => {
+    const isOffline = !navigator.onLine;
+    document.body.classList.toggle('kiosk-offline', isOffline);
+    banner?.classList.toggle('hidden', !isOffline);
+  };
+
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
+
+  // 2. Service Worker Registration
+  if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+    navigator.serviceWorker
+      .register('/admin/sw.js', { scope: '/admin/' })
+      .then((reg) => {
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateToast(newWorker);
+            }
+          });
+        });
+      })
+      .catch((err) => console.warn('[PWA] SW registration failed:', err));
+  }
+
+  // 3. In-App Install Prompt
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as NavigatorWithStandalone).standalone === true;
+
+  if (!isStandalone) {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e as BeforeInstallPromptEvent;
+      showInstallButton();
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredPrompt = null;
+      removeInstallButton();
+    });
+  }
+}
+
+function showInstallButton(): void {
+  if (document.getElementById('pwaInstallBtn')) return;
+  const actionsContainer = document.querySelector(
+    '.topbar__actions, .admin-header__actions, nav, .topbar',
+  );
+  if (!actionsContainer) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'pwaInstallBtn';
+  btn.type = 'button';
+  btn.className = 'btn-pwa-install';
+  btn.innerHTML = '<span>📲 Install App</span>';
+  btn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try {
+      const choice = await deferredPrompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        removeInstallButton();
+      }
+    } catch {
+      // Ignore user choice errors
+    }
+    deferredPrompt = null;
+  });
+  actionsContainer.prepend(btn);
+}
+
+function removeInstallButton(): void {
+  const btn = document.getElementById('pwaInstallBtn');
+  btn?.remove();
+}
+
+function showUpdateToast(worker: ServiceWorker): void {
+  if (document.getElementById('pwaUpdateToast')) return;
+  const toast = document.createElement('div');
+  toast.id = 'pwaUpdateToast';
+  toast.innerHTML = `
+    <span>A newer version of PB Admin is available.</span>
+    <button type="button" class="btn-pwa-install" id="pwaReloadBtn">Reload</button>
+  `;
+  document.body.appendChild(toast);
+  document.getElementById('pwaReloadBtn')?.addEventListener('click', () => {
+    worker.postMessage({ type: 'SKIP_WAITING' });
+    window.location.reload();
+  });
 }

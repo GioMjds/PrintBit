@@ -69,9 +69,22 @@ const entryPoints = [
   { in: 'src/public/admin/alerts/app.ts', out: 'src/public/admin/alerts/app.js' },
 ];
 
+function ensurePwaIcons() {
+  const iconPath = path.resolve('src', 'public', 'admin', 'icons', 'icon-192x192.png');
+  if (!fs.existsSync(iconPath)) {
+    console.log('PWA icons missing, generating PWA icons...');
+    try {
+      require('./generate-pwa-icons');
+    } catch (err) {
+      console.warn(`Could not generate PWA icons: ${err.message}`);
+    }
+  }
+}
+
 try {
   copyFlatpickrCss();
   copyDotLottieWasm();
+  ensurePwaIcons();
   for (const entry of entryPoints) {
     console.log(`Building: ${entry.in} -> ${entry.out}`);
     esbuild.buildSync({
