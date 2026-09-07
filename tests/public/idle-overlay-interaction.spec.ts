@@ -56,6 +56,8 @@ type WindowShim = {
   clearInterval: typeof clearInterval;
 };
 
+type IntervalCallback = () => void;
+
 type GlobalBrowserShims = {
   document?: unknown;
   window?: unknown;
@@ -82,11 +84,17 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function installBrowserShims(document: FakeDocument): void {
+function installBrowserShims(document: FakeDocument): {
+  runLatestInterval: () => void;
+} {
+  let latestIntervalCallback: IntervalCallback | undefined;
   const windowShim: WindowShim = {
     setTimeout: jest.fn(() => 1) as unknown as typeof setTimeout,
     clearTimeout: jest.fn(),
-    setInterval: jest.fn(() => 1) as unknown as typeof setInterval,
+    setInterval: jest.fn((callback: IntervalCallback) => {
+      latestIntervalCallback = callback;
+      return 1;
+    }) as unknown as typeof setInterval,
     clearInterval: jest.fn(),
   };
 
@@ -96,6 +104,10 @@ function installBrowserShims(document: FakeDocument): void {
     ok: true,
     json: async () => ({ idleTimeoutSeconds: 120 }),
   }) as unknown as typeof fetch;
+
+  return {
+    runLatestInterval: () => latestIntervalCallback?.(),
+  };
 }
 
 test('idle attractor consumes pointer and click activation events', async () => {
@@ -137,4 +149,30 @@ test('idle timeout warning consumes activation events before dismissing', async 
 
   expect(pointerDown.defaultPrevented).toBe(true);
   expect(click.defaultPrevented).toBe(true);
+});
+
+test('idle timeout defers cleanup while a confirmation job is active', async () => {
+  const modal = new FakeElement();
+  const countdown = new FakeElement();
+  const document = new FakeDocument({
+    idleWarningModal: modal,
+    idleCountdown: countdown,
+  });
+  const { runLatestInterval } = installBrowserShims(document);
+  const onTimeout = jest.fn();
+  const now = jest.spyOn(Date, 'now');
+  now.mockReturnValueOnce(0).mockReturnValue(121_000);
+
+  await initializePageIdleTimeout({
+    showWarningModal: true,
+    deferWhile: () => true,
+    onTimeout,
+  });
+  runLatestInterval();
+  await Promise.resolve();
+
+  expect(getPageIdleState().warningShownAt).toBeNull();
+  expect(modal.style.display).not.toBe('flex');
+  expect(onTimeout).not.toHaveBeenCalled();
+  now.mockRestore();
 });

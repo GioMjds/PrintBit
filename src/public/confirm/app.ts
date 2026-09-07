@@ -37,6 +37,10 @@ void loadHotspotConfig();
 void setupPageIdleWarningButton();
 void initializePageIdleTimeout({
   showWarningModal: true,
+  // A paid or queued job must stay visible until the worker reports a terminal
+  // result. Resume a full normal idle period after that result instead of
+  // cancelling the customer's active work in the background.
+  deferWhile: () => hasActiveJob(),
   onTimeout: async () => {
     console.log(
       '[PAGE IDLE] Confirm page timeout reached, redirecting to home',

@@ -19,6 +19,11 @@ export interface IdleTimeoutConfig {
   modalId?: string;
   countdownId?: string;
   buttonId?: string;
+  /**
+   * Defers the idle countdown while customer work is in progress. Once it
+   * returns false, the customer receives a fresh full idle period.
+   */
+  deferWhile?: () => boolean;
   onTimeout?: () => Promise<void> | void;
   onWarningShown?: () => void;
   onWarningHidden?: () => void;
@@ -132,6 +137,15 @@ export function startPageIdleTimer(): void {
     if (!pageIdleState.enabled || pageIdleState.startedAtMs === null) return;
 
     const currentNow = Date.now();
+    if (idleConfig.deferWhile?.()) {
+      pageIdleState.startedAtMs = currentNow;
+      pageIdleState.elapsedSeconds = 0;
+      if (pageIdleState.warningShownAt !== null) {
+        pageIdleState.warningShownAt = null;
+        hidePageIdleWarning();
+      }
+      return;
+    }
     const elapsed = Math.max(
       0,
       (currentNow - pageIdleState.startedAtMs) / 1000,
