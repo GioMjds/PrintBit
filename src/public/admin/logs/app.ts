@@ -16,12 +16,6 @@ const clearLogsBtn = document.getElementById('clearLogsBtn') as HTMLButtonElemen
 const prevPageBtn = document.getElementById('prevPageBtn') as HTMLButtonElement;
 const nextPageBtn = document.getElementById('nextPageBtn') as HTMLButtonElement;
 const pageInfo = document.getElementById('pageInfo') as HTMLElement;
-const openAlertBadge = document.getElementById(
-  'openAlertBadge',
-) as HTMLElement | null;
-const openAlertBadgeMob = document.getElementById(
-  'openAlertBadgeMob',
-) as HTMLElement | null;
 
 const PAGE_SIZE = 20;
 let refreshTimer: number | null = null;
@@ -52,11 +46,6 @@ export function inferLogBadge(type: string, message: string): { label: string; c
   return { label, className: 'log-badge--system' };
 }
 
-function setOpenAlertBadge(openCount: number): void {
-  const value = openCount > 0 ? String(openCount) : '';
-  if (openAlertBadge) openAlertBadge.textContent = value;
-  if (openAlertBadgeMob) openAlertBadgeMob.textContent = value;
-}
 
 function totalPages(): number {
   return Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
@@ -205,8 +194,9 @@ function showRefreshError(error: unknown): void {
   );
 }
 
-initAuth(async () => {
+initAuth(async (signal) => {
   await loadData();
+  if (signal.aborted) return;
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(
     () => void loadData().catch(showRefreshError),

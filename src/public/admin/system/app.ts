@@ -649,9 +649,11 @@ function showRefreshError(error: unknown): void {
   );
 }
 
-initAuth(async () => {
+initAuth(async (signal) => {
   await loadData();
+  if (signal.aborted) return;
   await loadPrinterSelection();
+  if (signal.aborted) return;
   connectSocket();
 
   if (refreshTimer !== null) window.clearInterval(refreshTimer);

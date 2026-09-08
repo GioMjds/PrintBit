@@ -302,6 +302,7 @@ export type EarningsAnalyticsResponse = {
 
 const PIN_KEY = 'printbit.adminPin';
 const TOKEN_KEY = 'adminSessionToken';
+const SESSION_HINT_KEY = 'printbit.adminSessionActive';
 
 export function getAdminPin(): string {
   return sessionStorage.getItem(PIN_KEY) ?? '';
@@ -325,6 +326,18 @@ export function setAdminToken(token: string): void {
 
 export function clearAdminToken(): void {
   sessionStorage.removeItem(TOKEN_KEY);
+}
+
+function setAdminSessionHint(active: boolean): void {
+  if (active) {
+    sessionStorage.setItem(SESSION_HINT_KEY, '1');
+    return;
+  }
+  sessionStorage.removeItem(SESSION_HINT_KEY);
+}
+
+function hasAdminSessionHint(): boolean {
+  return sessionStorage.getItem(SESSION_HINT_KEY) === '1' || Boolean(getAdminToken());
 }
 
 // ── Utilities ────────────────────────────────────────────────────
@@ -432,7 +445,7 @@ export function updateSidebarBadges(summary: SummaryResponse): void {
 }
 
 export type InitAuthOptions = {
-  onSuccess: () => void | Promise<void>;
+  onSuccess: (signal: AbortSignal) => void | Promise<void>;
   formId?: string;
   errorId?: string;
   viewId?: string;
@@ -440,7 +453,9 @@ export type InitAuthOptions = {
   logoutId?: string;
 };
 
-export type InitAuthArg = (() => void | Promise<void>) | InitAuthOptions;
+export type InitAuthArg =
+  | ((signal: AbortSignal) => void | Promise<void>)
+  | InitAuthOptions;
 
 /**
  * Initialises the auth gate UI. Call once from each admin sub-page.
@@ -469,6 +484,26 @@ export function initAuth(arg: InitAuthArg): () => void {
   const logoutBtn = document.getElementById(
     options.logoutId ?? 'logoutBtn',
   ) as HTMLButtonElement | null;
+  let authOperation = 0;
+  let initializationController = new AbortController();
+
+  function beginAuthOperation(): {
+    operation: number;
+    signal: AbortSignal;
+  } {
+    initializationController.abort();
+    initializationController = new AbortController();
+    authOperation += 1;
+    return {
+      operation: authOperation,
+      signal: initializationController.signal,
+    };
+  }
+
+  function invalidateAuthOperation(): void {
+    authOperation += 1;
+    initializationController.abort();
+  }
 
   function showDashboard(visible: boolean): void {
     if (visible) {
@@ -480,40 +515,51 @@ export function initAuth(arg: InitAuthArg): () => void {
     if (dashboard) dashboard.classList.toggle('hidden', !visible);
   }
 
-  async function unlock(pin: string): Promise<void> {
-    const response = await fetch('/api/admin/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ pin }),
-    });
-    if (!response.ok) {
-      let errorMessage = 'Invalid admin PIN.';
-      try {
-        const errorBody = (await response.json()) as unknown;
-        if (
-          errorBody &&
-          typeof errorBody === 'object' &&
-          'error' in errorBody &&
-          typeof (errorBody as { error: unknown }).error === 'string' &&
-          (errorBody as { error: string }).error.trim()
-        ) {
-          errorMessage = (errorBody as { error: string }).error;
+  async function unlock(pin: string): Promise<boolean> {
+    const { operation, signal } = beginAuthOperation();
+    try {
+      const response = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pin }),
+      });
+      if (operation !== authOperation) return false;
+      if (!response.ok) {
+        let errorMessage = 'Invalid admin PIN.';
+        try {
+          const errorBody = (await response.json()) as unknown;
+          if (
+            errorBody &&
+            typeof errorBody === 'object' &&
+            'error' in errorBody &&
+            typeof (errorBody as { error: unknown }).error === 'string' &&
+            (errorBody as { error: string }).error.trim()
+          ) {
+            errorMessage = (errorBody as { error: string }).error;
+          }
+        } catch {
+          // Ignore JSON parse errors and fall back to default message
         }
-      } catch {
-        // Ignore JSON parse errors and fall back to default message
+        throw new Error(errorMessage);
       }
-      throw new Error(errorMessage);
+
+      const data = (await response.json()) as {
+        ok: boolean;
+        sessionToken?: string;
+      };
+      if (operation !== authOperation) return false;
+      if (data.sessionToken) setAdminToken(data.sessionToken);
+      setAdminSessionHint(true);
+
+      showDashboard(true);
+      await options.onSuccess(signal);
+      if (operation !== authOperation || signal.aborted) return false;
+      return true;
+    } catch (error) {
+      if (operation !== authOperation) return false;
+      throw error;
     }
-
-    const data = (await response.json()) as {
-      ok: boolean;
-      sessionToken?: string;
-    };
-    if (data.sessionToken) setAdminToken(data.sessionToken);
-
-    showDashboard(true);
-    await options.onSuccess();
   }
 
   if (authForm && pinInput) {
@@ -526,7 +572,9 @@ export function initAuth(arg: InitAuthArg): () => void {
       }
       setMessage('Unlocking admin panel...');
       void unlock(pin)
-        .then(() => setMessage('Admin panel unlocked.'))
+        .then((authenticated) => {
+          if (authenticated) setMessage('Admin panel unlocked.');
+        })
         .catch((err: unknown) => {
           const msg =
             err instanceof Error ? err.message : 'Failed to unlock admin panel.';
@@ -538,21 +586,22 @@ export function initAuth(arg: InitAuthArg): () => void {
 
   if (logoutBtn) {
     logoutBtn.addEventListener('click', () => {
+      invalidateAuthOperation();
       const token = getAdminToken();
+      clearAdminToken();
+      setAdminSessionHint(false);
+      showDashboard(false);
+      setMessage('Admin panel locked.');
       void fetch('/api/admin/logout', {
         method: 'POST',
         headers: { 'x-admin-token': token },
         credentials: 'include',
-      }).finally(() => {
-        clearAdminToken();
-        showDashboard(false);
-        setMessage('Admin panel locked.');
-      });
+      }).catch(() => undefined);
     });
   }
 
-  // Pre-unhide dashboard if an active session token exists in sessionStorage
-  if (getAdminToken()) {
+  // Pre-unhide dashboard if this tab recently held a verified admin session.
+  if (hasAdminSessionHint()) {
     showDashboard(true);
   }
 
@@ -561,22 +610,43 @@ export function initAuth(arg: InitAuthArg): () => void {
 
   // On startup, check for an existing valid session (httpOnly cookie sent
   // automatically) and show the dashboard immediately if authenticated.
+  const startupOperation = authOperation;
+  const startupSignal = initializationController.signal;
   void ensureAuth()
-    .then((authenticated) => {
+    .then(async (authenticated) => {
+      if (startupOperation !== authOperation) return;
       if (authenticated) {
+        setAdminSessionHint(true);
         showDashboard(true);
-        return options.onSuccess();
+        await options.onSuccess(startupSignal);
+        return;
       }
       clearAdminToken();
+      setAdminSessionHint(false);
       showDashboard(false);
     })
     .catch(() => {
+      if (startupOperation !== authOperation) return;
       clearAdminToken();
+      setAdminSessionHint(false);
       showDashboard(false);
     });
 
-  // Return no-op cleanup (pages manage their own timers)
-  return () => {};
+  const handlePageShow = (event: PageTransitionEvent): void => {
+    if (!event.persisted) return;
+
+    invalidateAuthOperation();
+    if (!hasAdminSessionHint()) {
+      clearAdminToken();
+      showDashboard(false);
+      return;
+    }
+
+    window.location.reload();
+  };
+  window.addEventListener('pageshow', handlePageShow);
+
+  return () => window.removeEventListener('pageshow', handlePageShow);
 }
 
 type BeforeInstallPromptEvent = Event & {

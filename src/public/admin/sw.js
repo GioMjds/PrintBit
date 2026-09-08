@@ -1,6 +1,6 @@
 // PrintBit Admin Service Worker
 // Scope: /admin/
-const CACHE_NAME = 'pb-admin-v1';
+const CACHE_NAME = 'pb-admin-v2';
 
 const PRECACHE_URLS = [
   '/admin/offline.html',

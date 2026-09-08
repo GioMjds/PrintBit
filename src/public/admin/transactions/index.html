@@ -7,19 +7,25 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>Transaction Logs · Admin · PrintBit</title>
+    <title>Transactions  · Admin · PrintBit</title>
     <link rel="manifest" href="/admin/manifest.webmanifest" />
     <meta name="theme-color" content="#111827" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
     <meta name="apple-mobile-web-app-title" content="PB Admin" />
     <link rel="apple-touch-icon" href="/admin/icons/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/admin/icons/favicon.svg" />
     <link rel="stylesheet" href="/globals.css" />
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/transactions/styles.css" />
-      <script>
-      if (sessionStorage.getItem('adminSessionToken')) {
+    <script>
+      if (
+        sessionStorage.getItem('printbit.adminSessionActive') ||
+        sessionStorage.getItem('adminSessionToken')
+      ) {
         document.documentElement.classList.add('admin-session-active');
       }
     </script>
@@ -245,7 +251,7 @@
                 clip-rule="evenodd"
               />
             </svg>
-            <span>System Logs</span>
+            <span>Logs</span>
           </a>
           <a href="/admin/transactions" class="nav-btn nav-btn--active">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -253,7 +259,7 @@
                 d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
               />
             </svg>
-            <span>Transaction Logs</span>
+            <span>Transactions</span>
           </a>
           <a href="/admin/feedback" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -279,7 +285,12 @@
               />
             </svg>
             <span>Reports</span>
-            <span class="nav-count-badge" id="openReportBadge" aria-label="open reports count"></span></a>
+            <span
+              class="nav-count-badge"
+              id="openReportBadge"
+              aria-label="open reports count"
+            ></span
+          ></a>
           <a href="/admin/alerts" class="nav-btn">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
@@ -313,16 +324,20 @@
       <div class="main">
         <header class="topbar">
           <div class="topbar__left">
-            <h2 class="topbar__title">Transaction Logs</h2>
+            <h2 class="topbar__title">Transactions</h2>
+            <span class="tx-live-sync" id="syncStatusBadge" title="Live background synchronization active">
+              <span class="tx-live-sync__dot"></span>
+              <span>Live</span>
+            </span>
           </div>
           <div class="topbar__right">
             <p
               id="adminMessage"
               class="topbar__msg"
-              role="alert"
+              role="status"
               aria-live="polite"
             ></p>
-            <button id="refreshBtn" class="topbar-btn">
+            <button id="refreshBtn" class="topbar-btn" type="button">
               <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path
                   fill-rule="evenodd"
@@ -332,7 +347,7 @@
               </svg>
               <span>Refresh</span>
             </button>
-            <button id="exportLogsBtn" class="topbar-btn topbar-btn--accent">
+            <button id="exportLogsBtn" class="topbar-btn topbar-btn--accent" type="button">
               <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                 <path
                   fill-rule="evenodd"
@@ -342,129 +357,193 @@
               </svg>
               <span>Export Transaction CSV</span>
             </button>
-            <button id="clearLogsBtn" class="topbar-btn topbar-btn--danger">
-              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fill-rule="evenodd"
-                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-              <span>Clear Transaction Logs</span>
-            </button>
           </div>
         </header>
 
         <div class="content">
           <section class="page">
-            <section class="admin-page-hero">
-              <p class="admin-page-hero__kicker">Auditing</p>
-              <h3 class="admin-page-hero__title">
-                Print/Copy/Scan Transactions
-              </h3>
-              <p class="admin-page-hero__desc">
-                Filter transaction lifecycle events across print, copy, and scan
-                by ID, mode, date range, event type, and status.
-              </p>
-            </section>
-
-            <section class="tx-filters-panel">
-              <div class="tx-filters-grid">
-                <label class="tx-filter-field">
-                  <span>Transaction ID</span>
-                  <input
-                    id="transactionIdInput"
-                    class="tx-input"
-                    type="text"
-                    placeholder="e.g. tx-123..."
-                  />
-                </label>
-                <label class="tx-filter-field">
-                  <span>Mode</span>
-                  <select id="modeFilter" class="tx-select">
-                    <option value="">All</option>
-                    <option value="print">Print</option>
-                    <option value="copy">Copy</option>
-                    <option value="scan">Scan</option>
-                  </select>
-                </label>
-                <label class="tx-filter-field">
-                  <span>Status</span>
-                  <select id="statusFilter" class="tx-select">
-                    <option value="">All</option>
-                    <option value="created">Created</option>
-                    <option value="processing">Processing</option>
-                    <option value="completed">Completed</option>
-                    <option value="failed">Failed</option>
-                    <option value="refund">Refund</option>
-                  </select>
-                </label>
-                <label class="tx-filter-field">
-                  <span>Event type</span>
-                  <input
-                    id="eventTypeInput"
-                    class="tx-input"
-                    type="text"
-                    placeholder="Exact type (optional)"
-                  />
-                </label>
-                <label class="tx-filter-field">
-                  <span>Date from</span>
-                  <input
-                    id="dateFromInput"
-                    class="tx-input"
-                    type="datetime-local"
-                  />
-                </label>
-                <label class="tx-filter-field">
-                  <span>Date to</span>
-                  <input
-                    id="dateToInput"
-                    class="tx-input"
-                    type="datetime-local"
-                  />
-                </label>
+            <!-- Operational KPI Ribbon -->
+            <div class="tx-kpi-ribbon" role="region" aria-label="Transaction summary metrics">
+              <div class="tx-kpi-card">
+                <div class="tx-kpi-card__label">Total Transactions</div>
+                <div id="kpiTotalCount" class="tx-kpi-card__val">0</div>
+                <div class="tx-kpi-card__sub">Across all services</div>
               </div>
-              <div class="tx-filter-actions">
-                <button
-                  id="applyFiltersBtn"
-                  class="topbar-btn topbar-btn--accent"
-                >
-                  Apply Filters
-                </button>
-                <button id="clearFiltersBtn" class="topbar-btn">
-                  Reset Filters
-                </button>
+              <div class="tx-kpi-card">
+                <div class="tx-kpi-card__label">Total Settled</div>
+                <div id="kpiTotalAmount" class="tx-kpi-card__val tx-kpi-card__val--indigo">₱0.00</div>
+                <div class="tx-kpi-card__sub">Confirmed cash intake</div>
               </div>
-            </section>
-
-            <div class="logs-panel">
-              <div class="logs-scroll">
-                <table class="logs-table">
-                  <thead>
-                    <tr>
-                      <th class="logs-th logs-th--ts">Timestamp</th>
-                      <th class="logs-th logs-th--id">Transaction ID</th>
-                      <th class="logs-th logs-th--mode">Mode</th>
-                      <th class="logs-th logs-th--actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody id="logsBody"></tbody>
-                </table>
-              </div>
-              <div class="logs-pagination">
-                <button id="prevPageBtn" class="logs-pagination__btn" disabled>
-                  ← Prev
-                </button>
-                <span id="pageInfo" class="logs-pagination__info"
-                  >Page 1 of 1</span
-                >
-                <button id="nextPageBtn" class="logs-pagination__btn" disabled>
-                  Next →
-                </button>
+              <div class="tx-kpi-card">
+                <div class="tx-kpi-card__label">Attention Needed</div>
+                <div id="kpiDiscrepancyCount" class="tx-kpi-card__val tx-kpi-card__val--alert">0</div>
+                <div class="tx-kpi-card__sub">Shortages & failures</div>
               </div>
             </div>
 
+            <!-- Inverted hierarchy resolved: Filters precede table -->
+            <div class="tx-content-order">
+              <details class="tx-filters-panel" id="txFiltersPanel" open>
+                <summary class="tx-filters-summary">
+                  <span class="tx-filters-summary__label">
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                      class="tx-filters-summary__icon"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M3 3a1 1 0 011-1h12a1 1 0 01.8 1.6l-4.8 6.4v4.5a1 1 0 01-.55.9l-2 1A1 1 0 018 15.5V9L3.2 2.6A1 1 0 013 2z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                    Filters & Search
+                    <span
+                      id="activeFilterCount"
+                      class="tx-filters-summary__count hidden"
+                      >0</span
+                    >
+                  </span>
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                    class="tx-filters-summary__chevron"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                      clip-rule="evenodd"
+                    />
+                  </svg>
+                </summary>
+
+                <!-- Fast Filter Chips -->
+                <div class="tx-quick-chips" role="group" aria-label="Quick filters">
+                  <button type="button" class="tx-chip tx-chip--active" data-chip="all">All Transactions</button>
+                  <button type="button" class="tx-chip tx-chip--alert" data-chip="attention">Discrepancies & Shortages</button>
+                  <button type="button" class="tx-chip" data-chip="print">Print Only</button>
+                  <button type="button" class="tx-chip" data-chip="copy">Copy Only</button>
+                  <button type="button" class="tx-chip" data-chip="scan">Scan Only</button>
+                </div>
+
+                <div class="tx-filters-grid">
+                  <label class="tx-filter-field">
+                    <span>Transaction ID</span>
+                    <input
+                      id="transactionIdInput"
+                      class="tx-input"
+                      type="text"
+                      inputmode="search"
+                      autocomplete="off"
+                      placeholder="Search by ID or suffix…"
+                    />
+                  </label>
+                  <label class="tx-filter-field">
+                    <span>Mode</span>
+                    <select id="modeFilter" class="tx-select">
+                      <option value="">All</option>
+                      <option value="print">Print</option>
+                      <option value="copy">Copy</option>
+                      <option value="scan">Scan</option>
+                    </select>
+                  </label>
+                  <label class="tx-filter-field">
+                    <span>Status</span>
+                    <select id="statusFilter" class="tx-select">
+                      <option value="">All</option>
+                      <option value="completed">Completed</option>
+                      <option value="processing">Processing</option>
+                      <option value="failed">Failed</option>
+                      <option value="refund">Refund</option>
+                      <option value="created">Created</option>
+                    </select>
+                  </label>
+                  <label class="tx-filter-field">
+                    <span>Event type</span>
+                    <input
+                      id="eventTypeInput"
+                      class="tx-input"
+                      type="text"
+                      placeholder="Exact type (optional)"
+                    />
+                  </label>
+                  <label class="tx-filter-field">
+                    <span>Date from</span>
+                    <input
+                      id="dateFromInput"
+                      class="tx-input"
+                      type="datetime-local"
+                    />
+                  </label>
+                  <label class="tx-filter-field">
+                    <span>Date to</span>
+                    <input
+                      id="dateToInput"
+                      class="tx-input"
+                      type="datetime-local"
+                    />
+                  </label>
+                </div>
+                <div class="tx-filter-actions">
+                  <button
+                    id="applyFiltersBtn"
+                    class="topbar-btn topbar-btn--accent"
+                    type="button"
+                  >
+                    Apply Filters
+                  </button>
+                  <button id="clearFiltersBtn" class="topbar-btn" type="button">
+                    Reset Filters
+                  </button>
+                </div>
+              </details>
+
+              <div class="logs-panel">
+                <div class="logs-scroll">
+                  <table class="logs-table">
+                    <thead>
+                      <tr>
+                        <th scope="col" class="logs-th logs-th--ts">Timestamp</th>
+                        <th scope="col" class="logs-th logs-th--id">Transaction ID</th>
+                        <th scope="col" class="logs-th logs-th--mode">Mode</th>
+                        <th scope="col" class="logs-th logs-th--amount">Charged</th>
+                        <th scope="col" class="logs-th logs-th--status">Status</th>
+                        <th scope="col" class="logs-th logs-th--change">Change / Shortage</th>
+                        <th scope="col" class="logs-th logs-th--actions">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="logsBody"></tbody>
+                  </table>
+                </div>
+                <div class="logs-pagination">
+                  <button
+                    id="prevPageBtn"
+                    class="logs-pagination__btn"
+                    type="button"
+                    aria-label="Previous page"
+                    disabled
+                  >
+                    ← Prev
+                  </button>
+                  <span id="pageInfo" class="logs-pagination__info" aria-live="polite"
+                    >Page 1 of 1</span
+                  >
+                  <button
+                    id="nextPageBtn"
+                    class="logs-pagination__btn"
+                    type="button"
+                    aria-label="Next page"
+                    disabled
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Slide-over Context Drawer with 3-Card Architecture -->
             <div id="txDrawerBackdrop" class="tx-drawer-backdrop hidden"></div>
             <aside
               id="txDetailDrawer"
@@ -475,7 +554,6 @@
             >
               <header class="tx-drawer__head">
                 <div>
-                  <p class="tx-drawer__kicker">Transaction context</p>
                   <h4 id="txDetailTitle" class="tx-drawer__title">
                     Transaction Details
                   </h4>
@@ -484,8 +562,9 @@
                   id="txDetailCloseBtn"
                   class="tx-drawer__close"
                   type="button"
+                  aria-label="Close transaction details"
                 >
-                  ×
+                  ✕
                 </button>
               </header>
 
@@ -498,95 +577,178 @@
                   Select a transaction to inspect details.
                 </p>
 
-                <dl class="tx-detail-grid">
-                  <div>
-                    <dt>Transaction ID</dt>
-                    <dd id="dTransactionId">—</dd>
-                  </div>
-                  <div>
-                    <dt>Mode</dt>
-                    <dd id="dMode">—</dd>
-                  </div>
-                  <div>
-                    <dt>Charged Amount</dt>
-                    <dd id="dAmount">—</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd id="dStatus">—</dd>
-                  </div>
-                  <div>
-                    <dt>Color Pages (billed)</dt>
-                    <dd id="dColorPages">—</dd>
-                  </div>
-                  <div>
-                    <dt>B&W Pages (billed)</dt>
-                    <dd id="dBwPages">—</dd>
-                  </div>
-                  <div>
-                    <dt>Pages Printed (confirmed)</dt>
-                    <dd id="dPagesPrinted">—</dd>
-                  </div>
-                  <div>
-                    <dt>Change Requested</dt>
-                    <dd id="dChangeRequested">—</dd>
-                  </div>
-                  <div>
-                    <dt>Change Dispensed</dt>
-                    <dd id="dChangeDispensed">—</dd>
-                  </div>
-                  <div>
-                    <dt>Remaining Owed</dt>
-                    <dd id="dChangeRemaining">—</dd>
-                  </div>
-                  <div>
-                    <dt>Change Status</dt>
-                    <dd id="dChangeStatus">—</dd>
-                  </div>
-                  <div>
-                    <dt>Change Message</dt>
-                    <dd id="dChangeMessage">—</dd>
-                  </div>
-                  <div>
-                    <dt>Settled At</dt>
-                    <dd id="dSettledAt">—</dd>
-                  </div>
-                  <div>
-                    <dt>Terminal At</dt>
-                    <dd id="dTerminalAt">—</dd>
-                  </div>
-                  <div>
-                    <dt>Generated At</dt>
-                    <dd id="dGeneratedAt">—</dd>
-                  </div>
-                </dl>
+                <div class="tx-drawer-cards">
+                  <!-- Card 1: Financial Settlement & Cash Flow -->
+                  <section class="tx-drawer-card">
+                    <h5 class="tx-drawer-card__title">Financial Settlement</h5>
+                    <div class="tx-drawer-financial-hero">
+                      <span class="tx-drawer-financial-hero__label">Total Charged Amount</span>
+                      <span id="dAmount" class="tx-drawer-financial-hero__val">--</span>
+                    </div>
+                    <dl class="tx-drawer-card__grid">
+                      <div>
+                        <dt>Change Requested</dt>
+                        <dd id="dChangeRequested">--</dd>
+                      </div>
+                      <div>
+                        <dt>Change Dispensed</dt>
+                        <dd id="dChangeDispensed">--</dd>
+                      </div>
+                      <div>
+                        <dt>Remaining Owed</dt>
+                        <dd id="dChangeRemaining" class="tx-owed-highlight">--</dd>
+                      </div>
+                      <div>
+                        <dt>Hopper Dispense Status</dt>
+                        <dd id="dChangeStatus">--</dd>
+                      </div>
+                      <div class="tx-grid-span-2">
+                        <dt>Dispense Message</dt>
+                        <dd id="dChangeMessage">--</dd>
+                      </div>
+                      <div>
+                        <dt>Payment Settled At</dt>
+                        <dd id="dSettledAt">--</dd>
+                      </div>
+                    </dl>
+                  </section>
 
-                <section class="tx-drawer__section">
-                  <h5>Context flags</h5>
-                  <p id="dContextHint" class="tx-drawer__hint">—</p>
-                  <ul id="dMissingReasons" class="tx-missing-reasons"></ul>
-                </section>
+                  <!-- Card 2: Hardware & Print Execution -->
+                  <section class="tx-drawer-card">
+                    <h5 class="tx-drawer-card__title">Hardware & Job Execution</h5>
+                    <dl class="tx-drawer-card__grid">
+                      <div>
+                        <dt>Service Mode</dt>
+                        <dd id="dMode">--</dd>
+                      </div>
+                      <div>
+                        <dt>Lifecycle Status</dt>
+                        <dd id="dStatus">--</dd>
+                      </div>
+                      <div>
+                        <dt>Color Pages (billed)</dt>
+                        <dd id="dColorPages">--</dd>
+                      </div>
+                      <div>
+                        <dt>B&W Pages (billed)</dt>
+                        <dd id="dBwPages">--</dd>
+                      </div>
+                      <div>
+                        <dt>Pages Printed (spooler)</dt>
+                        <dd id="dPagesPrinted">--</dd>
+                      </div>
+                      <div>
+                        <dt>Terminal Completed At</dt>
+                        <dd id="dTerminalAt">--</dd>
+                      </div>
+                    </dl>
+                  </section>
 
-                <section class="tx-drawer__section">
-                  <h5>Recent related logs</h5>
-                  <div class="tx-detail-log-scroll">
-                    <table class="tx-detail-log-table">
-                      <thead>
-                        <tr>
-                          <th>Timestamp</th>
-                          <th>Type</th>
-                          <th>Message</th>
-                        </tr>
-                      </thead>
-                      <tbody id="dRelatedLogsBody"></tbody>
-                    </table>
-                  </div>
-                </section>
+                  <!-- Card 3: Audit Trace & Context -->
+                  <section class="tx-drawer-card">
+                    <h5 class="tx-drawer-card__title">Audit Trace & Context</h5>
+                    <dl class="tx-drawer-card__grid">
+                      <div class="tx-grid-span-2">
+                        <dt>Transaction ID</dt>
+                        <dd id="dTransactionId" class="tx-mono-id">--</dd>
+                      </div>
+                      <div>
+                        <dt>Generated At</dt>
+                        <dd id="dGeneratedAt">--</dd>
+                      </div>
+                      <div>
+                        <dt>Context Health</dt>
+                        <dd id="dContextHint">--</dd>
+                      </div>
+                    </dl>
+
+                    <div class="tx-drawer-subgroup">
+                      <h6 class="tx-drawer-subgroup__title">Missing Context Flags</h6>
+                      <ul id="dMissingReasons" class="tx-missing-reasons"></ul>
+                    </div>
+
+                    <div class="tx-drawer-subgroup">
+                      <h6 class="tx-drawer-subgroup__title">Recent Related Logs</h6>
+                      <div class="tx-detail-log-scroll">
+                        <table class="tx-detail-log-table">
+                          <thead>
+                            <tr>
+                              <th scope="col">Timestamp</th>
+                              <th scope="col">Type</th>
+                              <th scope="col">Message</th>
+                            </tr>
+                          </thead>
+                          <tbody id="dRelatedLogsBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </section>
+                </div>
               </div>
-              <!-- /.tx-drawer__body -->
 
-              <footer class="tx-drawer__actions"></footer>
+              <footer class="tx-drawer__actions">
+                <button id="txReceiptPdfBtn" type="button" class="topbar-btn topbar-btn--accent" disabled>
+                  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="16" height="16">
+                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/>
+                  </svg>
+                  <span>View E-Receipt PDF</span>
+                </button>
+                <button id="txReportIssueBtn" type="button" class="topbar-btn">
+                  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="16" height="16">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                  </svg>
+                  <span>Escalate Issue</span>
+                </button>
+                <button id="txDrawerDoneBtn" type="button" class="topbar-btn">
+                  <span>Done</span>
+                </button>
+              </footer>
             </aside>
+
+            <!-- Incident Escalation Modal (Restored & Accessible) -->
+            <div id="txReportModal" class="tx-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="txReportHeading">
+              <div class="tx-modal">
+                <div class="tx-modal__head">
+                  <h4 id="txReportHeading" class="tx-modal__title">Escalate Transaction Issue</h4>
+                  <button id="txReportCloseBtn" class="tx-drawer__close" type="button" aria-label="Close modal">✕</button>
+                </div>
+                <div class="tx-modal__body">
+                  <p class="tx-modal__desc">
+                    Log an incident to the system report queue for hardware technician follow-up.
+                  </p>
+                  <div class="tx-modal__fields">
+                    <label class="tx-filter-field">
+                      <span>Issue Title</span>
+                      <input id="txReportTitleInput" class="tx-input" type="text" placeholder="e.g. Hopper coin jam - ₱15 unreturned" required />
+                    </label>
+                    <label class="tx-filter-field">
+                      <span>Category</span>
+                      <select id="txReportCategoryInput" class="tx-select">
+                        <option value="payment">Payment & Cash Hopper</option>
+                        <option value="print">Printer / Spooler</option>
+                        <option value="copy">Copy System</option>
+                        <option value="scan">Scanner System</option>
+                        <option value="hardware">General Hardware</option>
+                        <option value="software">Software / System</option>
+                        <option value="network">Network / WiFi</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label class="tx-filter-field">
+                      <span>Incident Description</span>
+                      <textarea id="txReportDescriptionInput" class="tx-textarea" placeholder="Detail the student complaint, physical kiosk condition, or hardware fault..." required></textarea>
+                    </label>
+                  </div>
+                </div>
+                <div class="tx-modal__foot">
+                  <button id="txReportCancelBtn" class="topbar-btn" type="button">Cancel</button>
+                  <button id="txReportSubmitBtn" class="topbar-btn topbar-btn--accent" type="button">Submit Escalation</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Global Toast Notification for mobile & desktop feedback -->
+            <div id="txToast" class="tx-toast hidden" role="status" aria-live="polite"></div>
           </section>
         </div>
       </div>

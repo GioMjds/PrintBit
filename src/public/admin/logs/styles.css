@@ -171,7 +171,7 @@
 @media (max-width: 640px) {
   .logs-scroll {
     max-height: min(65dvh, 560px);
-    padding: 12px;
+    padding: 8px 10px;
     box-sizing: border-box;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -205,11 +205,11 @@
       rgba(17, 20, 47, 0.88),
       rgba(11, 10, 26, 0.94)
     );
-    border: 1px solid rgba(125, 211, 252, 0.18);
-    border-radius: 12px;
-    margin-bottom: 12px;
-    padding: 14px 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(125, 211, 252, 0.16);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
   }
 
   .logs-table tbody tr:hover {
@@ -225,26 +225,52 @@
     border: none;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    font-size: 12.5px;
+    gap: 4px;
+    font-size: 11.5px;
     line-height: 1.4;
   }
 
   .logs-table tbody td::before {
     content: attr(data-label);
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 700;
     text-transform: uppercase;
     color: var(--lavender);
     letter-spacing: 0.5px;
-    opacity: 0.7;
+    opacity: 0.65;
   }
 
   .logs-table tbody td:first-child {
     font-size: 11px;
-    border-bottom: 1px solid rgba(167, 170, 225, 0.12);
-    padding-bottom: 10px;
-    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(167, 170, 225, 0.1);
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+  }
+
+  .logs-msg-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .log-badge {
+    align-self: flex-start;
+    max-width: 100%;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .logs-msg-text {
+    width: 100%;
+    font-size: 11.5px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   /* Empty state overrides for mobile card transformation */
@@ -271,7 +297,7 @@
 
 @media (max-width: 480px) {
   .logs-pagination {
-    padding: 10px 12px;
+    padding: 8px 10px;
     gap: 8px;
     justify-content: space-between;
   }
@@ -285,5 +311,11 @@
   .logs-pagination__btn {
     padding: 6px 10px;
     font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logs-table tbody tr {
+    transition: none;
   }
 }

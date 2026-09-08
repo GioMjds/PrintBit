@@ -309,8 +309,9 @@ function showRefreshError(error: unknown): void {
   );
 }
 
-initAuth(async () => {
+initAuth(async (signal) => {
   await loadData();
+  if (signal.aborted) return;
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(
     () => void loadData().catch(showRefreshError),

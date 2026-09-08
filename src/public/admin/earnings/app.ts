@@ -297,12 +297,13 @@ nextAnchorBtn.addEventListener('click', () => {
   void loadAnalyticsData().catch(showEarningsError);
 });
 
-initAuth(async () => {
+initAuth(async (signal) => {
   currentView = resolveInitialView();
   setActiveViewButton(currentView);
   initCalendar();
   picker?.setDate(anchorDate, false);
   await loadData().catch(showEarningsError);
+  if (signal.aborted) return;
   if (summaryRefreshTimer !== null) window.clearInterval(summaryRefreshTimer);
   if (analyticsRefreshTimer !== null)
     window.clearInterval(analyticsRefreshTimer);

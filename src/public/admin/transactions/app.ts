@@ -7,74 +7,98 @@ import {
   updateSidebarBadges,
 } from '../shared';
 
+// Topbar & Navigation
 const logsBody = document.getElementById('logsBody') as HTMLElement;
 const refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 const exportLogsBtn = document.getElementById(
   'exportLogsBtn',
 ) as HTMLButtonElement;
-const clearLogsBtn = document.getElementById('clearLogsBtn') as HTMLButtonElement;
 const prevPageBtn = document.getElementById('prevPageBtn') as HTMLButtonElement;
 const nextPageBtn = document.getElementById('nextPageBtn') as HTMLButtonElement;
 const pageInfo = document.getElementById('pageInfo') as HTMLElement;
+
+// KPI Ribbon Elements
+const kpiTotalCount = document.getElementById('kpiTotalCount');
+const kpiTotalAmount = document.getElementById('kpiTotalAmount');
+const kpiDiscrepancyCount = document.getElementById('kpiDiscrepancyCount');
+const txToast = document.getElementById('txToast');
+
+// Filters & Search
 const applyFiltersBtn = document.getElementById(
   'applyFiltersBtn',
 ) as HTMLButtonElement;
 const clearFiltersBtn = document.getElementById(
   'clearFiltersBtn',
 ) as HTMLButtonElement;
+const activeFilterCount = document.getElementById(
+  'activeFilterCount',
+) as HTMLElement | null;
+const txFiltersPanel = document.getElementById(
+  'txFiltersPanel',
+) as HTMLDetailsElement | null;
+const quickChips = document.querySelectorAll<HTMLButtonElement>('.tx-chip');
 
 const transactionIdInput = document.getElementById(
   'transactionIdInput',
 ) as HTMLInputElement;
 const modeFilter = document.getElementById('modeFilter') as HTMLSelectElement;
-const statusFilter = document.getElementById('statusFilter') as HTMLSelectElement;
-const eventTypeInput = document.getElementById('eventTypeInput') as HTMLInputElement;
-const dateFromInput = document.getElementById('dateFromInput') as HTMLInputElement;
+const statusFilter = document.getElementById(
+  'statusFilter',
+) as HTMLSelectElement;
+const eventTypeInput = document.getElementById(
+  'eventTypeInput',
+) as HTMLInputElement;
+const dateFromInput = document.getElementById(
+  'dateFromInput',
+) as HTMLInputElement;
 const dateToInput = document.getElementById('dateToInput') as HTMLInputElement;
 
-const openAlertBadge = document.getElementById(
-  'openAlertBadge',
-) as HTMLElement | null;
-const openAlertBadgeMob = document.getElementById(
-  'openAlertBadgeMob',
-) as HTMLElement | null;
-
+// Context Drawer Elements
 const txDrawerBackdrop = document.getElementById(
   'txDrawerBackdrop',
 ) as HTMLElement | null;
-const txDetailDrawer = document.getElementById('txDetailDrawer') as HTMLElement | null;
+const txDetailDrawer = document.getElementById(
+  'txDetailDrawer',
+) as HTMLElement | null;
 const txDetailCloseBtn = document.getElementById(
   'txDetailCloseBtn',
 ) as HTMLButtonElement | null;
-const txDetailState = document.getElementById('txDetailState') as HTMLElement | null;
-const dTransactionId = document.getElementById('dTransactionId') as HTMLElement | null;
-const dMode = document.getElementById('dMode') as HTMLElement | null;
-const dAmount = document.getElementById('dAmount') as HTMLElement | null;
-const dStatus = document.getElementById('dStatus') as HTMLElement | null;
-const dColorPages = document.getElementById('dColorPages') as HTMLElement | null;
-const dBwPages = document.getElementById('dBwPages') as HTMLElement | null;
-const dPagesPrinted = document.getElementById('dPagesPrinted') as HTMLElement | null;
-const dChangeRequested = document.getElementById(
-  'dChangeRequested',
-) as HTMLElement | null;
-const dChangeDispensed = document.getElementById(
-  'dChangeDispensed',
-) as HTMLElement | null;
-const dChangeRemaining = document.getElementById(
-  'dChangeRemaining',
-) as HTMLElement | null;
-const dChangeStatus = document.getElementById('dChangeStatus') as HTMLElement | null;
-const dChangeMessage = document.getElementById('dChangeMessage') as HTMLElement | null;
-const dSettledAt = document.getElementById('dSettledAt') as HTMLElement | null;
-const dTerminalAt = document.getElementById('dTerminalAt') as HTMLElement | null;
-const dGeneratedAt = document.getElementById('dGeneratedAt') as HTMLElement | null;
-const dContextHint = document.getElementById('dContextHint') as HTMLElement | null;
-const dMissingReasons = document.getElementById('dMissingReasons') as HTMLElement | null;
-const dRelatedLogsBody = document.getElementById(
-  'dRelatedLogsBody',
+const txDrawerDoneBtn = document.getElementById(
+  'txDrawerDoneBtn',
+) as HTMLButtonElement | null;
+const txReceiptPdfBtn = document.getElementById(
+  'txReceiptPdfBtn',
+) as HTMLButtonElement | null;
+const txReportIssueBtn = document.getElementById(
+  'txReportIssueBtn',
+) as HTMLButtonElement | null;
+const txDetailState = document.getElementById(
+  'txDetailState',
 ) as HTMLElement | null;
 
-const txReportModal = document.getElementById('txReportModal') as HTMLElement | null;
+const dTransactionId = document.getElementById('dTransactionId');
+const dMode = document.getElementById('dMode');
+const dAmount = document.getElementById('dAmount');
+const dStatus = document.getElementById('dStatus');
+const dColorPages = document.getElementById('dColorPages');
+const dBwPages = document.getElementById('dBwPages');
+const dPagesPrinted = document.getElementById('dPagesPrinted');
+const dChangeRequested = document.getElementById('dChangeRequested');
+const dChangeDispensed = document.getElementById('dChangeDispensed');
+const dChangeRemaining = document.getElementById('dChangeRemaining');
+const dChangeStatus = document.getElementById('dChangeStatus');
+const dChangeMessage = document.getElementById('dChangeMessage');
+const dSettledAt = document.getElementById('dSettledAt');
+const dTerminalAt = document.getElementById('dTerminalAt');
+const dGeneratedAt = document.getElementById('dGeneratedAt');
+const dContextHint = document.getElementById('dContextHint');
+const dMissingReasons = document.getElementById('dMissingReasons');
+const dRelatedLogsBody = document.getElementById('dRelatedLogsBody');
+
+// Incident Report Modal Elements
+const txReportModal = document.getElementById(
+  'txReportModal',
+) as HTMLElement | null;
 const txReportCloseBtn = document.getElementById(
   'txReportCloseBtn',
 ) as HTMLButtonElement | null;
@@ -96,6 +120,7 @@ const txReportDescriptionInput = document.getElementById(
 
 const PAGE_SIZE = 20;
 let refreshTimer: number | null = null;
+let toastTimer: number | null = null;
 let currentPage = 1;
 let totalLogs = 0;
 let allLogs: LogsResponse['logs'] = [];
@@ -189,6 +214,7 @@ type FilterState = {
   eventType: string;
   dateFrom: string;
   dateTo: string;
+  quickFilter: 'all' | 'attention' | 'print' | 'copy' | 'scan';
 };
 
 type ReportCategory =
@@ -208,12 +234,18 @@ const filterState: FilterState = {
   eventType: '',
   dateFrom: '',
   dateTo: '',
+  quickFilter: 'all',
 };
 
-function setOpenAlertBadge(openCount: number): void {
-  const value = openCount > 0 ? String(openCount) : '';
-  if (openAlertBadge) openAlertBadge.textContent = value;
-  if (openAlertBadgeMob) openAlertBadgeMob.textContent = value;
+function showToast(msg: string): void {
+  setMessage(msg);
+  if (!txToast) return;
+  txToast.textContent = msg;
+  txToast.classList.remove('hidden');
+  if (toastTimer !== null) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    txToast?.classList.add('hidden');
+  }, 3500);
 }
 
 function escapeHtml(str: string): string {
@@ -237,7 +269,39 @@ function inferMode(log: LogsResponse['logs'][number]): string {
   return '—';
 }
 
-function getTransactionContextId(log: LogsResponse['logs'][number]): string | null {
+function inferStatus(log: LogsResponse['logs'][number]): string {
+  if (typeof log.meta?.status === 'string' && log.meta.status) {
+    return log.meta.status;
+  }
+  const type = log.type.toLowerCase();
+  if (type.includes('fail') || type.includes('error')) return 'failed';
+  if (type.includes('refund')) return 'refund';
+  if (type.includes('completed') || type.includes('confirmed'))
+    return 'completed';
+  if (type.includes('start') || type.includes('process')) return 'processing';
+  return 'completed';
+}
+
+function inferAmount(log: LogsResponse['logs'][number]): number | null {
+  const m = log.meta;
+  if (!m) return null;
+  if (typeof m.chargedAmount === 'number') return m.chargedAmount;
+  if (typeof m.amount === 'number') return m.amount;
+  if (typeof m.price === 'number') return m.price;
+  return null;
+}
+
+function inferChangeRemaining(log: LogsResponse['logs'][number]): number | null {
+  const m = log.meta;
+  if (!m) return null;
+  if (typeof m.remaining === 'number') return m.remaining;
+  if (typeof m.changeRemaining === 'number') return m.changeRemaining;
+  return null;
+}
+
+function getTransactionContextId(
+  log: LogsResponse['logs'][number],
+): string | null {
   const transactionId = log.meta?.transactionId;
   if (typeof transactionId !== 'string') return null;
   const trimmed = transactionId.trim();
@@ -258,9 +322,19 @@ function formatMode(value: string | null): string {
 
 function formatStatus(value: string | null): string {
   if (!value) return '—';
-  if (value === 'settled_pending_terminal') return 'pending terminal confirmation';
+  if (value === 'settled_pending_terminal')
+    return 'pending terminal confirmation';
   if (value === 'refunded_pending_review') return 'refund pending review';
   return value.replace(/_/g, ' ');
+}
+
+function statusCssClass(status: string | null): string {
+  if (!status) return 'completed';
+  const s = status.toLowerCase();
+  if (s.includes('fail') || s.includes('error')) return 'failed';
+  if (s.includes('refund')) return 'refund';
+  if (s.includes('process') || s.includes('pend')) return 'processing';
+  return 'completed';
 }
 
 function formatPeso(value: number | null): string {
@@ -280,6 +354,30 @@ function setField(target: HTMLElement | null, value: string): void {
   if (target) target.textContent = value;
 }
 
+function debounce<T extends (...args: never[]) => void>(
+  fn: T,
+  delayMs: number,
+): (...args: Parameters<T>) => void {
+  let timer: number | null = null;
+  return (...args: Parameters<T>) => {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), delayMs);
+  };
+}
+
+function updateActiveFilterCount(): void {
+  if (!activeFilterCount) return;
+  const count = Object.values(filterState).filter(
+    (value) => value !== '' && value !== 'all',
+  ).length;
+  if (count > 0) {
+    activeFilterCount.textContent = String(count);
+    activeFilterCount.classList.remove('hidden');
+  } else {
+    activeFilterCount.classList.add('hidden');
+  }
+}
+
 async function resolveApiErrorMessage(
   response: Response,
   fallback: string,
@@ -295,8 +393,40 @@ async function resolveApiErrorMessage(
   return fallback;
 }
 
+function getFilteredLogs(): LogsResponse['logs'] {
+  if (filterState.quickFilter === 'all') {
+    return allLogs;
+  }
+  if (filterState.quickFilter === 'attention') {
+    return allLogs.filter((log) => {
+      const status = inferStatus(log);
+      const remaining = inferChangeRemaining(log);
+      const type = log.type.toLowerCase();
+      return (
+        status === 'failed' ||
+        status === 'refund' ||
+        (remaining != null && remaining > 0) ||
+        type.includes('fail') ||
+        type.includes('error') ||
+        type.includes('refund')
+      );
+    });
+  }
+  if (
+    filterState.quickFilter === 'print' ||
+    filterState.quickFilter === 'copy' ||
+    filterState.quickFilter === 'scan'
+  ) {
+    return allLogs.filter(
+      (log) => inferMode(log).toLowerCase() === filterState.quickFilter,
+    );
+  }
+  return allLogs;
+}
+
 function totalPages(): number {
-  return Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
+  const filtered = getFilteredLogs();
+  return Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 }
 
 function updatePaginationControls(): void {
@@ -306,11 +436,98 @@ function updatePaginationControls(): void {
   nextPageBtn.disabled = currentPage >= pages;
 }
 
+function updateKpiRibbon(): void {
+  if (kpiTotalCount) {
+    kpiTotalCount.textContent = totalLogs.toLocaleString();
+  }
+
+  let totalSettled = 0;
+  let discrepancyCount = 0;
+
+  for (const log of allLogs) {
+    const amt = inferAmount(log);
+    if (amt != null) totalSettled += amt;
+
+    const status = inferStatus(log);
+    const rem = inferChangeRemaining(log);
+    if (status === 'failed' || status === 'refund' || (rem != null && rem > 0)) {
+      discrepancyCount++;
+    }
+  }
+
+  if (kpiTotalAmount) {
+    kpiTotalAmount.textContent = `₱${totalSettled.toFixed(2)}`;
+  }
+  if (kpiDiscrepancyCount) {
+    kpiDiscrepancyCount.textContent = String(discrepancyCount);
+  }
+}
+
+function middleTruncate(
+  value: string,
+  keepStart: number,
+  keepEnd: number,
+): string {
+  if (value.length <= keepStart + keepEnd + 1) return value;
+  return `${value.slice(0, keepStart)}…${value.slice(-keepEnd)}`;
+}
+
 function renderPage(): void {
+  const filtered = getFilteredLogs();
   const start = (currentPage - 1) * PAGE_SIZE;
-  const slice = allLogs.slice(start, start + PAGE_SIZE);
+  const slice = filtered.slice(start, start + PAGE_SIZE);
   applyLogs(slice);
   updatePaginationControls();
+
+  // Asynchronously hydrate visible rows with exact backend context if cached or needed
+  void enrichVisibleRows(slice);
+}
+
+async function enrichVisibleRows(slice: LogsResponse['logs']): Promise<void> {
+  for (const log of slice) {
+    const txId = getTransactionContextId(log);
+    if (!txId) continue;
+
+    // Check if already in cache
+    let ctx = transactionContextCache.get(txId);
+    if (!ctx) {
+      try {
+        ctx = await fetchTransactionContext(txId);
+      } catch {
+        continue;
+      }
+    }
+
+    // Update table row if still visible
+    const tr = logsBody.querySelector<HTMLTableRowElement>(
+      `tr[data-log-id="${log.id}"]`,
+    );
+    if (!tr || !ctx) continue;
+
+    const amountCell = tr.querySelector('.logs-td--amount');
+    if (amountCell && ctx.chargedAmount != null) {
+      amountCell.textContent = formatPeso(ctx.chargedAmount);
+    }
+
+    const statusCell = tr.querySelector('.logs-td--status');
+    if (statusCell && ctx.status) {
+      statusCell.innerHTML = `
+        <span class="tx-status-badge tx-status-badge--${statusCssClass(ctx.status)}">
+          ${escapeHtml(formatStatus(ctx.status))}
+        </span>
+      `;
+    }
+
+    const changeCell = tr.querySelector('.logs-td--change');
+    if (changeCell) {
+      const rem = ctx.change.remaining;
+      if (rem != null && rem > 0) {
+        changeCell.innerHTML = `<span class="tx-shortage-badge" title="Coin hopper shortage: ₱${rem.toFixed(2)} owed">Owed ₱${rem.toFixed(2)}</span>`;
+      } else {
+        changeCell.innerHTML = `<span class="tx-change-ok">Exact / Settled</span>`;
+      }
+    }
+  }
 }
 
 function applyLogs(logs: LogsResponse['logs']): void {
@@ -318,29 +535,58 @@ function applyLogs(logs: LogsResponse['logs']): void {
 
   if (logs.length === 0) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="6" style="text-align:center;color:var(--ink-muted);padding:24px">No transaction log entries.</td>`;
+    tr.innerHTML = `<td colspan="7" style="text-align:center;color:var(--ink-muted);padding:36px">No transaction log entries found.</td>`;
     logsBody.appendChild(tr);
     return;
   }
 
   for (const log of logs) {
     const transactionContextId = getTransactionContextId(log);
+    const cached = transactionContextId
+      ? transactionContextCache.get(transactionContextId)
+      : null;
+
+    const mode = cached?.mode ?? inferMode(log);
+    const status = cached?.status ?? inferStatus(log);
+    const amount = cached?.chargedAmount ?? inferAmount(log);
+    const changeRemaining =
+      cached?.change?.remaining ?? inferChangeRemaining(log);
+
     const transactionIdCell = transactionContextId
-      ? escapeHtml(transactionContextId)
-      : '<span class="tx-context-missing">Missing transaction context</span>';
-    const actionMarkup = `
-      <div class="tx-actions">
-        <button class="tx-action-btn" data-action="view-details" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
-          Open details
-        </button>
-      </div>
+      ? `<span class="tx-id-truncate" title="${escapeHtml(transactionContextId)}">${escapeHtml(middleTruncate(transactionContextId, 9, 6))}</span>`
+      : '<span class="tx-context-missing">Missing ID context</span>';
+
+    const modeBadge = `<span class="tx-mode-badge tx-mode-badge--${escapeHtml(mode.toLowerCase())}">${escapeHtml(formatMode(mode))}</span>`;
+
+    const statusBadge = `
+      <span class="tx-status-badge tx-status-badge--${statusCssClass(status)}">
+        ${escapeHtml(formatStatus(status))}
+      </span>
     `;
+
+    const changeMarkup =
+      changeRemaining != null && changeRemaining > 0
+        ? `<span class="tx-shortage-badge" title="Coin hopper shortage: ₱${changeRemaining.toFixed(2)} unreturned">Owed ₱${changeRemaining.toFixed(2)}</span>`
+        : `<span class="tx-change-ok">Exact / Settled</span>`;
+
+    const actionMarkup = `
+      <button class="tx-action-btn" data-action="view-details" data-transaction-id="${escapeHtml(transactionContextId ?? '')}" ${transactionContextId ? '' : 'disabled'}>
+        Inspect
+      </button>
+    `;
+
     const tr = document.createElement('tr');
     tr.dataset.logId = log.id;
     tr.innerHTML = `
-      <td class="logs-td logs-td--ts">${new Date(log.timestamp).toLocaleString()}</td>
+      <td class="logs-td logs-td--ts">
+        <div>${new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+        <div style="font-size:11px;opacity:0.6">${new Date(log.timestamp).toLocaleDateString()}</div>
+      </td>
       <td class="logs-td logs-td--id">${transactionIdCell}</td>
-      <td class="logs-td logs-td--mode">${escapeHtml(inferMode(log))}</td>
+      <td class="logs-td logs-td--mode">${modeBadge}</td>
+      <td class="logs-td logs-td--amount">${formatPeso(amount)}</td>
+      <td class="logs-td logs-td--status">${statusBadge}</td>
+      <td class="logs-td logs-td--change">${changeMarkup}</td>
       <td class="logs-td logs-td--actions">${actionMarkup}</td>
     `;
     logsBody.appendChild(tr);
@@ -359,13 +605,15 @@ function buildFilterParams(includeLimit: boolean): URLSearchParams {
   const params = new URLSearchParams();
   if (includeLimit) params.set('limit', '1000');
 
-  if (filterState.transactionId) params.set('transactionId', filterState.transactionId);
+  if (filterState.transactionId)
+    params.set('transactionId', filterState.transactionId);
   if (filterState.mode) params.set('mode', filterState.mode);
   if (filterState.status) params.set('status', filterState.status);
   if (filterState.eventType) params.set('eventType', filterState.eventType);
 
   const isoFrom = toIso(filterState.dateFrom);
   if (isoFrom) params.set('dateFrom', isoFrom);
+
   const isoTo = toIso(filterState.dateTo);
   if (isoTo) params.set('dateTo', isoTo);
 
@@ -388,6 +636,7 @@ function resetFilterState(): void {
   filterState.eventType = '';
   filterState.dateFrom = '';
   filterState.dateTo = '';
+  filterState.quickFilter = 'all';
 
   transactionIdInput.value = '';
   modeFilter.value = '';
@@ -395,11 +644,17 @@ function resetFilterState(): void {
   eventTypeInput.value = '';
   dateFromInput.value = '';
   dateToInput.value = '';
+
+  quickChips.forEach((chip) => {
+    chip.classList.toggle('tx-chip--active', chip.dataset.chip === 'all');
+  });
 }
 
 async function loadData(): Promise<void> {
   const params = buildFilterParams(true);
-  const res = await apiFetch(`/api/admin/logs/transactions?${params.toString()}`);
+  const res = await apiFetch(
+    `/api/admin/logs/transactions?${params.toString()}`,
+  );
   if (!res.ok) {
     const errorText = await resolveApiErrorMessage(
       res,
@@ -411,6 +666,8 @@ async function loadData(): Promise<void> {
   allLogs = data.logs;
   totalLogs = allLogs.length;
   if (currentPage > totalPages()) currentPage = totalPages();
+
+  updateKpiRibbon();
   renderPage();
   await loadSummary();
 }
@@ -422,36 +679,24 @@ async function loadSummary(): Promise<void> {
   updateSidebarBadges(summary);
 }
 
-async function clearAllTransactionLogs(): Promise<void> {
-  if (!confirm('Delete ALL transaction log entries? This cannot be undone.')) {
-    return;
-  }
-  setMessage('Clearing transaction logs…');
-  const res = await apiFetch('/api/admin/logs/transactions', { method: 'DELETE' });
-  if (!res.ok) {
-    setMessage('Failed to clear transaction logs.');
-    return;
-  }
-  allLogs = [];
-  totalLogs = 0;
-  currentPage = 1;
-  transactionContextCache.clear();
-  closeTransactionDrawer();
-  closeReportModal();
-  renderPage();
-  setMessage('All transaction logs cleared.');
-}
-
-function applyFilters(): void {
+function applyFilters(options: { silent?: boolean } = {}): void {
   applyFilterStateFromInputs();
+  updateActiveFilterCount();
   currentPage = 1;
-  setMessage('Applying transaction filters…');
+  if (!options.silent) showToast('Applying transaction filters…');
   void loadData()
-    .then(() => setMessage('Transaction filters applied.'))
+    .then(() => {
+      if (!options.silent) showToast('Transaction filters applied.');
+    })
     .catch((error: unknown) =>
-      setMessage(error instanceof Error ? error.message : 'Filter failed.'),
+      showToast(error instanceof Error ? error.message : 'Filter failed.'),
     );
 }
+
+const debouncedApplyFilters = debounce(
+  () => applyFilters({ silent: true }),
+  350,
+);
 
 function openTransactionDrawerShell(): void {
   txDrawerBackdrop?.classList.remove('is-leaving');
@@ -494,6 +739,7 @@ function resetDrawerView(): void {
   setField(dTerminalAt, '—');
   setField(dGeneratedAt, '—');
   setField(dContextHint, '—');
+  if (txReceiptPdfBtn) txReceiptPdfBtn.disabled = true;
   if (dMissingReasons) dMissingReasons.innerHTML = '';
   if (dRelatedLogsBody) dRelatedLogsBody.innerHTML = '';
 }
@@ -589,6 +835,11 @@ function renderDrawer(context: TransactionContextPayload): void {
       : 'Transaction context is complete.');
   setField(dContextHint, hint);
 
+  // E-Receipt button state
+  if (txReceiptPdfBtn) {
+    txReceiptPdfBtn.disabled = !context.transactionId;
+  }
+
   if (dMissingReasons) {
     dMissingReasons.innerHTML = '';
     if (context.contextFlags.missingReasons.length === 0) {
@@ -617,6 +868,7 @@ async function openTransactionDrawer(transactionId: string): Promise<void> {
     const context = await fetchTransactionContext(transactionId);
     if (activeDrawerTransactionId !== transactionId) return;
     renderDrawer(context);
+    reportContext = context;
     if (txDetailState) {
       txDetailState.textContent = context.contextFlags.hasIncompleteContext
         ? 'Context loaded with missing fields flagged below.'
@@ -628,14 +880,30 @@ async function openTransactionDrawer(transactionId: string): Promise<void> {
       txDetailState.textContent =
         error instanceof Error ? error.message : 'Failed to load context.';
     }
-    setMessage(
-      error instanceof Error ? error.message : 'Failed to load transaction context.',
+    showToast(
+      error instanceof Error
+        ? error.message
+        : 'Failed to load transaction context.',
     );
   }
 }
 
+function openReportModal(): void {
+  if (!txReportModal) return;
+  txReportModal.classList.remove('is-leaving');
+  txReportModal.classList.remove('hidden');
+
+  if (reportContext) {
+    if (txReportTitleInput) {
+      txReportTitleInput.value = `[${reportContext.transactionId}] Hardware / settlement anomaly`;
+    }
+    if (txReportDescriptionInput) {
+      txReportDescriptionInput.value = `Transaction: ${reportContext.transactionId}\nMode: ${reportContext.mode ?? 'unknown'}\nCharged: ${formatPeso(reportContext.chargedAmount)}\nOwed: ${formatPeso(reportContext.change.remaining)}\nStatus: ${reportContext.status ?? 'unknown'}\n\nStudent / Machine notes: `;
+    }
+  }
+}
+
 function closeReportModal(): void {
-  reportContext = null;
   if (txReportModal && !txReportModal.classList.contains('hidden')) {
     txReportModal.classList.add('is-leaving');
     window.setTimeout(() => {
@@ -649,23 +917,23 @@ function closeReportModal(): void {
 
 async function submitQuickReport(): Promise<void> {
   if (!reportContext) {
-    setMessage('No transaction context loaded for report creation.');
+    showToast('No transaction context loaded for report creation.');
     return;
   }
   const title = txReportTitleInput?.value.trim() ?? '';
   const description = txReportDescriptionInput?.value.trim() ?? '';
   const category = (txReportCategoryInput?.value ?? 'other') as ReportCategory;
   if (!title) {
-    setMessage('Report title is required.');
+    showToast('Report title is required.');
     return;
   }
   if (!description) {
-    setMessage('Report description is required.');
+    showToast('Report description is required.');
     return;
   }
 
   if (txReportSubmitBtn) txReportSubmitBtn.disabled = true;
-  setMessage('Submitting report…');
+  showToast('Submitting escalation report…');
   try {
     const transactionId = reportContext.transactionId;
     const response = await apiFetch('/api/admin/report-issues', {
@@ -693,31 +961,33 @@ async function submitQuickReport(): Promise<void> {
         response,
         'Failed to submit report.',
       );
-      setMessage(message);
+      showToast(message);
       if (txReportSubmitBtn) txReportSubmitBtn.disabled = false;
       return;
     }
 
     closeReportModal();
-    setMessage(`Report created for transaction ${transactionId}.`);
+    showToast(`Report created for transaction ${transactionId}.`);
     if (txReportSubmitBtn) txReportSubmitBtn.disabled = false;
   } catch {
     if (txReportSubmitBtn) txReportSubmitBtn.disabled = false;
-    setMessage('Network error while submitting report.');
+    showToast('Network error while submitting report.');
   }
 }
 
+// ── Event Handlers ──────────────────────────────────────────────────────────
+
 refreshBtn.addEventListener('click', () => {
-  setMessage('Refreshing…');
+  showToast('Refreshing transaction logs…');
   void loadData()
-    .then(() => setMessage('Transaction logs refreshed.'))
+    .then(() => showToast('Transaction logs refreshed.'))
     .catch((e: unknown) =>
-      setMessage(e instanceof Error ? e.message : 'Refresh failed.'),
+      showToast(e instanceof Error ? e.message : 'Refresh failed.'),
     );
 });
 
 exportLogsBtn.addEventListener('click', () => {
-  setMessage('Preparing transaction logs export…');
+  showToast('Preparing transaction CSV export…');
   const params = buildFilterParams(false);
   const suffix = params.toString() ? `?${params.toString()}` : '';
   void apiFetch(`/api/admin/logs/transactions/export.csv${suffix}`)
@@ -732,35 +1002,55 @@ exportLogsBtn.addEventListener('click', () => {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      setMessage('Transaction logs exported.');
+      showToast('Transaction logs CSV exported.');
     })
     .catch((error: unknown) => {
       const msg =
         error instanceof Error
           ? error.message
           : 'Failed to export transaction logs.';
-      setMessage(msg);
+      showToast(msg);
     });
 });
 
 function showRefreshError(error: unknown): void {
-  setMessage(
+  showToast(
     error instanceof Error ? error.message : 'Automatic refresh failed.',
   );
 }
 
-clearLogsBtn.addEventListener('click', () => {
-  void clearAllTransactionLogs().catch(showRefreshError);
-});
-applyFiltersBtn.addEventListener('click', applyFilters);
+applyFiltersBtn.addEventListener('click', () => applyFilters());
+
 clearFiltersBtn.addEventListener('click', () => {
   resetFilterState();
+  updateActiveFilterCount();
   currentPage = 1;
-  setMessage('Filters cleared.');
-  void loadData().catch((error: unknown) =>
-    setMessage(error instanceof Error ? error.message : 'Refresh failed.'),
-  );
+  showToast('Filters reset.');
+  renderPage();
 });
+
+// Quick Filter Chips Handling
+quickChips.forEach((chip) => {
+  chip.addEventListener('click', () => {
+    const chipType = (chip.dataset.chip ?? 'all') as FilterState['quickFilter'];
+    filterState.quickFilter = chipType;
+
+    quickChips.forEach((c) => {
+      c.classList.toggle('tx-chip--active', c === chip);
+    });
+
+    currentPage = 1;
+    renderPage();
+  });
+});
+
+// Live Debounced Search
+transactionIdInput.addEventListener('input', debouncedApplyFilters);
+eventTypeInput.addEventListener('input', debouncedApplyFilters);
+modeFilter.addEventListener('change', () => applyFilters());
+statusFilter.addEventListener('change', () => applyFilters());
+dateFromInput.addEventListener('change', () => applyFilters());
+dateToInput.addEventListener('change', () => applyFilters());
 
 prevPageBtn.addEventListener('click', () => {
   if (currentPage > 1) {
@@ -787,7 +1077,7 @@ logsBody.addEventListener('click', (event) => {
 
   if (action === 'view-details') {
     if (!transactionId) {
-      setMessage('Missing transaction context for this log row.');
+      showToast('Missing transaction context for this log row.');
       return;
     }
     void openTransactionDrawer(transactionId);
@@ -795,9 +1085,22 @@ logsBody.addEventListener('click', (event) => {
   }
 });
 
+// Drawer Button Listeners
 txDetailCloseBtn?.addEventListener('click', closeTransactionDrawer);
+txDrawerDoneBtn?.addEventListener('click', closeTransactionDrawer);
 txDrawerBackdrop?.addEventListener('click', closeTransactionDrawer);
 
+txReceiptPdfBtn?.addEventListener('click', () => {
+  if (!reportContext?.transactionId) return;
+  const url = `/api/admin/transactions/${encodeURIComponent(reportContext.transactionId)}/receipt/pdf`;
+  window.open(url, '_blank');
+});
+
+txReportIssueBtn?.addEventListener('click', () => {
+  openReportModal();
+});
+
+// Modal Listeners
 txReportCloseBtn?.addEventListener('click', closeReportModal);
 txReportCancelBtn?.addEventListener('click', closeReportModal);
 txReportModal?.addEventListener('click', (event) => {
@@ -807,20 +1110,28 @@ txReportSubmitBtn?.addEventListener('click', () => void submitQuickReport());
 
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
-    if (txDrawerBackdrop && !txDrawerBackdrop.classList.contains('hidden')) {
-      closeTransactionDrawer();
-    } else if (txReportModal && !txReportModal.classList.contains('hidden')) {
+    if (txReportModal && !txReportModal.classList.contains('hidden')) {
       closeReportModal();
+    } else if (
+      txDrawerBackdrop &&
+      !txDrawerBackdrop.classList.contains('hidden')
+    ) {
+      closeTransactionDrawer();
     }
   }
 });
 
-initAuth(async () => {
+// On mobile, collapse filters panel by default
+if (txFiltersPanel && window.matchMedia('(max-width: 700px)').matches) {
+  txFiltersPanel.open = false;
+}
+
+initAuth(async (signal) => {
   await loadData();
+  if (signal.aborted) return;
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   refreshTimer = window.setInterval(
     () => void loadData().catch(showRefreshError),
     10_000,
   );
 });
-

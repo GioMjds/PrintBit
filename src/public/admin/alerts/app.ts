@@ -368,9 +368,10 @@ function connectSocket(): void {
   socket = nextSocket;
 }
 
-initAuth(async () => {
+initAuth(async (signal) => {
   cleanupLiveUpdates();
   await loadData();
+  if (signal.aborted) return;
   connectSocket();
   poller = window.setInterval(
     () => void loadData().catch(showRefreshError),

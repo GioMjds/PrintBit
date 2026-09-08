@@ -5,7 +5,7 @@
     <meta name="google" content="notranslate" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0"
     />
     <title>System Logs · Admin · PrintBit</title>
     <link rel="manifest" href="/admin/manifest.webmanifest" />
@@ -19,7 +19,10 @@
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/logs/styles.css" />
     <script>
-      if (sessionStorage.getItem('adminSessionToken')) {
+      if (
+        sessionStorage.getItem('printbit.adminSessionActive') ||
+        sessionStorage.getItem('adminSessionToken')
+      ) {
         document.documentElement.classList.add('admin-session-active');
       }
     </script>
@@ -186,7 +189,7 @@
         </div>
 
         <nav class="sidebar__nav">
-          <a href="/admin/dashboard" class="nav-btn">
+          <a href="/admin/dashboard" class="nav-btn" aria-label="Overview">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zm6-4a1
@@ -196,7 +199,7 @@
             </svg>
             <span>Overview</span>
           </a>
-          <a href="/admin/earnings" class="nav-btn">
+          <a href="/admin/earnings" class="nav-btn" aria-label="Earnings">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -208,7 +211,7 @@
             </svg>
             <span>Earnings</span>
           </a>
-          <a href="/admin/system" class="nav-btn">
+          <a href="/admin/system" class="nav-btn" aria-label="System">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -220,7 +223,7 @@
             </svg>
             <span>System</span>
           </a>
-          <a href="/admin/settings" class="nav-btn">
+          <a href="/admin/settings" class="nav-btn" aria-label="Settings">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -236,7 +239,12 @@
             </svg>
             <span>Settings</span>
           </a>
-          <a href="/admin/logs" class="nav-btn nav-btn--active">
+          <a
+            href="/admin/logs"
+            class="nav-btn nav-btn--active"
+            aria-label="System Logs"
+            aria-current="page"
+          >
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -246,9 +254,13 @@
                 clip-rule="evenodd"
               />
             </svg>
-            <span>System Logs</span>
+            <span>Logs</span>
           </a>
-          <a href="/admin/transactions" class="nav-btn">
+          <a
+            href="/admin/transactions"
+            class="nav-btn"
+            aria-label="Transaction Logs"
+          >
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M4 2h9l3 3v13a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1zm0 2v13h11V6h-2a1 1 0 01-1-1V3H4zm3 4a1 1 0 100 2h5a1 1 0 100-2H7zm0 4a1 1 0 100 2h5a1 1 0 100-2H7z"
@@ -256,7 +268,7 @@
             </svg>
             <span>Transaction Logs</span>
           </a>
-          <a href="/admin/feedback" class="nav-btn">
+          <a href="/admin/feedback" class="nav-btn" aria-label="Feedback">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -271,7 +283,7 @@
               aria-label="open feedback count"
             ></span>
           </a>
-          <a href="/admin/report" class="nav-btn">
+          <a href="/admin/report" class="nav-btn" aria-label="Reports">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -286,7 +298,7 @@
               aria-label="open reports count"
             ></span>
           </a>
-          <a href="/admin/alerts" class="nav-btn">
+          <a href="/admin/alerts" class="nav-btn" aria-label="Anomaly Alerts">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"
@@ -302,7 +314,7 @@
         </nav>
 
         <div class="sidebar__foot">
-          <button id="logoutBtn" class="lock-btn">
+          <button id="logoutBtn" class="lock-btn" aria-label="Lock admin panel">
             <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path
                 fill-rule="evenodd"
@@ -320,7 +332,7 @@
       <div class="main">
         <header class="topbar">
           <div class="topbar__left">
-            <h2 class="topbar__title">System Logs</h2>
+            <h2 class="topbar__title">Logs</h2>
             <span class="live-pill" aria-label="Live updates active">
               <span class="live-pill__dot"></span>Live
             </span>
@@ -386,8 +398,7 @@
               <p class="admin-page-hero__kicker">Operations</p>
               <h3 class="admin-page-hero__title">System Event Logs</h3>
               <p class="admin-page-hero__desc">
-                View kiosk/system runtime events only. Transaction lifecycle
-                entries are separated into the Transaction Logs page.
+                View kiosk/system runtime events.
               </p>
             </section>
 

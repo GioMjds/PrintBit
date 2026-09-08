@@ -20,7 +20,10 @@
     <link rel="stylesheet" href="/admin/earnings/styles.css" />
     <link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css" />
       <script>
-      if (sessionStorage.getItem('adminSessionToken')) {
+      if (
+        sessionStorage.getItem('printbit.adminSessionActive') ||
+        sessionStorage.getItem('adminSessionToken')
+      ) {
         document.documentElement.classList.add('admin-session-active');
       }
     </script>

@@ -19,7 +19,10 @@
     <link rel="stylesheet" href="/admin/shared.css" />
     <link rel="stylesheet" href="/admin/settings/styles.css" />
     <script>
-      if (sessionStorage.getItem('adminSessionToken')) {
+      if (
+        sessionStorage.getItem('printbit.adminSessionActive') ||
+        sessionStorage.getItem('adminSessionToken')
+      ) {
         document.documentElement.classList.add('admin-session-active');
       }
     </script>
