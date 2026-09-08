@@ -423,6 +423,32 @@ body {
   color: var(--ink-muted);
   line-height: 1.55;
 }
+.topbar-actions { display: flex; justify-content: flex-end; }
+.document-care-fab { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 13px; border: 1px solid rgba(251,191,36,.4); border-radius: 999px; background: rgba(251,191,36,.12); color: #fff3c4; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.document-care-fab span:first-child, .document-care-modal__icon { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #fbbf24; color: #0e0d1f; font-weight: 800; }
+.document-care-modal { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; padding: 24px; background: rgba(5,4,15,.78); }
+.document-care-modal.is-open { display: grid; }
+.document-care-modal__card { width: min(440px, 100%); padding: 26px; border: 1px solid rgba(251,191,36,.35); border-radius: 22px; background: #19172d; color: var(--white); box-shadow: 0 24px 70px rgba(0,0,0,.45); }
+.document-care-modal__card h2 { margin: 14px 0 8px; font-size: 21px; }
+.document-care-modal__card p, .document-care-modal__card li { color: var(--ink-muted); font-size: 13px; line-height: 1.6; }
+.document-care-modal__card ul { margin: 10px 0 20px; padding-left: 20px; }
+.document-care-modal__close { width: 100%; min-height: 44px; border: 0; border-radius: 12px; background: #fbbf24; color: #0e0d1f; font: inherit; font-weight: 800; cursor: pointer; }
+
+.document-care-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 14px;
+  background: rgba(251, 191, 36, 0.09);
+  color: #fce8a8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.document-care-notice__icon { display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; background: #fbbf24; color: #0e0d1f; font-size: 13px; font-weight: 800; }
+.document-care-notice__title { display: block; margin-bottom: 2px; color: #fff3c4; font-size: 12px; }
+.document-care-notice p { margin: 0; }
 
 .steps {
   list-style: none;

@@ -13,6 +13,7 @@ import { withPrintQuality } from '@/services/print-job-options';
 import {
   db,
   type ReceiptRecordStatus,
+  type ReceiptPrintConfigurationSnapshot,
   acquireIdempotencyKey,
   storeIdempotencyKey,
   releaseIdempotencyKey,
@@ -499,6 +500,22 @@ export class CopyService {
       chargedAmount: settlement.chargedAmount,
       colorPages: quote.billableColorPages * quote.copies,
       bwPages: quote.billableBwPages * quote.copies,
+      coinsInserted: settlement.previousBalance,
+      documentName: previewFilename || 'Scanned Document',
+      printConfiguration: {
+        copies: quote.copies,
+        colorMode: quote.effectiveColorMode,
+        paperSize: normalized.paperSize,
+        quality: normalized.quality,
+        duplex: quote.duplex,
+        orientation: normalized.orientation,
+        pageRange:
+          typeof normalized.pageRange === 'string'
+            ? normalized.pageRange
+            : quote.pageRange
+              ? String(quote.pageRange)
+              : null,
+      },
       change: {
         requested: settlement.change.requested,
         dispensed: settlement.change.dispensed,
@@ -981,6 +998,22 @@ export class CopyService {
             chargedAmount: settlement.chargedAmount,
             colorPages: quote.billableColorPages * quote.copies,
             bwPages: quote.billableBwPages * quote.copies,
+            coinsInserted: settlement.previousBalance,
+            documentName: previewFilename || 'Scanned Document',
+            printConfiguration: {
+              copies: quote.copies,
+              colorMode: quote.effectiveColorMode,
+              paperSize: normalized.paperSize,
+              quality: normalized.quality,
+              duplex: quote.duplex,
+              orientation: normalized.orientation,
+              pageRange:
+                typeof normalized.pageRange === 'string'
+                  ? normalized.pageRange
+                  : quote.pageRange
+                    ? String(quote.pageRange)
+                    : null,
+            },
             change: {
               requested: settlement.change.requested,
               dispensed: settlement.change.dispensed,
@@ -1208,6 +1241,9 @@ export class CopyService {
     chargedAmount: number;
     colorPages?: number | null;
     bwPages?: number | null;
+    coinsInserted?: number | null;
+    documentName?: string | null;
+    printConfiguration?: Partial<ReceiptPrintConfigurationSnapshot> | null;
     change: {
       requested: number;
       dispensed: number;
@@ -1232,6 +1268,9 @@ export class CopyService {
           typeof input.bwPages === 'number'
             ? Math.max(0, Math.floor(input.bwPages))
             : null,
+        coinsInserted: input.coinsInserted,
+        documentName: input.documentName,
+        printConfiguration: input.printConfiguration,
         status: 'settled_pending_terminal',
         change: input.change,
         settledAt: input.settledAt,

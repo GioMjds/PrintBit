@@ -170,6 +170,30 @@ async function ensurePdfSource(
   return { pdfPath, cleanupPaths: [] };
 }
 
+export async function prepareWorkerPdf(_input: {
+  sourcePath: string;
+}): Promise<{ pdfPath: string; cleanupPaths: string[]; pageCount: number }> {
+  const prepared = await ensurePdfSource(_input.sourcePath);
+  try {
+    const bytes = await fs.promises.readFile(prepared.pdfPath);
+    const pdf = await PDFDocument.load(bytes);
+    return {
+      pdfPath: prepared.pdfPath,
+      cleanupPaths: prepared.cleanupPaths,
+      pageCount: pdf.getPageCount(),
+    };
+  } catch (error) {
+    for (const cleanupPath of prepared.cleanupPaths) {
+      try {
+        await fs.promises.unlink(cleanupPath);
+      } catch {
+        // Preserve the original preparation error.
+      }
+    }
+    throw error;
+  }
+}
+
 function needsOrientationRotation(
   width: number,
   height: number,

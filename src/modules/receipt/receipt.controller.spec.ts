@@ -16,6 +16,17 @@ describe('ReceiptController PDF endpoints', () => {
     bwPages: 1,
     pagesPrinted: 2,
     totalPages: 2,
+    coinsInserted: 10.0,
+    documentName: 'document.pdf',
+    printConfiguration: {
+      copies: 1,
+      colorMode: 'colored',
+      paperSize: 'A4',
+      quality: 'standard',
+      duplex: false,
+      orientation: 'portrait',
+      pageRange: null,
+    },
     status: 'printed',
     change: {
       requested: 0,

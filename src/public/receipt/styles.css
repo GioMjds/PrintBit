@@ -223,6 +223,28 @@
   max-width: 65%;
 }
 
+/* document name styling */
+.receipt-row__value--doc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 65%;
+  word-break: normal;
+}
+
+.receipt-doc-icon {
+  flex-shrink: 0;
+  color: var(--lavender);
+  opacity: 0.85;
+}
+
+#rDocumentNameText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Thin separator between groups ────────────────────────────────── */
 .receipt-separator {
   height: 1px;

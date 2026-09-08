@@ -4,6 +4,7 @@ import { printFile, detectDefaultPrinter } from '@/services/printer';
 import { printerStateProjection } from '@/services/printer-state-projection';
 
 const mockHandoffToWorker = jest.fn();
+const mockPrepareWorkerPdf = jest.fn();
 const mockExecFile = jest.fn();
 const mockSpawn = jest.fn();
 const mockExec = jest.fn();
@@ -34,11 +35,7 @@ jest.mock('@/services/document-rotation', () => ({
 }));
 
 jest.mock('@/services/prepare-print-pdf', () => ({
-  IMAGE_EXTENSIONS: new Set(['.jpg', '.jpeg', '.png']),
-  preparePrintPdf: jest.fn(async ({ sourcePath }) => ({
-    pdfPath: sourcePath,
-    cleanupPaths: [],
-  })),
+  prepareWorkerPdf: (...args: unknown[]) => mockPrepareWorkerPdf(...args),
 }));
 
 describe('Printer Worker Handoff', () => {
@@ -70,6 +67,11 @@ describe('Printer Worker Handoff', () => {
       targetPath: path.join(uploadsDir, 'mock_target.pdf'),
       fileName: 'mock_worker_job.pdf',
     });
+    mockPrepareWorkerPdf.mockImplementation(async ({ sourcePath }) => ({
+      pdfPath: sourcePath,
+      cleanupPaths: [],
+      pageCount: 2,
+    }));
   });
 
   describe('printFile', () => {
@@ -80,6 +82,7 @@ describe('Printer Worker Handoff', () => {
           copies: 2,
           colorMode: 'colored',
           orientation: 'landscape',
+          rotationDeg: 90,
           paperSize: 'A4',
           pageRange: '1-2',
           quality: 'high',
@@ -101,10 +104,15 @@ describe('Printer Worker Handoff', () => {
         copies: 2,
         color: true,
         orientation: 'landscape',
+        rotationDeg: 90,
+        paperSize: 'A4',
         pageRange: '1-2',
         quality: 'high',
       });
       expect(callArg.sourcePath).toBe(testFilePath);
+      expect(mockPrepareWorkerPdf).toHaveBeenCalledWith({
+        sourcePath: testFilePath,
+      });
     });
 
     it('falls back to generated UUIDs when transactionId or spoolerCorrelationKey are omitted', async () => {
@@ -129,6 +137,8 @@ describe('Printer Worker Handoff', () => {
         copies: 1,
         color: false,
         orientation: 'portrait',
+        rotationDeg: 0,
+        paperSize: 'A4',
         pageRange: undefined,
         quality: undefined,
       });

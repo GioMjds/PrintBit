@@ -6,11 +6,10 @@ import { handoffToWorker } from './worker-handoff';
 import { printerStateProjection } from './printer-state-projection';
 import {
   normalizeRotationDeg,
-  preparePrintRotationArtifact,
   type RotationDeg,
 } from './document-rotation';
 import type { PrintQuality } from '@/core/database/shared.schema';
-import { preparePrintPdf, IMAGE_EXTENSIONS } from './prepare-print-pdf';
+import { prepareWorkerPdf } from './prepare-print-pdf';
 
 export class PrintDispatchError extends Error {
   readonly result: {
@@ -147,33 +146,9 @@ export class PrinterService {
     }
 
     const rotationDeg = normalizeRotationDeg(options.rotationDeg, 0);
-    const fileExt = path.extname(filePath).toLowerCase();
-
-    let preparedPdfPath: string;
-    let cleanupPaths: string[] = [];
-
-    if (IMAGE_EXTENSIONS.has(fileExt)) {
-      const prepared = await preparePrintPdf({
-        sourcePath: filePath,
-        colorMode: options.colorMode,
-        orientation: options.orientation,
-        rotationDeg,
-        paperSize: options.paperSize,
-        pageRange: options.pageRange,
-        duplex: options.duplex,
-        quality: options.quality,
-      });
-      preparedPdfPath = prepared.pdfPath;
-      cleanupPaths = prepared.cleanupPaths;
-    } else {
-      const prepared = await preparePrintRotationArtifact({
-        sourcePath: filePath,
-        rotationDeg,
-        targetOrientation: options.orientation,
-      });
-      preparedPdfPath = prepared.printPath;
-      cleanupPaths = prepared.cleanupPaths;
-    }
+    const prepared = await prepareWorkerPdf({ sourcePath: filePath });
+    const preparedPdfPath = prepared.pdfPath;
+    const cleanupPaths = prepared.cleanupPaths;
 
     try {
       const spoolerCorrelationKey =
@@ -191,6 +166,8 @@ export class PrinterService {
           copies: options.copies,
           color: options.colorMode === 'colored',
           orientation: options.orientation,
+          rotationDeg,
+          paperSize: options.paperSize,
           pageRange: options.pageRange,
           quality: options.quality,
         },

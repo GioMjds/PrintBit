@@ -26,6 +26,8 @@ export async function handoffToWorker(input: {
     color?: boolean;
     pageRange?: string | null;
     orientation?: string | null;
+    rotationDeg?: 0 | 90 | 180 | 270;
+    paperSize?: 'A4' | 'Letter' | 'Legal';
     quality?: 'standard' | 'high';
   };
 }): Promise<{ targetPath: string; fileName: string }> {
@@ -86,6 +88,8 @@ export async function handoffToWorker(input: {
       color: input.printSettings?.color ?? false,
       pageRange: input.printSettings?.pageRange ?? null,
       orientation: input.printSettings?.orientation ?? null,
+      rotationDeg: input.printSettings?.rotationDeg ?? 0,
+      paperSize: input.printSettings?.paperSize ?? 'A4',
       quality: input.printSettings?.quality ?? 'standard',
       schemaVersion: 2,
       transactionId: input.transactionId,

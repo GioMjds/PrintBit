@@ -1,3 +1,13 @@
+type ReceiptPrintConfiguration = {
+  copies: number | null;
+  colorMode: 'monochrome' | 'colored' | null;
+  paperSize: string | null;
+  quality: 'standard' | 'high' | null;
+  duplex: boolean | null;
+  orientation: 'portrait' | 'landscape' | null;
+  pageRange: string | null;
+};
+
 type ReceiptPayload = {
   transactionId: string;
   mode: 'print' | 'copy' | string | null;
@@ -19,6 +29,9 @@ type ReceiptPayload = {
   bwPages: number | null;
   pagesPrinted: number | null;
   totalPages: number | null;
+  coinsInserted?: number | null;
+  documentName?: string | null;
+  printConfiguration?: ReceiptPrintConfiguration | null;
 };
 
 type ReceiptLookup =
@@ -45,11 +58,35 @@ const downloadBtn = document.getElementById(
   'downloadBtn',
 ) as HTMLButtonElement | null;
 
+const rows = {
+  documentName: document.getElementById('rowDocumentName') as HTMLElement | null,
+  sepPrintConfig: document.getElementById('sepPrintConfig') as HTMLElement | null,
+  copies: document.getElementById('rowCopies') as HTMLElement | null,
+  colorMode: document.getElementById('rowColorMode') as HTMLElement | null,
+  paperSize: document.getElementById('rowPaperSize') as HTMLElement | null,
+  quality: document.getElementById('rowQuality') as HTMLElement | null,
+  duplex: document.getElementById('rowDuplex') as HTMLElement | null,
+  orientation: document.getElementById('rowOrientation') as HTMLElement | null,
+  pageRange: document.getElementById('rowPageRange') as HTMLElement | null,
+  coinsInserted: document.getElementById('rowCoinsInserted') as HTMLElement | null,
+};
+
 const fields = {
   transactionId: document.getElementById(
     'rTransactionId',
   ) as HTMLElement | null,
   mode: document.getElementById('rMode') as HTMLElement | null,
+  documentName: document.getElementById(
+    'rDocumentNameText',
+  ) as HTMLElement | null,
+  copies: document.getElementById('rCopies') as HTMLElement | null,
+  colorMode: document.getElementById('rColorMode') as HTMLElement | null,
+  paperSize: document.getElementById('rPaperSize') as HTMLElement | null,
+  quality: document.getElementById('rQuality') as HTMLElement | null,
+  duplex: document.getElementById('rDuplex') as HTMLElement | null,
+  orientation: document.getElementById('rOrientation') as HTMLElement | null,
+  pageRange: document.getElementById('rPageRange') as HTMLElement | null,
+  coinsInserted: document.getElementById('rCoinsInserted') as HTMLElement | null,
   amount: document.getElementById('rAmount') as HTMLElement | null,
   colorPages: document.getElementById('rColorPages') as HTMLElement | null,
   bwPages: document.getElementById('rBwPages') as HTMLElement | null,
@@ -84,6 +121,15 @@ const TERMINAL_STATUSES = new Set([
 /* ── Helpers ────────────────────────────────────────────────────── */
 function setField(el: HTMLElement | null, value: string): void {
   if (el) el.textContent = value;
+}
+
+function setRowVisible(row: HTMLElement | null, visible: boolean): void {
+  if (!row) return;
+  if (visible) {
+    row.removeAttribute('hidden');
+  } else {
+    row.setAttribute('hidden', '');
+  }
 }
 
 function setMessage(
@@ -304,6 +350,87 @@ function renderReceipt(payload: ReceiptPayload): void {
       : 'No outstanding change.');
   setField(fields.transactionId, payload.transactionId);
   setField(fields.mode, fmtMode(payload.mode));
+
+  if (payload.documentName) {
+    setRowVisible(rows.documentName, true);
+    setField(fields.documentName, payload.documentName);
+  } else {
+    setRowVisible(rows.documentName, false);
+  }
+
+  const config = payload.printConfiguration;
+  const hasCopies = config?.copies != null;
+  const hasColorMode = Boolean(config?.colorMode);
+  const hasPaperSize = Boolean(config?.paperSize);
+  const hasQuality = Boolean(config?.quality);
+  const hasDuplex = config?.duplex != null;
+  const hasOrientation = Boolean(config?.orientation);
+  const hasPageRange = Boolean(config?.pageRange);
+  const hasAnyConfig =
+    hasCopies ||
+    hasColorMode ||
+    hasPaperSize ||
+    hasQuality ||
+    hasDuplex ||
+    hasOrientation ||
+    hasPageRange;
+
+  setRowVisible(rows.sepPrintConfig, hasAnyConfig);
+
+  setRowVisible(rows.copies, hasCopies);
+  if (hasCopies && config?.copies != null) {
+    setField(fields.copies, String(config.copies));
+  }
+
+  setRowVisible(rows.colorMode, hasColorMode);
+  if (hasColorMode && config?.colorMode) {
+    setField(
+      fields.colorMode,
+      config.colorMode === 'colored' ? 'Color' : 'Black & White',
+    );
+  }
+
+  setRowVisible(rows.paperSize, hasPaperSize);
+  if (hasPaperSize && config?.paperSize) {
+    setField(fields.paperSize, config.paperSize.toUpperCase());
+  }
+
+  setRowVisible(rows.quality, hasQuality);
+  if (hasQuality && config?.quality) {
+    setField(
+      fields.quality,
+      config.quality === 'high' ? 'High' : 'Standard',
+    );
+  }
+
+  setRowVisible(rows.duplex, hasDuplex);
+  if (hasDuplex && config?.duplex != null) {
+    setField(
+      fields.duplex,
+      config.duplex ? 'Double-sided' : 'Single-sided',
+    );
+  }
+
+  setRowVisible(rows.orientation, hasOrientation);
+  if (hasOrientation && config?.orientation) {
+    setField(
+      fields.orientation,
+      config.orientation === 'landscape' ? 'Landscape' : 'Portrait',
+    );
+  }
+
+  setRowVisible(rows.pageRange, hasPageRange);
+  if (hasPageRange && config?.pageRange) {
+    setField(fields.pageRange, config.pageRange);
+  }
+
+  if (payload.coinsInserted != null) {
+    setRowVisible(rows.coinsInserted, true);
+    setField(fields.coinsInserted, fmtPeso(payload.coinsInserted));
+  } else {
+    setRowVisible(rows.coinsInserted, false);
+  }
+
   setField(fields.amount, fmtPeso(payload.chargedAmount));
   setField(
     fields.colorPages,

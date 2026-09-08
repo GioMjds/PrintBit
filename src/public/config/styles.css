@@ -1136,13 +1136,6 @@ body {
   color: var(--ink-muted);
 }
 
-.detection-evidence--orientation {
-  grid-template-areas:
-    "eyebrow counts"
-    "summary counts"
-    "details details";
-}
-
 /* ── Copies / rotation stepper ───────────────────────────── */
 .copies-control {
   display: flex;

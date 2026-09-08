@@ -525,6 +525,9 @@ export class ScannerService {
         transactionId,
         mode: 'print', // receipts use 'print' or 'copy'; scan uses 'print' as the closest mode
         chargedAmount: settlement.chargedAmount,
+        coinsInserted: settlement.previousBalance,
+        documentName: filename,
+        printConfiguration: null,
         status: 'printed',
         change: {
           requested: settlement.change.requested,

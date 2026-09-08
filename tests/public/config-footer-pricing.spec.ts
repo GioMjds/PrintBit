@@ -81,7 +81,7 @@ test('separates paper size and page range each into its own full-width grid line
   expect(page).toMatch(/id="pageRangeSingleWrap"[\s\S]*?class="[^"]*hidden/);
 });
 
-test('places detection evidence in compact full-width strips after its related controls', () => {
+test('keeps color evidence but removes the orientation document check', () => {
   const styles = fs.readFileSync(
     path.resolve('src/public/config/styles.css'),
     'utf8',
@@ -89,8 +89,7 @@ test('places detection evidence in compact full-width strips after its related c
 
   expect(page.indexOf('id="colorModeGroup"')).toBeLessThan(page.indexOf('id="qualityGroup"'));
   expect(page.indexOf('id="qualityGroup"')).toBeLessThan(page.indexOf('id="colorDetectionEvidence"'));
-  expect(page.indexOf('id="orientationGroup"')).toBeLessThan(page.indexOf('id="rotationGroup"'));
-  expect(page.indexOf('id="rotationGroup"')).toBeLessThan(page.indexOf('id="orientationDetectionEvidence"'));
+  expect(page).not.toContain('id="orientationDetectionEvidence"');
   expect(styles).toMatch(/\.detection-evidence\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
 });
 

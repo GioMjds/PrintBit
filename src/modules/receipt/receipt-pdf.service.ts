@@ -47,8 +47,22 @@ export class ReceiptPdfService {
       const rightMargin = 14;
       const contentWidth = pageWidth - leftMargin - rightMargin;
 
-      // Estimate height based on whether change / notes / color pages are present
+      // Estimate height based on whether change / notes / color pages / details are present
       let estimatedHeight = 360;
+      if (payload.coinsInserted != null) estimatedHeight += 16;
+      if (payload.documentName) estimatedHeight += 16;
+      if (payload.printConfiguration) {
+        const c = payload.printConfiguration;
+        let configRows = 0;
+        if (c.copies != null) configRows++;
+        if (c.colorMode) configRows++;
+        if (c.paperSize) configRows++;
+        if (c.quality) configRows++;
+        if (c.duplex != null) configRows++;
+        if (c.orientation) configRows++;
+        if (c.pageRange) configRows++;
+        if (configRows > 0) estimatedHeight += configRows * 14 + 10;
+      }
       if (payload.change && payload.change.requested > 0) estimatedHeight += 45;
       if (payload.change && payload.change.remaining > 0) estimatedHeight += 20;
       if (payload.colorPages != null && payload.bwPages != null) estimatedHeight += 24;
@@ -119,6 +133,55 @@ export class ReceiptPdfService {
       drawRow('Service Mode:', (payload.mode || 'PRINT').toUpperCase());
       drawRow('Status:', formatStatus(payload.status), true);
       drawRow('Date:', formatDate(payload.settledAt || payload.generatedAt));
+      if (payload.documentName) {
+        drawRow('Document:', payload.documentName);
+      }
+
+      // ── Print Configuration (if present) ───────────────────────
+      const config = payload.printConfiguration;
+      const hasConfig =
+        config &&
+        (config.copies != null ||
+          config.colorMode ||
+          config.paperSize ||
+          config.quality ||
+          config.duplex != null ||
+          config.orientation ||
+          config.pageRange);
+
+      if (hasConfig) {
+        drawDashedLine();
+        if (config.copies != null) {
+          drawRow('Copies:', String(config.copies));
+        }
+        if (config.colorMode) {
+          drawRow(
+            'Color Mode:',
+            config.colorMode === 'colored' ? 'Color' : 'Black & White',
+          );
+        }
+        if (config.paperSize) {
+          drawRow('Paper Size:', config.paperSize);
+        }
+        if (config.quality) {
+          drawRow(
+            'Print Quality:',
+            config.quality === 'high' ? 'High' : 'Standard',
+          );
+        }
+        if (config.duplex != null) {
+          drawRow('Duplex:', config.duplex ? 'Double-sided' : 'Single-sided');
+        }
+        if (config.orientation) {
+          drawRow(
+            'Orientation:',
+            config.orientation === 'landscape' ? 'Landscape' : 'Portrait',
+          );
+        }
+        if (config.pageRange) {
+          drawRow('Page Range:', config.pageRange);
+        }
+      }
 
       drawDashedLine();
 
@@ -137,6 +200,10 @@ export class ReceiptPdfService {
         drawRow('Pages Printed:', pagesText);
       }
 
+      if (payload.coinsInserted != null) {
+        drawRow('Coins Inserted:', formatCurrency(payload.coinsInserted));
+      }
+
       drawRow('Amount Charged:', formatCurrency(payload.chargedAmount), true);
 
       // ── 4. Change Details (if applicable) ──────────────────────
@@ -145,7 +212,7 @@ export class ReceiptPdfService {
         drawRow('Change Requested:', formatCurrency(payload.change.requested));
         drawRow('Change Dispensed:', formatCurrency(payload.change.dispensed));
         if (payload.change.remaining > 0) {
-          drawRow('Remaining Owed:', formatCurrency(payload.change.remaining), true);
+          drawRow('Missing Change:', formatCurrency(payload.change.remaining), true);
         }
         drawRow('Change Status:', formatChangeState(payload.change.state));
         if (payload.change.owedChangeId) {

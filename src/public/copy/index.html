@@ -126,7 +126,7 @@
           <h1>Copy</h1>
         </div>
 
-        <div class="topbar-spacer"></div>
+        <div class="topbar-actions"><button type="button" class="document-care-fab" id="documentCareBtn" aria-haspopup="dialog" aria-controls="documentCareModal"><span aria-hidden="true">!</span><span>Document care</span></button></div>
       </header>
 
       <!-- ── Two-column body ─────────────────────────────────────── -->
@@ -214,7 +214,6 @@
             <p class="steps-panel__lead">
               Follow these steps to complete your copy job.
             </p>
-
             <ol class="steps" aria-label="Copy steps">
               <li class="step">
                 <div class="step__number" aria-hidden="true">1</div>
@@ -457,6 +456,7 @@
           </section>
         </section>
       </main>
+      <div class="modal-overlay document-care-modal" id="documentCareModal" role="dialog" aria-modal="true" aria-labelledby="documentCareTitle" aria-hidden="true"><div class="modal-card document-care-modal__card"><div class="document-care-modal__icon" aria-hidden="true">!</div><h2 class="modal-title" id="documentCareTitle">Prepare your document</h2><p class="modal-subtitle">To avoid paper jams and keep your preview clear:</p><ul><li>Use clean, flat, undamaged bond paper.</li><li>Remove staples, clips, tape, folded areas, and torn edges.</li><li>For the ADF, align pages straight. On the glass, place the document flat.</li></ul><div class="modal-actions"><button type="button" class="modal-btn modal-btn--primary document-care-modal__close" id="documentCareClose">Got it</button></div></div></div>
 
       <!-- Footer -->
       <footer class="copy-footer">

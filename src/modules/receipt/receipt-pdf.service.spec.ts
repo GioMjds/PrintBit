@@ -16,6 +16,17 @@ describe('ReceiptPdfService', () => {
     bwPages: 1,
     pagesPrinted: 3,
     totalPages: 3,
+    coinsInserted: 20.0,
+    documentName: 'document-preview.pdf',
+    printConfiguration: {
+      copies: 1,
+      colorMode: 'colored',
+      paperSize: 'A4',
+      quality: 'standard',
+      duplex: false,
+      orientation: 'portrait',
+      pageRange: '1-3',
+    },
     status: 'printed',
     change: {
       requested: 5.0,
@@ -76,6 +87,17 @@ describe('ReceiptPdfService', () => {
       bwPages: 1,
       pagesPrinted: 1,
       totalPages: 1,
+      coinsInserted: null,
+      documentName: null,
+      printConfiguration: {
+        copies: null,
+        colorMode: null,
+        paperSize: null,
+        quality: null,
+        duplex: null,
+        orientation: null,
+        pageRange: null,
+      },
       status: 'printed',
       change: {
         requested: 0,
@@ -96,4 +118,60 @@ describe('ReceiptPdfService', () => {
     expect(pdfBuffer.length).toBeGreaterThan(100);
     expect(pdfBuffer.subarray(0, 5).toString('ascii')).toBe('%PDF-');
   });
+
+  it('includes document name, print configuration, coins inserted, and Missing Change in PDF stream', async () => {
+    const payloadWithMissingChange: ReceiptPayload = {
+      ...samplePayload,
+      change: {
+        requested: 10.0,
+        dispensed: 4.0,
+        remaining: 6.0,
+        state: 'failed',
+        attempts: 1,
+        owedChangeId: 'OWE-5678',
+        message: null,
+      },
+    };
+
+    const pdfBuffer = await service.generateThermalReceiptPdf(payloadWithMissingChange);
+
+    // Inflate all compressed streams in the PDF to verify rendered text content
+    const pdfRaw = pdfBuffer.toString('latin1');
+    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+    let extractedText = '';
+    let match: RegExpExecArray | null;
+    while ((match = streamRegex.exec(pdfRaw)) !== null) {
+      try {
+        const decompressed = require('node:zlib')
+          .inflateSync(Buffer.from(match[1], 'latin1'))
+          .toString('latin1');
+        extractedText += decompressed + '\n';
+      } catch {
+        extractedText += match[1] + '\n';
+      }
+    }
+
+    const decodedText = extractedText.replace(/<([0-9a-fA-F]+)>/g, (_, hex) =>
+      Buffer.from(hex, 'hex').toString('latin1'),
+    );
+
+    // Extract text from PDFKit's kerning TJ arrays: [ (string1) num (string2) ... ] TJ
+    const unkernedText = decodedText.replace(/\[([\s\S]*?)\]\s*TJ/g, (_, inner) => {
+      return inner.replace(/-?\d+(\.\d+)?/g, '').replace(/\s+/g, '');
+    });
+
+    expect(unkernedText).toContain('Document:');
+    expect(unkernedText).toContain('document-preview.pdf');
+    expect(unkernedText).toContain('Copies:');
+    expect(unkernedText).toContain('ColorMode:');
+    expect(unkernedText).toContain('PaperSize:');
+    expect(unkernedText).toContain('PrintQuality:');
+    expect(unkernedText).toContain('Duplex:');
+    expect(unkernedText).toContain('Orientation:');
+    expect(unkernedText).toContain('PageRange:');
+    expect(unkernedText).toContain('CoinsInserted:');
+    expect(unkernedText).toContain('MissingChange:');
+    expect(unkernedText).not.toContain('RemainingOwed:');
+  });
 });
+

@@ -18,7 +18,6 @@ import {
 } from '../shared/large-print-warning';
 import {
   buildColorDetectionEvidence,
-  buildOrientationDetectionEvidence,
 } from './detection-evidence';
 
 export {};
@@ -178,7 +177,7 @@ interface PDFViewport {
 const PAPER_MM: Record<PaperSize, [number, number]> = {
   A4: [210, 297], // A4 Bond Paper
   Letter: [216, 279], // Short Bond Paper (8.5" × 11")
-  Legal: [216, 356], // Long Bond Paper (8.5" × 13")
+  Legal: [216, 356], // Long Bond Paper / US Legal (8.5" × 14")
 };
 
 /** Return [widthPx, heightPx] of the paper sheet at 96 dpi,
@@ -418,6 +417,12 @@ class PrintPreview {
       this.sheet.setAttribute('data-gray', '');
     } else {
       this.sheet.removeAttribute('data-gray');
+    }
+
+    if (this.pdfDoc) {
+      void this.renderPage(this.currentPage);
+    } else if (this.iframe.style.display !== 'none') {
+      this.recalcHtmlPages();
     }
   }
 
@@ -1005,16 +1010,6 @@ const colorDetectionCounts = document.getElementById(
 const colorDetectionConfidence = document.getElementById(
   'colorDetectionConfidence',
 ) as HTMLElement | null;
-const orientationDetectionEvidence = document.getElementById(
-  'orientationDetectionEvidence',
-) as HTMLElement | null;
-const orientationDetectionSummary = document.getElementById(
-  'orientationDetectionSummary',
-) as HTMLElement | null;
-const orientationDetectionDetails = document.getElementById(
-  'orientationDetectionDetails',
-) as HTMLElement | null;
-
 const qualityRadios = document.querySelectorAll<HTMLInputElement>(
   'input[name="printQuality"]',
 );
@@ -1085,11 +1080,6 @@ if (mode === 'scan') {
 
 let currentPrintQuote: PrintQuote | null = null;
 let detectedColorMode: ColorMode | null = null;
-let detectedOrientation: Orientation | null = null;
-let currentOrientationDetectionKey: string | null = null;
-const orientationAutoAppliedKeys = new Set<string>();
-const orientationManuallyAdjustedKeys = new Set<string>();
-let suppressOrientationChangeTracking = false;
 let quoteError: string | null = null;
 let quoteLoading = false;
 let quoteRequestVersion = 0;
@@ -1452,112 +1442,6 @@ function getCopies(): number {
     1,
     Math.min(30, parseInt(copiesInput?.value ?? '1', 10) || 1),
   );
-}
-
-function orientationDetectionKey(): string | null {
-  if (mode !== 'print' || !sessionId) return null;
-  const id = selectedDocumentId ?? selectedFile;
-  if (!id) return null;
-  return `${sessionId}:${id}`;
-}
-
-function clearOrientationNotice(): void {
-  document.querySelector('.orientation-detect-notice')?.remove();
-  if (orientationDetectionEvidence) orientationDetectionEvidence.hidden = true;
-}
-
-function syncOrientationDetectionContext(): string | null {
-  const key = orientationDetectionKey();
-  if (key !== currentOrientationDetectionKey) {
-    currentOrientationDetectionKey = key;
-    detectedOrientation = null;
-    clearOrientationNotice();
-  }
-  return key;
-}
-
-function showOrientationNotice(detected: Orientation): void {
-  if (!orientationDetectionEvidence) return;
-
-  const imageInfo = preview.imageInfo;
-  const evidence = imageInfo
-    ? buildOrientationDetectionEvidence(
-        detected,
-        imageInfo.naturalWidth,
-        imageInfo.naturalHeight,
-      )
-    : null;
-  if (!evidence) {
-    orientationDetectionEvidence.hidden = true;
-    return;
-  }
-
-  orientationDetectionEvidence.hidden = false;
-  if (orientationDetectionSummary) {
-    const detectedLabel = detected === 'landscape' ? 'Landscape' : 'Portrait';
-    orientationDetectionSummary.textContent = `${detectedLabel} detected`;
-  }
-  if (orientationDetectionDetails) {
-    orientationDetectionDetails.textContent =
-      `Based on preview: ${evidence.width.toLocaleString()} × ` +
-      `${evidence.height.toLocaleString()} px · ` +
-      `${evidence.aspectRatio.toFixed(2)}:1 aspect ratio`;
-  }
-}
-
-function applyImageOrientationDetection(): void {
-  if (mode !== 'print') {
-    detectedOrientation = null;
-    clearOrientationNotice();
-    return;
-  }
-
-  const key = syncOrientationDetectionContext();
-  if (!key) {
-    detectedOrientation = null;
-    clearOrientationNotice();
-    return;
-  }
-
-  const imageInfo = preview.imageInfo;
-  if (
-    !imageInfo ||
-    imageInfo.naturalWidth <= 0 ||
-    imageInfo.naturalHeight <= 0
-  ) {
-    detectedOrientation = null;
-    clearOrientationNotice();
-    return;
-  }
-
-  detectedOrientation =
-    imageInfo.naturalWidth > imageInfo.naturalHeight ? 'landscape' : 'portrait';
-  showOrientationNotice(detectedOrientation);
-
-  if (
-    orientationManuallyAdjustedKeys.has(key) ||
-    orientationAutoAppliedKeys.has(key)
-  ) {
-    return;
-  }
-
-  const selected = (getRadio('orientation') as Orientation) || 'portrait';
-  if (selected !== detectedOrientation) {
-    const target = document.querySelector<HTMLInputElement>(
-      `input[name="orientation"][value="${detectedOrientation}"]`,
-    );
-    if (target) {
-      suppressOrientationChangeTracking = true;
-      try {
-        target.checked = true;
-        target.dispatchEvent(new Event('change', { bubbles: true }));
-      } finally {
-        suppressOrientationChangeTracking = false;
-      }
-    }
-  }
-
-  orientationAutoAppliedKeys.add(key);
 }
 
 function currentPreviewConfig(): PreviewConfig {
@@ -1941,17 +1825,6 @@ document
     });
   });
 
-document
-  .querySelectorAll<HTMLInputElement>('input[name="orientation"]')
-  .forEach((el) => {
-    el.addEventListener('change', () => {
-      if (suppressOrientationChangeTracking) return;
-      const key = orientationDetectionKey();
-      if (!key) return;
-      orientationManuallyAdjustedKeys.add(key);
-    });
-  });
-
 qualityRadios.forEach((radio) => {
   radio.addEventListener('change', () => {
     updateSummary();
@@ -2005,8 +1878,6 @@ async function loadPreview(): Promise<void> {
     selectedDocumentId: selectedDocumentId ?? null,
   });
   if (mode === 'copy') {
-    clearOrientationNotice();
-    detectedOrientation = null;
     const copyPreview = copyPreviewPath;
     if (!copyPreview) return;
 
@@ -2044,8 +1915,6 @@ async function loadPreview(): Promise<void> {
   }
 
   if (mode === 'scan') {
-    clearOrientationNotice();
-    detectedOrientation = null;
     if (!scanFilename) {
       previewLog('loadPreview() scan mode - no scanFilename');
       return;
@@ -2083,8 +1952,6 @@ async function loadPreview(): Promise<void> {
   }
 
   if (mode !== 'print') {
-    clearOrientationNotice();
-    detectedOrientation = null;
     return;
   }
 
@@ -2095,13 +1962,11 @@ async function loadPreview(): Promise<void> {
     return;
   }
 
-  syncOrientationDetectionContext();
   const filename = selectedFile ?? undefined;
   const previewPromise = preview.load(sessionId, filename);
 
   if (shouldPreparePreviewInBackground(filename)) {
     void previewPromise.then(() => {
-      applyImageOrientationDetection();
       syncPageRangeAvailability();
       clampSinglePage();
       updateSummary();
@@ -2115,7 +1980,6 @@ async function loadPreview(): Promise<void> {
   }
 
   await previewPromise;
-  applyImageOrientationDetection();
   if (sessionId) await applyColorAnalysis(sessionId, selectedFile);
   syncPageRangeAvailability();
   clampSinglePage();
@@ -2288,7 +2152,7 @@ async function prepareDocumentPreview(): Promise<void> {
   } else {
     preparationLoading.setMessage(
       'Analyzing document',
-      'Checking pages, color, and orientation…',
+      'Checking pages and color…',
     );
   }
 

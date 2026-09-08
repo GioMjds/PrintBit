@@ -20,6 +20,22 @@ export interface ReceiptChangeSnapshot {
   message: string | null;
 }
 
+export interface ReceiptPrintConfigurationSnapshot {
+  copies: number | null;
+  colorMode: 'colored' | 'grayscale' | null;
+  paperSize: 'A4' | 'Letter' | 'Legal' | null;
+  quality: 'standard' | 'high' | null;
+  duplex: boolean | null;
+  orientation: 'portrait' | 'landscape' | null;
+  pageRange: string | null;
+}
+
+export interface ReceiptDetailsSnapshot {
+  coinsInserted: number | null;
+  documentName: string | null;
+  printConfiguration: ReceiptPrintConfigurationSnapshot;
+}
+
 export interface ReceiptRecordEntry {
   id: string;
   transactionId: string;
@@ -29,6 +45,7 @@ export interface ReceiptRecordEntry {
   bwPages?: number | null;
   status: ReceiptRecordStatus;
   change: ReceiptChangeSnapshot;
+  details?: ReceiptDetailsSnapshot;
   settledAt: string | null;
   terminalAt: string | null;
   createdAt: string;
@@ -75,12 +92,13 @@ export class ReceiptSqliteStore {
           change_attempts,
           change_owed_id,
           change_message,
+          details_json,
           settled_at,
           terminal_at,
           created_at,
           updated_at,
           expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(transaction_id) DO UPDATE SET
           mode = excluded.mode,
           charged_amount = excluded.charged_amount,
@@ -93,6 +111,7 @@ export class ReceiptSqliteStore {
           change_attempts = excluded.change_attempts,
           change_owed_id = excluded.change_owed_id,
           change_message = excluded.change_message,
+          details_json = excluded.details_json,
           settled_at = excluded.settled_at,
           terminal_at = excluded.terminal_at,
           updated_at = excluded.updated_at,
@@ -128,6 +147,7 @@ export class ReceiptSqliteStore {
         entry.change.attempts,
         entry.change.owedChangeId,
         entry.change.message,
+        entry.details ? JSON.stringify(entry.details) : null,
         entry.settledAt,
         entry.terminalAt,
         entry.createdAt,
@@ -153,6 +173,7 @@ export class ReceiptSqliteStore {
           change_attempts,
           change_owed_id,
           change_message,
+          details_json,
           settled_at,
           terminal_at,
           created_at,
@@ -184,6 +205,7 @@ export class ReceiptSqliteStore {
           change_attempts,
           change_owed_id,
           change_message,
+          details_json,
           settled_at,
           terminal_at,
           created_at,
@@ -243,6 +265,7 @@ export class ReceiptSqliteStore {
           change_attempts,
           change_owed_id,
           change_message,
+          details_json,
           settled_at,
           terminal_at,
           created_at,
@@ -359,6 +382,7 @@ export class ReceiptSqliteStore {
           rr.change_attempts AS receipt_change_attempts,
           rr.change_owed_id AS receipt_change_owed_id,
           rr.change_message AS receipt_change_message,
+          rr.details_json AS receipt_details_json,
           rr.settled_at AS receipt_settled_at,
           rr.terminal_at AS receipt_terminal_at,
           rr.created_at AS receipt_created_at,
@@ -396,6 +420,7 @@ export class ReceiptSqliteStore {
         change_attempts: row.receipt_change_attempts,
         change_owed_id: row.receipt_change_owed_id,
         change_message: row.receipt_change_message,
+        details_json: row.receipt_details_json,
         settled_at: row.receipt_settled_at,
         terminal_at: row.receipt_terminal_at,
         created_at: row.receipt_created_at,
@@ -506,6 +531,7 @@ export class ReceiptSqliteStore {
         owedChangeId: changeState === 'failed' ? owedChangeId : null,
         message: changeState === 'failed' ? changeMessage : null,
       },
+      details: this.toReceiptDetails(row.details_json),
       settledAt: typeof row.settled_at === 'string' ? row.settled_at : null,
       terminalAt: typeof row.terminal_at === 'string' ? row.terminal_at : null,
       createdAt: String(row.created_at ?? ''),
@@ -519,6 +545,74 @@ export class ReceiptSqliteStore {
         typeof row.bw_pages === 'number' && Number.isFinite(row.bw_pages)
           ? Math.max(0, Math.floor(Number(row.bw_pages)))
           : null,
+    };
+  }
+
+  private toReceiptDetails(value: unknown): ReceiptDetailsSnapshot | undefined {
+    if (typeof value !== 'string' || !value.trim()) return undefined;
+
+    let candidate: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (typeof parsed !== 'object' || parsed === null) return undefined;
+      candidate = parsed as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+
+    const rawConfiguration =
+      typeof candidate.printConfiguration === 'object' &&
+      candidate.printConfiguration !== null
+        ? (candidate.printConfiguration as Record<string, unknown>)
+        : {};
+    const coinsInserted = Number(candidate.coinsInserted);
+
+    return {
+      coinsInserted:
+        Number.isFinite(coinsInserted) && coinsInserted >= 0
+          ? coinsInserted
+          : null,
+      documentName:
+        typeof candidate.documentName === 'string' && candidate.documentName
+          ? candidate.documentName
+          : null,
+      printConfiguration: {
+        copies:
+          typeof rawConfiguration.copies === 'number' &&
+          Number.isFinite(rawConfiguration.copies)
+            ? Math.min(30, Math.max(1, Math.floor(rawConfiguration.copies)))
+            : null,
+        colorMode:
+          rawConfiguration.colorMode === 'colored' ||
+          rawConfiguration.colorMode === 'grayscale'
+            ? rawConfiguration.colorMode
+            : null,
+        paperSize:
+          rawConfiguration.paperSize === 'A4' ||
+          rawConfiguration.paperSize === 'Letter' ||
+          rawConfiguration.paperSize === 'Legal'
+            ? rawConfiguration.paperSize
+            : null,
+        quality:
+          rawConfiguration.quality === 'standard' ||
+          rawConfiguration.quality === 'high'
+            ? rawConfiguration.quality
+            : null,
+        duplex:
+          typeof rawConfiguration.duplex === 'boolean'
+            ? rawConfiguration.duplex
+            : null,
+        orientation:
+          rawConfiguration.orientation === 'portrait' ||
+          rawConfiguration.orientation === 'landscape'
+            ? rawConfiguration.orientation
+            : null,
+        pageRange:
+          typeof rawConfiguration.pageRange === 'string' &&
+          rawConfiguration.pageRange
+            ? rawConfiguration.pageRange
+            : null,
+      },
     };
   }
 

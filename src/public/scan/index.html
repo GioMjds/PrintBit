@@ -81,6 +81,7 @@
           </svg>
           <h1>Scan &amp; Print</h1>
         </div>
+        <div class="topbar-actions"><button type="button" class="document-care-fab" id="documentCareBtn" aria-haspopup="dialog" aria-controls="documentCareModal"><span aria-hidden="true">!</span><span>Document care</span></button></div>
       </header>
 
       <!-- ── Main two-column layout ── -->
@@ -331,6 +332,7 @@
         </section>
         <!-- /controls-col -->
       </main>
+      <div class="modal-overlay document-care-modal" id="documentCareModal" role="dialog" aria-modal="true" aria-labelledby="documentCareTitle" aria-hidden="true"><div class="modal-card document-care-modal__card"><div class="document-care-modal__icon" aria-hidden="true">!</div><h2 class="modal-title" id="documentCareTitle">Prepare your document</h2><p class="modal-subtitle">To avoid paper jams and keep your preview clear:</p><ul><li>Use clean, flat, undamaged bond paper.</li><li>Remove staples, clips, tape, folded areas, and torn edges.</li><li>For the ADF, align pages straight. On the glass, place the document flat.</li></ul><div class="modal-actions"><button type="button" class="modal-btn modal-btn--primary document-care-modal__close" id="documentCareClose">Got it</button></div></div></div>
 
       <!-- ── Footer: action buttons ── -->
       <footer class="scan-footer">

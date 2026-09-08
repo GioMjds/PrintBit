@@ -106,6 +106,7 @@ interface ConfirmPaymentBody {
   spoolerCorrelationKey?: string;
   copies?: number;
   colorMode?: 'colored' | 'grayscale';
+  quality?: 'standard' | 'high';
   orientation?: 'portrait' | 'landscape';
   rotationDeg?: number;
   paperSize?: 'A4' | 'Letter' | 'Legal';
@@ -1269,6 +1270,7 @@ export class FinancialService {
 
     let serverFilename: string | null = null;
     let targetDocumentId: string | null = null;
+    let originalDocumentName: string | null = mode === 'copy' ? 'Scanned Document' : null;
     let printOptions: PrintJobOptions | null = null;
     let printQuotePages: {
       selectedPages: number;
@@ -1349,6 +1351,9 @@ export class FinancialService {
       this.deps.sessionStore.touchSession(sessionId);
 
       const target = resolveTargetDocument(session, documentId);
+      if (target) {
+        originalDocumentName = target.filename ?? null;
+      }
       if (!target) {
         void adminService.appendAdminLog(
           'payment_failed',
@@ -1628,6 +1633,20 @@ export class FinancialService {
     try {
       const initialStatus: ReceiptRecordStatus =
         mode === 'print' ? 'settled_pending_terminal' : 'printed';
+      const printConfig = {
+        copies: typeof copies === 'number' && Number.isFinite(copies) ? copies : 1,
+        colorMode: printOptions?.colorMode ?? (colorMode === 'colored' ? 'colored' : 'grayscale'),
+        paperSize,
+        quality,
+        duplex: printOptions?.duplex ?? duplex,
+        orientation: printOptions?.orientation ?? orientation,
+        pageRange:
+          typeof printOptions?.pageRange === 'string'
+            ? printOptions.pageRange
+            : typeof req.body?.pageRange === 'string'
+              ? req.body.pageRange
+              : null,
+      };
       let snapshot = this.receiptService.upsertReceiptSnapshot({
         transactionId,
         mode,
@@ -1641,6 +1660,9 @@ export class FinancialService {
           typeof printQuotePages?.billableBwPages === 'number'
             ? printQuotePages?.billableBwPages
             : null,
+        coinsInserted: settlement.previousBalance,
+        documentName: originalDocumentName,
+        printConfiguration: printConfig,
         status: initialStatus,
         change: {
           requested: settlement.change.requested,

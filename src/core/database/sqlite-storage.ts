@@ -297,6 +297,7 @@ function ensureSchema(db: DatabaseSync): void {
       change_attempts INTEGER NOT NULL DEFAULT 0,
       change_owed_id TEXT,
       change_message TEXT,
+      details_json TEXT,
       settled_at TEXT,
       terminal_at TEXT,
       created_at TEXT NOT NULL,
@@ -476,6 +477,10 @@ function ensureSchema(db: DatabaseSync): void {
   }
   if (!receiptColumns.has('bw_pages')) {
     db.exec('ALTER TABLE receipt_records ADD COLUMN bw_pages INTEGER');
+  }
+  if (!receiptColumns.has('details_json')) {
+    db.exec('ALTER TABLE receipt_records ADD COLUMN details_json TEXT');
+    appliedMigrations.push('receipt_records.details_json');
   }
 
   const consumablesUsageColumnRows = db
@@ -853,12 +858,13 @@ export function importLowDbSnapshotIfNeeded(
             change_attempts,
             change_owed_id,
             change_message,
+            details_json,
             settled_at,
             terminal_at,
             created_at,
             updated_at,
             expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           receipt.id,
@@ -872,6 +878,7 @@ export function importLowDbSnapshotIfNeeded(
           receipt.change.attempts,
           receipt.change.owedChangeId,
           receipt.change.message,
+          receipt.details ? JSON.stringify(receipt.details) : null,
           receipt.settledAt,
           receipt.terminalAt,
           receipt.createdAt,

@@ -27,6 +27,7 @@ import {
   resolveWifiTroubleshootingDetails,
   type HotspotConfig,
 } from '../shared/wifi-troubleshooting';
+import { buildPhysicalPrintSettings } from './print-settings';
 
 export {};
 
@@ -198,6 +199,8 @@ type PrintLifecycleStatePayload = {
   totalPages?: number;
   reason?: string | null;
   printError?: PrintError | null;
+  failureStage?: string;
+  errorType?: string;
 };
 
 function normalizeRotationDeg(value: unknown): RotationDeg {
@@ -283,6 +286,9 @@ const errorSeverityText = document.getElementById('errorSeverityText');
 const errorProgressEl = document.getElementById(
   'errorProgress',
 ) as HTMLParagraphElement | null;
+const errorTechDetails = document.getElementById(
+  'errorTechDetails',
+) as HTMLElement | null;
 const maintenanceResolution = document.getElementById(
   'maintenanceResolution',
 ) as HTMLElement | null;
@@ -2186,12 +2192,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
         },
         body: JSON.stringify({
           amount: totalPrice,
-          copies: config.copies,
-          colorMode: getDisplayColorMode(),
-          orientation: config.orientation,
-          rotationDeg: config.rotationDeg,
-          paperSize: config.paperSize,
-          pageRange: config.pageRange,
+          ...buildPhysicalPrintSettings(config, getDisplayColorMode()),
           previewPath: config.copyPreviewPath,
           spoolerCorrelationKey,
         }),
@@ -2255,13 +2256,7 @@ modalConfirmBtn?.addEventListener('click', async () => {
           mode: config.mode,
           sessionId: config.sessionId,
           documentId: config.documentId,
-          copies: config.copies,
-          colorMode: getDisplayColorMode(),
-          quality: config.quality,
-          orientation: config.orientation,
-          rotationDeg: config.rotationDeg,
-          paperSize: config.paperSize,
-          pageRange: config.pageRange,
+          ...buildPhysicalPrintSettings(config, getDisplayColorMode()),
           spoolerCorrelationKey,
         }),
       });

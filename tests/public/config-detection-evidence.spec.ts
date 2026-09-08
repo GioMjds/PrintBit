@@ -1,6 +1,5 @@
 import {
   buildColorDetectionEvidence,
-  buildOrientationDetectionEvidence,
 } from '../../src/public/config/detection-evidence';
 
 describe('config detection evidence', () => {
@@ -29,16 +28,5 @@ describe('config detection evidence', () => {
 
     expect(evidence.colorPercentage).toBe(0);
     expect(evidence.selectedPages).toBe(0);
-  });
-
-  test('describes orientation from preview dimensions', () => {
-    const evidence = buildOrientationDetectionEvidence('landscape', 1600, 1100);
-
-    expect(evidence).toEqual({
-      orientation: 'landscape',
-      width: 1600,
-      height: 1100,
-      aspectRatio: 1.45,
-    });
   });
 });

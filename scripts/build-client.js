@@ -88,9 +88,9 @@ try {
   for (const entry of entryPoints) {
     console.log(`Building: ${entry.in} -> ${entry.out}`);
     esbuild.buildSync({
-      entryPoints: [entry.in],
+      entryPoints: [path.resolve(entry.in)],
       bundle: true,
-      outfile: entry.out,
+      outfile: path.resolve(entry.out),
       minify: true,
     });
   }

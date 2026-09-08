@@ -27,6 +27,8 @@ import {
   ReceiptRecordStatus,
   ReceiptChangeState,
   ReceiptChangeSnapshot,
+  ReceiptDetailsSnapshot,
+  ReceiptPrintConfigurationSnapshot,
   ReceiptRecordEntry,
   ReceiptAccessTokenEntry,
 } from './models/receipt.model';
@@ -137,6 +139,8 @@ export {
   ReceiptRecordStatus,
   ReceiptChangeState,
   ReceiptChangeSnapshot,
+  ReceiptDetailsSnapshot,
+  ReceiptPrintConfigurationSnapshot,
   ReceiptRecordEntry,
   ReceiptAccessTokenEntry,
 };

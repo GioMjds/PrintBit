@@ -35,7 +35,7 @@ import {
   buildWorkerErrorPayload,
   sendWorkerError,
 } from '@/services/worker-error-pipe';
-import { preparePrintPdf } from '@/services/prepare-print-pdf';
+import { prepareWorkerPdf } from '@/services/prepare-print-pdf';
 import { powerSafetyService } from '@/services/power-safety';
 
 /**
@@ -232,16 +232,7 @@ export async function orchestratePrintJob(
     // =========================================================================
     currentStage = 'prepare-final-pdf';
 
-    const preparedPdf = await preparePrintPdf({
-      sourcePath: uploadPath,
-      colorMode: job.data.request.colorMode,
-      orientation: job.data.request.orientation,
-      rotationDeg: job.data.request.rotationDeg,
-      paperSize: job.data.request.paperSize,
-      pageRange: job.data.request.pageRange,
-      duplex: job.data.request.duplex,
-      quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
-    });
+    const preparedPdf = await prepareWorkerPdf({ sourcePath: uploadPath });
     preparedCleanupPaths = preparedPdf.cleanupPaths;
 
     // =========================================================================
@@ -277,6 +268,8 @@ export async function orchestratePrintJob(
         color: job.data.request.colorMode === 'colored',
         pageRange: job.data.request.pageRange,
         orientation: job.data.request.orientation,
+        rotationDeg: job.data.request.rotationDeg as 0 | 90 | 180 | 270,
+        paperSize: job.data.request.paperSize,
         quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
       },
     });

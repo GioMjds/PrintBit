@@ -5,7 +5,9 @@ import type {
   ReceiptAccessTokenEntry,
   ReceiptChangeSnapshot,
   ReceiptChangeState,
+  ReceiptDetailsSnapshot,
   ReceiptMode,
+  ReceiptPrintConfigurationSnapshot,
   ReceiptRecordEntry,
   ReceiptRecordStatus,
 } from '@/services/db';
@@ -23,6 +25,9 @@ export interface ReceiptSnapshotInput {
   // Optional persisted page composition counts (nullable when unknown)
   colorPages?: number | null;
   bwPages?: number | null;
+  coinsInserted?: number | null;
+  documentName?: string | null;
+  printConfiguration?: Partial<ReceiptPrintConfigurationSnapshot> | null;
   status?: ReceiptRecordStatus;
   change?: Partial<ReceiptChangeSnapshot>;
   settledAt?: string | null;
@@ -67,6 +72,9 @@ export interface ReceiptPayload {
   bwPages: number | null;
   pagesPrinted: number | null;
   totalPages: number | null;
+  coinsInserted: number | null;
+  documentName: string | null;
+  printConfiguration: ReceiptPrintConfigurationSnapshot;
   status: ReceiptRecordStatus;
   change: ReceiptPayloadChange;
   settledAt: string | null;
@@ -141,6 +149,7 @@ export class ReceiptService {
       existing?.terminalAt ?? null,
     );
     const change = this.normalizeChangeSnapshot(input.change, existing?.change);
+    const details = this.normalizeDetailsSnapshot(input, existing?.details);
 
     const entry: ReceiptRecordEntry = {
       id: existing?.id ?? randomUUID(),
@@ -158,6 +167,7 @@ export class ReceiptService {
           : existing?.bwPages ?? null,
       status: input.status ?? existing?.status ?? DEFAULT_STATUS,
       change,
+      details,
       settledAt,
       terminalAt,
       createdAt: existing?.createdAt ?? nowIso,
@@ -365,6 +375,10 @@ export class ReceiptService {
       bwPages: record.bwPages ?? null,
       pagesPrinted: lifecycle?.pagesPrinted ?? null,
       totalPages: lifecycle?.totalPages ?? null,
+      coinsInserted: record.details?.coinsInserted ?? null,
+      documentName: record.details?.documentName ?? null,
+      printConfiguration:
+        record.details?.printConfiguration ?? this.emptyPrintConfiguration(),
       status: record.status,
       change: {
         requested: record.change.requested,
@@ -462,6 +476,84 @@ export class ReceiptService {
       owedChangeId: state === 'failed' ? owedChangeId : null,
       message: state === 'failed' ? message : null,
     };
+  }
+
+  private normalizeDetailsSnapshot(
+    input: ReceiptSnapshotInput,
+    existing: ReceiptDetailsSnapshot | undefined,
+  ): ReceiptDetailsSnapshot {
+    const configuration = input.printConfiguration;
+    const previousConfiguration =
+      existing?.printConfiguration ?? this.emptyPrintConfiguration();
+
+    return {
+      coinsInserted:
+        typeof input.coinsInserted === 'number'
+          ? this.normalizeChargedAmount(input.coinsInserted)
+          : existing?.coinsInserted ?? null,
+      documentName:
+        typeof input.documentName === 'string'
+          ? this.normalizeDocumentName(input.documentName)
+          : existing?.documentName ?? null,
+      printConfiguration: {
+        copies:
+          typeof configuration?.copies === 'number' &&
+          Number.isFinite(configuration.copies)
+            ? Math.min(30, Math.max(1, Math.floor(configuration.copies)))
+            : previousConfiguration.copies,
+        colorMode:
+          configuration?.colorMode === 'colored' ||
+          configuration?.colorMode === 'grayscale'
+            ? configuration.colorMode
+            : previousConfiguration.colorMode,
+        paperSize:
+          configuration?.paperSize === 'A4' ||
+          configuration?.paperSize === 'Letter' ||
+          configuration?.paperSize === 'Legal'
+            ? configuration.paperSize
+            : previousConfiguration.paperSize,
+        quality:
+          configuration?.quality === 'standard' ||
+          configuration?.quality === 'high'
+            ? configuration.quality
+            : previousConfiguration.quality,
+        duplex:
+          typeof configuration?.duplex === 'boolean'
+            ? configuration.duplex
+            : previousConfiguration.duplex,
+        orientation:
+          configuration?.orientation === 'portrait' ||
+          configuration?.orientation === 'landscape'
+            ? configuration.orientation
+            : previousConfiguration.orientation,
+        pageRange:
+          typeof configuration?.pageRange === 'string'
+            ? this.normalizeDisplayText(configuration.pageRange, 80)
+            : previousConfiguration.pageRange,
+      },
+    };
+  }
+
+  private emptyPrintConfiguration(): ReceiptPrintConfigurationSnapshot {
+    return {
+      copies: null,
+      colorMode: null,
+      paperSize: null,
+      quality: null,
+      duplex: null,
+      orientation: null,
+      pageRange: null,
+    };
+  }
+
+  private normalizeDocumentName(value: string): string | null {
+    const leafName = value.replace(/\\/g, '/').split('/').pop() ?? '';
+    return this.normalizeDisplayText(leafName, 180);
+  }
+
+  private normalizeDisplayText(value: string, maxLength: number): string | null {
+    const normalized = value.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    return normalized ? normalized.slice(0, maxLength) : null;
   }
 
   private appendLifecycleLog(

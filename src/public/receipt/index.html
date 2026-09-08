@@ -83,9 +83,63 @@
             <span class="receipt-row__label">Service</span>
             <span class="receipt-row__value" id="rMode">—</span>
           </div>
+          <div class="receipt-row" id="rowDocumentName" hidden>
+            <span class="receipt-row__label">Document</span>
+            <span class="receipt-row__value receipt-row__value--doc" id="rDocumentName">
+              <svg
+                class="receipt-doc-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="14"
+                height="14"
+                aria-hidden="true"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span id="rDocumentNameText">—</span>
+            </span>
+          </div>
+
+          <div class="receipt-separator" id="sepPrintConfig" aria-hidden="true" hidden></div>
+
+          <div class="receipt-row" id="rowCopies" hidden>
+            <span class="receipt-row__label">Copies</span>
+            <span class="receipt-row__value" id="rCopies">—</span>
+          </div>
+          <div class="receipt-row" id="rowColorMode" hidden>
+            <span class="receipt-row__label">Color Mode</span>
+            <span class="receipt-row__value" id="rColorMode">—</span>
+          </div>
+          <div class="receipt-row" id="rowPaperSize" hidden>
+            <span class="receipt-row__label">Paper Size</span>
+            <span class="receipt-row__value" id="rPaperSize">—</span>
+          </div>
+          <div class="receipt-row" id="rowQuality" hidden>
+            <span class="receipt-row__label">Print Quality</span>
+            <span class="receipt-row__value" id="rQuality">—</span>
+          </div>
+          <div class="receipt-row" id="rowDuplex" hidden>
+            <span class="receipt-row__label">Duplex</span>
+            <span class="receipt-row__value" id="rDuplex">—</span>
+          </div>
+          <div class="receipt-row" id="rowOrientation" hidden>
+            <span class="receipt-row__label">Orientation</span>
+            <span class="receipt-row__value" id="rOrientation">—</span>
+          </div>
+          <div class="receipt-row" id="rowPageRange" hidden>
+            <span class="receipt-row__label">Page Range</span>
+            <span class="receipt-row__value" id="rPageRange">—</span>
+          </div>
 
           <div class="receipt-separator" aria-hidden="true"></div>
 
+          <div class="receipt-row" id="rowCoinsInserted" hidden>
+            <span class="receipt-row__label">Coins Inserted</span>
+            <span class="receipt-row__value" id="rCoinsInserted">—</span>
+          </div>
           <div class="receipt-row receipt-row--highlight" id="rowAmount">
             <span class="receipt-row__label">Amount Charged</span>
             <span
@@ -115,7 +169,7 @@
             <span class="receipt-row__value" id="rChangeDispensed">—</span>
           </div>
           <div class="receipt-row" id="rowChangeRemaining">
-            <span class="receipt-row__label">Remaining Owed</span>
+            <span class="receipt-row__label">Missing Change</span>
             <span
               class="receipt-row__value receipt-row__value--warn"
               id="rChangeRemaining"
