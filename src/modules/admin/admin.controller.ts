@@ -69,6 +69,7 @@ import {
   getSqliteDb,
   writeRuntimeState,
 } from '@/core/database/sqlite-storage';
+import { requestWindowsShutdown } from '@/services/windows-power';
 
 export interface AdminControllerDeps {
   io: SocketIOServer;
@@ -92,6 +93,7 @@ export interface AdminControllerDeps {
     attempts: number;
     owedChangeId?: string;
   }>;
+  shutdownWindows?: () => Promise<void>;
 }
 
 // ── Validation helpers ─────────────────────────────────────────────────────
@@ -374,6 +376,12 @@ const adminStorageClearRateLimit = createRateLimit({
   max: 3,
 });
 
+const adminShutdownRateLimit = createRateLimit({
+  keyPrefix: 'admin-system-shutdown',
+  windowMs: 10 * 60_000,
+  max: 3,
+});
+
 export class AdminController {
   public readonly router: Router;
   private readonly adminService: AdminService;
@@ -427,6 +435,13 @@ export class AdminController {
       requireAdminLocalAccess,
       requireAdminPin,
       this.handleGetStatus,
+    );
+    this.router.post(
+      '/system/shutdown',
+      requireAdminLocalAccess,
+      requireAdminPin,
+      adminShutdownRateLimit,
+      this.handleSystemShutdown,
     );
     this.router.get(
       '/earnings/analytics',
@@ -1027,6 +1042,41 @@ export class AdminController {
       host,
       wifiActive,
     });
+  };
+
+  private handleSystemShutdown = async (_req: Request, res: Response) => {
+    const recovery = getRecoveryStatusSnapshot();
+    const hopper = this.deps.getHopperStatus();
+
+    if (recovery.sessionStats.inFlight > 0 || hopper.pending) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Cannot shut down while a customer operation is in progress.',
+      });
+    }
+
+    try {
+      await this.adminService.appendAdminLog(
+        'admin_system_shutdown_requested',
+        'Administrator requested a Windows shutdown from the System Control Center.',
+      );
+      await (this.deps.shutdownWindows ?? requestWindowsShutdown)();
+      return res.status(202).json({
+        ok: true,
+        message: 'Windows shutdown scheduled.',
+      });
+    } catch (error) {
+      await this.adminService.appendAdminLog(
+        'admin_system_shutdown_failed',
+        `Windows shutdown could not be scheduled: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return res.status(503).json({
+        ok: false,
+        error: 'Windows shutdown could not be scheduled.',
+      });
+    }
   };
 
   private handleGetEarningsAnalytics = (req: Request, res: Response) => {

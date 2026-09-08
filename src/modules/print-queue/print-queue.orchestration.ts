@@ -203,7 +203,7 @@ export async function orchestratePrintJob(
 
     try {
       await fs.access(uploadPath);
-    } catch (error) {
+    } catch {
       throw new WorkerOrchestrationError(
         'FILE_NOT_FOUND',
         false,
@@ -232,7 +232,16 @@ export async function orchestratePrintJob(
     // =========================================================================
     currentStage = 'prepare-final-pdf';
 
-    const preparedPdf = await prepareWorkerPdf({ sourcePath: uploadPath });
+    const preparedPdf = await prepareWorkerPdf({
+      sourcePath: uploadPath,
+      colorMode: job.data.request.colorMode,
+      orientation: job.data.request.orientation,
+      rotationDeg: job.data.request.rotationDeg,
+      paperSize: job.data.request.paperSize,
+      pageRange: job.data.request.pageRange,
+      duplex: job.data.request.duplex ?? false,
+      quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
+    });
     preparedCleanupPaths = preparedPdf.cleanupPaths;
 
     // =========================================================================
@@ -268,7 +277,7 @@ export async function orchestratePrintJob(
         color: job.data.request.colorMode === 'colored',
         pageRange: job.data.request.pageRange,
         orientation: job.data.request.orientation,
-        rotationDeg: job.data.request.rotationDeg as 0 | 90 | 180 | 270,
+        rotationDeg: 0, // content rotation and orientation are already pre-baked
         paperSize: job.data.request.paperSize,
         quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
       },

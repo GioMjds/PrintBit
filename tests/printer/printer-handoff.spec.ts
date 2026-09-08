@@ -104,7 +104,7 @@ describe('Printer Worker Handoff', () => {
         copies: 2,
         color: true,
         orientation: 'landscape',
-        rotationDeg: 90,
+        rotationDeg: 0,
         paperSize: 'A4',
         pageRange: '1-2',
         quality: 'high',
@@ -112,6 +112,13 @@ describe('Printer Worker Handoff', () => {
       expect(callArg.sourcePath).toBe(testFilePath);
       expect(mockPrepareWorkerPdf).toHaveBeenCalledWith({
         sourcePath: testFilePath,
+        colorMode: 'colored',
+        orientation: 'landscape',
+        rotationDeg: 90,
+        paperSize: 'A4',
+        pageRange: '1-2',
+        duplex: undefined,
+        quality: 'high',
       });
     });
 

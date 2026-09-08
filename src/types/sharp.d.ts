@@ -11,6 +11,8 @@ declare module 'sharp' {
 
   interface SharpPipeline {
     ensureAlpha(): SharpPipeline;
+    flip(flip?: boolean): SharpPipeline;
+    flop(flop?: boolean): SharpPipeline;
     grayscale(): SharpPipeline;
     metadata(): Promise<SharpMetadata>;
     png(options?: Record<string, unknown>): SharpPipeline;

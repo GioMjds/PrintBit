@@ -4,10 +4,7 @@ import fs from 'node:fs';
 import { WORKER_QUEUE_DIR } from '@/config';
 import { handoffToWorker } from './worker-handoff';
 import { printerStateProjection } from './printer-state-projection';
-import {
-  normalizeRotationDeg,
-  type RotationDeg,
-} from './document-rotation';
+import type { RotationDeg } from './document-rotation';
 import type { PrintQuality } from '@/core/database/shared.schema';
 import { prepareWorkerPdf } from './prepare-print-pdf';
 
@@ -145,8 +142,19 @@ export class PrinterService {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    const rotationDeg = normalizeRotationDeg(options.rotationDeg, 0);
-    const prepared = await prepareWorkerPdf({ sourcePath: filePath });
+    // Pre-bake content transforms and normalize every page to the selected
+    // orientation. The worker still uses that orientation to select the
+    // matching Windows queue and its saved driver defaults.
+    const prepared = await prepareWorkerPdf({
+      sourcePath: filePath,
+      colorMode: options.colorMode,
+      orientation: options.orientation,
+      rotationDeg: options.rotationDeg,
+      paperSize: options.paperSize,
+      pageRange: options.pageRange,
+      duplex: options.duplex,
+      quality: options.quality,
+    });
     const preparedPdfPath = prepared.pdfPath;
     const cleanupPaths = prepared.cleanupPaths;
 
@@ -166,7 +174,7 @@ export class PrinterService {
           copies: options.copies,
           color: options.colorMode === 'colored',
           orientation: options.orientation,
-          rotationDeg,
+          rotationDeg: 0, // content rotation and orientation are already pre-baked
           paperSize: options.paperSize,
           pageRange: options.pageRange,
           quality: options.quality,

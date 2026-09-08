@@ -540,6 +540,40 @@
                   </div>
                 </section>
 
+                <section class="system-panel system-panel--danger">
+                  <header class="system-panel__head">
+                    <h3 class="system-panel__title">Power Controls</h3>
+                    <p class="system-panel__desc">
+                      Shut down the Windows tablet after all customer work is
+                      complete.
+                    </p>
+                  </header>
+                  <div class="system-panel__body">
+                    <p class="power-control__warning" role="note">
+                      This powers off the entire kiosk computer. Do not use
+                      while a payment, print, scan, or hopper operation is
+                      active.
+                    </p>
+                    <button
+                      id="shutdownWindowsBtn"
+                      type="button"
+                      class="ctrl-btn ctrl-btn--danger"
+                    >
+                      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path
+                          fill-rule="evenodd"
+                          d="M10 2a1 1 0 011 1v6a1 1 0 11-2 0V3a1 1 0 011-1zm-4.95 2.636a1 1 0 011.414 0A6 6 0 1013.536 4.636a1 1 0 111.414-1.414A8 8 0 115.05 4.636z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      <span>
+                        Shut Down Windows
+                        <span class="ctrl-btn__sub">Requests a normal Windows shutdown</span>
+                      </span>
+                    </button>
+                  </div>
+                </section>
+
                 <section class="system-panel">
                   <header class="system-panel__head">
                     <h3 class="system-panel__title">Replacement SOP</h3>

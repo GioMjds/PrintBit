@@ -14,6 +14,21 @@ const handoffToWorker = jest.fn().mockResolvedValue({
   fileName: 'test.pdf',
 });
 const checkpointRecoverySession = jest.fn().mockResolvedValue({});
+const getRecoveryStatusSnapshot = jest.fn(() => ({
+  lifecycle: {
+    bootCount: 1,
+    unexpectedRestartCount: 0,
+    lastStartupAt: null,
+    lastShutdownAt: null,
+  },
+  sessionStats: {
+    inFlight: 0,
+    startupPending: 0,
+    autoRefunded: 0,
+    pendingAdminReview: 0,
+    voided: 0,
+  },
+}));
 const runtimeDb: { data: unknown } = { data: null };
 const sumUsagePagesBySource = jest.fn();
 const getSqliteDb = jest.fn(() => ({
@@ -40,21 +55,7 @@ jest.mock('../../src/services/worker-handoff', () => ({ handoffToWorker }));
 
 jest.mock('../../src/services/recovery', () => ({
   checkpointRecoverySession,
-  getRecoveryStatusSnapshot: jest.fn(() => ({
-    lifecycle: {
-      bootCount: 1,
-      unexpectedRestartCount: 0,
-      lastStartupAt: null,
-      lastShutdownAt: null,
-    },
-    sessionStats: {
-      inFlight: 0,
-      startupPending: 0,
-      autoRefunded: 0,
-      pendingAdminReview: 0,
-      voided: 0,
-    },
-  })),
+  getRecoveryStatusSnapshot,
   getSpoolerLifecycleRecord: jest.fn(),
 }));
 
@@ -296,5 +297,147 @@ describe('admin test print accounting metadata', () => {
     );
 
     expect(resetInkRefillBaseline).toHaveBeenCalledWith(0, 1);
+  });
+});
+
+describe('admin system shutdown', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getRecoveryStatusSnapshot.mockReturnValue({
+      lifecycle: {
+        bootCount: 1,
+        unexpectedRestartCount: 0,
+        lastStartupAt: null,
+        lastShutdownAt: null,
+      },
+      sessionStats: {
+        inFlight: 0,
+        startupPending: 0,
+        autoRefunded: 0,
+        pendingAdminReview: 0,
+        voided: 0,
+      },
+    });
+  });
+
+  function createController(
+    shutdownWindows: jest.Mock,
+    getHopperStatus = jest.fn(() => ({
+      connected: false,
+      pending: false,
+      portPath: null,
+      lastError: null,
+      lastSuccessAt: null,
+    })),
+  ): AdminController {
+    return new AdminController(
+      { appendAdminLog: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never,
+      {
+        io: {} as never,
+        uploadDir: 'tmp',
+        getSerialStatus: jest.fn(),
+        getHopperStatus,
+        runHopperSelfTest: jest.fn(),
+        shutdownWindows,
+      },
+    );
+  }
+
+  test('requests a normal Windows shutdown when no work is in flight', async () => {
+    const shutdownWindows = jest.fn().mockResolvedValue(undefined);
+    const controller = createController(shutdownWindows);
+    const response = createResponse();
+
+    await getRouteHandler(controller, '/system/shutdown')(
+      {} as Request,
+      response,
+    );
+
+    expect(response.statusCode).toBe(202);
+    expect(response.body).toEqual({
+      ok: true,
+      message: 'Windows shutdown scheduled.',
+    });
+    expect(shutdownWindows).toHaveBeenCalledTimes(1);
+  });
+
+  test('refuses shutdown while a recovery session is still in flight', async () => {
+    getRecoveryStatusSnapshot.mockReturnValueOnce({
+      lifecycle: {
+        bootCount: 1,
+        unexpectedRestartCount: 0,
+        lastStartupAt: null,
+        lastShutdownAt: null,
+      },
+      sessionStats: {
+        inFlight: 1,
+        startupPending: 0,
+        autoRefunded: 0,
+        pendingAdminReview: 0,
+        voided: 0,
+      },
+    });
+    const shutdownWindows = jest.fn().mockResolvedValue(undefined);
+    const controller = createController(shutdownWindows);
+    const response = createResponse();
+
+    await getRouteHandler(controller, '/system/shutdown')(
+      {} as Request,
+      response,
+    );
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      ok: false,
+      error: 'Cannot shut down while a customer operation is in progress.',
+    });
+    expect(shutdownWindows).not.toHaveBeenCalled();
+  });
+
+  test('refuses shutdown while the hopper is busy', async () => {
+    const shutdownWindows = jest.fn().mockResolvedValue(undefined);
+    const controller = createController(
+      shutdownWindows,
+      jest.fn(() => ({
+        connected: false,
+        pending: true,
+        portPath: null,
+        lastError: null,
+        lastSuccessAt: null,
+      })),
+    );
+    const response = createResponse();
+
+    await getRouteHandler(controller, '/system/shutdown')(
+      {} as Request,
+      response,
+    );
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      ok: false,
+      error: 'Cannot shut down while a customer operation is in progress.',
+    });
+    expect(shutdownWindows).not.toHaveBeenCalled();
+  });
+
+  test('reports when Windows rejects the shutdown request', async () => {
+    const shutdownWindows = jest
+      .fn()
+      .mockRejectedValue(new Error('shutdown privilege unavailable'));
+    const controller = createController(shutdownWindows);
+    const response = createResponse();
+
+    await getRouteHandler(controller, '/system/shutdown')(
+      {} as Request,
+      response,
+    );
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body).toEqual({
+      ok: false,
+      error: 'Windows shutdown could not be scheduled.',
+    });
   });
 });

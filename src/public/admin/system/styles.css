@@ -238,6 +238,17 @@
   overflow: hidden;
 }
 
+.system-panel--danger {
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+.power-control__warning {
+  margin: 0;
+  color: rgba(254, 202, 202, 0.84);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .system-panel__head {
   padding: 14px 16px 12px;
   border-bottom: 1px solid var(--border);
@@ -384,6 +395,17 @@
 .ctrl-btn--indigo:not(:disabled):hover {
   background: rgba(99, 102, 241, 0.22);
   border-color: rgba(129, 140, 248, 0.46);
+}
+
+.ctrl-btn--danger {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.ctrl-btn--danger:not(:disabled):hover {
+  background: rgba(248, 113, 113, 0.2);
+  border-color: rgba(248, 113, 113, 0.48);
 }
 
 .sop-list {

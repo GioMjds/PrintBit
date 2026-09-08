@@ -125,8 +125,8 @@ const copyTroubleshootSteps = document.getElementById(
 ) as HTMLOListElement | null;
 const backBtn = document.querySelector<HTMLAnchorElement>('a.back-btn');
 const documentCareModal = document.getElementById('documentCareModal');
-document.getElementById('documentCareBtn')?.addEventListener('click', () => { documentCareModal?.classList.add('is-visible'); documentCareModal?.setAttribute('aria-hidden', 'false'); });
-document.getElementById('documentCareClose')?.addEventListener('click', () => { documentCareModal?.classList.remove('is-visible'); documentCareModal?.setAttribute('aria-hidden', 'true'); });
+document.getElementById('documentCareBtn')?.addEventListener('click', () => { documentCareModal?.classList.add('is-open'); documentCareModal?.setAttribute('aria-hidden', 'false'); });
+document.getElementById('documentCareClose')?.addEventListener('click', () => { documentCareModal?.classList.remove('is-open'); documentCareModal?.setAttribute('aria-hidden', 'true'); });
 documentCareModal?.addEventListener('click', (event) => { if (event.target === documentCareModal) document.getElementById('documentCareClose')?.click(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') document.getElementById('documentCareClose')?.click(); });
 

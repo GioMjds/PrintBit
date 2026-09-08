@@ -196,6 +196,13 @@ All sections below must pass before closing spooler handoff reliability work.
 
 ## Power loss, reboot & crash recovery (Issue #37)
 
+### Planned kiosk shutdown
+
+- From the authenticated admin console, open `/admin/system` and use **Shut Down Windows** under **Power Controls**.
+- PrintBit refuses the request while a recovery session is in flight or the hopper is busy. Finish the active customer operation first.
+- The action requests a planned Windows shutdown through `shutdown.exe /s /t 0`; it does not use the force-close option. See the [Microsoft shutdown command reference](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/shutdown).
+- After power-on, verify that Assigned Access, the Node server, the C# worker, the watchdog, and the printer are all running before returning the kiosk to service.
+
 ### Software recovery behavior
 
 - At process startup, PrintBit records startup lifecycle markers in persistent runtime state.

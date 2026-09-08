@@ -60,6 +60,9 @@ const reDetectBtn = document.getElementById(
 const testPrintBtn = document.getElementById(
   'testPrintBtn',
 ) as HTMLButtonElement | null;
+const shutdownWindowsBtn = document.getElementById(
+  'shutdownWindowsBtn',
+) as HTMLButtonElement | null;
 const printerSelection = document.getElementById(
   'printerSelection',
 ) as HTMLSelectElement | null;
@@ -506,6 +509,42 @@ testPrintBtn?.addEventListener('click', () => {
     )
     .finally(() => {
       testPrintBtn.disabled = false;
+    });
+});
+
+// ── Windows shutdown ─────────────────────────────────────────────────────────
+
+shutdownWindowsBtn?.addEventListener('click', () => {
+  if (
+    !window.confirm(
+      'Shut down the entire Windows kiosk? Make sure no customer operation is active.',
+    )
+  ) {
+    return;
+  }
+
+  shutdownWindowsBtn.disabled = true;
+  setMessage('Scheduling Windows shutdown...');
+
+  void apiFetch('/api/admin/system/shutdown', { method: 'POST' })
+    .then(async (res) => {
+      const body = (await res.json()) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok || body.ok !== true) {
+        throw new Error(body.error ?? 'Windows shutdown could not be scheduled.');
+      }
+      setMessage(body.message ?? 'Windows shutdown scheduled.');
+    })
+    .catch((error: unknown) => {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Windows shutdown could not be scheduled.',
+      );
+      shutdownWindowsBtn.disabled = false;
     });
 });
 
