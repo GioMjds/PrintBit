@@ -186,16 +186,16 @@ On a failed recovery or circuit opening, a best-effort Windows diagnostic reader
 
 Extend Worker `PrinterRecoverySettings` with validated defaults:
 
-| Setting | Default |
-| --- | ---: |
-| `SupervisorPollIntervalSeconds` | 5 |
-| `UnhealthySamplesBeforeRecovery` | 2 |
-| `HealthySamplesBeforeReady` | 2 |
-| `CircuitBreakerFailureLimit` | 3 |
-| `CircuitBreakerWindowMinutes` | 10 |
-| `StuckBaseTimeoutSeconds` | 60 |
-| `StuckPerPageTimeoutSeconds` | 30 |
-| `StuckTimeoutCapMinutes` | 15 |
+| Setting                          | Default |
+| -------------------------------- | ------: |
+| `SupervisorPollIntervalSeconds`  |       5 |
+| `UnhealthySamplesBeforeRecovery` |       2 |
+| `HealthySamplesBeforeReady`      |       2 |
+| `CircuitBreakerFailureLimit`     |       3 |
+| `CircuitBreakerWindowMinutes`    |      10 |
+| `StuckBaseTimeoutSeconds`        |      60 |
+| `StuckPerPageTimeoutSeconds`     |      30 |
+| `StuckTimeoutCapMinutes`         |      15 |
 
 Existing Spooler transition and health-recheck settings remain in force. Invalid non-positive timing values or limits fail configuration validation at Worker startup rather than silently weakening safety. Node separately defines `PRINTER_SUPERVISOR_STALE_MS=15000`; tests and deployment validation require it to remain greater than two Worker poll intervals.
 
