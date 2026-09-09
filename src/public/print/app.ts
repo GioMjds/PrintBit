@@ -38,7 +38,6 @@ type SessionResponse = {
   token: string;
   status: 'pending' | 'uploaded';
   uploadUrl: string;
-  publicUploadUrl?: string;
   remainingSeconds?: number;
   warningThresholdSeconds?: number;
   /** Single document (legacy) */
@@ -111,15 +110,6 @@ const wifiPasswordVal = document.getElementById('wifiPasswordVal');
 const mobileGuideTextEl = document.getElementById(
   'mobileGuideText',
 ) as HTMLElement | null;
-const networkModeToggle = document.getElementById(
-  'networkModeToggle',
-) as HTMLElement | null;
-const modeLocalBtn = document.getElementById(
-  'modeLocalBtn',
-) as HTMLButtonElement | null;
-const modeInternetBtn = document.getElementById(
-  'modeInternetBtn',
-) as HTMLButtonElement | null;
 const conversionOverlay = document.getElementById(
   'conversionOverlay',
 ) as HTMLElement | null;
@@ -142,10 +132,6 @@ let deletingDocumentIds = new Set<string>();
 let lastRenderedFileSignature = '';
 let attachedSessionId: string | null = null;
 let hotspotConfig: HotspotConfig | null = null;
-let localUploadUrl = '';
-let publicUploadUrl = '';
-let activeUploadMode: 'local' | 'internet' = 'local';
-let uploadModeManuallySelected = false;
 let sessionWarningThresholdSeconds = 60;
 const SESSION_COUNTDOWN_TICK_MS = 1000;
 const NEW_SESSION_COOLDOWN_MS = 15_000;
@@ -641,56 +627,24 @@ function renderStartupOnboarding(): void {
   }
 }
 
-function deriveInternetUploadUrl(localUrl: string, providedInternetUrl?: string): string {
-  if (providedInternetUrl && providedInternetUrl.trim().length > 0) {
-    return providedInternetUrl;
-  }
-  try {
-    const localParsed = new URL(localUrl);
-    if (!localParsed.pathname.startsWith('/upload/')) return '';
+function updateUploadLink(uploadUrl: string): void {
+  const normalizedUrl = normalizeLocalUploadUrl(uploadUrl);
+  renderStartupOnboarding();
 
-    const currentOrigin = window.location.origin;
-    const currentHost = window.location.hostname.trim().toLowerCase();
-    const isLoopbackCurrent =
-      currentHost === '' ||
-      currentHost === 'localhost' ||
-      currentHost === '127.0.0.1' ||
-      currentHost === '::1';
-    if (isLoopbackCurrent) return '';
-    if (currentOrigin === localParsed.origin) return '';
-
-    const pathWithQuery = `${localParsed.pathname}${localParsed.search}${localParsed.hash}`;
-    return new URL(pathWithQuery, currentOrigin).toString();
-  } catch {
-    return providedInternetUrl ?? '';
-  }
-}
-
-function setUploadMode(
-  mode: 'local' | 'internet',
-  manualSelection = false,
-): void {
-  if (manualSelection) uploadModeManuallySelected = true;
-  const hasInternetOption = publicUploadUrl.length > 0;
-  if (mode === 'internet' && !hasInternetOption) mode = 'local';
-  activeUploadMode = mode;
-
-  const activeUrl =
-    mode === 'internet' && publicUploadUrl ? publicUploadUrl : localUploadUrl;
-  if (!activeUrl) return;
+  if (!normalizedUrl) return;
 
   let href: string;
   try {
-    const parsed = new URL(activeUrl);
+    const parsed = new URL(normalizedUrl);
     const currentOrigin = window.location.origin;
-    href = parsed.origin === currentOrigin ? parsed.pathname : activeUrl;
+    href = parsed.origin === currentOrigin ? parsed.pathname : normalizedUrl;
   } catch {
-    href = activeUrl;
+    href = normalizedUrl;
   }
 
   if (uploadLink) {
     uploadLink.href = href;
-    uploadLink.textContent = activeUrl;
+    uploadLink.textContent = normalizedUrl;
   }
 
   if (openUploadBtn) {
@@ -699,54 +653,18 @@ function setUploadMode(
 
   if (qrStepLabelEl) qrStepLabelEl.textContent = 'Scan upload QR';
   if (mobileGuideTextEl) {
-    if (hasInternetOption) {
-      mobileGuideTextEl.innerHTML =
-        mode === 'internet'
-          ? "Internet mode: use this if your phone is on mobile data or different Wi-Fi.<br />If it fails, switch back to Kiosk Wi-Fi mode."
-          : "Kiosk Wi-Fi mode: join PrintBit Wi-Fi first, then scan the upload QR.<br />If it fails, switch to Internet mode.";
-    } else {
-      mobileGuideTextEl.innerHTML =
-        "Join PrintBit Wi-Fi first, then scan the upload QR.<br />If scanning fails, open the Upload link below.";
-    }
-  }
-
-  if (networkModeToggle) {
-    networkModeToggle.style.display = hasInternetOption ? 'flex' : 'none';
-  }
-  if (modeLocalBtn) {
-    modeLocalBtn.classList.toggle('is-active', mode === 'local');
-    modeLocalBtn.disabled = !localUploadUrl;
-  }
-  if (modeInternetBtn) {
-    modeInternetBtn.classList.toggle('is-active', mode === 'internet');
-    modeInternetBtn.disabled = !hasInternetOption;
+    mobileGuideTextEl.innerHTML =
+      'Join PrintBit Wi-Fi first, then scan the upload QR.<br />If scanning fails, open the Upload link below.';
   }
 
   if (uploadQrCanvas) {
-    void QRCode.toCanvas(uploadQrCanvas, activeUrl, {
+    void QRCode.toCanvas(uploadQrCanvas, normalizedUrl, {
       width: 220,
       margin: 1,
       color: { dark: '#1a1a2e', light: '#ffffff' },
       errorCorrectionLevel: 'M',
     });
   }
-}
-
-function updateUploadLink(uploadUrl: string, internetUploadUrl?: string): void {
-  localUploadUrl = normalizeLocalUploadUrl(uploadUrl);
-  publicUploadUrl = deriveInternetUploadUrl(localUploadUrl, internetUploadUrl);
-  renderStartupOnboarding();
-
-  if (publicUploadUrl) {
-    const isEsp32 = hotspotConfig?.provider === 'esp32';
-    const defaultMode = isEsp32 ? 'local' : 'internet';
-    const preferredMode = uploadModeManuallySelected
-      ? activeUploadMode
-      : defaultMode;
-    setUploadMode(preferredMode);
-    return;
-  }
-  setUploadMode('local');
 }
 
 async function createSession(): Promise<void> {
@@ -762,8 +680,6 @@ async function createSession(): Promise<void> {
     resetSessionCountdown();
     activeSessionId = '';
     activeSessionToken = '';
-    activeUploadMode = 'local';
-    uploadModeManuallySelected = false;
 
     if (!hotspotConfig) {
       try {
@@ -820,7 +736,7 @@ async function createSession(): Promise<void> {
     setSessionText(session.sessionId);
     setSessionActive(true);
     updateSessionCountdown(session.remainingSeconds);
-    updateUploadLink(session.uploadUrl, session.publicUploadUrl);
+    updateUploadLink(session.uploadUrl);
 
     attachSocket(session.sessionId);
     void checkUploadStatus();
@@ -1162,7 +1078,7 @@ async function restoreSession(sid: string): Promise<void> {
     sessionWarningThresholdSeconds = session.warningThresholdSeconds ?? 60;
     sessionStorage.setItem('printbit.sessionToken', session.token);
     updateSessionCountdown(session.remainingSeconds);
-    updateUploadLink(session.uploadUrl, session.publicUploadUrl);
+    updateUploadLink(session.uploadUrl);
     await checkUploadStatus();
   } else {
     await requestNewSession();
@@ -1186,14 +1102,6 @@ refreshSessionBtn?.addEventListener('click', () => {
   } else {
     requestNewSession();
   }
-});
-
-modeLocalBtn?.addEventListener('click', () => {
-  setUploadMode('local', true);
-});
-
-modeInternetBtn?.addEventListener('click', () => {
-  setUploadMode('internet', true);
 });
 
 startupContinueBtn?.addEventListener('click', () => {

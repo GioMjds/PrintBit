@@ -3,20 +3,10 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { PDFDocument, degrees } from 'pdf-lib';
-import { convertToPdfPreview } from './preview';
 
 export type RotationDeg = 0 | 90 | 180 | 270;
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
-const OFFICE_EXTENSIONS = new Set([
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-]);
-const ROTATED_PRINT_DIR = path.resolve('uploads', 'rotated');
 
 export function parseRotationDeg(value: unknown): RotationDeg | null {
   if (value === 0 || value === 90 || value === 180 || value === 270) {
@@ -45,7 +35,6 @@ async function rotatePdfFile(
 ): Promise<void> {
   const bytes = await fs.promises.readFile(sourcePath);
   const pdf = await PDFDocument.load(bytes);
-  let changed = false;
 
   for (const page of pdf.getPages()) {
     const current = page.getRotation().angle;
@@ -64,7 +53,6 @@ async function rotatePdfFile(
     const next = ((current + rotationDeg + extraRotation) % 360 + 360) % 360;
     if (next !== current) {
       page.setRotation(degrees(next));
-      changed = true;
     }
   }
 
@@ -119,47 +107,6 @@ async function rotateFileToPath(
   throw new Error(
     `Rotation is not supported for ${extension || 'this'} file type.`,
   );
-}
-
-export async function preparePrintRotationArtifact(input: {
-  sourcePath: string;
-  rotationDeg: RotationDeg;
-  targetOrientation?: 'portrait' | 'landscape';
-}): Promise<{ printPath: string; cleanupPaths: string[] }> {
-  const { sourcePath, rotationDeg, targetOrientation } = input;
-  if (rotationDeg === 0 && !targetOrientation) {
-    return { printPath: sourcePath, cleanupPaths: [] };
-  }
-
-  const sourceExt = path.extname(sourcePath).toLowerCase();
-  let workingSourcePath = sourcePath;
-  if (OFFICE_EXTENSIONS.has(sourceExt)) {
-    try {
-      workingSourcePath = await convertToPdfPreview(sourcePath);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown conversion error';
-      throw new Error(`Failed to convert document for rotation: ${message}`, { cause: error });
-    }
-  }
-
-  const workingExt = normalizeFileExtension(
-    path.extname(workingSourcePath).toLowerCase(),
-  );
-  if (workingExt !== '.pdf' && !IMAGE_EXTENSIONS.has(workingExt)) {
-    throw new Error(
-      `Rotation is not supported for ${sourceExt || 'this'} file type.`,
-      { cause: new Error(`Unsupported file type: ${workingExt}`) }
-    );
-  }
-
-  await fs.promises.mkdir(ROTATED_PRINT_DIR, { recursive: true });
-  const outputPath = path.join(
-    ROTATED_PRINT_DIR,
-    `${path.basename(workingSourcePath, path.extname(workingSourcePath))}-${rotationDeg}-${randomUUID()}${workingExt}`,
-  );
-  await rotateFileToPath(workingSourcePath, outputPath, rotationDeg, targetOrientation);
-  return { printPath: outputPath, cleanupPaths: [outputPath] };
 }
 
 export async function prepareScanRotationArtifact(input: {

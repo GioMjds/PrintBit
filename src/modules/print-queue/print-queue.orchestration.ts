@@ -35,7 +35,6 @@ import {
   buildWorkerErrorPayload,
   sendWorkerError,
 } from '@/services/worker-error-pipe';
-import { prepareWorkerPdf } from '@/services/prepare-print-pdf';
 import { powerSafetyService } from '@/services/power-safety';
 
 /**
@@ -178,7 +177,6 @@ export async function orchestratePrintJob(
   const chargedAmount = job.data.financial.chargedAmount ?? 0;
   const printerService = new PrinterService();
   const uploadPath = path.resolve(UPLOAD_DIR, job.data.request.serverFilename);
-  let preparedCleanupPaths: string[] = [];
 
   try {
     // =========================================================================
@@ -228,23 +226,6 @@ export async function orchestratePrintJob(
     });
 
     // =========================================================================
-    // STAGE 2: PREPARE FINAL PDF
-    // =========================================================================
-    currentStage = 'prepare-final-pdf';
-
-    const preparedPdf = await prepareWorkerPdf({
-      sourcePath: uploadPath,
-      colorMode: job.data.request.colorMode,
-      orientation: job.data.request.orientation,
-      rotationDeg: job.data.request.rotationDeg,
-      paperSize: job.data.request.paperSize,
-      pageRange: job.data.request.pageRange,
-      duplex: job.data.request.duplex ?? false,
-      quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
-    });
-    preparedCleanupPaths = preparedPdf.cleanupPaths;
-
-    // =========================================================================
     // STAGE 3: HANDOFF TO C# WORKER
     // =========================================================================
     currentStage = 'handoff';
@@ -268,7 +249,7 @@ export async function orchestratePrintJob(
     }
 
     const handoffResult = await handoffToWorker({
-      sourcePath: preparedPdf.pdfPath,
+      sourcePath: uploadPath,
       queueDir: WORKER_QUEUE_DIR,
       transactionId: ctx.transactionId,
       spoolerCorrelationKey: ctx.spoolerCorrelationKey,
@@ -277,8 +258,9 @@ export async function orchestratePrintJob(
         color: job.data.request.colorMode === 'colored',
         pageRange: job.data.request.pageRange,
         orientation: job.data.request.orientation,
-        rotationDeg: 0, // content rotation and orientation are already pre-baked
+        rotationDeg: job.data.request.rotationDeg,
         paperSize: job.data.request.paperSize,
+        duplex: job.data.request.duplex ?? false,
         quality: job.data.request.settings?.quality ?? job.data.request.quality ?? 'standard',
       },
     });
@@ -294,7 +276,6 @@ export async function orchestratePrintJob(
       stage: 'handoff',
       fileName: handoffResult.fileName,
       dispatchedAt: job.data.dispatch.jobDispatchedAt,
-      preparedPages: preparedPdf.pageCount,
     });
 
     return {
@@ -363,16 +344,5 @@ export async function orchestratePrintJob(
     }
 
     throw new Error(`NON_RETRYABLE - ${failureClass}: ${failureReason}`, { cause: err });
-  } finally {
-    for (const cleanupPath of preparedCleanupPaths) {
-      try {
-        await fs.unlink(cleanupPath);
-      } catch (error) {
-        console.warn('[PRINT-WORKER] Failed to clean up prepared PDF.', {
-          cleanupPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
   }
 }

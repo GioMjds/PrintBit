@@ -19,6 +19,10 @@ import {
 import {
   buildColorDetectionEvidence,
 } from './detection-evidence';
+import {
+  detectOrientationFromDimensions,
+  detectPaperSizeFromDimensions,
+} from './geometry-detection';
 
 export {};
 
@@ -146,6 +150,7 @@ interface StoredConfigSeed {
   orientation?: Orientation;
   rotationDeg?: number;
   quality?: PrintQuality;
+  paperSize?: PaperSize;
 }
 
 // PDF.js types (loaded dynamically from /libs/pdfjs)
@@ -327,6 +332,38 @@ class PrintPreview {
 
   get imageInfo(): { naturalWidth: number; naturalHeight: number } | null {
     return this.latestImageInfo;
+  }
+
+  async getNaturalDimensions(): Promise<{ width: number; height: number } | null> {
+    if (this.pdfDoc) {
+      try {
+        const page = await this.pdfDoc.getPage(1);
+        const vp = page.getViewport({ scale: 1 });
+        return { width: vp.width, height: vp.height };
+      } catch {
+        return null;
+      }
+    }
+    if (this.latestImageInfo) {
+      return {
+        width: this.latestImageInfo.naturalWidth,
+        height: this.latestImageInfo.naturalHeight,
+      };
+    }
+    return null;
+  }
+
+  async getNaturalOrientation(): Promise<Orientation | null> {
+    const dims = await this.getNaturalDimensions();
+    if (!dims) return null;
+    return detectOrientationFromDimensions(dims.width, dims.height);
+  }
+
+  async getDetectedPaperSize(): Promise<PaperSize | null> {
+    if (!this.pdfDoc) return null;
+    const dims = await this.getNaturalDimensions();
+    if (!dims) return null;
+    return detectPaperSizeFromDimensions(dims.width, dims.height);
   }
 
   private renderTask: Promise<void> | null = null;
@@ -878,8 +915,19 @@ const scanReleaseToken =
   storedConfig.scanReleaseToken.trim().length > 0
     ? storedConfig.scanReleaseToken.trim()
     : null;
+const hasStoredOrientation =
+  storedConfig?.orientation === 'landscape' ||
+  storedConfig?.orientation === 'portrait';
+const hasStoredPaperSize =
+  storedConfig?.paperSize === 'A4' ||
+  storedConfig?.paperSize === 'Letter' ||
+  storedConfig?.paperSize === 'Legal';
 const initialOrientation: Orientation =
   storedConfig?.orientation === 'landscape' ? 'landscape' : 'portrait';
+const initialPaperSize: PaperSize =
+  storedConfig?.paperSize === 'Letter' || storedConfig?.paperSize === 'Legal'
+    ? storedConfig.paperSize
+    : 'A4';
 const initialQuality: PrintQuality =
   storedConfig?.quality === 'high' ? 'high' : 'standard';
 let rotationDeg: RotationDeg =
@@ -1019,6 +1067,13 @@ const initialOrientationInput = document.querySelector<HTMLInputElement>(
 );
 if (initialOrientationInput) {
   initialOrientationInput.checked = true;
+}
+
+const initialPaperSizeInput = document.querySelector<HTMLInputElement>(
+  `input[name="paperSize"][value="${initialPaperSize}"]`,
+);
+if (initialPaperSizeInput) {
+  initialPaperSizeInput.checked = true;
 }
 
 const initialQualityInput = document.querySelector<HTMLInputElement>(
@@ -1808,6 +1863,29 @@ function setRotation(next: number): void {
 renderRotationValue();
 preview.applyConfig(currentPreviewConfig());
 
+let userManuallyAdjustedOrientation = false;
+let userManuallyAdjustedPaperSize = false;
+let suppressOrientationAutoTracking = false;
+let suppressPaperSizeAutoTracking = false;
+
+document
+  .querySelectorAll<HTMLInputElement>('input[name="orientation"]')
+  .forEach((el) => {
+    el.addEventListener('change', () => {
+      if (suppressOrientationAutoTracking) return;
+      userManuallyAdjustedOrientation = true;
+    });
+  });
+
+document
+  .querySelectorAll<HTMLInputElement>('input[name="paperSize"]')
+  .forEach((el) => {
+    el.addEventListener('change', () => {
+      if (suppressPaperSizeAutoTracking) return;
+      userManuallyAdjustedPaperSize = true;
+    });
+  });
+
 document
   .querySelectorAll<HTMLInputElement>('input[type=radio]')
   .forEach((el) => {
@@ -1870,6 +1948,72 @@ clampSinglePage();
 syncCustomRangeValidity();
 setPrintContinueState();
 
+async function applyDocumentAutoDetection(): Promise<void> {
+  let changed = false;
+
+  if (!hasStoredOrientation && !userManuallyAdjustedOrientation) {
+    try {
+      const detectedOrientation = await preview.getNaturalOrientation();
+      if (detectedOrientation) {
+        const currentOrientation = getRadio('orientation');
+        if (currentOrientation !== detectedOrientation) {
+          const target = document.querySelector<HTMLInputElement>(
+            `input[name="orientation"][value="${detectedOrientation}"]`,
+          );
+          if (target) {
+            previewLog('Auto-applying detected orientation', {
+              detectedOrientation,
+            });
+            suppressOrientationAutoTracking = true;
+            try {
+              target.checked = true;
+              target.dispatchEvent(new Event('change', { bubbles: true }));
+              changed = true;
+            } finally {
+              suppressOrientationAutoTracking = false;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      previewLog('Failed to auto-detect document orientation', err);
+    }
+  }
+
+  if (!hasStoredPaperSize && !userManuallyAdjustedPaperSize) {
+    try {
+      const detectedPaperSize = await preview.getDetectedPaperSize();
+      if (detectedPaperSize) {
+        const currentPaperSize = getRadio('paperSize');
+        if (currentPaperSize !== detectedPaperSize) {
+          const target = document.querySelector<HTMLInputElement>(
+            `input[name="paperSize"][value="${detectedPaperSize}"]`,
+          );
+          if (target) {
+            previewLog('Auto-applying detected paper size', {
+              detectedPaperSize,
+            });
+            suppressPaperSizeAutoTracking = true;
+            try {
+              target.checked = true;
+              target.dispatchEvent(new Event('change', { bubbles: true }));
+              changed = true;
+            } finally {
+              suppressPaperSizeAutoTracking = false;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      previewLog('Failed to auto-detect document paper size', err);
+    }
+  }
+
+  if (changed) {
+    preview.applyConfig(currentPreviewConfig());
+  }
+}
+
 async function loadPreview(): Promise<void> {
   previewLog('loadPreview() start', {
     mode,
@@ -1887,6 +2031,7 @@ async function loadPreview(): Promise<void> {
       if (!resp.ok) return;
       const buf = await resp.arrayBuffer();
       await preview.loadFromBuffer(buf, 'application/pdf');
+      await applyDocumentAutoDetection();
     } catch {
       // Preview not critical for copy mode
     }
@@ -1943,6 +2088,7 @@ async function loadPreview(): Promise<void> {
 
       const buf = await resp.arrayBuffer();
       await preview.loadFromBuffer(buf, mime || 'application/octet-stream');
+      await applyDocumentAutoDetection();
     } catch (err) {
       previewLog('loadPreview() scan mode - exception', err);
     }
@@ -1966,7 +2112,8 @@ async function loadPreview(): Promise<void> {
   const previewPromise = preview.load(sessionId, filename);
 
   if (shouldPreparePreviewInBackground(filename)) {
-    void previewPromise.then(() => {
+    void previewPromise.then(async () => {
+      await applyDocumentAutoDetection();
       syncPageRangeAvailability();
       clampSinglePage();
       updateSummary();
@@ -1980,6 +2127,7 @@ async function loadPreview(): Promise<void> {
   }
 
   await previewPromise;
+  await applyDocumentAutoDetection();
   if (sessionId) await applyColorAnalysis(sessionId, selectedFile);
   syncPageRangeAvailability();
   clampSinglePage();
@@ -2152,7 +2300,7 @@ async function prepareDocumentPreview(): Promise<void> {
   } else {
     preparationLoading.setMessage(
       'Analyzing document',
-      'Checking pages and color…',
+      'Checking pages, color, and orientation…',
     );
   }
 

@@ -4,7 +4,6 @@ import { printFile, detectDefaultPrinter } from '@/services/printer';
 import { printerStateProjection } from '@/services/printer-state-projection';
 
 const mockHandoffToWorker = jest.fn();
-const mockPrepareWorkerPdf = jest.fn();
 const mockExecFile = jest.fn();
 const mockSpawn = jest.fn();
 const mockExec = jest.fn();
@@ -24,18 +23,6 @@ jest.mock('child_process', () => ({
 jest.mock('@/services/worker-handoff', () => ({
   handoffToWorker: (...args: unknown[]) => mockHandoffToWorker(...args),
   WorkerHandoffError: class extends Error {},
-}));
-
-jest.mock('@/services/document-rotation', () => ({
-  normalizeRotationDeg: jest.fn((deg) => deg ?? 0),
-  preparePrintRotationArtifact: jest.fn(async ({ sourcePath }) => ({
-    printPath: sourcePath,
-    cleanupPaths: [],
-  })),
-}));
-
-jest.mock('@/services/prepare-print-pdf', () => ({
-  prepareWorkerPdf: (...args: unknown[]) => mockPrepareWorkerPdf(...args),
 }));
 
 describe('Printer Worker Handoff', () => {
@@ -67,11 +54,6 @@ describe('Printer Worker Handoff', () => {
       targetPath: path.join(uploadsDir, 'mock_target.pdf'),
       fileName: 'mock_worker_job.pdf',
     });
-    mockPrepareWorkerPdf.mockImplementation(async ({ sourcePath }) => ({
-      pdfPath: sourcePath,
-      cleanupPaths: [],
-      pageCount: 2,
-    }));
   });
 
   describe('printFile', () => {
@@ -104,22 +86,14 @@ describe('Printer Worker Handoff', () => {
         copies: 2,
         color: true,
         orientation: 'landscape',
-        rotationDeg: 0,
-        paperSize: 'A4',
-        pageRange: '1-2',
-        quality: 'high',
-      });
-      expect(callArg.sourcePath).toBe(testFilePath);
-      expect(mockPrepareWorkerPdf).toHaveBeenCalledWith({
-        sourcePath: testFilePath,
-        colorMode: 'colored',
-        orientation: 'landscape',
         rotationDeg: 90,
         paperSize: 'A4',
         pageRange: '1-2',
         duplex: undefined,
         quality: 'high',
       });
+      expect(callArg.sourcePath).toBe(testFilePath);
+      expect(callArg.sourcePath).toBe(testFilePath);
     });
 
     it('falls back to generated UUIDs when transactionId or spoolerCorrelationKey are omitted', async () => {
@@ -147,6 +121,7 @@ describe('Printer Worker Handoff', () => {
         rotationDeg: 0,
         paperSize: 'A4',
         pageRange: undefined,
+        duplex: undefined,
         quality: undefined,
       });
     });

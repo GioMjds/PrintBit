@@ -25,8 +25,9 @@ export async function handoffToWorker(input: {
     copies?: number;
     color?: boolean;
     pageRange?: string | null;
+    duplex?: boolean;
     orientation?: string | null;
-    rotationDeg?: 0 | 90 | 180 | 270;
+    rotationDeg?: number;
     paperSize?: 'A4' | 'Letter' | 'Legal';
     quality?: 'standard' | 'high';
   };
@@ -87,6 +88,7 @@ export async function handoffToWorker(input: {
       copies: input.printSettings?.copies ?? 1,
       color: input.printSettings?.color ?? false,
       pageRange: input.printSettings?.pageRange ?? null,
+      duplex: input.printSettings?.duplex ?? false,
       orientation: input.printSettings?.orientation ?? null,
       rotationDeg: input.printSettings?.rotationDeg ?? 0,
       paperSize: input.printSettings?.paperSize ?? 'A4',
@@ -98,7 +100,7 @@ export async function handoffToWorker(input: {
     await fs.writeFile(jsonPath, JSON.stringify(sidecar), 'utf-8');
 
     return { targetPath, fileName };
-  } catch (err) {
+  } catch {
     // Clean up partial files on failure
     for (const partial of [tempPath, targetPath, jsonPath]) {
       try {

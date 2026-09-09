@@ -27,6 +27,7 @@ describe('worker print sidecar contract', () => {
           rotationDeg: 270,
           paperSize: 'Legal',
           pageRange: '2-4',
+          duplex: true,
         },
       });
 
@@ -40,6 +41,7 @@ describe('worker print sidecar contract', () => {
         rotationDeg: 270,
         paperSize: 'Legal',
         pageRange: '2-4',
+        duplex: true,
       });
     } finally {
       await fs.rm(tempDirectory, { recursive: true, force: true });

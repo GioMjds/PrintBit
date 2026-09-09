@@ -6,7 +6,6 @@ import { handoffToWorker } from './worker-handoff';
 import { printerStateProjection } from './printer-state-projection';
 import type { RotationDeg } from './document-rotation';
 import type { PrintQuality } from '@/core/database/shared.schema';
-import { prepareWorkerPdf } from './prepare-print-pdf';
 
 export class PrintDispatchError extends Error {
   readonly result: {
@@ -142,61 +141,31 @@ export class PrinterService {
       throw new Error(`File not found: ${filePath}`);
     }
 
-    // Pre-bake content transforms and normalize every page to the selected
-    // orientation. The worker still uses that orientation to select the
-    // matching Windows queue and its saved driver defaults.
-    const prepared = await prepareWorkerPdf({
+    const spoolerCorrelationKey = context.spoolerCorrelationKey || randomUUID();
+    const transactionId = context.transactionId || randomUUID();
+    const queueDir = WORKER_QUEUE_DIR || path.resolve('../printbit-worker/queue');
+
+    const handoffResult = await handoffToWorker({
       sourcePath: filePath,
-      colorMode: options.colorMode,
-      orientation: options.orientation,
-      rotationDeg: options.rotationDeg,
-      paperSize: options.paperSize,
-      pageRange: options.pageRange,
-      duplex: options.duplex,
-      quality: options.quality,
+      queueDir,
+      transactionId,
+      spoolerCorrelationKey,
+      printSettings: {
+        copies: options.copies,
+        color: options.colorMode === 'colored',
+        orientation: options.orientation,
+        rotationDeg: options.rotationDeg ?? 0,
+        paperSize: options.paperSize,
+        pageRange: options.pageRange,
+        duplex: options.duplex,
+        quality: options.quality,
+      },
     });
-    const preparedPdfPath = prepared.pdfPath;
-    const cleanupPaths = prepared.cleanupPaths;
 
-    try {
-      const spoolerCorrelationKey =
-        context.spoolerCorrelationKey || randomUUID();
-      const transactionId = context.transactionId || randomUUID();
-      const queueDir =
-        WORKER_QUEUE_DIR || path.resolve('../printbit-worker/queue');
-
-      const handoffResult = await handoffToWorker({
-        sourcePath: preparedPdfPath,
-        queueDir,
-        transactionId,
-        spoolerCorrelationKey,
-        printSettings: {
-          copies: options.copies,
-          color: options.colorMode === 'colored',
-          orientation: options.orientation,
-          rotationDeg: 0, // content rotation and orientation are already pre-baked
-          paperSize: options.paperSize,
-          pageRange: options.pageRange,
-          quality: options.quality,
-        },
-      });
-
-      return {
-        success: true,
-        fileName: handoffResult.fileName,
-      } as unknown as PrintDispatchResult;
-    } finally {
-      for (const cleanupPath of cleanupPaths) {
-        try {
-          await fs.promises.unlink(cleanupPath);
-        } catch (error) {
-          console.warn('[PRINTER] Failed to clean up prepared artifact.', {
-            cleanupPath,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
+    return {
+      success: true,
+      fileName: handoffResult.fileName,
+    } as unknown as PrintDispatchResult;
   }
 }
 
